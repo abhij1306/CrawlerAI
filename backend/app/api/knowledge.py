@@ -125,6 +125,85 @@ async def knowledge_memory(
 ) -> dict[str, Any]:
     """Read-only relational extraction-memory projection for operator UI."""
     normalized_domain = normalize_domain(domain)
+    (
+        templates,
+        recipes,
+        compiled_rows,
+        observation_rows,
+        manifest_rows,
+        release_rows,
+    ) = await _memory_rows(session, normalized_domain)
+    latest_compiled = {}
+    for row in compiled_rows:
+        latest_compiled.setdefault(row.recipe_id, row)
+
+    recipes_by_template: dict[uuid.UUID, list[ExtractionRecipe]] = {}
+    for recipe in recipes:
+        recipes_by_template.setdefault(recipe.template_id, []).append(recipe)
+    verdicts_by_template: dict[uuid.UUID, dict[str, int]] = {}
+    observed_at_by_template: dict[uuid.UUID, Any] = {}
+    for template_id, verdict, count, observed_at in observation_rows:
+        if template_id is None:
+            continue
+        verdicts_by_template.setdefault(template_id, {})[str(verdict)] = int(count)
+        current = observed_at_by_template.get(template_id)
+        if current is None or (observed_at is not None and observed_at > current):
+            observed_at_by_template[template_id] = observed_at
+    manifests_by_template = {
+        template_id: int(count)
+        for template_id, count in manifest_rows
+        if template_id is not None
+    }
+
+    selector_count = sum(
+        selector_rule_count(recipe.payload)
+        for recipe in recipes
+        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS
+    )
+    contract_count = sum(
+        len(list((recipe.payload or {}).get("contracts") or []))
+        for recipe in recipes
+        if recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
+    )
+    template_payloads = [
+        _memory_template(
+            template,
+            recipes=recipes_by_template.get(template.id, []),
+            latest_compiled=latest_compiled,
+            verdicts=verdicts_by_template.get(template.id, {}),
+            manifest_count=manifests_by_template.get(template.id, 0),
+            last_observed_at=observed_at_by_template.get(template.id),
+        )
+        for template in templates
+    ]
+    return {
+        "domain": normalized_domain,
+        "summary": {
+            "template_count": len(templates),
+            "recipe_count": len(recipes),
+            "selector_count": selector_count,
+            "contract_count": contract_count,
+            "observation_count": sum(
+                sum(row.values()) for row in verdicts_by_template.values()
+            ),
+            "manifest_count": sum(manifests_by_template.values()),
+            "release_count": sum(int(count) for _, count, _ in release_rows),
+        },
+        "templates": template_payloads,
+        "releases": [
+            {
+                "surface": surface,
+                "count": int(count),
+                "latest_created_at": latest_created_at,
+            }
+            for surface, count, latest_created_at in release_rows
+        ],
+    }
+
+
+async def _memory_rows(
+    session: AsyncSession, normalized_domain: str
+) -> tuple[Any, Any, Any, Any, Any, Any]:
     templates = list(
         (
             await session.execute(
@@ -217,69 +296,14 @@ async def knowledge_memory(
             .order_by(ExtractionReleaseSnapshot.surface)
         )
     ).all()
-
-    recipes_by_template: dict[uuid.UUID, list[ExtractionRecipe]] = {}
-    for recipe in recipes:
-        recipes_by_template.setdefault(recipe.template_id, []).append(recipe)
-    verdicts_by_template: dict[uuid.UUID, dict[str, int]] = {}
-    observed_at_by_template: dict[uuid.UUID, Any] = {}
-    for template_id, verdict, count, observed_at in observation_rows:
-        if template_id is None:
-            continue
-        verdicts_by_template.setdefault(template_id, {})[str(verdict)] = int(count)
-        current = observed_at_by_template.get(template_id)
-        if current is None or (observed_at is not None and observed_at > current):
-            observed_at_by_template[template_id] = observed_at
-    manifests_by_template = {
-        template_id: int(count)
-        for template_id, count in manifest_rows
-        if template_id is not None
-    }
-
-    selector_count = sum(
-        selector_rule_count(recipe.payload)
-        for recipe in recipes
-        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS
+    return (
+        templates,
+        recipes,
+        compiled_rows,
+        observation_rows,
+        manifest_rows,
+        release_rows,
     )
-    contract_count = sum(
-        len(list((recipe.payload or {}).get("contracts") or []))
-        for recipe in recipes
-        if recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
-    )
-    template_payloads = [
-        _memory_template(
-            template,
-            recipes=recipes_by_template.get(template.id, []),
-            latest_compiled=latest_compiled,
-            verdicts=verdicts_by_template.get(template.id, {}),
-            manifest_count=manifests_by_template.get(template.id, 0),
-            last_observed_at=observed_at_by_template.get(template.id),
-        )
-        for template in templates
-    ]
-    return {
-        "domain": normalized_domain,
-        "summary": {
-            "template_count": len(templates),
-            "recipe_count": len(recipes),
-            "selector_count": selector_count,
-            "contract_count": contract_count,
-            "observation_count": sum(
-                sum(row.values()) for row in verdicts_by_template.values()
-            ),
-            "manifest_count": sum(manifests_by_template.values()),
-            "release_count": sum(int(count) for _, count, _ in release_rows),
-        },
-        "templates": template_payloads,
-        "releases": [
-            {
-                "surface": surface,
-                "count": int(count),
-                "latest_created_at": latest_created_at,
-            }
-            for surface, count, latest_created_at in release_rows
-        ],
-    }
 
 
 @router.get("/entities/{entity_id}")
