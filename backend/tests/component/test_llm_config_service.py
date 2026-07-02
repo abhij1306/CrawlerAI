@@ -41,7 +41,7 @@ async def test_resolve_active_config_prefers_task_then_general(db_session) -> No
     await db_session.commit()
 
     task_config = await resolve_active_config(db_session, "data_enrichment_semantic")
-    fallback_config = await resolve_active_config(db_session, "page_classification")
+    fallback_config = await resolve_active_config(db_session, "unregistered_task_probe")
 
     assert task_config is not None
     assert task_config.model == "task-model"

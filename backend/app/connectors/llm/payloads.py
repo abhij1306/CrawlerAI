@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Any
 
-from app.core.config.llm_runtime import llm_runtime_settings
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -13,29 +11,6 @@ from pydantic import (
     ValidationError,
     field_validator,
 )
-
-
-def _require_schema_field_name(value: str) -> str:
-    normalized = str(value or "").strip()
-    if not normalized or not _is_valid_schema_field_name(normalized):
-        raise ValueError("contains an invalid field name")
-    return normalized
-
-
-_SchemaFieldName = Annotated[str, AfterValidator(_require_schema_field_name)]
-
-
-class _PageClassificationPayload(TypedDict):
-    page_type: Literal["listing", "detail", "challenge", "error", "unknown"]
-    has_secondary_listing: bool
-    wait_selector_hint: str
-    reasoning: str
-
-
-class _SchemaInferencePayload(TypedDict):
-    confirmed_fields: list[_SchemaFieldName]
-    new_fields: list[_SchemaFieldName]
-    absent_fields: list[_SchemaFieldName]
 
 
 class _ProductIntelligenceEnrichmentPayload(BaseModel):
@@ -100,8 +75,6 @@ class _DataEnrichmentSemanticPayload(BaseModel):
 
 
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
-    "page_classification": TypeAdapter(_PageClassificationPayload),
-    "schema_inference": TypeAdapter(_SchemaInferencePayload),
     "product_intelligence_enrichment": TypeAdapter(
         _ProductIntelligenceEnrichmentPayload
     ),
@@ -141,17 +114,6 @@ def _format_validation_error(task_type: str, exc: ValidationError) -> str:
     detail = str(error.get("msg") or "invalid payload")
     suffix = f" at {location}" if location else ""
     return f"{task_type} payload validation failed{suffix}: {detail}"
-
-
-def _is_valid_schema_field_name(value: str) -> bool:
-    return (
-        bool(value)
-        and len(value) <= llm_runtime_settings.schema_field_name_max_length
-        and value.replace("_", "").isalnum()
-        and value.lower() == value
-        and not value.startswith("_")
-        and not value.isdigit()
-    )
 
 
 def _parse_json_object(raw_text: str) -> dict | None:

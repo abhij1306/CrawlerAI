@@ -59,6 +59,33 @@ EVALUATION_SCENARIOS = frozenset(
 )
 TRUST_OUTCOMES = frozenset({"trusted", "review", "rejected", "blocked"})
 
+# Grounded LLM repair (Phase 7, offline / operator-loop). The model may only
+# propose grounded repairs; these route through the same compile/replay/activation
+# gates as operator corrections but are never release-eligible and never self-activate.
+GROUNDED_REPAIR_LLM_TASK: Final[str] = "grounded_extraction_repair"
+GROUNDED_REPAIR_CUSTOM_FIELD_TYPES = frozenset(
+    {
+        "string",
+        "list",
+        "number",
+        "money",
+        "date",
+        "boolean",
+        "enum",
+        "key_value",
+        "structured_object",
+    }
+)
+GROUNDED_REPAIR_CUSTOM_FIELD_CARDINALITIES = frozenset({"single", "multi"})
+GROUNDED_REPAIR_PUBLISH_POLICIES = frozenset({"retain_only", "publish_when_valid"})
+GROUNDED_REPAIR_PROMPT_REGISTRY: Final[dict[str, dict[str, str]]] = {
+    GROUNDED_REPAIR_LLM_TASK: {
+        "response_type": "object",
+        "system_file": "grounded_extraction_repair.system.txt",
+        "user_file": "grounded_extraction_repair.user.txt",
+    },
+}
+
 COMPACT_REPRESENTATION_SCHEMA_VERSION: Final[Literal["compact_page.v2"]] = (
     "compact_page.v2"
 )

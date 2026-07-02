@@ -28,16 +28,15 @@ import type {
 const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [
   'general',
-  'xpath_discovery',
-  'page_classification',
-  'schema_inference',
   'data_enrichment_semantic',
+  'product_intelligence_enrichment',
+  'product_intelligence_brand_inference',
 ];
 
 const INITIAL_LLM_FORM: LlmConfigCreatePayload = {
   provider: 'mistral',
   model: 'mistral-small-latest',
-  task_type: 'xpath_discovery',
+  task_type: 'data_enrichment_semantic',
   api_key: '',
   per_domain_daily_budget_usd: '0',
   global_session_budget_usd: '0',

@@ -104,7 +104,7 @@ def extract(
         )
     attempt = _execute_attempt(request, adapter, harvest)
     stage_outcomes = list(attempt.stage_outcomes)
-    sentinel_observations = ()
+    sentinel_observations: tuple[SentinelObservation, ...] = ()
 
     if extractor_tier == "recipe" and not attempt.records:
         generic_harvest = _generic_harvest(request, adapter)

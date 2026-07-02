@@ -86,7 +86,6 @@ class LLMRuntimeSettings(BaseSettings):
     llm_max_calls_per_run: int = Field(default=50, ge=0)
     llm_call_budget_ttl_seconds: int = Field(default=7 * 24 * 60 * 60, ge=60)
     html_anchor_min_length: int = 3
-    schema_field_name_max_length: int = 40
     html_render_block_tags: str = "h1,h2,h3,h4,h5,h6,p,li,dt,dd"
     html_prune_stripped_tags: str = "script,style,svg,noscript,iframe,nav,footer,header,aside,form,button,input,select,textarea"
     html_prune_preserved_script_types: str = "application/ld+json,application/json"

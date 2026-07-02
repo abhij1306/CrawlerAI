@@ -445,15 +445,14 @@ async def _overlay_suspended_templates(
     ]
     if not ids:
         return
-    statuses = dict(
-        (
-            await session.execute(
-                select(ExtractionTemplate.id, ExtractionTemplate.status).where(
-                    ExtractionTemplate.id.in_(ids)
-                )
-            )
-        ).all()
+    result = await session.execute(
+        select(ExtractionTemplate.id, ExtractionTemplate.status).where(
+            ExtractionTemplate.id.in_(ids)
+        )
     )
+    statuses: dict[uuid.UUID, str] = {
+        template_id: status for template_id, status in result
+    }
     for row in templates:
         if not isinstance(row, dict):
             continue

@@ -41,6 +41,16 @@ class GroundedCorrectionScopeMismatch(ValueError):
     """Grounded correction replay passed for a template outside the run scope."""
 
 
+# Only human truth or qualified deterministic pseudo-labels may activate a rule.
+# Weak and unverified-model authorities (grounded LLM repair) can be compiled and
+# replayed for review but must never flip an active release.
+_ACTIVATION_AUTHORITIES = frozenset({"human_verified", "deterministic_pseudo"})
+
+
+def _authority_can_activate(authority: str) -> bool:
+    return authority in _ACTIVATION_AUTHORITIES
+
+
 async def save_grounded_correction(
     session: AsyncSession,
     *,
@@ -48,9 +58,10 @@ async def save_grounded_correction(
     labels: list[dict[str, object]],
     activate: bool = False,
     representative_url_result_ids: list[int] | None = None,
+    authority: str = "human_verified",
 ) -> dict[str, object]:
     domain = normalize_domain(run.url)
-    grounded_labels = _grounded_labels(labels, run=run)
+    grounded_labels = _grounded_labels(labels, run=run, authority=authority)
     proposal = _candidate_recipe_proposal(grounded_labels, source_run_id=run.id)
     replay = await _evaluate_representative_replay(
         session,
@@ -60,7 +71,7 @@ async def save_grounded_correction(
         representative_url_result_ids=representative_url_result_ids or [],
     )
     status_name = _replay_status(replay)
-    if activate and replay["passed"]:
+    if activate and replay["passed"] and _authority_can_activate(authority):
         release = await _activate_grounded_correction(
             session,
             run=run,
@@ -99,17 +110,25 @@ async def save_grounded_correction(
 
 
 def _grounded_labels(
-    payloads: list[dict[str, object]], *, run: CrawlRun
+    payloads: list[dict[str, object]],
+    *,
+    run: CrawlRun,
+    authority: str = "human_verified",
 ) -> list[GroundedLabel]:
-    verified_at = datetime.now(UTC)
+    # Only human-verified labels may carry verifier metadata (see GroundedLabel);
+    # model/weak labels stay unstamped and never become release-eligible.
+    verifier = (
+        {"verifier_id": str(run.user_id), "verified_at": datetime.now(UTC)}
+        if authority == "human_verified"
+        else {}
+    )
     return [
         GroundedLabel.model_validate(
             {
                 **dict(payload),
                 "label_id": f"run-{run.id}-{uuid4()}",
-                "authority": "human_verified",
-                "verifier_id": str(run.user_id),
-                "verified_at": verified_at,
+                "authority": authority,
+                **verifier,
             }
         )
         for payload in payloads

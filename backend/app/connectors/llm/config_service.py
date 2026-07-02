@@ -11,6 +11,7 @@ from app.models.llm import LLMConfig
 from app.core.config.field_mappings import PROMPT_REGISTRY
 from app.core.config.llm_runtime import SUPPORTED_LLM_PROVIDERS
 from app.core.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
+from app.core.config.evaluation import GROUNDED_REPAIR_PROMPT_REGISTRY
 from app.core.config.product_intelligence import PRODUCT_INTELLIGENCE_PROMPT_REGISTRY
 from app.connectors.llm.payloads import SUPPORTED_TASK_TYPES
 from sqlalchemy import select
@@ -84,6 +85,7 @@ def get_prompt_task(task_type: str) -> dict | None:
                 "PRODUCT_INTELLIGENCE_PROMPT_REGISTRY",
                 PRODUCT_INTELLIGENCE_PROMPT_REGISTRY,
             ),
+            ("GROUNDED_REPAIR_PROMPT_REGISTRY", GROUNDED_REPAIR_PROMPT_REGISTRY),
             ("PROMPT_REGISTRY", PROMPT_REGISTRY),
         )
         if normalized in registry

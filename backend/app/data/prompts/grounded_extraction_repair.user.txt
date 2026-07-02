@@ -1,0 +1,17 @@
+Target schema (standard fields for this surface):
+$target_schema
+
+Compact page representation (DOM digest with css locators):
+$compact_representation
+
+Structured objects already resolved on the page:
+$structured_objects
+
+Extraction evidence (current values and the nodes they came from):
+$evidence
+
+Operator labels (human-verified ground truth to respect, never contradict):
+$operator_labels
+
+Return one JSON object of grounded repair proposals. Cite a css: node/path
+locator for every proposal. Omit anything you cannot ground.

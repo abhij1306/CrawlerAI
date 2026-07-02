@@ -309,6 +309,35 @@ def test_extraction_rules_have_no_matrix_tuned_constants() -> None:
     assert not offenders, offenders
 
 
+def test_extraction_hot_path_never_imports_grounded_llm_repair() -> None:
+    """Phase 7: the LLM may propose grounded repairs offline, never in the hot path.
+
+    Extraction must not import the grounded-repair module or any LLM connector, so
+    a model can never publish or activate a value inside a live extraction run.
+    """
+    forbidden_prefixes = (
+        "app.evaluation.llm_repair",
+        "app.connectors.llm",
+    )
+    offenders: list[tuple[Path, str]] = []
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = _parse_module(path)
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+        for module in modules:
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in forbidden_prefixes
+            ):
+                offenders.append((path, module))
+    assert not offenders, offenders
+
+
 def test_extraction_does_not_import_extraction_memory_storage() -> None:
     """Extraction reads frozen pure contracts, never mutable memory storage."""
     forbidden_prefixes = (

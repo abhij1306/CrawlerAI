@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping, cast
 
 from app.core.config import extraction_memory as memory_config
 from app.core.shared.ids import stable_id
@@ -207,7 +207,7 @@ def _normalized(value: object) -> object:
 
 def _clamped_rate(raw: object) -> float:
     try:
-        value = float(raw)
+        value = float(cast(Any, raw))
     except (TypeError, ValueError):
         return memory_config.SENTINEL_DEFAULT_SAMPLE_RATE
     return max(0.0, min(1.0, value))

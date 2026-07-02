@@ -1,4 +1,0 @@
-URL: ${url}
-
-HTML snippet:
-${html_snippet}
