@@ -148,6 +148,7 @@ class SourceLocator(FrozenModel):
         "network_json_pointer",
         "url_component",
         "adapter_path",
+        "dom_path",
     ]
     value: str
     preview: str | None = None
@@ -525,6 +526,18 @@ class DiagnosticSummary(FrozenModel):
     failure_codes: tuple[FailureTaxonomy, ...] = ()
     evidence_count: int = 0
     review_required: bool = False
+    model_invoked: bool = False
+    model_artifact_id: str | None = None
+    model_artifact_version: str | None = None
+    model_outcome: Literal[
+        "not_considered",
+        "disabled",
+        "produced_evidence",
+        "no_match",
+        "failed",
+        "timed_out",
+        "budget_limited",
+    ] = "not_considered"
 
 
 FieldValueType = Literal[
@@ -658,6 +671,95 @@ class ExtractionMetrics(FrozenModel):
     resolve_duration_ms: float = 0.0
     publish_duration_ms: float = 0.0
     verdict: str | None = None
+    universal_representation_build_count: int = 0
+    universal_model_invocation_count: int = 0
+    universal_model_latency_ms: float = 0.0
+    universal_model_service_failure_count: int = 0
+    universal_model_ungrounded_rejection_count: int = 0
+    universal_model_ungrounded_rejection_rate: float = 0.0
+    universal_model_cost_usd: float = 0.0
+    universal_model_cost_per_1000_pages: float = 0.0
+
+
+class UniversalModelArtifact(FrozenModel):
+    schema_version: Literal["universal_model_artifact.v1"] = (
+        "universal_model_artifact.v1"
+    )
+    artifact_id: str = Field(min_length=1)
+    artifact_version: str = Field(min_length=1)
+    adapter_id: str = Field(min_length=1)
+    model_family: str = Field(min_length=1)
+    deployment_mode: Literal["local", "shared"]
+    benchmark_schema_version: Literal["universal_model_benchmark.v2"]
+    benchmark_report_id: str = Field(min_length=1)
+    benchmark_passed: bool
+    approved: bool
+    enabled: bool
+    confidence_threshold: float = Field(ge=0.0, le=1.0)
+    timeout_ms: int = Field(gt=0)
+    max_memory_mb: float = Field(gt=0.0)
+    max_cost_per_page_usd: float = Field(ge=0.0)
+    supported_surfaces: tuple[Surface, ...] = Field(min_length=1)
+
+
+class ModelEvidenceCandidate(FrozenModel):
+    prediction_id: str = Field(min_length=1)
+    artifact_id: str = Field(min_length=1)
+    source_path: str = Field(min_length=1)
+    fact_type: str = Field(min_length=1)
+    raw_value: JsonValue
+    value: JsonValue
+    subject_id: str = Field(min_length=1)
+    subject_scope: Literal[
+        "document",
+        "product",
+        "variant",
+        "offer",
+        "asset",
+        "job",
+        "unknown",
+    ]
+    confidence: float = Field(ge=0.0, le=1.0)
+    entity_hint: EntityHint | None = None
+    group_id: str | None = None
+    parent_subject_id: str | None = None
+    relation_type: (
+        Literal[
+            "product_variant",
+            "product_offer",
+            "variant_offer",
+            "product_asset",
+            "variant_asset",
+            "job_asset",
+        ]
+        | None
+    ) = None
+
+    @model_validator(mode="after")
+    def validate_fact_type(self) -> ModelEvidenceCandidate:
+        if self.fact_type not in FACT_TYPES:
+            raise ValueError(f"Unsupported model evidence fact type: {self.fact_type}")
+        return self
+
+
+class UniversalModelResult(FrozenModel):
+    schema_version: Literal["universal_model_runtime_result.v1"] = (
+        "universal_model_runtime_result.v1"
+    )
+    adapter_id: str = Field(min_length=1)
+    artifact_id: str = Field(min_length=1)
+    artifact_version: str = Field(min_length=1)
+    predictions: tuple[ModelEvidenceCandidate, ...] = ()
+    latency_ms: float = Field(ge=0.0)
+    memory_mb: float = Field(ge=0.0)
+    cost_usd: float = Field(ge=0.0)
+
+    @model_validator(mode="after")
+    def validate_prediction_ids(self) -> UniversalModelResult:
+        prediction_ids = {row.prediction_id for row in self.predictions}
+        if len(prediction_ids) != len(self.predictions):
+            raise ValueError("Universal model prediction IDs must be unique")
+        return self
 
 
 class PublicRecord(FrozenModel):

@@ -308,7 +308,9 @@ def test_zero_record_result_has_failure_taxonomy_and_diagnostics() -> None:
         "resolve",
         "publish",
         "validate",
+        "model_fallback",
     )
+    assert result.diagnostics.model_outcome == "disabled"
     assert result.diagnostics.trust_state == "rejected"
 
 

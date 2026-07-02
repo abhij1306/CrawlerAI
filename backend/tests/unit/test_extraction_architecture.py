@@ -331,6 +331,101 @@ def test_extraction_does_not_import_extraction_memory_storage() -> None:
     assert not offenders, offenders
 
 
+def test_phase4_evaluation_modules_are_offline_only() -> None:
+    package_exports = (APP_ROOT / "evaluation" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    for runtime_alias in (
+        "CompactPageRepresentation",
+        "ModelPrediction",
+        "OfflineHarnessResult",
+        "benchmark_universal_model",
+    ):
+        assert runtime_alias not in package_exports
+
+    forbidden_prefixes = (
+        "app.evaluation.compact_representation",
+        "app.evaluation.model_harness",
+        "app.evaluation.partitions",
+        "app.evaluation.benchmark",
+    )
+    evaluation_root = APP_ROOT / "evaluation"
+    offenders: list[tuple[Path, str]] = []
+    for path in _python_files(APP_ROOT):
+        if evaluation_root in path.parents:
+            continue
+        tree = _parse_module(path)
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+        for module in modules:
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in forbidden_prefixes
+            ):
+                offenders.append((path, module))
+    assert not offenders, offenders
+
+
+def test_runtime_model_fallback_cannot_resolve_publish_or_persist() -> None:
+    path = APP_ROOT / "extraction" / "model_runtime.py"
+    tree = _parse_module(path)
+    forbidden_prefixes = (
+        "app.extraction.resolution",
+        "app.extraction.publication",
+        "app.persistence",
+        "app.models",
+    )
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    offenders = tuple(
+        sorted(
+            module
+            for module in imports
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in forbidden_prefixes
+            )
+        )
+    )
+    assert offenders == ()
+
+
+def test_universal_model_config_does_not_live_in_extraction_service_code() -> None:
+    service_paths = (
+        APP_ROOT / "extraction" / "engine.py",
+        APP_ROOT / "extraction" / "model_runtime.py",
+    )
+    forbidden_assignment_names = {
+        "timeout_ms",
+        "confidence_threshold",
+        "max_memory_mb",
+        "max_cost_per_page_usd",
+    }
+    offenders: list[tuple[Path, int, str]] = []
+    for path in service_paths:
+        tree = _parse_module(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+            for target in targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id in forbidden_assignment_names
+                ):
+                    offenders.append((path, node.lineno, target.id))
+    assert offenders == []
+
+
 def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:
     forbidden_files = {
         APP_ROOT / "crawl" / "pipeline" / "direct_record_fallback.py",

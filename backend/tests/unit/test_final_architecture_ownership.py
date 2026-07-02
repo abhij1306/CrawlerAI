@@ -137,9 +137,9 @@ PACKAGE_LOC_BUDGETS = {
     "enrichment": 2_021,
     "connectors": 2_467,
     "intelligence": 3_216,
-    "extraction": 12_236,
+    "extraction": 12_922,
 }
-TOTAL_APP_LOC_BUDGET = 71_792
+TOTAL_APP_LOC_BUDGET = 73_349
 
 
 def test_production_package_loc_budgets() -> None:

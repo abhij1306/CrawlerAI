@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Literal, cast
 
@@ -10,9 +11,10 @@ from app.core.config.extraction_rules import (
     DETAIL_SHELL_FINDING_RULE_ID,
 )
 from app.core.extraction_memory.contract_runtime import match_template
-from app.extraction.adapters import adapter_for, harvest_compiled_recipe
+from app.extraction.adapters import SurfaceAdapter, adapter_for, harvest_compiled_recipe
 from app.extraction.contracts import (
     DiagnosticSummary,
+    CollectorOutcome,
     EntityGraph,
     Evidence,
     ExecutionManifestContext,
@@ -20,9 +22,17 @@ from app.extraction.contracts import (
     ExtractionResult,
     FailureClassification,
     Finding,
+    HarvestResult,
+    PublicationResult,
     PublicRecord,
+    ResolutionEnvelope,
     StageOutcome,
     TargetSelection,
+)
+from app.extraction.model_runtime import (
+    ModelFallbackResult,
+    RuntimeModelAdapter,
+    run_model_fallback,
 )
 from app.core.shared.ids import stable_id
 from app.extraction.result_building import (
@@ -49,12 +59,29 @@ Verdict = Literal[
 ]
 
 
-def extract(request: ExtractionRequest) -> ExtractionResult:
+@dataclass(frozen=True)
+class _ExtractionAttempt:
+    harvest: HarvestResult
+    resolution: ResolutionEnvelope
+    publication: PublicationResult
+    findings: tuple[Finding, ...]
+    verdict: Verdict
+    records: tuple[PublicRecord, ...]
+    resolve_duration_ms: float
+    publish_duration_ms: float
+    stage_outcomes: tuple[StageOutcome, ...]
+
+
+def extract(
+    request: ExtractionRequest,
+    *,
+    model_adapter: RuntimeModelAdapter | None = None,
+) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
     adapter = adapter_for(request.surface)
     compiled_template = _compiled_recipe_template(request)
-    extractor_tier: Literal["deterministic", "recipe"] = "deterministic"
+    extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic"
     if compiled_template is not None:
         harvest = harvest_compiled_recipe(request)
         if any(row.collector_id == "css_recipe" for row in harvest.evidence):
@@ -63,35 +90,65 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
             harvest = adapter.harvest(request)
     else:
         harvest = adapter.harvest(request)
-    stage_outcomes = [_stage_outcome("harvest", len(harvest.evidence))]
+    attempt = _execute_attempt(request, adapter, harvest)
+    stage_outcomes = list(attempt.stage_outcomes)
 
-    resolve_started = perf_counter()
-    resolution = adapter.resolve(request, harvest)
-    resolve_duration_ms = (perf_counter() - resolve_started) * 1_000
-    stage_outcomes.append(_stage_outcome("resolve", len(resolution.decisions)))
-
-    publish_started = perf_counter()
-    publication = adapter.publish(resolution)
-    publish_duration_ms = (perf_counter() - publish_started) * 1_000
-    stage_outcomes.append(_stage_outcome("publish", len(publication.records)))
-
-    publication_validation = (
-        validate_selected_contract_fields(
-            publication.records,
-            request.requested_fields,
-            harvest.evidence,
+    if extractor_tier == "recipe" and _needs_contract_fallback(attempt.verdict):
+        generic_harvest = adapter.harvest(request)
+        generic_harvest = generic_harvest.model_copy(
+            update={
+                "collector_outcomes": (
+                    *harvest.collector_outcomes,
+                    *generic_harvest.collector_outcomes,
+                )
+            }
         )
-        if request.surface == Surface.ECOMMERCE_DETAIL
-        else ()
-    )
-    findings = (
-        *resolution.findings,
-        *publication.findings,
-        *publication_validation,
-    )
-    verdict = _assess(request, resolution.target, publication.records, findings)
-    records = publication.records if verdict in {"success", "partial", "review"} else ()
-    stage_outcomes.append(_stage_outcome("validate", len(findings)))
+        attempt = _execute_attempt(
+            request, adapter, generic_harvest, stage_prefix="generic_"
+        )
+        stage_outcomes.extend(attempt.stage_outcomes)
+        extractor_tier = "deterministic"
+
+    model_fallback: ModelFallbackResult | None = None
+    if _needs_contract_fallback(attempt.verdict):
+        model_fallback = run_model_fallback(request, model_adapter)
+        model_outcome = _model_collector_outcome(model_fallback)
+        stage_outcomes.append(
+            StageOutcome(
+                stage="model_fallback",
+                outcome=model_outcome.outcome,
+                detail=model_outcome.detail,
+            )
+        )
+        attempt = replace(
+            attempt,
+            harvest=attempt.harvest.model_copy(
+                update={
+                    "collector_outcomes": (
+                        *attempt.harvest.collector_outcomes,
+                        model_outcome,
+                    )
+                }
+            ),
+        )
+        if model_fallback.evidence:
+            model_harvest = attempt.harvest.model_copy(
+                update={
+                    "evidence": (*attempt.harvest.evidence, *model_fallback.evidence),
+                }
+            )
+            attempt = _execute_attempt(
+                request, adapter, model_harvest, stage_prefix="model_"
+            )
+            stage_outcomes.extend(attempt.stage_outcomes)
+            extractor_tier = "ml"
+
+    harvest = attempt.harvest
+    resolution = attempt.resolution
+    publication = attempt.publication
+    findings = attempt.findings
+    verdict = attempt.verdict
+    records = attempt.records
     failures = _failure_classifications(
         request,
         verdict=verdict,
@@ -99,8 +156,47 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         target=resolution.target,
         findings=findings,
         evidence=harvest.evidence,
+        model_fallback=model_fallback,
     )
     field_states = resolution.field_states
+    extraction_metrics = metrics(
+        harvest.evidence,
+        resolution.graph,
+        resolution.target,
+        findings,
+        resolution.decisions,
+        publication.records,
+        verdict,
+        collector_count=len(harvest.collector_outcomes),
+        resolve_duration_ms=attempt.resolve_duration_ms,
+        publish_duration_ms=attempt.publish_duration_ms,
+    )
+    if model_fallback is not None:
+        extraction_metrics = extraction_metrics.model_copy(
+            update={
+                "universal_representation_build_count": int(
+                    model_fallback.representation_built
+                ),
+                "universal_model_invocation_count": int(model_fallback.invoked),
+                "universal_model_latency_ms": model_fallback.latency_ms,
+                "universal_model_service_failure_count": int(
+                    model_fallback.failure_code == "model_service_failure"
+                ),
+                "universal_model_ungrounded_rejection_count": (
+                    model_fallback.ungrounded_rejection_count
+                ),
+                "universal_model_ungrounded_rejection_rate": (
+                    model_fallback.ungrounded_rejection_count
+                    / model_fallback.prediction_count
+                    if model_fallback.prediction_count
+                    else 0.0
+                ),
+                "universal_model_cost_usd": model_fallback.cost_usd,
+                "universal_model_cost_per_1000_pages": (
+                    model_fallback.cost_usd * 1_000
+                ),
+            }
+        )
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -120,18 +216,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         retry_request=retry_request(
             verdict, publication.records, request, harvest.evidence
         ),
-        metrics=metrics(
-            harvest.evidence,
-            resolution.graph,
-            resolution.target,
-            findings,
-            resolution.decisions,
-            publication.records,
-            verdict,
-            collector_count=len(harvest.collector_outcomes),
-            resolve_duration_ms=resolve_duration_ms,
-            publish_duration_ms=publish_duration_ms,
-        ),
+        metrics=extraction_metrics,
         collector_outcomes=harvest.collector_outcomes,
         stage_outcomes=tuple(stage_outcomes),
         contract_outcomes=resolution.contract_outcomes,
@@ -145,7 +230,71 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
             field_states=field_states,
             failures=failures,
             extractor_tier=extractor_tier,
+            model_fallback=model_fallback,
         ),
+    )
+
+
+def _execute_attempt(
+    request: ExtractionRequest,
+    adapter: SurfaceAdapter,
+    harvest: HarvestResult,
+    *,
+    stage_prefix: str = "",
+) -> _ExtractionAttempt:
+    stage_outcomes = [_stage_outcome(f"{stage_prefix}harvest", len(harvest.evidence))]
+    resolve_started = perf_counter()
+    resolution = adapter.resolve(request, harvest)
+    resolve_duration_ms = (perf_counter() - resolve_started) * 1_000
+    stage_outcomes.append(
+        _stage_outcome(f"{stage_prefix}resolve", len(resolution.decisions))
+    )
+    publish_started = perf_counter()
+    publication = adapter.publish(resolution)
+    publish_duration_ms = (perf_counter() - publish_started) * 1_000
+    stage_outcomes.append(
+        _stage_outcome(f"{stage_prefix}publish", len(publication.records))
+    )
+    publication_validation = (
+        validate_selected_contract_fields(
+            publication.records,
+            request.requested_fields,
+            harvest.evidence,
+        )
+        if request.surface == Surface.ECOMMERCE_DETAIL
+        else ()
+    )
+    findings = (
+        *resolution.findings,
+        *publication.findings,
+        *publication_validation,
+    )
+    verdict = _assess(request, resolution.target, publication.records, findings)
+    records = publication.records if verdict in {"success", "partial", "review"} else ()
+    stage_outcomes.append(_stage_outcome(f"{stage_prefix}validate", len(findings)))
+    return _ExtractionAttempt(
+        harvest=harvest,
+        resolution=resolution,
+        publication=publication,
+        findings=findings,
+        verdict=verdict,
+        records=records,
+        resolve_duration_ms=resolve_duration_ms,
+        publish_duration_ms=publish_duration_ms,
+        stage_outcomes=tuple(stage_outcomes),
+    )
+
+
+def _needs_contract_fallback(verdict: Verdict) -> bool:
+    return verdict in {"empty", "partial", "review"}
+
+
+def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
+    return CollectorOutcome(
+        collector_id="universal_model",
+        outcome=("skipped" if result.outcome == "disabled" else result.outcome),
+        evidence_count=len(result.evidence),
+        detail=result.detail,
     )
 
 
@@ -338,9 +487,19 @@ def _failure_classifications(
     target: TargetSelection,
     findings: tuple[Finding, ...],
     evidence: tuple[Evidence, ...],
+    model_fallback: ModelFallbackResult | None = None,
 ) -> tuple[FailureClassification, ...]:
     if records:
         return ()
+    if model_fallback is not None and model_fallback.failure_code is not None:
+        return (
+            _failure(
+                model_fallback.failure_code,
+                "Universal model fallback degraded; deterministic extraction remained authoritative.",
+                findings,
+                evidence,
+            ),
+        )
     if (
         request.capture.acquisition_outcome in {"blocked", "error"}
         or request.capture.blocked
@@ -425,7 +584,8 @@ def _diagnostic_summary(
     stage_outcomes: tuple[StageOutcome, ...],
     field_states,
     failures: tuple[FailureClassification, ...],
-    extractor_tier: Literal["deterministic", "recipe"] = "deterministic",
+    extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
+    model_fallback: ModelFallbackResult | None = None,
 ) -> DiagnosticSummary:
     missing = tuple(
         row.field
@@ -461,4 +621,18 @@ def _diagnostic_summary(
         failure_codes=tuple(row.code for row in failures),
         evidence_count=len(evidence),
         review_required=verdict == "review",
+        model_invoked=model_fallback.invoked if model_fallback is not None else False,
+        model_artifact_id=(
+            model_fallback.artifact.artifact_id
+            if model_fallback is not None and model_fallback.artifact is not None
+            else None
+        ),
+        model_artifact_version=(
+            model_fallback.artifact.artifact_version
+            if model_fallback is not None and model_fallback.artifact is not None
+            else None
+        ),
+        model_outcome=(
+            model_fallback.outcome if model_fallback is not None else "not_considered"
+        ),
     )

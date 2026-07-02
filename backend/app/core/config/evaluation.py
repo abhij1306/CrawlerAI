@@ -41,4 +41,83 @@ EVALUATION_PARTITIONS = frozenset(
         "sentinel_disagreement",
     }
 )
+EVALUATION_SURFACES = frozenset(
+    {
+        "ecommerce_listing",
+        "ecommerce_detail",
+        "job_listing",
+        "job_detail",
+    }
+)
+EVALUATION_SCENARIOS = frozenset(
+    {
+        "multi_variant",
+        "personalized_or_promotional",
+        "platform_collision",
+        "sentinel_disagreement",
+    }
+)
 TRUST_OUTCOMES = frozenset({"trusted", "review", "rejected", "blocked"})
+
+COMPACT_REPRESENTATION_SCHEMA_VERSION: Final[Literal["compact_page.v2"]] = (
+    "compact_page.v2"
+)
+COMPACT_REPRESENTATION_MAX_NODES: Final[int] = 80
+COMPACT_REPRESENTATION_MAX_TEXT_CHARS: Final[int] = 120
+COMPACT_REPRESENTATION_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "id",
+    "class",
+    "href",
+    "src",
+    "alt",
+    "title",
+    "aria-label",
+    "role",
+    "itemprop",
+    "data-testid",
+    "data-test-id",
+    "data-test-dataid",
+    "test-data-id",
+    "test-dataid",
+)
+COMPACT_REPRESENTATION_EXCLUDED_TAGS: Final[frozenset[str]] = frozenset(
+    {"script", "style", "noscript", "svg", "template"}
+)
+
+RELEASE_REQUIRED_EVALUATION_PARTITIONS: Final[tuple[str, ...]] = (
+    "known_template",
+    "unseen_domain",
+    "unseen_template",
+    "temporal_change",
+    "ab_variant",
+    "market_or_locale",
+)
+RELEASE_REQUIRED_EVALUATION_SURFACES: Final[tuple[str, ...]] = (
+    "ecommerce_listing",
+    "ecommerce_detail",
+    "job_listing",
+    "job_detail",
+)
+RELEASE_REQUIRED_EVALUATION_SCENARIOS: Final[tuple[str, ...]] = (
+    "multi_variant",
+    "sentinel_disagreement",
+)
+UNIVERSAL_MODEL_REQUIRED_METRICS: Final[tuple[str, ...]] = (
+    "field_precision",
+    "field_recall",
+    "field_f1",
+    "normalized_exact_match",
+    "record_boundary_accuracy",
+    "variant_binding_accuracy",
+    "recommendation_contamination_rate",
+    "ungrounded_value_rate",
+    "latency_ms_p95",
+    "memory_mb_p95",
+    "cost_per_1000_pages",
+)
+UNIVERSAL_MODEL_BENCHMARK_SCHEMA_VERSION: Final[
+    Literal["universal_model_benchmark.v2"]
+] = "universal_model_benchmark.v2"
+
+UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY: Final[str] = "universal_model"
+UNIVERSAL_MODEL_COLLECTOR_ID: Final[str] = "universal_model"

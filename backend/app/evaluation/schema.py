@@ -14,12 +14,15 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from app.core.config.evaluation import (
     EVALUATION_CASE_SCHEMA_VERSION,
     EVALUATION_PARTITIONS,
+    EVALUATION_SCENARIOS,
+    EVALUATION_SURFACES,
     GROUNDED_LABEL_SCHEMA_VERSION,
     GROUNDING_REFERENCE_KINDS,
     LABEL_AUTHORITIES,
     LABEL_TARGET_KINDS,
     REGION_SEMANTIC_ROLES,
     TRUST_OUTCOMES,
+    UNIVERSAL_MODEL_REQUIRED_METRICS,
 )
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
@@ -47,11 +50,23 @@ EvaluationPartition = Literal[
     "platform_collision",
     "sentinel_disagreement",
 ]
+EvaluationSurface = Literal[
+    "ecommerce_listing",
+    "ecommerce_detail",
+    "job_listing",
+    "job_detail",
+]
+EvaluationScenario = Literal[
+    "multi_variant",
+    "personalized_or_promotional",
+    "platform_collision",
+    "sentinel_disagreement",
+]
 TrustOutcome = Literal["trusted", "review", "rejected", "blocked"]
 
 
 class EvaluationSchemaModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
 class BoundingBox(EvaluationSchemaModel):
@@ -245,6 +260,8 @@ class EvaluationCase(EvaluationSchemaModel):
     case_id: NonEmptyText
     input_bundle_ref: NonEmptyText
     partition: EvaluationPartition
+    surface: EvaluationSurface = "ecommerce_detail"
+    scenario_tags: tuple[EvaluationScenario, ...] = ()
     labels: tuple[GroundedLabel, ...]
     expected_records: tuple[ExpectedRecord, ...] = ()
     release_evaluation_label_ids: tuple[NonEmptyText, ...] = ()
@@ -262,6 +279,22 @@ class EvaluationCase(EvaluationSchemaModel):
     def validate_case(self) -> EvaluationCase:
         if self.partition not in EVALUATION_PARTITIONS:
             raise ValueError(f"Unsupported evaluation partition: {self.partition}")
+        if self.surface not in EVALUATION_SURFACES:
+            raise ValueError(f"Unsupported evaluation surface: {self.surface}")
+        invalid_scenarios = sorted(
+            set(self.scenario_tags).difference(EVALUATION_SCENARIOS)
+        )
+        if invalid_scenarios:
+            raise ValueError(f"Unsupported evaluation scenarios: {invalid_scenarios}")
+        if len(set(self.scenario_tags)) != len(self.scenario_tags):
+            raise ValueError("Evaluation scenario tags must be unique")
+        invalid_metrics = sorted(
+            set(self.required_metrics).difference(UNIVERSAL_MODEL_REQUIRED_METRICS)
+        )
+        if invalid_metrics:
+            raise ValueError(f"Unsupported evaluation metrics: {invalid_metrics}")
+        if len(set(self.required_metrics)) != len(self.required_metrics):
+            raise ValueError("Required evaluation metrics must be unique")
         if self.expected_trust_outcome not in TRUST_OUTCOMES:
             raise ValueError(
                 f"Unsupported trust outcome: {self.expected_trust_outcome}"

@@ -1,0 +1,66 @@
+{
+  "baseline": {
+    "missing_signals": [
+      "unseen_template_field_f1",
+      "ungrounded_value_rate"
+    ],
+    "ungrounded_value_rate": null,
+    "unseen_template_field_f1": null
+  },
+  "candidate": null,
+  "case_count": 0,
+  "evaluation_status": "not_run",
+  "input_errors": [
+    "candidate_results_not_supplied"
+  ],
+  "metrics": {
+    "cost_per_1000_pages": null,
+    "field_f1": null,
+    "field_precision": null,
+    "field_recall": null,
+    "latency_ms_p95": null,
+    "memory_mb_p95": null,
+    "normalized_exact_match": null,
+    "recommendation_contamination_rate": null,
+    "record_boundary_accuracy": null,
+    "ungrounded_value_rate": null,
+    "variant_binding_accuracy": null
+  },
+  "metrics_available": false,
+  "partition_gate": {
+    "missing_partitions": [
+      "known_template",
+      "unseen_domain",
+      "unseen_template",
+      "temporal_change",
+      "ab_variant",
+      "market_or_locale"
+    ],
+    "missing_scenarios": [
+      "multi_variant",
+      "sentinel_disagreement"
+    ],
+    "missing_surfaces": [
+      "ecommerce_listing",
+      "ecommerce_detail",
+      "job_listing",
+      "job_detail"
+    ],
+    "passed": false,
+    "release_label_counts": {},
+    "release_label_counts_by_scenario": {},
+    "release_label_counts_by_surface": {}
+  },
+  "partition_metrics": {},
+  "release_gate": {
+    "passed": false,
+    "phase5_status": "blocked_until_candidate_beats_baseline",
+    "reason": "no approved offline candidate benchmark has been supplied",
+    "reason_codes": [
+      "candidate_benchmark_not_run"
+    ],
+    "serving_decision": "no_production_serving"
+  },
+  "result_count": 0,
+  "schema_version": "universal_model_benchmark.v2"
+}

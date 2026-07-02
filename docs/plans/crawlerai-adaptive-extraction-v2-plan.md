@@ -2,7 +2,7 @@
 
 **Created:** 2026-07-02 (rewritten after review rejection of the ML-first draft)
 **Agent:** Claude (Opus 4.8)
-**Status:** IN PROGRESS — Phase 2 complete; next step is Phase 3 operator correction and grounded labels
+**Status:** IN PROGRESS — Phase 5 fail-closed runtime implementation complete pending final verification; no production artifact active because Phase 4 has no passing candidate benchmark
 **Authoritative:** This is the single authoritative extraction roadmap going forward. The two previously-queued extraction plans are **retired and not referenced** (their scope is mostly landed and superseded here).
 **Feature specs:** `docs/feature specs/CrawlerAI_Adaptive_Extraction_Architecture_v2.md` (target architecture — the *what/why*). Product/ops/governance concerns are **explicitly deferred** to `docs/feature specs/CrawlerAI_Deferred_Product_Operations_Architecture.md` and are **out of scope** here.
 
@@ -230,41 +230,41 @@ Detailed slices are written for every phase below. They remain gated: do not sta
 > Rationale: operators should correct business meaning, not write selectors. This phase consolidates existing review/learning/selector paths into one label-producing correction path. Product/ops/governance beyond this extraction correction loop remains deferred.
 
 ### Slice 3.1 — Inventory and consolidate existing correction surfaces
-**Status:** TODO
+**Status:** DONE — the authoritative mutation path is `POST /api/crawls/{run_id}/grounded-corrections`; direct selector CRUD, selector promotion, and field-action mutation paths were removed, while selector/domain-memory views remain read-only where still useful.
 **Delete target:** duplicate selector-learning, review-promotion, and domain-memory correction screens/APIs that bypass grounded labels or the consolidated extraction-memory store.
 **Files:** `app/api/*` routes identified by grep for selector/review/domain-memory learning, `app/crawl/review/*`, `app/core/records/selectors_runtime.py`, relevant frontend selector/domain-memory/review routes, focused API/frontend tests
 **What:** Identify every operator correction entry point and choose one authoritative correction API that writes grounded labels. Keep read-only compatibility only where required for existing pages during the slice; schedule deletion in the same phase.
 **Verify:** grep inventory recorded in Notes; focused tests prove the chosen API path writes extraction-memory labels and legacy mutation paths no longer promote selectors directly.
 
 ### Slice 3.2 — Implement grounded correction payloads
-**Status:** TODO
+**Status:** DONE — correction requests use the versioned `GroundedLabel` contract and reject text-only or ungrounded release truth; accepted labels retain node/path/region/absence, semantic-role, locale, relationship, verifier, and run provenance.
 **Delete target:** correction payloads that contain only field/value text with no node/path/region/absence grounding.
 **Files:** `app/evaluation/schema.py`, `app/models/extraction_memory.py`, `app/persistence/extraction_memory.py`, chosen correction API, frontend correction types/components, focused schema/API tests
 **What:** Support labels for correct value, wrong value, explicit absence, primary region, recommendation/exclusion region, repeated-record boundary, semantic role, locale interpretation, and variant/job relationship. Labels must reference node/path/region or explicit absence and carry operator/review provenance.
 **Verify:** focused tests reject text-only labels for release truth; API tests prove all accepted corrections create grounded labels.
 
 ### Slice 3.3 — Replay corrections against representative siblings
-**Status:** TODO
+**Status:** DONE — grounded CSS proposals replay against caller-selected representative URL results owned by the run, require one template cohort plus stored page artifacts, and remain inactive on missing, conflicting, or non-generalizing samples.
 **Delete target:** one-page correction paths that activate without representative replay.
 **Files:** `app/evaluation/`, `app/persistence/extraction_memory.py`, recipe compiler/runtime modules, chosen correction API, focused replay tests
 **What:** Convert accepted labels into candidate recipe proposals, compile them, replay against representative siblings/current samples, and report precision/recall/trust deltas before activation. Generalization must be proven by sibling coverage, not one corrected page.
 **Verify:** focused tests prove a correction can generalize to siblings and a one-page-only unsafe correction remains inactive.
 
 ### Slice 3.4 — Add activation gates for human-led corrections
-**Status:** TODO
+**Status:** DONE — activation requires grounded-label validation, conflict-free proposal construction, representative replay success, matching template scope, immutable candidate release creation, and atomic run release activation; failures leave the prior release active.
 **Delete target:** direct correction-to-active-template writes.
 **Files:** `app/models/extraction_memory.py`, `app/persistence/extraction_memory.py`, correction API, manifest activation code from Phase 2, focused activation tests
 **What:** Require compile success, representative replay pass, conflict-free layer merge, policy validation, and explicit activation decision before a correction affects production extraction. Store rejected proposals as learning/evaluation data, not runtime behavior.
 **Verify:** focused tests prove failed gates do not change active manifest; accepted correction activates through manifest only.
 
 ### Slice 3.5 — Delete duplicate correction UI/API paths
-**Status:** TODO
+**Status:** DONE — the standalone selector route and selector mutation components/actions were deleted; Domain Memory is read-only for learned selector state, and Crawl Studio now submits grounded corrections instead of persisting selectors directly.
 **Delete target:** legacy selector/domain-memory/review-promotion UI/API paths superseded by the grounded correction path.
 **Files:** frontend selector/domain-memory/review routes from Slice 3.1 inventory, backend APIs from Slice 3.1 inventory, tests updated or deleted with the removed paths
 **What:** Remove the duplicate screens/routes/API handlers after the single correction flow is green. Keep the deferred product/ops plan as the owner for broader queues/dashboards/governance; this slice only removes extraction-correction duplication.
 **Verify:** focused backend API tests, `vp test <changed frontend test paths>`, `vp check --fix`, `vp build`; grep proves deleted mutation endpoints/components have no live references.
 
-**Phase 3 exit gate:** A non-specialist can correct template extraction without authoring selectors; corrections produce grounded labels; replay gates activation; duplicate correction paths are deleted or explicitly out of extraction scope.
+**Phase 3 exit gate:** MET — operators submit grounded business corrections rather than selector CRUD; representative replay gates immutable release activation; duplicate selector mutation UI/API paths are deleted and remaining selector/domain-memory surfaces are read-only. Focused backend and frontend tests were completed during Phase 3; final all-phase verification remains separate from this plan update.
 
 ---
 
@@ -273,41 +273,43 @@ Detailed slices are written for every phase below. They remain gated: do not sta
 > Rationale: do not build model serving until evidence proves a universal extractor beats the frozen deterministic baseline on the right partitions without increasing ungrounded output.
 
 ### Slice 4.1 — Build compact page representation offline
-**Status:** TODO
+**Status:** DONE — `compact_page.v2` enforces a global node/text bound, selected attributes, immutable source hash, repeated-block keys, CSS-node/path label mapping, preserved node/path/region grounding references, and market tags. An architecture ratchet forbids Phase-4 representation/model/benchmark imports outside `app/evaluation/`.
 **Delete target:** any research prototype that consumes full raw HTML when a bounded representation is sufficient.
 **Files:** `app/evaluation/`, possible representation module under `app/extraction/` only if needed by later runtime, `app/core/config/*` for bounds, focused representation tests
 **What:** Create a bounded representation containing relevant nodes, selected attributes, source lineage, repeated-block membership, labels, optional region references, and market-sensitive features. Keep it lazy/offline in this phase.
 **Verify:** tests prove representation is bounded, excludes irrelevant bulk, carries node/path/region references, and is not built on normal extraction success paths.
 
 ### Slice 4.2 — Partition evaluation data for known/unseen/temporal cases
-**Status:** TODO
+**Status:** DONE — release gating counts only release-eligible labels and fails closed across identity partitions, all four extraction surfaces, and required multi-variant/Sentinel-disagreement scenarios; weak and model-only labels cannot satisfy coverage.
 **Delete target:** aggregate-only model evaluation that hides unseen-template or critical-semantic regressions.
 **Files:** `app/evaluation/schema.py`, `app/evaluation/`, baseline artifacts/config, focused evaluation tests
 **What:** Define dataset partitions for known templates, unseen domains, unseen templates in known domains, temporal changes, A/B variants, locale variants, listings/details, multi-variant products, jobs, and Sentinel-disagreement seeds. Only grounded human labels and qualified pseudo-labels can enter release evaluation.
 **Verify:** tests prove weak/model-only labels are excluded and partition metrics fail closed when required partitions are missing.
 
 ### Slice 4.3 — Add offline universal-model adapter harness
-**Status:** TODO
+**Status:** DONE — the offline adapter contract carries candidate family, deployment mode, artifact version, and representation hash; page type, record boundary, field, exclusion-region, and typed relationship predictions are validated as grounded evidence, and non-empty public-record payloads are rejected.
 **Delete target:** one-off notebooks/scripts that cannot reproduce model evaluation.
 **Files:** `app/evaluation/`, optional `scripts/` evaluation entrypoint, model config under `app/core/config/*`, focused adapter tests
 **What:** Implement an offline adapter interface for candidate models that predicts page type, record boundaries, field-bearing nodes/paths, exclusion regions, and basic relationships. Outputs are evidence predictions only. No production serving infrastructure.
 **Verify:** focused tests run a deterministic fake adapter through the harness and prove outputs cannot become public records directly.
 
 ### Slice 4.4 — Benchmark against the Phase-0 deterministic baseline
-**Status:** TODO
+**Status:** DONE — `universal_model_benchmark.v2` requires one candidate identity, exact case/result coverage, required dataset dimensions, explicit unseen-template baseline F1, and baseline ungrounded-value rate. It reports aggregate and per-partition field metrics, exact grounded boundary/relationship matching, recommendation contamination, latency, memory, and cost. Its CLI accepts reproducible case/result/baseline JSON inputs. The committed artifact records NO-GO because no approved candidate results or comparable unseen-template baseline were supplied.
 **Delete target:** model-selection decisions based on anecdotes or overall accuracy only.
 **Files:** `app/evaluation/`, `app/evaluation/baselines/run_1.json`, benchmark report artifact under `app/evaluation/` or `docs/` as appropriate, focused metric tests
 **What:** Compare candidate models on field precision/recall/F1, normalized exact match, record-boundary accuracy, variant binding, recommendation contamination, ungrounded-value rate, latency, memory, and cost per 1,000 pages. Compare local/shared inference from measured data only.
 **Verify:** benchmark command produces stable report; release gate fails if unseen-template gains are absent or ungrounded-value rate rises.
 
 ### Slice 4.5 — Record go/no-go and serving decision
-**Status:** TODO
+**Status:** DONE — serving decision is `no_production_serving`; the v2 report marks metrics unavailable rather than recording misleading zeroes. Production activation remains blocked until a complete offline candidate benchmark beats the comparable deterministic unseen-template baseline without increasing ungrounded-value rate. The operator later authorized fail-closed Phase 5 implementation, but no artifact was activated and no serving process was added.
 **Delete target:** production model wiring before benchmark approval.
 **Files:** this plan Notes, benchmark artifact, `docs/CODEBASE_MAP.md` only if new evaluation modules landed
 **What:** Record the selected model family/deployment mode or explicitly reject runtime ML for now. If rejected, Phase 5 is blocked or reduced to deterministic fallback improvements.
 **Verify:** plan Notes contain benchmark summary, go/no-go, and serving decision; no production runtime code invokes the candidate model.
 
-**Phase 4 exit gate:** Offline model is proven to beat deterministic generic extraction on unseen templates without increasing ungrounded-value rate, or Phase 5 is blocked/re-scoped; no production serving infra exists before the gate.
+**Phase 4 exit gate:** NOT PASSED — the offline evaluation boundary, coverage gates, evidence-only adapter contract, fail-closed benchmark, committed decision artifact, and production-import ratchet are present. Review hardening prevents evaluation-label leakage, rejects predictions not grounded to retained source paths, scores fields with source grounding, uses truth-owned recommendation regions, validates prediction graphs and baseline rates, and removes duplicated descendant text from compact nodes. No approved candidate, release dataset, or comparable unseen-template deterministic baseline was supplied, so `no_production_serving` remains the only valid activation decision. The operator explicitly authorized continued Phase 5 implementation; runtime therefore exists fail-closed, with no active artifact. Final verification remains pending.
+
+**Phase 4 review decision log (2026-07-02):** The operator requested review plus fixes, which pre-authorized recommended Option A repairs. Architecture: keep Phase 5 fail-closed and correct the plan status instead of bypassing the benchmark gate. Code quality: validate prediction identity/relationships and numeric baseline inputs. Tests: add regression coverage for truth leakage, invalid source grounding, grounding-aware scoring, recommendation contamination, invalid baselines, direct-text compaction, and CLI candidate loading. Performance: store direct node text rather than repeated descendant aggregates. Reproducibility: make the benchmark command accept case/result/baseline JSON instead of only emitting NO-GO. Repository audit: the only stored pages are 17 ecommerce-detail artifacts from one partial run; no release dataset, model artifact, or unseen-template baseline exists. Deferred: candidate selection, release dataset construction, benchmark execution, and all Phase 5 runtime wiring remain unresolved inputs, not implementation shortcuts.
 
 ---
 
@@ -316,41 +318,41 @@ Detailed slices are written for every phase below. They remain gated: do not sta
 > Rationale: the model is a lazy fallback that emits evidence. It is not the primary extractor and cannot publish values.
 
 ### Slice 5.1 — Add model artifact and runtime contract
-**Status:** TODO
+**Status:** IMPLEMENTED — frozen-snapshot `UniversalModelArtifact`, evidence-candidate/result contracts, exact artifact/adapter identity, approval/benchmark flags, confidence, timeout, memory, cost, deployment, and surface bounds are present. Missing/invalid/unapproved metadata disables fallback without invocation. Final verification pending.
 **Delete target:** hard-coded model paths, thresholds, endpoints, and runtime flags outside config.
 **Files:** `app/core/config/*`, `app/extraction/contracts.py`, `app/evaluation/` model metadata, focused config/contract tests
 **What:** Define model artifact identity, version, thresholds, deployment mode, memory/cost bounds, timeout behavior, and evidence-only output contract. Runtime must record model identity in evidence and diagnostics.
 **Verify:** tests prove missing/unapproved artifact disables fallback cleanly; config is not embedded in extraction service code.
 
 ### Slice 5.2 — Wire lazy Stage-4 fallback into extraction engine
-**Status:** TODO
+**Status:** IMPLEMENTED — engine order is compiled recipe, generic deterministic recovery when recipe output misses contract, then lazy model fallback. Predictions pass compact-source path/value grounding, become normal Evidence, and re-enter the existing adapter Resolve/Publish path. Deterministic success builds no representation and invokes no model. Final verification pending.
 **Delete target:** fallback paths that re-run expensive representation/model work after deterministic success.
 **Files:** `app/extraction/engine.py`, representation module, model adapter module, `app/extraction/result_building.py`, focused fallback tests
 **What:** Invoke the universal model only when compiled recipe and generic deterministic paths fail to satisfy the field contract, or when explicitly selected by later Sentinel sampling. Convert predictions to grounded evidence candidates; resolve/publication remains deterministic.
 **Verify:** focused tests prove success path never invokes model/representation; failure path emits evidence and diagnostics; model predictions cannot bypass `resolution.py`.
 
 ### Slice 5.3 — Add serving only if Phase-4 decision requires it
-**Status:** TODO
+**Status:** IMPLEMENTED AS NO SERVING — Phase 4 selected `no_production_serving`, so no process/service scaffold was added. Runtime exposes a bounded adapter protocol; approved metadata without a matching adapter fails degradably with `model_service_failure`. Timeout, identity mismatch, and budget outcomes publish no model evidence. Final verification pending.
 **Delete target:** unused local/shared serving scaffolding not selected by benchmark.
 **Files:** serving adapter files only as selected in Phase 4, `app/core/config/*`, focused service-failure tests
 **What:** Implement the minimal selected inference path: local process, shared service, or no serving. Include timeout, degraded-mode, and model-service-failure taxonomy. Do not duplicate model memory across workers unless the benchmark requires local inference.
 **Verify:** focused tests cover timeout/degraded behavior and `model_service_failure` classification without publishing unsafe values.
 
 ### Slice 5.4 — Prove the attribute-spelling mutation recovers records
-**Status:** TODO
+**Status:** IMPLEMENTED — both `test-data-id` and `test-dataid` mutations continue yielding records through the earlier deterministic generic fix, with zero representation builds/model calls. A separate synthetic deterministic miss proves grounded model Evidence can recover a listing only through normal Resolve/Publish. This is stricter than forcing ML when deterministic extraction already succeeds. Final verification pending.
 **Delete target:** brittle fixture assumptions that hide the original `test-data-id` / `test-dataid` failure.
 **Files:** focused synthetic mutation tests, `app/evaluation/`, relevant extractor/model adapter tests
 **What:** Add the explicit mutation acceptance test: same page evidence, only attribute spelling drifted. The learned fallback must produce grounded record-boundary/field evidence and final records through deterministic resolve/trust gates.
 **Verify:** synthetic mutation test yields records; evidence references the mutated source; no ungrounded fields are published.
 
 ### Slice 5.5 — Add invocation, latency, grounding, and cost gates
-**Status:** TODO
+**Status:** IMPLEMENTED — result/diagnose metrics record representation builds, invocations, latency, service failures, ungrounded rejection count/rate, raw cost, and cost per 1,000 pages; model identity/outcome appears in diagnostics. Success-path counts stay zero. Final verification pending.
 **Delete target:** model fallback that can silently become the default hot path.
 **Files:** `app/observability/diagnose.py`, `app/evaluation/`, architecture tests, focused metric tests
 **What:** Track universal representation build rate, model invocation rate, p50/p95 latency, model-service failure rate, ungrounded-value rejection rate, and cost per 1,000 pages. Add ratchets that keep fallback lazy.
 **Verify:** focused tests prove invocation metrics are emitted and success-path invocation remains zero for known-template/generic-success fixtures.
 
-**Phase 5 exit gate:** Success path never invokes the model; runtime ML fallback is evidence-only; the attribute-spelling mutation yields records; accuracy/latency/grounding/cost gates pass.
+**Phase 5 exit gate:** IMPLEMENTATION COMPLETE, VERIFICATION PENDING — success path is model-free; runtime predictions are evidence-only and source-grounded; deterministic attribute-spelling mutation yields records without wasting a model call; synthetic fallback recovery, degraded failure, budget, grounding, identity, diagnostics, and cost contracts are covered. No production candidate is active and no benchmark claim was fabricated.
 
 ---
 
@@ -463,12 +465,22 @@ Maintained in Notes and asserted at each phase gate:
 |---|---|---|---|
 | 1.1–1.5 | removed unused `CaptureAssessment` / `ResultAssessment` contracts | none | typed contract surface added; honest extraction LOC budget reseeded +246 (11,873 → 12,119) with this explicit exception |
 
+**Phase 2–5 debt ledger:**
+| Phase | App/UI code deleted | Test code deleted | Notable removals / exceptions |
+|---|---|---|---|
+| 2 | removed append-only/live recipe execution assumptions and partial activation paths | obsolete compatibility expectations replaced by fast-path/rollback behavior tests | compiled recipe runtime and immutable release machinery were intentional runtime additions |
+| 3 | direct selector CRUD helpers/routes, selector promotion and field-action endpoints, standalone selector page, selector mutation components/actions | obsolete selector CRUD tests and UI tests removed or rewritten around read-only views and grounded correction | material deletion phase; one authoritative grounded-correction mutation path remains |
+| 4 | no production runtime deletion; superseded aggregate-only benchmark assumptions and misleading zero-valued NO-GO metrics | focused contract tests added | explicit research-infrastructure exception: offline-only modules add LOC, are blocked from production imports, and may not justify Phase 5 without a passing comparable benchmark |
+| 5 | deleted `job_resolution.py` and consolidated its single job-resolution concern into `jobs.py`; offline compact builder duplication replaced by a shared runtime representation plus thin label decoration | added focused runtime contract tests | runtime contracts/engine/model module add 686 physical extraction LOC (12,236 → 12,922); explicit Phase-5 feature exception, still 24 extraction modules |
+
+Phase 4–5 add 1,557 production physical lines in total (71,792 → 73,349), recorded as explicit offline-evaluation plus gated-runtime feature surface rather than hidden under the Phase-0 deletion baseline.
+
 ---
 
 ## Acceptance Criteria (engine scope; testable)
 
 **Anti-brittleness**
-- [ ] A template differing only by attribute spelling (`test-data-id` vs `test-dataid`) still yields records (proven by synthetic mutation) — met in Phase 5 via the learned fallback, with an interim Phase-2 mitigation (attribute-name canonicalization + repeated-block detection + candidate scoring not tied to one exact attribute).
+- [x] A template differing only by attribute spelling (`test-data-id` vs `test-dataid`) still yields records (proven by synthetic mutation) — the Phase-2 generic correction handles both spellings, and Phase 5 proves the model remains uninvoked when deterministic extraction succeeds.
 - [ ] Present-but-unbound variant evidence is recovered **only** through a grounded path, and the plan distinguishes: **binding failure** (matrix exists, linking failed → recover), **source insufficiency** (only option axes, no combination proof → do not fabricate), **operator-authored mapping** (human-confirmed), **unsupported** (no grounded relationship → no variant). "Model predicted a relationship" is **not** sufficient evidence to publish a variant.
 - [x] `test_extraction_carries_no_retailer_domain_literals` stays green.
 
@@ -482,7 +494,7 @@ Maintained in Notes and asserted at each phase gate:
 **Correctness / governance (later phases)**
 - [x] Every zero-record outcome carries a classified reason (Phase 1).
 - [x] A learned template short-circuits generic collectors via a compiled recipe (Phase 2).
-- [ ] No universal model reaches production before it beats the deterministic baseline on unseen templates without raising ungrounded-value rate (Phase 4→5).
+- [x] No universal model reaches production before it beats the deterministic baseline on unseen templates without raising ungrounded-value rate (Phase 4→5) — Phase 4 ended NO-GO; Phase 5 runtime requires frozen approved/passing benchmark metadata and exact artifact/adapter identity, so no production artifact is active.
 - [ ] No Sentinel before a genuine recipe fast path exists (Phase 6).
 - [ ] Grounded models cannot publish ungrounded values or activate rules (Phase 7).
 
@@ -515,3 +527,7 @@ Maintained in Notes and asserted at each phase gate:
 - D1–D4 approved and executed in Slice 0.7. Slice 0.2 completed afterward; Phase 0 exit gate is met with app physical LOC net −905 from the Slice 0.5 physical baseline.
 - 2026-07-02: Expanded Phases 1–7 in this plan itself into decision-complete slices with file targets, delete targets, and verify gates. No Phase 1 implementation started in this edit.
 - 2026-07-02: Phase 1 completed. Added typed input/context/field/locale/manifest/failure contracts, mandatory zero-record failure classifications, business-readable diagnostic summaries, and manifest context in `diagnose.json`. Focused verification passed: `pytest tests/unit/test_extraction_runtime_behavior.py tests/unit/test_diagnose_builder.py tests/unit/test_extraction_architecture.py tests/unit/test_url_result_persistence.py tests/component/test_dashboard_service.py -q`; ruff clean on touched files; mypy clean on touched app files. Physical extraction LOC ratchet increased from 11,873 to 12,119 as a documented contract-surface exception.
+- 2026-07-02: Phase 2 completed with structural fingerprinting, bounded compiled recipe layers, a genuine recipe short-circuit, immutable release activation/rollback, and deterministic attribute-spelling drift tolerance.
+- 2026-07-02: Phase 3 completed with one grounded-correction mutation path, representative sibling replay, immutable activation gates, and deletion of direct selector CRUD/promotion plus the duplicate selector UI. Remaining selector/domain-memory views are read-only.
+- 2026-07-02: Phase 4 implementation completed as NO-GO. `compact_page.v2` and `universal_model_benchmark.v2` add bounded grounded representations, partition/surface/scenario coverage, candidate identity, exact case/result coverage, per-partition unseen-template metrics, typed structural matching, and unavailable—not zero—metrics when no benchmark ran. No approved candidate or comparable unseen-template deterministic baseline was supplied; serving and production activation remain blocked. The final v2 hardening was reviewed and edited without running commands at operator request, so its focused pytest/ruff/mypy verification is pending.
+- 2026-07-02: Operator explicitly requested continuation past the missing-benchmark implementation blocker. Phase 5 runtime was implemented fail-closed without approving a candidate: frozen artifact contract, lazy compact representation, grounded Evidence conversion, normal Resolve/Publish re-entry, degraded timeout/failure/budget behavior, and invocation/latency/grounding/cost diagnostics. No serving process or active artifact was added. Final verification is pending as one combined run per operator instruction.

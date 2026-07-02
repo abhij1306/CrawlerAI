@@ -34,10 +34,11 @@ from app.extraction.collectors.dom import css_recipe_evidence
 from app.extraction.collectors.url import UrlCollector
 from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
-from app.extraction.job_resolution import resolve_job_detail, resolve_job_listing
 from app.extraction.jobs import (
     collect_job_detail,
     collect_job_listing,
+    resolve_job_detail,
+    resolve_job_listing,
     wrong_surface_findings_for_job_detail,
 )
 from app.extraction.listing import (

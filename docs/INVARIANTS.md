@@ -458,7 +458,7 @@ apply to every branded ecommerce target. Raw internal retailer identifiers (a co
 - **Labels are unified.** Review promotions and field feedback are typed rows in `ExtractionOperatorLabel`, distinguished by `label_kind`.
 - **Extraction stays storage-free.** `app/extraction/` may import pure helpers from `app/core/extraction_memory/`; it must not import `app/models/extraction_memory.py` or `app/persistence/extraction_memory.py`.
 - **Resolve remains authority.** Saved contracts rank already-admissible evidence only. They cannot create ownership, resurrect rejected evidence, or publish values directly.
-- **Models remain evaluated fallback.** ML/LLM output is evidence only, is lazy off the deterministic success path, and cannot enter release evaluation unless qualified by the evaluation schema.
+- **Models remain evaluated fallback.** ML/LLM output is evidence only, is lazy off the deterministic success path, and cannot enter release evaluation unless qualified by the evaluation schema. Runtime ML requires approved, passing benchmark metadata in the frozen release snapshot plus an exact adapter/artifact identity match. Missing or unapproved metadata disables it. Predictions must resolve to retained compact-source paths and source values before becoming Evidence.
 - **Challengers cannot override.** A Sentinel/challenger may diagnose or suspend a recipe under an approved policy; it cannot directly replace resolved truth.
 - **Grounded publication.** No learned or LLM-produced value reaches publication without a source locator and resolver acceptance.
 

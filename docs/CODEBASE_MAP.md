@@ -160,10 +160,16 @@ Canonical config owner:
 | File | Purpose |
 |---|---|
 | `evaluation/baseline.py` | deterministic offline baseline reduction and stable artifact generation |
-| `evaluation/schema.py` | versioned evaluation cases and grounded-label release-truth contracts |
+| `evaluation/schema.py` | grounded-label truth plus evaluation partition, surface, scenario, and metric contracts |
+| `extraction/model_runtime.py` | Lazy evaluation-gated universal-model fallback, shared bounded runtime representation, source-grounding enforcement, and Evidence conversion |
+| `evaluation/compact_representation.py` | Offline truth-label decoration over the shared runtime `compact_page.v2` representation |
+| `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |
+| `evaluation/model_harness.py` | offline evidence-only candidate adapter with model/deployment/artifact identity; cannot emit public records |
+| `evaluation/benchmark.py`, `evaluation/benchmarks/*` | `universal_model_benchmark.v2`: exact candidate/case checks, per-partition metrics, fail-closed decision, and committed Phase-4 NO-GO artifact |
 | `crawl_engine.py` | Extraction facade and routing |
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
+| `extraction/jobs.py` | Job collection, wrong-surface checks, and deterministic job detail/listing resolution |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
 | `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
 | `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |
@@ -245,6 +251,7 @@ Canonical config owners:
 | `core/config/variant_policy.py` | Public variant axes, flat variant transport fields, and variant axis aliases |
 | `core/config/extraction_rules/` | extraction/runtime selector tokens split by common, image, detail, variant, listing/structured, and job concerns |
 | `core/config/extraction_price_rules.py` | Detail price selectors, JSON-LD price fields, currency decimal places, and price repair thresholds |
+| `core/config/evaluation.py` | evaluation vocabulary, compact-representation bounds, partition gates, and benchmark metric names |
 | `core/config/selectors.py` | DOM selectors |
 | `core/config/platforms.json` | platform metadata, signatures, JS mappings, readiness selectors |
 | `core/config/network_payload_specs.py` | payload specs and endpoint tokens |

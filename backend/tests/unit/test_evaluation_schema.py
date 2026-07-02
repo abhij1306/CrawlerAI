@@ -239,7 +239,7 @@ def test_expected_record_requires_matching_boundary_and_field_labels() -> None:
         market_tags=("en-US",),
         template_tags=("product-grid",),
         expected_trust_outcome="trusted",
-        required_metrics=("record_boundary_precision", "field_f1"),
+        required_metrics=("record_boundary_accuracy", "field_f1"),
     )
 
     assert case.expected_records[0].field_label_ids == (field.label_id,)
@@ -262,6 +262,28 @@ def test_entity_relationship_label_requires_distinct_typed_entities() -> None:
 
     assert label.relationship is not None
     assert label.relationship.relationship == "has_offer"
+
+
+def test_evaluation_case_rejects_unknown_or_duplicate_metric_vocabulary() -> None:
+    label = _human_field()
+    payload = _case(label, release_ids=(label.label_id,)).model_dump(mode="python")
+    payload["required_metrics"] = ("field_f1", "unknown_metric")
+
+    with pytest.raises(ValidationError, match="Unsupported evaluation metrics"):
+        EvaluationCase.model_validate(payload)
+
+    payload["required_metrics"] = ("field_f1", "field_f1")
+    with pytest.raises(ValidationError, match="must be unique"):
+        EvaluationCase.model_validate(payload)
+
+
+def test_evaluation_case_rejects_duplicate_scenario_tags() -> None:
+    label = _human_field()
+    payload = _case(label, release_ids=(label.label_id,)).model_dump(mode="python")
+    payload["scenario_tags"] = ("multi_variant", "multi_variant")
+
+    with pytest.raises(ValidationError, match="scenario tags must be unique"):
+        EvaluationCase.model_validate(payload)
 
 
 def test_schema_forbids_unknown_fields() -> None:
