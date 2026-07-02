@@ -113,6 +113,18 @@ def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:
     acquisition_result.platform_family = platform_family or None
 
 
+async def _load_runtime_snapshot(context: _URLProcessingContext) -> dict[str, object]:
+    snapshot = await load_release_payload(
+        context.session, context.run.extraction_release_snapshot_id
+    )
+    snapshot["_release_snapshot_id"] = (
+        str(context.run.extraction_release_snapshot_id)
+        if context.run.extraction_release_snapshot_id is not None
+        else None
+    )
+    return snapshot
+
+
 async def _run_record_extraction(
     context: _URLProcessingContext,
     *,
@@ -122,14 +134,7 @@ async def _run_record_extraction(
     from app.crawl.pipeline import extraction_loop
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
-    runtime_snapshot = await load_release_payload(
-        context.session, context.run.extraction_release_snapshot_id
-    )
-    runtime_snapshot["_release_snapshot_id"] = (
-        str(context.run.extraction_release_snapshot_id)
-        if context.run.extraction_release_snapshot_id is not None
-        else None
-    )
+    runtime_snapshot = await _load_runtime_snapshot(context)
     extract_records_impl = getattr(
         extraction_loop,
         "extract_records_for_acquisition_result",
@@ -243,14 +248,7 @@ async def _extract_records_from_preserved_browser_html(
     )
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
-    runtime_snapshot = await load_release_payload(
-        context.session, context.run.extraction_release_snapshot_id
-    )
-    runtime_snapshot["_release_snapshot_id"] = (
-        str(context.run.extraction_release_snapshot_id)
-        if context.run.extraction_release_snapshot_id is not None
-        else None
-    )
+    runtime_snapshot = await _load_runtime_snapshot(context)
     try:
         fallback_result = await asyncio.to_thread(
             extract_impl,

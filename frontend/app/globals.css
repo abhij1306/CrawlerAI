@@ -104,6 +104,9 @@
   --tracking-wide: 0.025em;
   --tracking-wider: 0.06em;
   --tracking-widest: 0.1em;
+
+  /* Animation durations */
+  --duration-180: 180ms;
 }
 
 /* ─── LIGHT THEME — Kapa-inspired Neutral Ops ─────────────────────────
@@ -235,13 +238,7 @@
   --control-height-lg: 38px;
   --interactive-border-width: 1px;
 
-  /* Border radii (also bridged in @theme) */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
-  --radius-2xl: 20px;
+  /* Border radii — xs→2xl sourced from @theme inline above; only --radius-full lives here */
   --radius-full: 9999px;
 
   /* Transitions */
@@ -540,7 +537,7 @@ body {
     ),
     linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 20rem);
   background-position: center top;
-  background-attachment: fixed;
+  /* background-attachment: fixed applied via @supports below (iOS Safari jank fix) */
   color: var(--text-primary);
   font-family: var(--font-primary-family);
   font-size: var(--text-base);
@@ -554,6 +551,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
   isolation: isolate;
   text-size-adjust: 100%;
+}
+
+/* Fixed background: scoped to non-iOS to avoid GPU compositing jank on Safari */
+@supports not (-webkit-overflow-scrolling: touch) {
+  body,
+  html[data-theme='dark'] body {
+    background-attachment: fixed;
+  }
 }
 
 /* Dark mode: warm ambient dark background gradient mesh */
@@ -570,7 +575,6 @@ html[data-theme='dark'] body {
       transparent 36rem
     ),
     linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 18rem);
-  background-attachment: fixed;
 }
 
 h1,
@@ -661,8 +665,9 @@ input:disabled,
 select:disabled,
 textarea:disabled {
   opacity: 0.42;
+  /* cursor:not-allowed is intentionally visible on hover — omitting pointer-events:none
+     so tooltip/title attributes still fire and the not-allowed cursor is actually seen. */
   cursor: not-allowed;
-  pointer-events: none;
 }
 
 /* ─── Focus rings — keyboard-only (WCAG 2.4.7 + 2.4.11) ─────────────── */
@@ -1350,11 +1355,13 @@ html:not([data-theme='dark']) .code-block {
   color: var(--metric-icon-color, var(--accent));
 }
 
-.bg-warning\/12 {
+/* Semantic tint utilities — registered via @utility so Tailwind v4 purge/scan picks them up.
+   Update any JSX usages: 'bg-warning\/12' → 'bg-warning-tint', 'bg-danger\/12' → 'bg-danger-tint' */
+@utility bg-warning-tint {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
-.bg-danger\/12 {
+@utility bg-danger-tint {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
@@ -1430,13 +1437,11 @@ html:not([data-theme='dark']) .code-block {
   box-shadow: var(--terminal-shadow);
 }
 
-.crawl-terminal,
-.crawl-terminal * {
-  font-family: var(--font-mono-family);
+/* font-family/line-height/letter-spacing already set on .crawl-terminal and inherit down.
+   Only font-stretch/font-synthesis need forcing — no * wildcard sledgehammer needed. */
+.crawl-terminal {
   font-stretch: normal;
   font-synthesis: none;
-  line-height: 1.5;
-  letter-spacing: 0;
 }
 
 /* Terminal shell context — scoped token overrides */
@@ -1712,6 +1717,7 @@ html:not([data-theme='dark']) .compact-data-table {
   animation: spin 0.75s linear infinite;
 }
 
+/* Stagger limit: 10 children @ 50ms steps. Extend if needed. */
 .stagger-children > * {
   animation: fade-in 180ms ease-out both;
 }
@@ -1731,11 +1737,20 @@ html:not([data-theme='dark']) .compact-data-table {
 .stagger-children > *:nth-child(6) {
   animation-delay: 250ms;
 }
-
-/* ─── Custom duration token ─────────────────────────────────────────── */
-@theme {
-  --duration-180: 180ms;
+.stagger-children > *:nth-child(7) {
+  animation-delay: 300ms;
 }
+.stagger-children > *:nth-child(8) {
+  animation-delay: 350ms;
+}
+.stagger-children > *:nth-child(9) {
+  animation-delay: 400ms;
+}
+.stagger-children > *:nth-child(10) {
+  animation-delay: 450ms;
+}
+
+/* --duration-180 merged into main @theme inline block at top of file */
 
 /* ═══════════════════════════════════════════════════════════════════════
    RESPONSIVE

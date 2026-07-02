@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from selectolax.lexbor import LexborHTMLParser
-
 from app.core.config.evaluation import COMPACT_REPRESENTATION_MAX_NODES
 from app.evaluation.schema import GroundedLabel, GroundingReference
+from app.extraction.documents import HtmlDocument
 from app.extraction.model_runtime import (
     RuntimeCompactNode,
     RuntimeCompactPage,
     RuntimeCompactSource,
     build_runtime_compact_page,
-    compact_node_path,
 )
 
 
@@ -46,7 +44,7 @@ def build_compact_page_representation(
         market_tags=market_tags,
         max_nodes=max_nodes,
     )
-    label_refs = _label_refs(labels, LexborHTMLParser(html), artifact_id)
+    label_refs = _label_refs(labels, HtmlDocument(artifact_id, html), artifact_id)
     nodes = tuple(
         CompactNode(
             **node.model_dump(),
@@ -67,7 +65,7 @@ def build_compact_page_representation(
 
 def _label_refs(
     labels: tuple[GroundedLabel, ...],
-    parser: LexborHTMLParser,
+    document: HtmlDocument,
     artifact_id: str,
 ) -> dict[str, dict[str, set[str]]]:
     paths: dict[str, set[str]] = {}
@@ -79,7 +77,7 @@ def _label_refs(
             if reference.kind == "path":
                 paths.setdefault(reference.locator, set()).add(label.label_id)
             elif reference.kind == "node":
-                for path in _node_reference_paths(reference, parser):
+                for path in _node_reference_paths(reference, document):
                     paths.setdefault(path, set()).add(label.label_id)
             elif reference.kind == "region" and reference.locator.startswith("/"):
                 regions.setdefault(reference.locator, set()).add(label.label_id)
@@ -87,7 +85,7 @@ def _label_refs(
 
 
 def _node_reference_paths(
-    reference: GroundingReference, parser: LexborHTMLParser
+    reference: GroundingReference, document: HtmlDocument
 ) -> tuple[str, ...]:
     locator = reference.locator.strip()
     if locator.startswith("/"):
@@ -98,7 +96,7 @@ def _node_reference_paths(
     if not selector:
         return ()
     try:
-        return tuple(compact_node_path(node) for node in parser.css(selector))
+        return tuple(node.dom_path() for node in document.css(selector))
     except (RuntimeError, ValueError):
         return ()
 

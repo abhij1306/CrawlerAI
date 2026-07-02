@@ -39,6 +39,17 @@ class HtmlNode:
     def text(self, *, separator: str = " ", strip: bool = True) -> str:
         return self.node.text(separator=separator, strip=strip)
 
+    def direct_text(self) -> str:
+        pieces: list[str] = []
+        child = self.node.child
+        while child is not None:
+            if child.is_text_node:
+                text = str(child.text() or "").strip()
+                if text:
+                    pieces.append(text)
+            child = child.next
+        return " ".join(" ".join(pieces).split())
+
     def tag(self) -> str:
         return str(self.node.tag or "").lower()
 
@@ -57,6 +68,28 @@ class HtmlNode:
 
     def identity(self) -> int:
         return int(self.node.mem_id)
+
+    def dom_path(self) -> str:
+        parts: list[str] = []
+        current: LexborNode | None = self.node
+        while current is not None:
+            tag = str(current.tag or "").lower()
+            if not tag or tag.startswith("-"):
+                break
+            parent = current.parent
+            index = 1
+            if parent is not None:
+                for sibling in parent.iter():
+                    if sibling is current:
+                        break
+                    if (
+                        sibling.parent is parent
+                        and str(sibling.tag or "").lower() == tag
+                    ):
+                        index += 1
+            parts.append(f"{tag}[{index}]")
+            current = parent
+        return "/" + "/".join(reversed(parts))
 
     def json(self) -> object:
         text = self.text()
@@ -127,6 +160,9 @@ class HtmlDocument:
     def css_first(self, selector: str) -> HtmlNode | None:
         node = self._parser.css_first(selector)
         return HtmlNode(self.artifact_id, node) if node is not None else None
+
+    def nodes(self) -> tuple[HtmlNode, ...]:
+        return self.css("*")
 
     def safe_css(self, selector: str) -> tuple[HtmlNode, ...]:
         try:

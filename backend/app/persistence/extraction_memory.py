@@ -68,7 +68,7 @@ def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
     selectors: dict[str, dict[str, object]] = {}
     contracts: dict[str, dict[str, object]] = {}
     provenance: list[dict[str, object]] = []
-    layer_signatures: set[tuple[str, str, str, str]] = set()
+    layer_signatures: dict[tuple[str, str, str], str] = {}
     for recipe in ordered:
         payload = dict(recipe.payload or {})
         provenance.append(
@@ -117,7 +117,7 @@ def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
 
 def _merge_layer_rule(
     target: dict[str, dict[str, object]],
-    layer_signatures: set[tuple[str, str, str, str]],
+    layer_signatures: dict[tuple[str, str, str], str],
     *,
     recipe: ExtractionRecipe,
     field: str,
@@ -128,17 +128,13 @@ def _merge_layer_rule(
     value_key = value.strip()
     if not field_key or not value_key:
         return
-    layer_key = (recipe.layer, recipe.kind, field_key, value_key)
-    ambiguous = {
-        item
-        for item in layer_signatures
-        if item[0] == recipe.layer and item[1] == recipe.kind and item[2] == field_key
-    }
-    if ambiguous and layer_key not in ambiguous:
+    layer_key = (recipe.layer, recipe.kind, field_key)
+    existing = layer_signatures.get(layer_key)
+    if existing is not None and existing != value_key:
         raise RecipeCompileError(
             f"ambiguous {recipe.kind} override for {field_key} at {recipe.layer}"
         )
-    layer_signatures.add(layer_key)
+    layer_signatures[layer_key] = value_key
     target[field_key] = dict(payload)
 
 
@@ -371,12 +367,26 @@ async def activate_release_snapshot_for_run(
 ) -> ExtractionReleaseSnapshot:
     """Atomically point a run at an existing immutable release snapshot."""
 
-    run = await session.get(CrawlRun, run_id)
+    run = (
+        await session.execute(
+            select(CrawlRun).where(CrawlRun.id == run_id).with_for_update()
+        )
+    ).scalar_one_or_none()
     if run is None:
         raise ValueError(f"unknown crawl run: {run_id}")
-    target = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
+    target = (
+        await session.execute(
+            select(ExtractionReleaseSnapshot)
+            .where(ExtractionReleaseSnapshot.id == release_snapshot_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
     if target is None:
         raise ValueError(f"unknown release snapshot: {release_snapshot_id}")
+    if target.run_id not in {None, run_id}:
+        raise ValueError("release snapshot is already active for another run")
+    if target.domain != normalize_domain(run.url) or target.surface != run.surface:
+        raise ValueError("release snapshot is incompatible with crawl run")
     current = await active_release_snapshot_for_run(session, run_id=run_id)
     if current is not None and current.id != target.id:
         current.run_id = None

@@ -783,6 +783,19 @@ async def test_release_snapshot_activation_and_rollback_are_atomic(
     assert active_after_failed_activation is not None
     assert active_after_failed_activation.id == candidate.id
 
+    incompatible = await create_candidate_release_snapshot(
+        db_session, domain="other.example", surface="ecommerce_detail"
+    )
+    with pytest.raises(ValueError, match="incompatible"):
+        await activate_release_snapshot_for_run(
+            db_session, run_id=901, release_snapshot_id=incompatible.id
+        )
+    active_after_incompatible = await active_release_snapshot_for_run(
+        db_session, run_id=901
+    )
+    assert active_after_incompatible is not None
+    assert active_after_incompatible.id == candidate.id
+
     await rollback_release_snapshot_for_run(
         db_session, run_id=901, target_release_snapshot_id=baseline.id
     )

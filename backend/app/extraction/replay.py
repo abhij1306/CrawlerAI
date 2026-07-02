@@ -333,6 +333,8 @@ def _is_error_status(status_code: object) -> bool:
 def _manifest_context(snapshot: dict[str, object]) -> ExecutionManifestContext:
     return ExecutionManifestContext(
         release_snapshot_id=_optional_text(snapshot.get("_release_snapshot_id")),
+        execution_manifest_id=_optional_text(snapshot.get("_execution_manifest_id")),
+        template_id=_optional_text(snapshot.get("_template_id")),
         manifest_version=_optional_text(snapshot.get("_manifest_version")),
         locale_policy_ref=_optional_text(snapshot.get("_locale_policy_ref")),
     )

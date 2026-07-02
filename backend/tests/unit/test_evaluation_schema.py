@@ -64,6 +64,7 @@ def _case(*labels: GroundedLabel, release_ids: tuple[str, ...]) -> EvaluationCas
         case_id="case-1",
         input_bundle_ref="bundle://frozen/1",
         partition="known_template",
+        surface="ecommerce_detail",
         labels=labels,
         release_evaluation_label_ids=release_ids,
         expected_trust_outcome="trusted",
@@ -226,6 +227,7 @@ def test_expected_record_requires_matching_boundary_and_field_labels() -> None:
         case_id="listing-case",
         input_bundle_ref="bundle://frozen/listing-1",
         partition="unseen_template",
+        surface="ecommerce_listing",
         labels=(boundary, field),
         expected_records=(
             ExpectedRecord(

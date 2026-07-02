@@ -93,7 +93,7 @@ def extract(
     attempt = _execute_attempt(request, adapter, harvest)
     stage_outcomes = list(attempt.stage_outcomes)
 
-    if extractor_tier == "recipe" and _needs_contract_fallback(attempt.verdict):
+    if extractor_tier == "recipe" and not attempt.records:
         generic_harvest = adapter.harvest(request)
         generic_harvest = generic_harvest.model_copy(
             update={
@@ -492,7 +492,16 @@ def _failure_classifications(
     if records:
         return ()
     if model_fallback is not None and model_fallback.failure_code is not None:
+        deterministic = _failure_classifications(
+            request,
+            verdict=verdict,
+            records=records,
+            target=target,
+            findings=findings,
+            evidence=evidence,
+        )
         return (
+            *deterministic,
             _failure(
                 model_fallback.failure_code,
                 "Universal model fallback degraded; deterministic extraction remained authoritative.",

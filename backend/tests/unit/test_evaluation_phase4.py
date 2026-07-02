@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from app.core.config.evaluation import COMPACT_REPRESENTATION_MAX_NODES
 from app.evaluation.benchmark import benchmark_universal_model, main, no_go_report
 from app.evaluation.compact_representation import build_compact_page_representation
 from app.evaluation.model_harness import (
@@ -32,16 +33,14 @@ pytestmark = pytest.mark.unit
 
 
 def _node(
-    locator: str = "/html[1]/body[1]/h1[1]",
+    locator: str = "css:.title",
 ) -> GroundingReference:
-    return GroundingReference(kind="path", artifact_id="html", locator=locator)
-
-
-def _css_node(locator: str = "css:.title") -> GroundingReference:
     return GroundingReference(kind="node", artifact_id="html", locator=locator)
 
 
-def _path(locator: str) -> GroundingReference:
+def _path(
+    locator: str = "/html[1]/body[1]/h1[1]",
+) -> GroundingReference:
     return GroundingReference(kind="path", artifact_id="html", locator=locator)
 
 
@@ -73,7 +72,7 @@ def _human_field(
         canonical_value=value,
         semantic_role="product_title" if field_name == "title" else "primary_price",
         locale_interpretation="not_applicable" if field_name == "title" else "en-US",
-        grounding=grounding or (_node(),),
+        grounding=grounding or (_path(),),
         verifier_id="operator-7",
         verified_at=datetime(2026, 7, 2, tzinfo=UTC),
     )
@@ -111,6 +110,22 @@ def _case(
     )
 
 
+def _fake_adapter(
+    *,
+    adapter_id: str,
+    result: ModelAdapterResult | None = None,
+    predict=None,
+):
+    if (result is None) == (predict is None):
+        raise ValueError("provide exactly one of result or predict")
+    predictor = predict or (lambda _page: cast(ModelAdapterResult, result))
+    return type(
+        "FakeAdapter",
+        (),
+        {"adapter_id": adapter_id, "predict": staticmethod(predictor)},
+    )()
+
+
 def _run_fixture_adapter(
     *,
     case_id: str,
@@ -127,11 +142,7 @@ def _run_fixture_adapter(
         memory_mb=30.0,
         cost_usd=0.002,
     )
-    adapter = type(
-        "Adapter",
-        (),
-        {"adapter_id": adapter_id, "predict": lambda self, page: result},
-    )()
+    adapter = _fake_adapter(adapter_id=adapter_id, result=result)
     return run_offline_adapter(
         case_id=case_id,
         page=build_compact_page_representation(
@@ -220,7 +231,7 @@ def test_compact_representation_resolves_css_node_labels_and_enforces_global_cap
         )
         + "</main>"
     )
-    label = _human_field(grounding=(_css_node(),))
+    label = _human_field(grounding=(_node(),))
 
     page = build_compact_page_representation(
         html=html,
@@ -229,7 +240,7 @@ def test_compact_representation_resolves_css_node_labels_and_enforces_global_cap
         max_nodes=10_000,
     )
 
-    assert len(page.nodes) <= 80
+    assert len(page.nodes) <= COMPACT_REPRESENTATION_MAX_NODES
     assert page.truncated is True
     assert any("label-title" in node.label_ids for node in page.nodes)
     assert page.grounding_references == label.grounding
@@ -270,12 +281,13 @@ def test_release_partition_gate_counts_only_release_eligible_labels() -> None:
         canonical_value="Trail Shoe",
         semantic_role="product_title",
         locale_interpretation="not_applicable",
-        grounding=(_node(),),
+        grounding=(_path(),),
     )
     case = EvaluationCase(
         case_id="weak-case",
         input_bundle_ref="bundle://weak",
         partition="known_template",
+        surface="ecommerce_detail",
         labels=(weak,),
         release_evaluation_label_ids=(),
         expected_trust_outcome="review",
@@ -305,31 +317,30 @@ def test_offline_model_harness_emits_evidence_only_predictions() -> None:
         html="<html><body><h1>Trail Shoe</h1></body></html>", artifact_id="html"
     )
 
-    class FakeAdapter:
-        adapter_id = "fake-universal"
-
-        def predict(self, page):
-            return ModelAdapterResult(
-                adapter_id=self.adapter_id,
-                model_family="deterministic-fixture",
-                deployment_mode="offline_fixture",
-                artifact_version="fixture-v1",
-                predictions=(
-                    ModelPrediction(
-                        prediction_id="pred-title",
-                        kind="field",
-                        field_name="title",
-                        value="Trail Shoe",
-                        confidence=0.99,
-                        grounding=(_node(),),
-                    ),
-                ),
-                latency_ms=3.0,
-                memory_mb=12.0,
-                cost_usd=0.001,
-            )
-
-    result = run_offline_adapter(case_id="case-1", page=page, adapter=FakeAdapter())
+    adapter_result = ModelAdapterResult(
+        adapter_id="fake-universal",
+        model_family="deterministic-fixture",
+        deployment_mode="offline_fixture",
+        artifact_version="fixture-v1",
+        predictions=(
+            ModelPrediction(
+                prediction_id="pred-title",
+                kind="field",
+                field_name="title",
+                value="Trail Shoe",
+                confidence=0.99,
+                grounding=(_path(),),
+            ),
+        ),
+        latency_ms=3.0,
+        memory_mb=12.0,
+        cost_usd=0.001,
+    )
+    result = run_offline_adapter(
+        case_id="case-1",
+        page=page,
+        adapter=_fake_adapter(adapter_id="fake-universal", result=adapter_result),
+    )
 
     assert result.adapter_id == "fake-universal"
     assert result.public_records == ()
@@ -350,11 +361,7 @@ def test_offline_harness_rejects_adapter_identity_mismatch() -> None:
         memory_mb=1.0,
         cost_usd=0.0,
     )
-    adapter = type(
-        "Adapter",
-        (),
-        {"adapter_id": "expected-adapter", "predict": lambda self, page: result},
-    )()
+    adapter = _fake_adapter(adapter_id="expected-adapter", result=result)
 
     with pytest.raises(ValueError, match="identity"):
         run_offline_adapter(case_id="case-1", page=page, adapter=adapter)
@@ -365,16 +372,10 @@ def test_offline_harness_rejects_evaluation_truth_leakage() -> None:
     page = build_compact_page_representation(
         html="<h1>Trail Shoe</h1>", artifact_id="html", labels=(label,)
     )
-    adapter = type(
-        "Adapter",
-        (),
-        {
-            "adapter_id": "must-not-run",
-            "predict": lambda self, page: pytest.fail(
-                "adapter must not receive evaluation truth"
-            ),
-        },
-    )()
+    adapter = _fake_adapter(
+        adapter_id="must-not-run",
+        predict=lambda page: pytest.fail("adapter must not receive evaluation truth"),
+    )
 
     with pytest.raises(ValueError, match="cannot expose evaluation labels"):
         run_offline_adapter(case_id="case-1", page=page, adapter=adapter)
@@ -409,11 +410,7 @@ def test_offline_harness_rejects_grounding_outside_compact_source() -> None:
         memory_mb=1.0,
         cost_usd=0.0,
     )
-    adapter = type(
-        "Adapter",
-        (),
-        {"adapter_id": "fake-universal", "predict": lambda self, page: result},
-    )()
+    adapter = _fake_adapter(adapter_id="fake-universal", result=result)
 
     with pytest.raises(ValueError, match="represented source artifact"):
         run_offline_adapter(case_id="case-1", page=page, adapter=adapter)
@@ -461,7 +458,7 @@ def test_model_result_rejects_unknown_prediction_relationships() -> None:
                     field_name="title",
                     value="Trail Shoe",
                     confidence=0.8,
-                    grounding=(_node(),),
+                    grounding=(_path(),),
                     related_prediction_ids=("missing-boundary",),
                 ),
             ),
@@ -483,7 +480,7 @@ def test_benchmark_gate_compares_to_baseline_and_ungrounded_rate() -> None:
             relationship="has_offer",
             target_entity_id="offer-1",
         ),
-        grounding=(_node(),),
+        grounding=(_path(),),
         verifier_id="operator-7",
         verified_at=datetime(2026, 7, 2, tzinfo=UTC),
     )
@@ -507,7 +504,7 @@ def test_benchmark_gate_compares_to_baseline_and_ungrounded_rate() -> None:
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.99,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
             ModelPrediction(
                 prediction_id="pred-link",
@@ -518,7 +515,7 @@ def test_benchmark_gate_compares_to_baseline_and_ungrounded_rate() -> None:
                     target_entity_id="offer-1",
                 ),
                 confidence=0.8,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
         latency_ms=5.0,
@@ -530,11 +527,7 @@ def test_benchmark_gate_compares_to_baseline_and_ungrounded_rate() -> None:
         page=build_compact_page_representation(
             html="<h1>Trail Shoe</h1>", artifact_id="html"
         ),
-        adapter=type(
-            "Adapter",
-            (),
-            {"adapter_id": "fake-universal", "predict": lambda self, page: result},
-        )(),
+        adapter=_fake_adapter(adapter_id="fake-universal", result=result),
     )
 
     report = benchmark_universal_model(
@@ -578,7 +571,7 @@ def test_benchmark_gate_uses_unseen_partition_not_aggregate_f1() -> None:
                 field_name="title",
                 value="Known Product",
                 confidence=0.9,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
     )
@@ -591,7 +584,7 @@ def test_benchmark_gate_uses_unseen_partition_not_aggregate_f1() -> None:
                 field_name="title",
                 value="Wrong Product",
                 confidence=0.9,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
     )
@@ -630,7 +623,7 @@ def test_benchmark_field_score_requires_correct_source_grounding() -> None:
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.9,
-                grounding=(_node("/html[1]/body[1]/aside[1]"),),
+                grounding=(_path("/html[1]/body[1]/aside[1]"),),
             ),
         ),
         latency_ms=1.0,
@@ -718,7 +711,7 @@ def test_benchmark_gate_fails_closed_when_baseline_signals_are_missing() -> None
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.9,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
     )
@@ -750,7 +743,7 @@ def test_benchmark_gate_fails_closed_for_invalid_baseline_rates() -> None:
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.9,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
     )
@@ -836,7 +829,7 @@ def test_benchmark_command_loads_candidate_inputs(
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.9,
-                grounding=(_node(),),
+                grounding=(_path(),),
             ),
         ),
     )

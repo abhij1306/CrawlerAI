@@ -7,7 +7,7 @@ import math
 from collections import Counter
 from pathlib import Path
 from statistics import quantiles
-from typing import Any
+from typing import Any, TypeGuard
 
 from app.core.config.evaluation import (
     RELEASE_REQUIRED_EVALUATION_PARTITIONS,
@@ -495,7 +495,7 @@ def _ratio(numerator: float, denominator: float) -> float:
     return round(float(numerator) / float(denominator), 6) if denominator else 0.0
 
 
-def _valid_rate(value: object) -> bool:
+def _valid_rate(value: object) -> TypeGuard[int | float]:
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)

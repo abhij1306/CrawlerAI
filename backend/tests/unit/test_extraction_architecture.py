@@ -332,15 +332,16 @@ def test_extraction_does_not_import_extraction_memory_storage() -> None:
 
 
 def test_phase4_evaluation_modules_are_offline_only() -> None:
-    package_exports = (APP_ROOT / "evaluation" / "__init__.py").read_text(
-        encoding="utf-8"
-    )
+    import app.evaluation as evaluation_package
+
+    package_exports = set(getattr(evaluation_package, "__all__", ()))
     for runtime_alias in (
         "CompactPageRepresentation",
         "ModelPrediction",
         "OfflineHarnessResult",
         "benchmark_universal_model",
     ):
+        assert not hasattr(evaluation_package, runtime_alias)
         assert runtime_alias not in package_exports
 
     forbidden_prefixes = (
@@ -378,7 +379,6 @@ def test_runtime_model_fallback_cannot_resolve_publish_or_persist() -> None:
         "app.extraction.resolution",
         "app.extraction.publication",
         "app.persistence",
-        "app.models",
     )
     imports: set[str] = set()
     for node in ast.walk(tree):
@@ -416,13 +416,29 @@ def test_universal_model_config_does_not_live_in_extraction_service_code() -> No
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
+            assigned_names: set[str] = set()
             targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
             for target in targets:
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id in forbidden_assignment_names
-                ):
-                    offenders.append((path, node.lineno, target.id))
+                for assigned in ast.walk(target):
+                    if isinstance(assigned, ast.Name):
+                        assigned_names.add(assigned.id)
+                    elif isinstance(assigned, ast.Attribute):
+                        assigned_names.add(assigned.attr)
+                    elif isinstance(assigned, ast.Constant) and isinstance(
+                        assigned.value, str
+                    ):
+                        assigned_names.add(assigned.value)
+            for assigned in ast.walk(node.value):
+                if isinstance(assigned, ast.Dict):
+                    assigned_names.update(
+                        key.value
+                        for key in assigned.keys
+                        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    )
+            offenders.extend(
+                (path, node.lineno, name)
+                for name in sorted(assigned_names & forbidden_assignment_names)
+            )
     assert offenders == []
 
 

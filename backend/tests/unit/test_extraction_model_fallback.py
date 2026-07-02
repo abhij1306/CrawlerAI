@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import sleep
 from typing import NoReturn
 
 import pytest
@@ -11,7 +12,7 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.engine import extract
-from app.extraction.model_runtime import RuntimeCompactPage
+from app.extraction.model_runtime import RuntimeCompactPage, _normalize_source_value
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
@@ -122,6 +123,20 @@ class TimeoutAdapter:
         raise TimeoutError("fixture timeout")
 
 
+class BlockingAdapter:
+    adapter_id = "fixture-runtime-adapter"
+
+    def predict(self, *args, **kwargs) -> NoReturn:
+        sleep(0.1)
+        raise AssertionError("late adapter result must be ignored")
+
+
+def test_source_value_normalization_preserves_zero_like_values() -> None:
+    assert _normalize_source_value(0) == "0"
+    assert _normalize_source_value(False) == "false"
+    assert _normalize_source_value(None) == ""
+
+
 def test_deterministic_success_never_builds_or_invokes_model() -> None:
     request = _request(
         """
@@ -217,8 +232,28 @@ def test_model_timeout_degrades_to_classified_zero_record_failure() -> None:
 
     assert result.records == ()
     assert result.diagnostics.model_outcome == "timed_out"
-    assert result.failure_classifications[0].code == "model_service_failure"
+    assert result.failure_classifications[0].code != "model_service_failure"
+    assert result.failure_classifications[-1].code == "model_service_failure"
     assert result.metrics.universal_model_service_failure_count == 1
+
+
+def test_blocking_model_adapter_is_cut_off_at_runtime_boundary() -> None:
+    snapshot = _approved_snapshot()
+    artifact = snapshot["universal_model"]
+    assert isinstance(artifact, dict)
+    artifact["timeout_ms"] = 5
+
+    result = extract(
+        _request(
+            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            runtime_snapshot=snapshot,
+        ),
+        model_adapter=BlockingAdapter(),
+    )
+
+    assert result.records == ()
+    assert result.diagnostics.model_outcome == "timed_out"
+    assert result.failure_classifications[-1].code == "model_service_failure"
 
 
 def test_model_budget_overrun_discards_all_predictions() -> None:
@@ -256,7 +291,8 @@ def test_model_result_identity_mismatch_fails_closed() -> None:
 
     assert result.records == ()
     assert result.diagnostics.model_outcome == "failed"
-    assert result.failure_classifications[0].code == "model_service_failure"
+    assert result.failure_classifications[0].code != "model_service_failure"
+    assert result.failure_classifications[-1].code == "model_service_failure"
     assert all(row.collector_id != "universal_model" for row in result.evidence)
 
 

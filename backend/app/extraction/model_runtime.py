@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from queue import Empty, Queue
+from threading import Thread
 from time import perf_counter
 from typing import Literal, Mapping, Protocol
 from urllib.parse import urljoin
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from app.core.config.evaluation import (
     COMPACT_REPRESENTATION_ATTRIBUTES,
@@ -34,6 +35,7 @@ from app.extraction.contracts import (
     UniversalModelArtifact,
     UniversalModelResult,
 )
+from app.extraction.documents import HtmlDocument, HtmlNode
 
 ModelRuntimeOutcome = Literal[
     "disabled",
@@ -140,7 +142,7 @@ def run_model_fallback(
     )
     started = perf_counter()
     try:
-        result = adapter.predict(page, artifact, timeout_ms=artifact.timeout_ms)
+        result = _predict_with_timeout(adapter, page, artifact)
     except TimeoutError:
         return ModelFallbackResult(
             outcome="timed_out",
@@ -217,25 +219,19 @@ def build_runtime_compact_page(
     if max_nodes <= 0:
         raise ValueError("max_nodes must be greater than zero")
     node_limit = min(max_nodes, COMPACT_REPRESENTATION_MAX_NODES)
-    parser = LexborHTMLParser(html)
-    candidates: list[LexborNode] = []
-    truncated = False
-    for node in _candidate_nodes(parser):
-        if len(candidates) >= node_limit:
-            truncated = True
-            break
-        candidates.append(node)
+    candidates = tuple(_candidate_nodes(HtmlDocument(artifact_id, html)))
+    retained = candidates[:node_limit]
     repeated_keys = _repeated_block_keys(candidates)
     nodes = tuple(
         RuntimeCompactNode(
             node_id=f"n{index}",
-            tag=str(node.tag or "").lower(),
-            path=compact_node_path(node),
-            text=_bounded_text(_direct_text(node)),
-            attributes=_selected_attributes(node.attributes),
-            repeated_block_key=repeated_keys.get(int(node.mem_id)),
+            tag=node.tag(),
+            path=node.dom_path(),
+            text=_bounded_text(node.direct_text()),
+            attributes=_selected_attributes(node.attributes()),
+            repeated_block_key=repeated_keys.get(node.identity()),
         )
-        for index, node in enumerate(candidates, start=1)
+        for index, node in enumerate(retained, start=1)
     )
     return RuntimeCompactPage(
         source=RuntimeCompactSource(
@@ -244,13 +240,40 @@ def build_runtime_compact_page(
         ),
         nodes=nodes,
         market_tags=market_tags,
-        truncated=truncated,
+        truncated=len(candidates) > node_limit,
     )
+
+
+def _predict_with_timeout(
+    adapter: RuntimeModelAdapter,
+    page: RuntimeCompactPage,
+    artifact: UniversalModelArtifact,
+) -> UniversalModelResult:
+    responses: Queue[UniversalModelResult | Exception] = Queue(maxsize=1)
+
+    def invoke() -> None:
+        try:
+            responses.put(
+                adapter.predict(page, artifact, timeout_ms=artifact.timeout_ms)
+            )
+        except Exception as exc:
+            responses.put(exc)
+
+    Thread(target=invoke, daemon=True).start()
+    try:
+        response = responses.get(timeout=artifact.timeout_ms / 1_000)
+    except Empty as exc:
+        raise TimeoutError from exc
+    if isinstance(response, Exception):
+        raise response
+    return response
 
 
 def _approved_artifact(
     request: ExtractionRequest,
 ) -> tuple[UniversalModelArtifact | None, str]:
+    if request.runtime_snapshot is None:
+        return None, "no universal model artifact in frozen runtime snapshot"
     raw = request.runtime_snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY)
     if not isinstance(raw, Mapping):
         return None, "no universal model artifact in frozen runtime snapshot"
@@ -415,18 +438,14 @@ def _canonical_value_is_grounded(
 def _normalize_source_value(value: object) -> str:
     if isinstance(value, (dict, list, tuple, set)):
         return ""
-    return " ".join(str(value or "").casefold().split())
+    return " ".join(str("" if value is None else value).casefold().split())
 
 
-def _candidate_nodes(parser: LexborHTMLParser):
-    root = parser.body or parser.root
-    if root is None:
-        return
-    for node in root.traverse():
-        tag = str(node.tag or "").lower()
-        if not tag or tag in COMPACT_REPRESENTATION_EXCLUDED_TAGS:
+def _candidate_nodes(document: HtmlDocument):
+    for node in document.nodes():
+        if not node.tag() or node.tag() in COMPACT_REPRESENTATION_EXCLUDED_TAGS:
             continue
-        if _direct_text(node) or _selected_attributes(node.attributes):
+        if node.direct_text() or _selected_attributes(node.attributes()):
             yield node
 
 
@@ -439,49 +458,19 @@ def _selected_attributes(attributes) -> dict[str, str]:
     }
 
 
-def _direct_text(node: LexborNode) -> str:
-    pieces: list[str] = []
-    child = node.child
-    while child is not None:
-        if child.is_text_node:
-            text = str(child.text() or "").strip()
-            if text:
-                pieces.append(text)
-        child = child.next
-    return " ".join(" ".join(pieces).split())
-
-
 def _bounded_text(value: str) -> str:
     return " ".join(value.split())[:COMPACT_REPRESENTATION_MAX_TEXT_CHARS]
 
 
-def compact_node_path(node: LexborNode) -> str:
-    parts: list[str] = []
-    current: LexborNode | None = node
-    while current is not None and str(current.tag or ""):
-        tag = str(current.tag or "").lower()
-        parent = current.parent
-        index = 1
-        if parent is not None:
-            for sibling in parent.iter():
-                if sibling is current:
-                    break
-                if sibling.parent is parent and str(sibling.tag or "").lower() == tag:
-                    index += 1
-        parts.append(f"{tag}[{index}]")
-        current = parent
-    return "/" + "/".join(reversed(parts))
-
-
-def _repeated_block_keys(nodes: list[LexborNode]) -> dict[int, str]:
+def _repeated_block_keys(nodes: tuple[HtmlNode, ...]) -> dict[int, str]:
     node_classes: dict[int, str] = {}
     counts: dict[str, int] = {}
     for node in nodes:
-        classes = " ".join(str((node.attributes or {}).get("class") or "").split()[:2])
+        classes = " ".join((node.attribute("class") or "").split()[:2])
         if not classes:
             continue
-        key = f"{str(node.tag or '').lower()}:{classes}"
-        node_classes[int(node.mem_id)] = key
+        key = f"{node.tag()}:{classes}"
+        node_classes[node.identity()] = key
         counts[key] = counts.get(key, 0) + 1
     return {
         node_id: key for node_id, key in node_classes.items() if counts.get(key, 0) > 1

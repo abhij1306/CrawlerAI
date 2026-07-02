@@ -6,6 +6,7 @@ They are deliberately independent from the extraction runtime.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -63,6 +64,20 @@ EvaluationScenario = Literal[
     "sentinel_disagreement",
 ]
 TrustOutcome = Literal["trusted", "review", "rejected", "blocked"]
+
+
+def _validate_unique_members(
+    values: tuple[str, ...],
+    allowed: Collection[str],
+    *,
+    unsupported_prefix: str,
+    duplicate_message: str,
+) -> None:
+    invalid = sorted(set(values).difference(allowed))
+    if invalid:
+        raise ValueError(f"{unsupported_prefix}: {invalid}")
+    if len(set(values)) != len(values):
+        raise ValueError(duplicate_message)
 
 
 class EvaluationSchemaModel(BaseModel):
@@ -260,7 +275,7 @@ class EvaluationCase(EvaluationSchemaModel):
     case_id: NonEmptyText
     input_bundle_ref: NonEmptyText
     partition: EvaluationPartition
-    surface: EvaluationSurface = "ecommerce_detail"
+    surface: EvaluationSurface
     scenario_tags: tuple[EvaluationScenario, ...] = ()
     labels: tuple[GroundedLabel, ...]
     expected_records: tuple[ExpectedRecord, ...] = ()
@@ -281,20 +296,18 @@ class EvaluationCase(EvaluationSchemaModel):
             raise ValueError(f"Unsupported evaluation partition: {self.partition}")
         if self.surface not in EVALUATION_SURFACES:
             raise ValueError(f"Unsupported evaluation surface: {self.surface}")
-        invalid_scenarios = sorted(
-            set(self.scenario_tags).difference(EVALUATION_SCENARIOS)
+        _validate_unique_members(
+            self.scenario_tags,
+            EVALUATION_SCENARIOS,
+            unsupported_prefix="Unsupported evaluation scenarios",
+            duplicate_message="Evaluation scenario tags must be unique",
         )
-        if invalid_scenarios:
-            raise ValueError(f"Unsupported evaluation scenarios: {invalid_scenarios}")
-        if len(set(self.scenario_tags)) != len(self.scenario_tags):
-            raise ValueError("Evaluation scenario tags must be unique")
-        invalid_metrics = sorted(
-            set(self.required_metrics).difference(UNIVERSAL_MODEL_REQUIRED_METRICS)
+        _validate_unique_members(
+            self.required_metrics,
+            UNIVERSAL_MODEL_REQUIRED_METRICS,
+            unsupported_prefix="Unsupported evaluation metrics",
+            duplicate_message="Required evaluation metrics must be unique",
         )
-        if invalid_metrics:
-            raise ValueError(f"Unsupported evaluation metrics: {invalid_metrics}")
-        if len(set(self.required_metrics)) != len(self.required_metrics):
-            raise ValueError("Required evaluation metrics must be unique")
         if self.expected_trust_outcome not in TRUST_OUTCOMES:
             raise ValueError(
                 f"Unsupported trust outcome: {self.expected_trust_outcome}"
