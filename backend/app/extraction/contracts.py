@@ -485,7 +485,10 @@ class CapabilityRequest(FrozenModel):
     schema_version: Literal["capability-request.v1"] = "capability-request.v1"
     required: bool = False
     reason: Literal[
-        "dynamic_content_missing", "explicit_variants_missing", "http_shell"
+        "dynamic_content_missing",
+        "empty_extraction",
+        "explicit_variants_missing",
+        "http_shell",
     ]
     required_artifacts: tuple[str, ...] = ()
     max_attempts: int = Field(default=1, ge=1, le=1)

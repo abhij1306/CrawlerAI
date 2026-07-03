@@ -738,13 +738,22 @@ def test_detail_contract_reports_selected_record_completeness() -> None:
 
     assert result.records
     assert result.verdict == "partial"
-    assert result.metrics.completeness_score == pytest.approx(0.4)
+    # Price + currency are unconditionally part of the completeness contract
+    # (Crawl-Run-2 §4.5), so a name+url-only record scores 2/7 and reports the
+    # commercial fields as missing alongside the descriptive ones.
+    assert result.metrics.completeness_score == pytest.approx(2 / 7)
     missing_fields = {
         finding.metadata.get("field")
         for finding in result.findings
         if finding.rule_id == "MISSING_CONTRACT_FIELD"
     }
-    assert missing_fields == {"brand", "description", "image_url"}
+    assert missing_fields == {
+        "brand",
+        "description",
+        "image_url",
+        "price",
+        "currency",
+    }
     completeness = next(
         finding
         for finding in result.findings
@@ -754,6 +763,8 @@ def test_detail_contract_reports_selected_record_completeness() -> None:
         "brand",
         "description",
         "image_url",
+        "price",
+        "currency",
     )
 
 

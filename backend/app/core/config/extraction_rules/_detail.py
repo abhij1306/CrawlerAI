@@ -27,6 +27,7 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 DETAIL_LOWER_ALNUM_TOKEN_PATTERN = r"[a-z0-9]+"
 DETAIL_NON_LOWER_ALNUM_PATTERN = r"[^a-z0-9]+"
+DETAIL_JSONLD_STRUCTURED_ATTRIBUTES = ("schema-productgroup",)
 
 DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
     {
@@ -235,6 +236,14 @@ DETAIL_SHELL_TITLE_KEYS = frozenset(
 DETAIL_NOT_FOUND_HTTP_STATUS_CODES = frozenset({404, 410})
 DETAIL_SHELL_TITLE_FLAG = "shell_title"
 DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
+DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS = (
+    "brand",
+    "description",
+    "image_url",
+    "price",
+    "sku",
+    "variants",
+)
 DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS = frozenset(
     {"title", "price", "currency", "availability", "image_url"}
 )
@@ -247,6 +256,11 @@ DETAIL_REVIEW_RISK_FINDING_RULE_IDS = frozenset(
         "NON_POSITIVE_PRICE",
         "INVALID_ORIGINAL_PRICE",
         "PARENT_VARIANT_AVAILABILITY_CONFLICT",
+        # A structured child offer that could not be joined to its variant drops
+        # per-variant commercial data from the public projection — a public-output
+        # risk that warrants operator review (Crawl-Run-2 §4.4, result 118 Nike).
+        # Matches ``variant_policy.CHILD_JOIN_FAILED_RULE_ID`` (scope "page").
+        "CHILD_JOIN_FAILED",
     }
 )
 DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS = ("price", "currency", "availability")

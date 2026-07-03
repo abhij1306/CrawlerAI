@@ -14,7 +14,9 @@ from app.core.config.extraction_rules import (
     DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS,
     DETAIL_REVIEW_RISK_FINDING_RULE_IDS,
     DETAIL_SHELL_FINDING_RULE_ID,
+    DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS,
 )
+from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.contract_runtime import match_template
 from app.core.extraction_memory.templates import normalize_route
@@ -253,7 +255,9 @@ def extract(
         derived_facts=resolution.derived_facts,
         evidence_dispositions=resolution.evidence_dispositions,
         field_states=field_states,
-        transport_outcome=_capture_outcome(request, verdict, findings),
+        transport_outcome=_capture_outcome(
+            request, verdict, findings, publication.records
+        ),
         data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
         verdict=verdict,
@@ -271,6 +275,7 @@ def extract(
             evidence=harvest.evidence,
             stage_outcomes=tuple(stage_outcomes),
             field_states=field_states,
+            findings=findings,
             failures=failures,
             review_required=review_required,
             extractor_tier=extractor_tier,
@@ -526,26 +531,9 @@ def _assess(
         record = records[0] if records else None
         thin_not_found = (
             request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
-            and (
-                record is None
-                or not any(
-                    record.get(field) not in (None, "", [], {}, ())
-                    for field in (
-                        "brand",
-                        "description",
-                        "image_url",
-                        "price",
-                        "sku",
-                        "variants",
-                    )
-                )
-            )
+            and _is_thin_detail_record(record)
         )
-        if (
-            (record is not None and is_shell_record(record))
-            or any(row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings)
-            or thin_not_found
-        ):
+        if _is_semantic_detail_shell(request, records, findings) or thin_not_found:
             return "error"
     if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
         return "error" if request.surface == Surface.JOB_DETAIL else "invalid"
@@ -622,7 +610,7 @@ def _blocked_result(
         derived_facts=(),
         evidence_dispositions=dispositions,
         field_states=states,
-        transport_outcome=_capture_outcome(request, "blocked", (finding,)),
+        transport_outcome=_capture_outcome(request, "blocked", (finding,), ()),
         data_integrity="blocked",
         records=(),
         verdict="blocked",
@@ -647,6 +635,7 @@ def _blocked_result(
             evidence=evidence,
             stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
             field_states=states,
+            findings=(finding,),
             failures=failures,
             review_required=_review_required(
                 request,
@@ -762,6 +751,7 @@ def _capture_outcome(
     request: ExtractionRequest,
     verdict: Verdict,
     findings: tuple[Finding, ...],
+    records: tuple[PublicRecord, ...],
 ) -> str:
     if request.capture.blocked or request.capture.acquisition_outcome == "blocked":
         return "blocked"
@@ -770,13 +760,36 @@ def _capture_outcome(
         and request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
     ):
         return DETAIL_CAPTURE_NOT_FOUND_OUTCOME
-    if request.surface == Surface.ECOMMERCE_DETAIL and any(
-        row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
-    ):
+    if _is_semantic_detail_shell(request, records, findings):
         return DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME
     if verdict == "blocked":
         return "blocked"
     return request.capture.acquisition_outcome or "unknown"
+
+
+def _is_semantic_detail_shell(
+    request: ExtractionRequest,
+    records: tuple[PublicRecord, ...],
+    findings: tuple[Finding, ...],
+) -> bool:
+    if request.surface != Surface.ECOMMERCE_DETAIL:
+        return False
+    record = records[0] if records else None
+    if (record is not None and is_shell_record(record)) or any(
+        row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
+    ):
+        return True
+    requested_host = normalize_domain(request.capture.requested_url)
+    final_host = normalize_domain(request.capture.final_url)
+    crossed_host = bool(requested_host and final_host and requested_host != final_host)
+    return record is not None and _is_thin_detail_record(record) and crossed_host
+
+
+def _is_thin_detail_record(record: PublicRecord | None) -> bool:
+    return record is None or not any(
+        record.get(field) not in (None, "", [], {}, ())
+        for field in DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS
+    )
 
 
 def _review_required(
@@ -854,16 +867,28 @@ def _diagnostic_summary(
     stage_outcomes: tuple[StageOutcome, ...],
     field_states,
     failures: tuple[FailureClassification, ...],
+    findings: tuple[Finding, ...] = (),
     review_required: bool = False,
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
     model_fallback: ModelFallbackResult | None = None,
     sentinel_observations=(),
 ) -> DiagnosticSummary:
-    missing = tuple(
-        row.field
-        for row in field_states
-        if row.state in {"not_present_in_captured_sources", "source_unavailable"}
+    # ``missing_critical_fields`` reports the unfulfilled *contract* fields so it
+    # agrees with the verdict and trust state (Crawl-Run-2 §4.5). The contract
+    # scorer publishes exactly that set as RECORD_COMPLETENESS ``missing_fields``;
+    # fall back to the raw not-present field-state scan for surfaces that emit no
+    # completeness contract (e.g. job_detail).
+    completeness = next(
+        (row for row in findings if row.rule_id == "RECORD_COMPLETENESS"), None
     )
+    if completeness is not None:
+        missing = tuple(completeness.metadata.get("missing_fields") or ())
+    else:
+        missing = tuple(
+            row.field
+            for row in field_states
+            if row.state in {"not_present_in_captured_sources", "source_unavailable"}
+        )
     return DiagnosticSummary(
         decision_path=tuple(row.stage for row in stage_outcomes),
         extractor_tier="blocked" if verdict == "blocked" else extractor_tier,

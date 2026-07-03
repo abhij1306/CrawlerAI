@@ -121,6 +121,33 @@ def test_field_reason_codes_become_bounded_root_causes(artifacts_root: Path) -> 
     ]
 
 
+def test_policy_suppressed_field_is_not_a_root_cause(artifacts_root: Path) -> None:
+    """Crawl-Run-2 §4.6: a captured value withheld from the parent by policy
+    (variant-specific SKU) is intentional output, not a run-level defect — its
+    ``field:*`` / ``field_reason:*`` causes must not appear."""
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "fields": [
+                {
+                    "field": "sku",
+                    "status": "captured_suppressed",
+                    "reason_codes": [
+                        "parent_sku_is_variant_specific",
+                        "SCALAR_LEXICOGRAPHIC",
+                    ],
+                },
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+
+    assert report["root_cause_count"] == 0
+
+
 def test_findings_become_root_causes(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,

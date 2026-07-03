@@ -171,6 +171,58 @@ def test_ecommerce_listing_rejects_site_chrome_and_unproven_category_links() -> 
     ]
 
 
+def test_ecommerce_listing_restores_market_locale_shop_product_links() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <div data-product-id="category-card">
+            <a href="/c/mens/footwear-climb/wid-kjyr4dq9">
+              <img src="/images/climb.jpg" alt="A hiker on rocks">
+              <span>Climb Footwear</span>
+            </a>
+          </div>
+          <div data-product-id="x000010397">
+            <a
+              href="https://arcteryx.com/mens/norvan-ld-4-gtx-shoe-0397"
+              title="Norvan LD 4 GTX Shoe Men's"
+            >
+              <img src="/images/norvan.jpg" alt="Norvan LD 4 GTX Shoe Men's">
+            </a>
+            <span class="price">$260.00</span>
+          </div>
+        </main>
+        """,
+        "https://arcteryx.com/ca/en/c/mens/footwear-run/wid-kjyr4dq9",
+        max_records=20,
+    )
+
+    assert [row["title"] for row in result.records] == ["Norvan LD 4 GTX Shoe Men's"]
+    assert [row["url"] for row in result.records] == [
+        "https://arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397"
+    ]
+
+
+def test_ecommerce_listing_empty_http_result_requests_browser_retry() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article><span class="price">15</span></article>
+          <article><span class="price">20</span></article>
+        </main>
+        """,
+        "https://www.calvinklein.com.br/masculino/underwear/kits-de-cueca",
+        max_records=20,
+    )
+
+    assert result.records == ()
+    assert result.verdict == "empty"
+    assert result.retry_request is not None
+    assert result.retry_request.required is True
+    assert result.retry_request.reason == "empty_extraction"
+
+
 def test_ecommerce_listing_keeps_generic_card_with_price_and_detail_link() -> None:
     result = _extract(
         "ecommerce_listing",

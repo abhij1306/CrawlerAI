@@ -514,6 +514,18 @@ def retry_request(
             required_artifacts=("rendered_html",),
         )
     ecommerce_detail = request.surface.value == "ecommerce_detail"
+    ecommerce_listing = request.surface.value == "ecommerce_listing"
+    if (
+        ecommerce_listing
+        and verdict == "empty"
+        and not records
+        and not request.capture.browser_attempted
+    ):
+        return RetryRequest(
+            required=True,
+            reason="empty_extraction",
+            required_artifacts=("rendered_html",),
+        )
     explicit_variants = "variants" in request.requested_fields
     if (
         ecommerce_detail

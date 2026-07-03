@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 
 from pydantic import Field
+
+from app.core.config.extraction_rules import is_rejected_option_value
 from app.core.records.url_identity import detail_url_resource_identity
+from app.core.shared.ids import stable_id
 from app.core.shared.url_utils import asset_url_identity
 from app.extraction.contracts import (
     CaptureBundle,
@@ -13,7 +16,6 @@ from app.extraction.contracts import (
     OptionValue,
     ProductOptionCatalog,
 )
-from app.core.shared.ids import stable_id
 
 
 class ProductEntity(FrozenModel):
@@ -300,8 +302,13 @@ def _merge_url_only_groups(
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
     identities: set[tuple[str, str]] = set()
     for row in rows:
+        product_id = _normalized_identity_value(
+            row.entity_hint.product_id if row.entity_hint else None
+        )
+        if product_id:
+            identities.add(("product.id", product_id))
         if row.fact_type in {"product.gtin", "product.mpn", "product.sku"}:
-            value = " ".join(str(row.value).casefold().split())
+            value = _normalized_identity_value(row.value)
             if value:
                 identities.add((row.fact_type, value))
         if row.fact_type == "product.url":
@@ -309,6 +316,12 @@ def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
             if resource_identity:
                 identities.add(("product.url_resource", resource_identity))
     return identities
+
+
+def _normalized_identity_value(value: object) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    return " ".join(str(value).casefold().split())
 
 
 def _product_identity_sets_match(
@@ -326,8 +339,19 @@ def _product_identity_sets_compatible(
             value for identity_kind, value in right if identity_kind == kind
         }
         if left_values and right_values and left_values.isdisjoint(right_values):
+            if kind == "product.url_resource" and _share_strong_product_identity(
+                left, right
+            ):
+                continue
             return False
     return True
+
+
+def _share_strong_product_identity(
+    left: set[tuple[str, str]], right: set[tuple[str, str]]
+) -> bool:
+    strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
+    return any(kind in strong_kinds and identity in right for kind, identity in left)
 
 
 def _product_by_subject(
@@ -757,8 +781,11 @@ def _option_catalogs(
         product_id = product_by_subject.get(ev.subject_id)
         if not product_id:
             continue
+        value = str(ev.value)
+        if is_rejected_option_value(value):
+            continue
         axis = ev.fact_type.removeprefix("option.")
-        by_product[product_id][axis][str(ev.value)].append(ev.evidence_id)
+        by_product[product_id][axis][value].append(ev.evidence_id)
     catalogs: list[ProductOptionCatalog] = []
     for product_id, axes in sorted(by_product.items()):
         catalogs.append(

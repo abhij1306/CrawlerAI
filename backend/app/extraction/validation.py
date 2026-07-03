@@ -11,9 +11,8 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
 from app.core.config.field_mappings import (
-    ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
+    ECOMMERCE_DETAIL_CRITICAL_CONTRACT_FIELDS,
     ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
-    ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
 )
 from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
@@ -61,19 +60,18 @@ def validate_selected_contract_fields(
     evidence: tuple[Evidence, ...] = (),
 ) -> tuple[Finding, ...]:
     record = records[0] if records else None
-    sellable_offer_exposed = _sellable_offer_exposed(record, evidence)
     availability_exposed = _availability_exposed(record, evidence)
-    conditional_fields = (
-        ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS if sellable_offer_exposed else ()
-    )
+    # Price + currency are always part of the completeness contract for a product
+    # detail record (Crawl-Run-2 §4.5): a page with no commercial signal at all is
+    # incomplete, not a clean success. Availability stays conditional — it is only
+    # scored when the page actually exposes an availability signal.
     availability_fields = (
         (ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,) if availability_exposed else ()
     )
     contract_fields = tuple(
         dict.fromkeys(
             (
-                *ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
-                *conditional_fields,
+                *ECOMMERCE_DETAIL_CRITICAL_CONTRACT_FIELDS,
                 *availability_fields,
                 *requested_fields,
             )
@@ -139,22 +137,6 @@ def validate_selected_contract_fields(
         )
     )
     return tuple(findings)
-
-
-def _sellable_offer_exposed(
-    record: PublicRecord | None, evidence: tuple[Evidence, ...]
-) -> bool:
-    if record is not None and any(
-        record.get(field) not in (None, "", [], {}, ())
-        for field in ("price", "currency", "original_price", "variants")
-    ):
-        return True
-    return any(
-        row.fact_type in {"offer.price", "offer.currency", "offer.original_price"}
-        and "invalid_decimal" not in row.flags
-        and "invalid_currency" not in row.flags
-        for row in evidence
-    )
 
 
 def _availability_exposed(
@@ -446,13 +428,28 @@ def _validate_offers(
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
     out: list[Finding] = []
-    # Split public-integrity from candidate diagnostics: a product-level offer
-    # (``variant_entity_id is None``) is the primary/public candidate, so its
-    # incompleteness is a page finding. Variant-bound offers are candidate
-    # evidence — most PRICE_WITHOUT_CURRENCY / CURRENCY_WITHOUT_PRICE warnings in
-    # a run describe discarded candidate offers on pages that already publish
-    # both parent price and currency, so they must stay diagnostic-only and never
-    # dominate the run-level root-cause report (audit Slice 1.3/1.4).
+    # Split public-integrity from candidate diagnostics. A product-level offer
+    # (``variant_entity_id is None``) can carry public price/currency, so its
+    # incompleteness is a *candidate* page finding — but only when the gap is not
+    # already closed elsewhere in the public projection. The parent projection
+    # publishes price if *any* product-level offer carries a price and currency if
+    # *any* carries a currency (they merge into one parent record). So a
+    # product-level offer that has price-but-no-currency is a genuine public
+    # integrity gap only when NO product-level offer supplies the currency;
+    # otherwise the pair is satisfiable at parent scope and the finding is
+    # diagnostic-only. This prevents the split-offer false positive (a page with a
+    # price-only offer and a separate currency-only offer that together publish
+    # both — audit Slice 1.3/1.4 + Crawl-Run-2 §4.1). Variant-bound offers stay
+    # candidate as before.
+    parent_has_price = any(
+        offer.variant_entity_id is None and bool(offer.fact_evidence.get("offer.price"))
+        for offer in entities.offers
+    )
+    parent_has_currency = any(
+        offer.variant_entity_id is None
+        and bool(offer.fact_evidence.get("offer.currency"))
+        for offer in entities.offers
+    )
     price_without_currency: dict[bool, list[tuple[str, tuple[str, ...]]]] = {
         True: [],
         False: [],
@@ -462,14 +459,17 @@ def _validate_offers(
         False: [],
     }
     for offer in entities.offers:
-        is_primary = offer.variant_entity_id is None
+        is_product_level = offer.variant_entity_id is None
         has_price = bool(offer.fact_evidence.get("offer.price"))
         has_currency = bool(offer.fact_evidence.get("offer.currency"))
         if has_price and not has_currency:
+            # Public gap only if the parent projection cannot supply the currency.
+            is_primary = is_product_level and not parent_has_currency
             price_without_currency[is_primary].append(
                 (offer.entity_id, offer.fact_evidence.get("offer.price", ()))
             )
         if has_currency and not has_price:
+            is_primary = is_product_level and not parent_has_price
             currency_without_price[is_primary].append(
                 (offer.entity_id, offer.fact_evidence.get("offer.currency", ()))
             )

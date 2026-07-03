@@ -40,6 +40,14 @@ _PARENT_PUBLISHED_FIELD_STATES = frozenset(
 # These findings are metrics emitted for every result, not failures. They remain
 # available in diagnose.json but must never inflate the run-level root-cause list.
 _INFORMATIONAL_FINDING_RULES = frozenset({"RECORD_COMPLETENESS"})
+# Reason codes that mark an *intentional* public-projection suppression rather
+# than a defect. A field whose captured value was deliberately withheld from the
+# parent record by policy (e.g. a variant-specific SKU that must not be promoted
+# to the parent) is expected behaviour, not a run-level root cause. Such fields
+# keep their per-page diagnose entry but never surface as a run cause
+# (Crawl-Run-2 §4.6).
+_POLICY_SUPPRESSED_STATUS = "captured_suppressed"
+_POLICY_SUPPRESSION_REASONS = frozenset({"parent_sku_is_variant_specific"})
 # Finding scopes that describe discarded candidate evidence rather than the
 # public/selected record. Diagnostic-only: preserved per-page, never a run cause.
 _DIAGNOSTIC_ONLY_FINDING_SCOPES = frozenset({"candidate"})
@@ -136,6 +144,16 @@ def _root_causes(
         if publication_policy not in (None, "", [], {}):
             cause = f"publication_policy:{field_name}:{_scalar(publication_policy)}"
             causes.setdefault(cause, {"field": field_name})
+        reason_codes = tuple(_string_list(field.get("reason_codes")))
+        # An intentionally policy-suppressed captured value is expected output,
+        # not a defect: skip its status/reason root causes (Crawl-Run-2 §4.6). A
+        # requested-but-unfulfilled field surfaces separately as a
+        # MISSING_CONTRACT_FIELD / requested-field finding, so this never hides a
+        # real requested-field gap.
+        if status == _POLICY_SUPPRESSED_STATUS and any(
+            reason in _POLICY_SUPPRESSION_REASONS for reason in reason_codes
+        ):
+            continue
         if status and status not in _CLEAN_FIELD_STATES:
             causes.setdefault(
                 f"field:{field_name}:{status}",

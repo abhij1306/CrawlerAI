@@ -293,6 +293,17 @@ ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS = (
     "image_url",
 )
 ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS = ("price", "currency")
+# Price + currency are commercial completeness-critical for a product detail
+# record: a product page that publishes neither is incomplete, so it drives the
+# verdict to ``partial`` and the trust state below ``verified`` regardless of
+# whether any offer signal was detected. Absence alone does NOT force operator
+# review (that is gated on risk findings) — see Crawl-Run-2 §4.5. This is the
+# single contract that ``validate_selected_contract_fields`` scores so that
+# completeness, verdict, trust, and ``missing_critical_fields`` agree.
+ECOMMERCE_DETAIL_CRITICAL_CONTRACT_FIELDS = (
+    *ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
+    *ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
+)
 ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD = "availability"
 ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS = frozenset(
     {
@@ -309,7 +320,8 @@ ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS = frozenset(
     }
 )
 SURFACE_BROWSER_RETRY_TARGETS = {
-    "ecommerce_detail": ("price", "currency", "title", "image_url")
+    "ecommerce_detail": ("price", "currency", "title", "image_url"),
+    "ecommerce_listing": ("title", "url"),
 }
 SURFACE_ACQUISITION_CONTRACT_FIELDS = {
     "ecommerce_detail": ("title", "price", "image_url")

@@ -19,6 +19,7 @@ from app.core.config.extraction_price_rules import (
     DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS,
 )
 from app.core.config.extraction_rules import (
+    DETAIL_JSONLD_STRUCTURED_ATTRIBUTES,
     VARIANT_JSONLD_NAME_OPTION_SEPARATOR,
     VARIANT_SHADE_URL_QUERY_KEYS,
 )
@@ -49,16 +50,12 @@ class JsonLdCollector:
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         _, doc = html_doc(bundle, artifacts)
         out: list[Evidence] = []
-        payloads: list[tuple[int, tuple[tuple[str, Any], ...]]] = []
-        for index, tag in enumerate(doc.css('script[type*="ld+json"]')):
-            data = loads_jsonish(tag.text())
-            objects = tuple(json_objects(data))
-            payloads.append((index, objects))
+        payloads = _jsonld_payloads(doc)
         variant_subject_ids = _known_variant_subject_ids(
             bundle,
-            (item for _index, objects in payloads for item in objects),
+            (item for _artifact_id, objects in payloads for item in objects),
         )
-        for index, objects in payloads:
+        for artifact_id, objects in payloads:
             selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path) and not _is_standalone_variant(
@@ -73,7 +70,7 @@ class JsonLdCollector:
                     out.extend(
                         _standalone_variant(
                             bundle,
-                            f"jsonld:{index}",
+                            artifact_id,
                             obj,
                             path,
                             variant_subject_ids,
@@ -83,13 +80,33 @@ class JsonLdCollector:
                 out.extend(
                     _product(
                         bundle,
-                        f"jsonld:{index}",
+                        artifact_id,
                         obj,
                         path,
                         variant_subject_ids,
                     )
                 )
         return tuple(out)
+
+
+def _jsonld_payloads(doc) -> list[tuple[str, tuple[tuple[str, Any], ...]]]:
+    payloads: list[tuple[str, tuple[tuple[str, Any], ...]]] = []
+    for index, tag in enumerate(doc.css('script[type*="ld+json"]')):
+        data = loads_jsonish(tag.text())
+        payloads.append((f"jsonld:{index}", tuple(json_objects(data))))
+    attr_index = 0
+    for attr_name in DETAIL_JSONLD_STRUCTURED_ATTRIBUTES:
+        for node in doc.safe_css(f"[{attr_name}]"):
+            raw = node.attribute(attr_name)
+            if not raw:
+                continue
+            data = loads_jsonish(raw)
+            objects = tuple(json_objects(data))
+            if not objects:
+                continue
+            payloads.append((f"jsonld:attr:{attr_index}", objects))
+            attr_index += 1
+    return payloads
 
 
 def _is_product(obj: dict[str, Any]) -> bool:
