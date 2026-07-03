@@ -308,6 +308,14 @@ function addLogToGroup(group: LogSiteGroupDraft, log: CrawlLog, stage: LogStage)
   group.stageLogs[stage].push(log);
 }
 
+function createRunGroupWithLogs(key: string, logs: CrawlLog[]) {
+  const group = createRunGroup(key);
+  for (const log of logs) {
+    addLogToGroup(group, log, getLogStage(log.message));
+  }
+  return group;
+}
+
 function firstUrlInLog(message: string): string {
   return sanitizeLogMessage(message).match(/https?:\/\/[^\s]+/i)?.[0] ?? '';
 }
@@ -360,11 +368,7 @@ export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []
     if (start) {
       if (pendingRunLogs.length) {
         untitledCounter += 1;
-        const runGroup = createRunGroup(`run:${untitledCounter}`);
-        for (const pendingLog of pendingRunLogs) {
-          addLogToGroup(runGroup, pendingLog, getLogStage(pendingLog.message));
-        }
-        groups.push(runGroup);
+        groups.push(createRunGroupWithLogs(`run:${untitledCounter}`, pendingRunLogs));
         pendingRunLogs = [];
       }
 
@@ -433,11 +437,7 @@ export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []
 
   if (pendingRunLogs.length) {
     untitledCounter += 1;
-    const runGroup = createRunGroup(`run:${untitledCounter}`);
-    for (const pendingLog of pendingRunLogs) {
-      addLogToGroup(runGroup, pendingLog, getLogStage(pendingLog.message));
-    }
-    groups.push(runGroup);
+    groups.push(createRunGroupWithLogs(`run:${untitledCounter}`, pendingRunLogs));
   }
 
   return groups.map((group) => {

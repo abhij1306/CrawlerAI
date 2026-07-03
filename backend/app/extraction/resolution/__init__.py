@@ -19,9 +19,11 @@ from app.core.config.extraction_price_rules import (
     DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY,
 )
 from app.core.config.extraction_rules import (
+    AVAILABILITY_PARENT_ROLLUP_PRECEDENCE,
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
+    IMAGE_DIMENSION_QUERY_KEYS,
     PRODUCT_ASSET_IDENTITY_FACT_TYPES,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
@@ -62,6 +64,7 @@ from app.core.shared.field_coerce_text import (
     infer_brand_from_title_marker,
 )
 from app.core.records.url_identity import (
+    detail_url_resource_identity,
     detail_style_code_from_url,
     detail_title_from_url,
     semantic_identity_tokens,
@@ -213,6 +216,9 @@ def resolve(
             primary_product_entity_id=primary_product_entity_id,
             variant_decisions=variant_decisions,
             expected_variant_count=len(entities.variants),
+            selected_variant_ids=frozenset(
+                variant.entity_id for variant in entities.variants if variant.selected
+            ),
             existing_fact_keys=frozenset(
                 (
                     *(
@@ -482,6 +488,7 @@ def _parent_derived_from_variants(
     variant_decisions: tuple[VariantDecision, ...],
     expected_variant_count: int,
     existing_fact_keys: frozenset[tuple[str, str]],
+    selected_variant_ids: frozenset[str] = frozenset(),
 ) -> tuple[DerivedFact, ...]:
     if not primary_offer_entity_id:
         return ()
@@ -495,6 +502,7 @@ def _parent_derived_from_variants(
             "price",
             leaf_variants,
             existing_fact_keys=existing_fact_keys,
+            selected_variant_ids=selected_variant_ids,
         )
     )
     out.extend(
@@ -560,9 +568,20 @@ def _aggregate_variant_field(
     variants: tuple[VariantDecision, ...],
     *,
     existing_fact_keys: frozenset[tuple[str, str]],
+    selected_variant_ids: frozenset[str] = frozenset(),
 ) -> tuple[DerivedFact, ...]:
     values = [row.values.get(public_field) for row in variants]
     if not values or any(value in (None, "", [], {}, ()) for value in values):
+        # A subset of variants carry the fact. Never fabricate a complete
+        # aggregate from partial coverage; for price, publish a documented
+        # bounded range (and a default-variant display price when one exists).
+        if public_field == "price":
+            return _aggregate_partial_variant_price(
+                entity_id,
+                variants,
+                existing_fact_keys=existing_fact_keys,
+                selected_variant_ids=selected_variant_ids,
+            )
         return ()
     lineages = [row.lineage.get(public_field) for row in variants]
     if _has_parent_inherited_lineage(lineages):
@@ -631,6 +650,80 @@ def _aggregate_variant_field(
     )
 
 
+def _aggregate_partial_variant_price(
+    entity_id: str,
+    variants: tuple[VariantDecision, ...],
+    *,
+    existing_fact_keys: frozenset[tuple[str, str]],
+    selected_variant_ids: frozenset[str],
+) -> tuple[DerivedFact, ...]:
+    """Parent price policy when only a subset of variants carry a price.
+
+    Publishes a documented bounded ``price_min``/``price_max`` range (never a
+    single value masquerading as a complete aggregate) plus, when a default /
+    selected variant is priced, that variant's price as the parent display price
+    with explicit lineage. A lone priced variant with no default yields nothing.
+    """
+    priced = [
+        row for row in variants if row.values.get("price") not in (None, "", [], {}, ())
+    ]
+    lineages = [row.lineage.get("price") for row in priced]
+    if not priced or _has_parent_inherited_lineage(lineages):
+        return ()
+    try:
+        decimals = [(Decimal(str(row.values["price"])), row) for row in priced]
+    except (InvalidOperation, TypeError, ValueError):
+        return ()
+    minimum = format(min(value for value, _ in decimals), ".2f")
+    maximum = format(max(value for value, _ in decimals), ".2f")
+    out: list[DerivedFact] = []
+    selected = [
+        (value, row)
+        for value, row in decimals
+        if row.variant_entity_id in selected_variant_ids
+    ]
+    if selected and (entity_id, "offer.price") not in existing_fact_keys:
+        value, row = selected[0]
+        selected_lineage = [row.lineage.get("price")]
+        out.append(
+            _aggregate_fact(
+                entity_id,
+                "offer.price",
+                format(value, ".2f"),
+                _lineage_evidence_ids(selected_lineage),
+                "selected_variant_price",
+                input_selected_fact_ids=_lineage_reference_ids(
+                    selected_lineage, "selected_fact_id"
+                ),
+                input_derived_fact_ids=_lineage_reference_ids(
+                    selected_lineage, "derived_fact_id"
+                ),
+            )
+        )
+    if len(priced) >= 2 and minimum != maximum:
+        evidence_ids = _lineage_evidence_ids(lineages)
+        selected_fact_ids = _lineage_reference_ids(lineages, "selected_fact_id")
+        derived_fact_ids = _lineage_reference_ids(lineages, "derived_fact_id")
+        for field, bound_value in (
+            ("offer.price_min", minimum),
+            ("offer.price_max", maximum),
+        ):
+            if (entity_id, field) in existing_fact_keys:
+                continue
+            out.append(
+                _aggregate_fact(
+                    entity_id,
+                    field,
+                    bound_value,
+                    evidence_ids,
+                    "bounded_variant_price_range",
+                    input_selected_fact_ids=selected_fact_ids,
+                    input_derived_fact_ids=derived_fact_ids,
+                )
+            )
+    return tuple(out)
+
+
 def _aggregate_variant_availability(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
@@ -644,13 +737,21 @@ def _aggregate_variant_availability(
     ):
         return ()
     values = [str(row.values.get("availability") or "") for row in variants]
-    if not values or any(value not in {"in_stock", "out_of_stock"} for value in values):
+    if not values or any(
+        value not in AVAILABILITY_PARENT_ROLLUP_PRECEDENCE for value in values
+    ):
+        return ()
+    rolled_up = next(
+        (state for state in AVAILABILITY_PARENT_ROLLUP_PRECEDENCE if state in values),
+        None,
+    )
+    if rolled_up is None:
         return ()
     return (
         _aggregate_fact(
             entity_id,
             "offer.availability",
-            "in_stock" if "in_stock" in values else "out_of_stock",
+            rolled_up,
             _lineage_evidence_ids(lineages),
             "variant_availability_aggregate",
             input_selected_fact_ids=_lineage_reference_ids(
@@ -1136,6 +1237,19 @@ def _url_mismatched_product_subjects(
     evidence: tuple[Evidence, ...],
 ) -> frozenset[str]:
     title_flags_by_subject: dict[str, set[str]] = {}
+    target_url_identities = {
+        identity
+        for row in evidence
+        if row.collector_id == "url" and row.fact_type == "product.url"
+        if (identity := detail_url_resource_identity(str(row.value)))
+    }
+    url_confirmed_subjects = {
+        row.subject_id
+        for row in evidence
+        if row.subject_id
+        and row.fact_type == "product.url"
+        and detail_url_resource_identity(str(row.value)) in target_url_identities
+    }
     for row in evidence:
         if (
             row.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE
@@ -1146,7 +1260,9 @@ def _url_mismatched_product_subjects(
     return frozenset(
         subject_id
         for subject_id, flags in title_flags_by_subject.items()
-        if "title_url_mismatch" in flags and "title_url_match" not in flags
+        if "title_url_mismatch" in flags
+        and "title_url_match" not in flags
+        and subject_id not in url_confirmed_subjects
     )
 
 
@@ -1470,13 +1586,18 @@ def _resolve_asset(
             rule_id="PRIMARY_ASSET_REJECTION",
             status="unresolved",
         )
-    return _resolve_scalar(
+    preferred = _accepted_asset_evidence(asset, evidence_by_id)
+    decision = _resolve_scalar(
         asset.entity_id,
         field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
         valid_ids,
         evidence_by_id,
         findings,
+        preferred_evidence_ids=(preferred.evidence_id,) if preferred else (),
     )
+    if preferred and decision.accepted_evidence_ids == (preferred.evidence_id,):
+        return decision.model_copy(update={"rule_id": "ASSET_DELIVERY_QUALITY"})
+    return decision
 
 
 def _invalid_primary_asset_url(value: object) -> bool:
@@ -1710,13 +1831,12 @@ def _accepted_asset_evidence(
 
 
 def _asset_requested_dimension(value: object) -> int:
-    dimension_keys = {"w", "width", "wid", "imwidth", "h", "height", "hei"}
     dimensions = [
         int(raw_value)
         for key, raw_value in parse_qsl(
             urlsplit(str(value or "")).query, keep_blank_values=False
         )
-        if key.casefold() in dimension_keys and str(raw_value).isdigit()
+        if key.casefold() in IMAGE_DIMENSION_QUERY_KEYS and str(raw_value).isdigit()
     ]
     return max(dimensions, default=0)
 
@@ -2226,3 +2346,4 @@ def _invalidity_reason(ev: Evidence) -> str | None:
     if generic:
         return min(generic)
     return None
+    (IMAGE_DIMENSION_QUERY_KEYS,)

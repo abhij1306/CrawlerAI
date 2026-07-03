@@ -329,6 +329,89 @@ def test_publication_policy_mapping_value_uses_reason_key(artifacts_root: Path) 
     )
 
 
+def test_candidate_scope_findings_are_not_root_causes(artifacts_root: Path) -> None:
+    """Slice 1: offer-completeness warnings bound to discarded candidates carry
+    scope=candidate and must stay per-page diagnostics, never run-level causes."""
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "findings": [
+                {
+                    "rule_id": "PRICE_WITHOUT_CURRENCY",
+                    "severity": "medium",
+                    "blocking": False,
+                    "scope": "candidate",
+                },
+                {
+                    "rule_id": "CURRENCY_WITHOUT_PRICE",
+                    "severity": "medium",
+                    "blocking": False,
+                    "scope": "selected_entity",
+                },
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+
+    assert [row["root_cause"] for row in report["root_causes"]] == [
+        "finding:CURRENCY_WITHOUT_PRICE",
+    ]
+
+
+def test_parent_absent_child_published_is_a_divergence_root_cause(
+    artifacts_root: Path,
+) -> None:
+    """Slice 1: a commercial fact published on a variant while the public parent
+    field is absent is surfaced as its own deterministic divergence cause. The
+    ``variants.*`` summary field itself never becomes a root cause."""
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "fields": [
+                {"field": "price", "status": "not_present_in_captured_sources"},
+                {"field": "variants.price", "status": "captured_published"},
+                {"field": "variants.currency", "status": "captured_published"},
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+    causes = {row["root_cause"] for row in report["root_causes"]}
+
+    assert "parent_absent_child_published:price" in causes
+    # currency has no parent field entry at all -> still divergent.
+    assert "parent_absent_child_published:currency" in causes
+    # The variant summary fields must not leak in as field-level causes.
+    assert not any(cause.startswith("field:variants.") for cause in causes)
+
+
+def test_variant_published_with_published_parent_is_not_divergent(
+    artifacts_root: Path,
+) -> None:
+    """When the parent field is genuinely published, the child-published state is
+    expected and must not raise a divergence cause."""
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "fields": [
+                {"field": "price", "status": "captured_published"},
+                {"field": "variants.price", "status": "captured_published"},
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+
+    assert report["root_causes"] == []
+
+
 @pytest.mark.asyncio
 async def test_write_run_report_persists_report_json(artifacts_root: Path) -> None:
     _write_diagnose(

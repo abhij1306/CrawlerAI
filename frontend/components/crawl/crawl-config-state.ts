@@ -23,7 +23,7 @@ export const ADVANCED_COLUMN_CLASS = 'flex flex-col gap-4';
 export const ADVANCED_SUBSECTION_CLASS = 'flex flex-col gap-2.5';
 export const ADVANCED_SECTION_TITLE_CLASS = 'flex items-center gap-2 type-subheading';
 
-export type CrawlRouteState = {
+type CrawlRouteState = {
   crawlTab: CrawlTab;
   crawlDomain: CrawlDomain;
   categoryMode: CategoryMode;

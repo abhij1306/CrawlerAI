@@ -39,6 +39,20 @@ def test_lone_decimal_separator_keeps_machine_price_shape_across_locales() -> No
     assert parse_money("12,50", locale_hint="en-US") == Decimal("12.50")
 
 
+def test_over_precise_lone_decimal_is_not_read_as_grouping() -> None:
+    # An ERP/JSON feed emits "128.000000" (six-place minor units). A grouping
+    # separator only ever produces three-digit groups, so a lone separator with
+    # a >=4-digit tail must be an over-precise decimal point — never delete it
+    # (which multiplied the value by 1,000,000 and published 128000000).
+    assert parse_money("128.000000") == Decimal("128.000000")
+    assert parse_money("128,000000") == Decimal("128.000000")
+    assert parse_money("1234.5678") == Decimal("1234.5678")
+    # A single three-digit tail stays ambiguous (thousands), and genuine
+    # multi-group thousands separators are still collapsed.
+    assert parse_money("1.234") == Decimal("1234")
+    assert parse_money("1.234.567") == Decimal("1234567")
+
+
 def test_gtin_check_digit_validation() -> None:
     assert validate_gtin("4006381333931") is True
     assert validate_gtin("4006381333932") is False

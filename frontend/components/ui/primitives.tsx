@@ -2,7 +2,6 @@ export { Badge } from './badge';
 export { Button } from './button';
 export { Card } from './card';
 export { Input, Textarea } from './input';
-export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 
 export { Dropdown } from './dropdown';
 export { Field } from './field';

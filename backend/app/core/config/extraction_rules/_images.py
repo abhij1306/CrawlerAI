@@ -156,8 +156,15 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "tracking",
         "transparent-background",
         "transparent_background",
-        "1x1",
     }
+)
+# A genuine 1×1 tracking pixel, matched only when it is a standalone dimension
+# token that declares no larger size elsewhere in the URL. This deliberately
+# excludes aspect-ratio crop markers such as ``_1x1_`` paired with
+# ``?width=1440&height=1440`` (a square product render), which must publish.
+TRACKING_PIXEL_DIMENSION_PATTERN = r"(?<!\w)1\s*[x×]\s*1(?!\w)"
+IMAGE_DIMENSION_QUERY_KEYS = frozenset(
+    {"w", "width", "wid", "imwidth", "sw", "h", "height", "hei", "sh"}
 )
 DETAIL_IMAGE_SRCSET_ATTRS = ("srcset", "data-srcset")
 PRODUCT_ASSET_CROSS_PRODUCT_PATH_PATTERNS = (
@@ -291,6 +298,7 @@ _LOCAL_EXPORTS = (
     "DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS",
     "EXPORT_IMAGE_URL_SUFFIXES",
     "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
+    "IMAGE_DIMENSION_QUERY_KEYS",
     "PRIMARY_IMAGE_REJECT_URL_TOKENS",
     "PRODUCT_ASSET_CROSS_PRODUCT_PATH_PATTERNS",
     "PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN",
@@ -304,6 +312,7 @@ _LOCAL_EXPORTS = (
     "PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS",
     "PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS",
     "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
+    "TRACKING_PIXEL_DIMENSION_PATTERN",
     "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
 )
 __all__ = sorted((*_common_exports.__all__, *_LOCAL_EXPORTS))

@@ -10,7 +10,7 @@ export const userSchema: z.ZodSchema<User> = z.object({
   updated_at: z.string(),
 });
 
-export const runStatusSchema = z.enum([
+const runStatusSchema = z.enum([
   'pending',
   'running',
   'paused',
@@ -20,7 +20,7 @@ export const runStatusSchema = z.enum([
   'proxy_exhausted',
 ]);
 
-export const resultSummarySchema = z
+const resultSummarySchema = z
   .object({
     extraction_verdict: z.string().optional(),
     record_count: z.number().optional(),

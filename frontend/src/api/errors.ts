@@ -10,14 +10,6 @@ export class ApiError extends Error {
     this.body = body;
     this.requestId = requestId;
   }
-
-  get isUnauthorized() {
-    return this.status === 401;
-  }
-
-  get isRetryable() {
-    return this.status === 408 || this.status === 429 || this.status >= 500;
-  }
 }
 
 export function httpErrorStatus(error: unknown): number | undefined {

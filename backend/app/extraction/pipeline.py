@@ -33,6 +33,7 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
     DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
+    DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH,
     DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN,
     DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
@@ -514,6 +515,7 @@ def normalize_evidence(
         and isinstance(value, str)
     ):
         value = coerce_long_text(value) or value
+        value = _segment_grounded_description(value)
     if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE and isinstance(
         value, str
     ):
@@ -604,6 +606,28 @@ def _normalize_brand_value(value: str, flags: set[str]) -> str:
     if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, normalized, re.IGNORECASE):
         flags.add("category_as_brand")
     return normalized
+
+
+def _segment_grounded_description(value: str) -> str:
+    """Salvage the grounded prose head when a description ends in a compacted,
+    separator-less feature list (``...minimalistic look.\xa0Soft Rock100%
+    Cotton14ozScreen printed``). The compacted suffix trips
+    ``description_missing_separator`` and used to invalidate the entire
+    candidate. Keep the longest complete sentence span preceding the first
+    compaction boundary and drop only the run-together tail; return the value
+    unchanged when no usable prose head exists so the existing invalidity flags
+    still apply."""
+    match = re.search(DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN, value)
+    if match is None:
+        return value
+    head = value[: match.start()]
+    boundary = max(head.rfind("."), head.rfind("!"), head.rfind("?"))
+    if boundary == -1:
+        return value
+    prose = head[: boundary + 1].strip()
+    if len(prose) < DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH or " " not in prose:
+        return value
+    return prose
 
 
 def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:

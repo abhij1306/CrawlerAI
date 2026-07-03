@@ -18,6 +18,146 @@ import {
   searchProvider,
 } from './product-intelligence-utils';
 
+type DiscoveryCandidate = ProductIntelligenceDiscoveryResponse['candidates'][number];
+type SourceRecord = NonNullable<
+  ReturnType<typeof loadPrefillPayload>['payload']['records']
+>[number];
+
+function historyFromJobs(
+  jobs: Awaited<ReturnType<typeof api.listProductIntelligenceJobs>> | undefined,
+) {
+  return (jobs ?? []).map((job) => ({
+    id: job.id,
+    status: job.status,
+    created_at: job.created_at,
+    label: job.source_run_id ? `From Run #${job.source_run_id}` : 'Direct Input',
+    meta: `${Number(job.summary?.candidate_count ?? 0)} URLs found`,
+  }));
+}
+
+function visibleRecords(
+  sourceRecords: SourceRecord[],
+  detail: Awaited<ReturnType<typeof api.getProductIntelligenceJob>> | undefined,
+) {
+  if (sourceRecords.length) return sourceRecords;
+  return (detail?.source_products ?? []).map((source) => ({
+    id: source.source_record_id,
+    run_id: source.source_run_id,
+    source_url: source.source_url,
+    data: source.payload,
+  }));
+}
+
+function activeSourceRun(
+  sourceRecords: SourceRecord[],
+  prefillRunId: number | null | undefined,
+  detailRunId: number | null | undefined,
+  records: SourceRecord[],
+) {
+  const recordRunId = records.find((record) => typeof record.run_id === 'number')?.run_id ?? null;
+  return sourceRecords.length
+    ? (prefillRunId ?? recordRunId)
+    : (detailRunId ?? recordRunId ?? prefillRunId ?? null);
+}
+
+function selectedCandidateUrls(
+  selectedUrls: string[],
+  discovery: ProductIntelligenceDiscoveryResponse | null,
+) {
+  const available = new Set((discovery?.candidates ?? []).map((candidate) => candidate.url));
+  return Array.from(new Set(selectedUrls)).filter((url) => available.has(url));
+}
+
+function groupCandidates(candidates: DiscoveryCandidate[]) {
+  const groups = new Map<number, DiscoveryCandidate[]>();
+  for (const candidate of candidates) {
+    const index = candidate.source_index ?? 0;
+    groups.set(index, [...(groups.get(index) ?? []), candidate]);
+  }
+  return Array.from(groups.entries()).map(([sourceIndex, rows]) => ({
+    sourceIndex,
+    sourceTitle: rows[0].source_title,
+    sourceBrand: rows[0].source_brand,
+    sourcePrice: rows[0].source_price,
+    sourceCurrency: rows[0].source_currency,
+    sourceUrl: rows[0].source_url,
+    candidates: rows,
+  }));
+}
+
+function candidateDistribution(candidates: DiscoveryCandidate[]) {
+  const distribution = { high: 0, medium: 0, low: 0 };
+  for (const candidate of candidates) {
+    const score = candidateConfidence(candidate);
+    if (score >= 0.6) distribution.high += 1;
+    else if (score >= 0.4) distribution.medium += 1;
+    else distribution.low += 1;
+  }
+  return distribution;
+}
+
+function selectedSummary(urls: string[], candidates: DiscoveryCandidate[]) {
+  if (!urls.length) return null;
+  const selected = new Set(urls);
+  const domains = new Set<string>();
+  for (const candidate of candidates) {
+    if (selected.has(candidate.url) && candidate.domain) domains.add(candidate.domain);
+  }
+  return { count: urls.length, domains: Array.from(domains) };
+}
+
+async function requestDiscovery({
+  records,
+  sourceRunId,
+  options,
+  allowedDomainsText,
+  excludedDomainsText,
+}: {
+  records: SourceRecord[];
+  sourceRunId: number | null;
+  options: typeof DEFAULT_OPTIONS;
+  allowedDomainsText: string;
+  excludedDomainsText: string;
+}) {
+  const sourceRecordIds = records
+    .map((record) => record.id)
+    .filter((value): value is number => typeof value === 'number');
+  const canUseRecordIds = sourceRecordIds.length === records.length;
+  const submittedOptions = {
+    ...options,
+    search_provider: searchProvider(options.search_provider),
+    allowed_domains: parseDomainLines(allowedDomainsText),
+    excluded_domains: parseDomainLines(excludedDomainsText),
+  };
+  const response = await api.discoverProductIntelligence({
+    source_run_id: sourceRunId,
+    source_record_ids: canUseRecordIds ? sourceRecordIds : [],
+    source_records: canUseRecordIds ? [] : records,
+    options: submittedOptions,
+  });
+  const echoedProvider = searchProvider(
+    response.search_provider ?? response.options?.search_provider,
+  );
+  return {
+    response,
+    nextOptions: detailOptions(response.options),
+    providerError:
+      echoedProvider === submittedOptions.search_provider
+        ? ''
+        : `Provider mismatch: submitted ${searchProviderLabel(submittedOptions.search_provider)}, backend used ${searchProviderLabel(echoedProvider)}.`,
+  };
+}
+
+function toggleFilteredSelection(current: string[], candidates: DiscoveryCandidate[]) {
+  const filteredUrls = candidates.flatMap((candidate) => (candidate.url ? [candidate.url] : []));
+  const selected = new Set(current);
+  if (filteredUrls.length && filteredUrls.every((url) => selected.has(url))) {
+    const filtered = new Set(filteredUrls);
+    return current.filter((url) => !filtered.has(url));
+  }
+  return Array.from(new Set([...current, ...filteredUrls]));
+}
+
 export function useProductIntelligence() {
   const navigate = useNavigate();
   const [initialPrefill] = useState(loadPrefillPayload);
@@ -61,17 +201,7 @@ export function useProductIntelligence() {
     queryFn: () => api.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
     enabled: resolvedActiveJobId !== null,
   });
-  const historyItems: HistoryItem[] = useMemo(
-    () =>
-      (jobsData ?? []).map((job) => ({
-        id: job.id,
-        status: job.status,
-        created_at: job.created_at,
-        label: job.source_run_id ? `From Run #${job.source_run_id}` : 'Direct Input',
-        meta: `${Number(job.summary?.candidate_count ?? 0)} URLs found`,
-      })),
-    [jobsData],
-  );
+  const historyItems: HistoryItem[] = useMemo(() => historyFromJobs(jobsData), [jobsData]);
   const detailHydratedOptions = useMemo(
     () => (detailData ? detailOptions(detailData.job.options) : DEFAULT_OPTIONS),
     [detailData],
@@ -89,32 +219,17 @@ export function useProductIntelligence() {
     ? excludedDomainsText
     : detailHydratedOptions.excluded_domains.join('\n');
   const visibleSourceRecords = useMemo(
-    () =>
-      sourceRecords.length
-        ? sourceRecords
-        : detailData
-          ? detailData.source_products.map((source) => ({
-              id: source.source_record_id,
-              run_id: source.source_run_id,
-              source_url: source.source_url,
-              data: source.payload,
-            }))
-          : [],
+    () => visibleRecords(sourceRecords, detailData),
     [detailData, sourceRecords],
   );
-  const activeSourceRunId = sourceRecords.length
-    ? (prefill.source_run_id ??
-      sourceRecords.find((record) => typeof record.run_id === 'number')?.run_id ??
-      null)
-    : (detailData?.job.source_run_id ??
-      visibleSourceRecords.find((record) => typeof record.run_id === 'number')?.run_id ??
-      prefill.source_run_id ??
-      null);
+  const activeSourceRunId = activeSourceRun(
+    sourceRecords,
+    prefill.source_run_id,
+    detailData?.job.source_run_id,
+    visibleSourceRecords,
+  );
   const uniqueSelectedUrls = useMemo(
-    () =>
-      Array.from(new Set(selectedUrls)).filter((url) =>
-        (discovery?.candidates ?? []).some((candidate) => candidate.url === url),
-      ),
+    () => selectedCandidateUrls(selectedUrls, discovery),
     [discovery, selectedUrls],
   );
   const selectedUrlSet = useMemo(() => new Set(uniqueSelectedUrls), [uniqueSelectedUrls]);
@@ -122,47 +237,18 @@ export function useProductIntelligence() {
     const all = discovery?.candidates ?? [];
     return all.filter((candidate) => candidateVisible(candidate, searchText, confidenceFilter));
   }, [discovery, searchText, confidenceFilter]);
-  const groupedCandidates = useMemo(() => {
-    const groups = new Map<number, typeof filteredCandidates>();
-    filteredCandidates.forEach((candidate) => {
-      const index = candidate.source_index ?? 0;
-      if (!groups.has(index)) groups.set(index, []);
-      groups.get(index)!.push(candidate);
-    });
-    return Array.from(groups.entries()).map(([sourceIndex, candidates]) => ({
-      sourceIndex,
-      sourceTitle: candidates[0].source_title,
-      sourceBrand: candidates[0].source_brand,
-      sourcePrice: candidates[0].source_price,
-      sourceCurrency: candidates[0].source_currency,
-      sourceUrl: candidates[0].source_url,
-      candidates,
-    }));
-  }, [filteredCandidates]);
-  const confidenceDistribution = useMemo(() => {
-    const all = discovery?.candidates ?? [];
-    return {
-      high: all.filter((candidate) => candidateConfidence(candidate) >= 0.6).length,
-      medium: all.filter((candidate) => {
-        const score = candidateConfidence(candidate);
-        return score >= 0.4 && score < 0.6;
-      }).length,
-      low: all.filter((candidate) => candidateConfidence(candidate) < 0.4).length,
-    };
-  }, [discovery]);
-  const selectedDomainSummary = useMemo(() => {
-    if (!uniqueSelectedUrls.length) return null;
-    const selectedUrlSet = new Set(uniqueSelectedUrls);
-    const domains = Array.from(
-      (discovery?.candidates ?? []).reduce<Set<string>>((acc, candidate) => {
-        if (selectedUrlSet.has(candidate.url) && candidate.domain) {
-          acc.add(candidate.domain);
-        }
-        return acc;
-      }, new Set<string>()),
-    );
-    return { count: uniqueSelectedUrls.length, domains };
-  }, [discovery, uniqueSelectedUrls]);
+  const groupedCandidates = useMemo(
+    () => groupCandidates(filteredCandidates),
+    [filteredCandidates],
+  );
+  const confidenceDistribution = useMemo(
+    () => candidateDistribution(discovery?.candidates ?? []),
+    [discovery],
+  );
+  const selectedDomainSummary = useMemo(
+    () => selectedSummary(uniqueSelectedUrls, discovery?.candidates ?? []),
+    [discovery, uniqueSelectedUrls],
+  );
   const discover = useCallback(
     async function discover() {
       if (!visibleSourceRecords.length) return;
@@ -171,33 +257,16 @@ export function useProductIntelligence() {
       setDiscoveryOverride(null);
       setSelectedUrls([]);
       try {
-        const sourceRecordIds = visibleSourceRecords
-          .map((record) => record.id)
-          .filter((value): value is number => typeof value === 'number');
-        const canUseRecordIds = sourceRecordIds.length === visibleSourceRecords.length;
-        const submittedOptions = {
-          ...effectiveOptions,
-          search_provider: searchProvider(effectiveOptions.search_provider),
-          allowed_domains: parseDomainLines(effectiveAllowedDomainsText),
-          excluded_domains: parseDomainLines(effectiveExcludedDomainsText),
-        };
-        const response = await api.discoverProductIntelligence({
-          source_run_id: activeSourceRunId,
-          source_record_ids: canUseRecordIds ? sourceRecordIds : [],
-          source_records: canUseRecordIds ? [] : visibleSourceRecords,
-          options: submittedOptions,
+        const { response, nextOptions, providerError } = await requestDiscovery({
+          records: visibleSourceRecords,
+          sourceRunId: activeSourceRunId,
+          options: effectiveOptions,
+          allowedDomainsText: effectiveAllowedDomainsText,
+          excludedDomainsText: effectiveExcludedDomainsText,
         });
-        const echoedProvider = searchProvider(
-          response.search_provider ?? response.options?.search_provider,
-        );
-        if (echoedProvider !== submittedOptions.search_provider) {
-          setError(
-            `Provider mismatch: submitted ${searchProviderLabel(submittedOptions.search_provider)}, backend used ${searchProviderLabel(echoedProvider)}.`,
-          );
-        }
+        setError(providerError);
         setDiscoveryOverride(response);
         setActiveJobId(response.job_id);
-        const nextOptions = detailOptions(response.options);
         setOptions(nextOptions);
         setAllowedDomainsText(nextOptions.allowed_domains.join('\n'));
         setExcludedDomainsText(nextOptions.excluded_domains.join('\n'));
@@ -239,19 +308,9 @@ export function useProductIntelligence() {
 
   const toggleAllUrls = useCallback(
     function toggleAllUrls() {
-      const filteredUrls = filteredCandidates.flatMap((candidate) =>
-        candidate.url ? [candidate.url] : [],
-      );
-      const selectedUrlSet = new Set(selectedUrls);
-      const allFilteredSelected = filteredUrls.every((url) => selectedUrlSet.has(url));
-      if (allFilteredSelected && filteredUrls.length > 0) {
-        const filteredUrlSet = new Set(filteredUrls);
-        setSelectedUrls((current) => current.filter((url) => !filteredUrlSet.has(url)));
-      } else {
-        setSelectedUrls((current) => Array.from(new Set([...current, ...filteredUrls])));
-      }
+      setSelectedUrls((current) => toggleFilteredSelection(current, filteredCandidates));
     },
-    [filteredCandidates, selectedUrls],
+    [filteredCandidates],
   );
 
   const openJob = useCallback(function openJob(jobId: number) {

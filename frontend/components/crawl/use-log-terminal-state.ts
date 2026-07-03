@@ -9,7 +9,7 @@ import type { LogSiteGroup } from './log-terminal-utils';
 const URL_TERMINAL_MESSAGE_PATTERN =
   /\b(processing failed|timed out|stopped after reaching max_records|(?:extracted|yielded)\s+0\s+records?|no (?:public )?records? extracted|rejected detail extraction)\b/i;
 
-export function groupHasTerminalOutcome(group: LogSiteGroup) {
+function groupHasTerminalOutcome(group: LogSiteGroup) {
   return (
     !group.url ||
     group.records.length > 0 ||

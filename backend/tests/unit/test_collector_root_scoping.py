@@ -125,6 +125,34 @@ def test_nested_variant_url_promotes_to_product_ancestor() -> None:
     ) == ("/product",)
 
 
+def test_nested_offer_url_promotes_to_top_level_product_root() -> None:
+    objects = (
+        (
+            "",
+            {
+                "@type": "Product",
+                "name": "Linen Taper Pants",
+                "brand": {"@type": "Brand", "name": "Clothier"},
+            },
+        ),
+        (
+            "/offers/0",
+            {
+                "@type": "Offer",
+                "url": "https://shop.test/product.do?pid=8878350120002",
+                "sku": "8878350120002",
+            },
+        ),
+    )
+
+    selection = select_product_roots(
+        objects, "https://shop.test/product.do?pid=887835012"
+    )
+
+    assert selection == RootSelection("selected", ("",))
+    assert root_admits_path(selection, "/offers/0")
+
+
 def test_search_hit_rows_are_not_treated_as_product_variants() -> None:
     bundle = CaptureBundle(
         schema_version="capture.v1",

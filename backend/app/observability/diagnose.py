@@ -20,7 +20,12 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from app.acquisition.acquirer import PageEvidence
 from app.core.config import field_mappings
+from app.core.config.extraction_rules import (
+    DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
+    DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
+)
 from app.extraction.contracts import (
     Decision,
     DiagnosticSummary,
@@ -124,6 +129,7 @@ def build_diagnosis(
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "verdict": extraction_result.verdict,
+        "transport_outcome": extraction_result.transport_outcome,
         "data_integrity": extraction_result.data_integrity,
         "manifest": _manifest_context(extraction_result).model_dump(mode="json"),
         "diagnostics": _diagnostic_summary(extraction_result).model_dump(mode="json"),
@@ -202,15 +208,29 @@ def _acquisition_section(acquisition_result: Any) -> dict[str, object]:
     browser = _mapping(getattr(acquisition_result, "browser_diagnostics", {}))
     diagnostics = _mapping(getattr(acquisition_result, "acquisition_diagnostics", {}))
     result = _mapping(diagnostics.get("result"))
+    page_evidence = PageEvidence.from_acquisition_result(acquisition_result)
+    blocked = page_evidence.indicates_block
     return {
         "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
         "method": str(getattr(acquisition_result, "method", "") or ""),
         "status_code": getattr(acquisition_result, "status_code", None),
-        "blocked": bool(getattr(acquisition_result, "blocked", False)),
+        "blocked": blocked,
+        "capture_outcome": _acquisition_capture_outcome(acquisition_result, blocked),
         "platform_family": getattr(acquisition_result, "platform_family", None),
         "browser_outcome": browser.get("browser_outcome"),
         "failure_reason": browser.get("failure_reason") or result.get("failure_reason"),
     }
+
+
+def _acquisition_capture_outcome(acquisition_result: Any, blocked: bool) -> str:
+    if blocked:
+        return "blocked"
+    status_code = getattr(acquisition_result, "status_code", None)
+    if status_code in DETAIL_NOT_FOUND_HTTP_STATUS_CODES:
+        return DETAIL_CAPTURE_NOT_FOUND_OUTCOME
+    if isinstance(status_code, int) and status_code >= 500:
+        return "error"
+    return "ok"
 
 
 def _field_section(

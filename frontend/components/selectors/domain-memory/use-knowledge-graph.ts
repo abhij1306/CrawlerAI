@@ -5,7 +5,7 @@ import { api } from '../../../lib/api';
 import type { KnowledgeContract, KnowledgeSiteRecord } from '../../../lib/api/types';
 import type { DomainWorkspace } from './types';
 
-export type KnowledgeGraphData = {
+type KnowledgeGraphData = {
   site: KnowledgeSiteRecord | null;
   contracts: KnowledgeContract[];
 };

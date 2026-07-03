@@ -2,7 +2,7 @@ import { AppDrawer } from '../../components/ui/dialog';
 import { Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
 import type { ProductIntelligenceOptions } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
-import { SEARCH_PROVIDER_OPTIONS } from './product-intelligence-utils';
+import { clampInt, SEARCH_PROVIDER_OPTIONS } from './product-intelligence-utils';
 
 export function SettingsDrawer({
   open,
@@ -165,12 +165,4 @@ function ProviderField({
       </div>
     </Field>
   );
-}
-
-function clampInt(value: unknown, min: number, max: number, fallback: number) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(Math.max(parsed, min), max);
 }

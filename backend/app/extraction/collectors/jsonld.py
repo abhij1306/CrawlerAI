@@ -118,14 +118,36 @@ def _standalone_variant(
     product_subject = stable_id(
         "subject", bundle.bundle_id, "product", parent_url or bundle.final_url
     )
-    return _variant(
-        bundle,
-        artifact_id,
-        row,
-        path,
-        product_subject,
-        variant_subject_ids=variant_subject_ids,
+    source_subject_ids = _source_subject_ids(bundle, row)
+    out = [
+        evidence(
+            bundle,
+            artifact_id,
+            "jsonld",
+            ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES[key],
+            text_value(row.get(key)),
+            SourceLocator(kind="json_pointer", value=f"{path}/{key}"),
+            hint=EntityHint(entity_type="product", url=parent_url or None),
+            directness="embedded",
+            confidence=0.9,
+            subject_id=product_subject,
+            subject_scope="product",
+            source_subject_ids=source_subject_ids,
+        )
+        for key in ("brand", "manufacturer", "manufacturerName", "designer")
+        if text_value(row.get(key))
+    ]
+    out.extend(
+        _variant(
+            bundle,
+            artifact_id,
+            row,
+            path,
+            product_subject,
+            variant_subject_ids=variant_subject_ids,
+        )
     )
+    return out
 
 
 def _product(
@@ -229,8 +251,6 @@ def _offers(
             continue
         offer_path = f"{path}/offers/{index}"
         offer_identity = _jsonld_identity(row) or offer_path
-        group = f"offer:{artifact_id}:{offer_identity}"
-        subject_id = group
         source_subject_ids = _source_subject_ids(bundle, row, include_sku=True)
         child_parent_subject_id = parent_subject_id
         child_parent_scope = parent_scope
@@ -238,6 +258,16 @@ def _offers(
         if item_offered in variant_subject_ids:
             child_parent_subject_id = item_offered
             child_parent_scope = "variant"
+        # Offers embedded under a variant frequently carry the shared product
+        # URL as their only identity, collapsing every variant's offer into one
+        # group. Namespace the group by the owning variant subject so each
+        # variant keeps its own offer (and its own price/availability).
+        group = (
+            f"offer:{artifact_id}:{child_parent_subject_id}:{offer_identity}"
+            if child_parent_scope == "variant" and child_parent_subject_id
+            else f"offer:{artifact_id}:{offer_identity}"
+        )
+        subject_id = group
         out.extend(
             _offer_facts(
                 bundle,

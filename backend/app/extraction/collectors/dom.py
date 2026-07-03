@@ -7,6 +7,10 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 
 from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
+    SELECT_CONTROL_SIGNAL_ATTRIBUTES,
+    control_signal_tokens,
+    has_product_option_signal,
+    is_rejected_control,
     CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_DOM_SELECTORS,
     DETAIL_BRAND_DOM_VALUE_ATTRIBUTES,
@@ -743,54 +747,119 @@ def _variant_controls(
 ) -> list[Evidence]:
     out: list[Evidence] = []
     out.extend(_attribute_variant_controls(bundle, doc, product_subject))
+    seen_by_axis: dict[str, set[str]] = {"size": set(), "color": set()}
+    # Select-based option axes: admit a <select>'s options only when the select
+    # itself is a credible product-option control (crawl-run-95 audit). Review
+    # sorters, country/quantity/pagination/address selects are rejected by
+    # semantic role so they can never fabricate a size axis.
+    for select in doc.css("select"):
+        axis = _select_option_axis(select, doc)
+        if axis is None:
+            continue
+        for option in select.css("option"):
+            raw_value = str(
+                option.attribute("value")
+                or option.attribute("aria-label")
+                or option.text()
+            ).strip()
+            _emit_option_evidence(
+                out,
+                bundle,
+                axis,
+                raw_value,
+                seen_by_axis[axis],
+                selector="select option",
+            )
+    # Non-select swatch / button controls carrying an explicit axis label.
     for axis, selectors in {
-        "size": (
-            'select[name*="size" i] option',
-            "select option",
-            '[data-option-name*="size" i]',
-            '[aria-label*="size" i]',
-        ),
-        "color": (
-            'select[name*="color" i] option',
-            '[data-option-name*="color" i]',
-            '[aria-label*="color" i]',
-        ),
+        "size": ('[data-option-name*="size" i]', '[aria-label*="size" i]'),
+        "color": ('[data-option-name*="color" i]', '[aria-label*="color" i]'),
     }.items():
-        seen: set[str] = set()
         for selector in selectors:
-            for index, tag in enumerate(doc.css(selector)):
+            for tag in doc.css(selector):
                 raw_value = str(
                     tag.attribute("value") or tag.attribute("aria-label") or tag.text()
                 ).strip()
-                value = _variant_value(raw_value, axis=axis)
-                if not value:
-                    continue
-                key = value.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                subject_id = stable_id(
-                    "subject", bundle.bundle_id, "product", bundle.final_url
-                )
-                hint = EntityHint(entity_type="product", option_values={axis: value})
-                out.append(
-                    evidence(
-                        bundle,
-                        "dom",
-                        "dom",
-                        f"option.{axis}",
-                        value,
-                        SourceLocator(
-                            kind="css_selector", value=selector, preview=value[:120]
-                        ),
-                        group_id=f"option:dom:{axis}",
-                        hint=hint,
-                        confidence=0.58,
-                        subject_id=subject_id,
-                        parent_subject_id=None,
-                    )
+                _emit_option_evidence(
+                    out, bundle, axis, raw_value, seen_by_axis[axis], selector=selector
                 )
     return out
+
+
+def _select_option_axis(select: HtmlNode, doc: HtmlNode) -> str | None:
+    """Return the product-option axis a ``<select>`` credibly represents.
+
+    Non-product controls (sort, country, quantity, review, pagination, address)
+    are rejected by semantic role; the remaining select yields an axis only when
+    it (or its associated ``<label>``) explicitly names ``size`` or ``color`` —
+    never a bare/opaque select.
+    """
+    signal_values = [
+        select.attribute(attribute) for attribute in SELECT_CONTROL_SIGNAL_ATTRIBUTES
+    ]
+    signal_values.append(_select_label_text(select, doc))
+    tokens = control_signal_tokens(signal_values)
+    signal = " ".join(value for value in signal_values if value)
+    if is_rejected_control(tokens, signal=signal):
+        return None
+    axis = (
+        "size"
+        if "size" in tokens
+        else "color"
+        if {"color", "colour"} & tokens
+        else None
+    )
+    if axis is None or not has_product_option_signal(tokens, axis=axis):
+        return None
+    return axis
+
+
+def _select_label_text(select: HtmlNode, doc: HtmlNode) -> str:
+    """Text of the ``<label>`` bound to ``select`` (via ``for``/id or adjacency)."""
+    select_id = str(select.attribute("id") or "").strip()
+    if select_id and '"' not in select_id:
+        label = doc.css_first(f'label[for="{select_id}"]')
+        if label is not None:
+            return label.text()
+    previous = select.previous_element()
+    if previous is not None and previous.tag() == "label":
+        return previous.text()
+    return ""
+
+
+def _emit_option_evidence(
+    out: list[Evidence],
+    bundle: CaptureBundle,
+    axis: str,
+    raw_value: str,
+    seen: set[str],
+    *,
+    selector: str,
+) -> None:
+    value = _variant_value(raw_value, axis=axis)
+    if not value:
+        return
+    key = value.lower()
+    if key in seen:
+        return
+    seen.add(key)
+    subject_id = stable_id("subject", bundle.bundle_id, "product", bundle.final_url)
+    hint = EntityHint(entity_type="product", option_values={axis: value})
+    out.append(
+        evidence(
+            bundle,
+            "dom",
+            "dom",
+            f"option.{axis}",
+            value,
+            SourceLocator(kind="css_selector", value=selector, preview=value[:120]),
+            group_id=f"option:dom:{axis}",
+            hint=hint,
+            confidence=0.58,
+            subject_id=subject_id,
+            parent_subject_id=None,
+        )
+    )
 
 
 def _attribute_variant_controls(

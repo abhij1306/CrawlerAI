@@ -516,6 +516,18 @@ AVAILABILITY_URL_MAP = {
     for term, canonical in _AVAILABILITY_SCHEMA_TERMS.items()
     for prefix in ("https://schema.org/", "http://schema.org/", "schema.org/", "")
 }
+# Precedence for rolling a full variant availability matrix up to a single
+# parent value: a product is purchasable if any variant is buyable, so the most
+# "available" state wins. Ordered most→least available; "out_of_stock"/
+# "discontinued" only surface when no buyable state is present.
+AVAILABILITY_PARENT_ROLLUP_PRECEDENCE = (
+    "in_stock",
+    "limited_stock",
+    "preorder",
+    "backorder",
+    "out_of_stock",
+    "discontinued",
+)
 NORMALIZER_AVAILABILITY_TOKENS = {
     "in_stock": ("in stock", "instock", "available", "ready to ship"),
     "limited_stock": (

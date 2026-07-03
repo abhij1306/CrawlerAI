@@ -95,7 +95,7 @@ def has_product_context(path: str, obj: dict) -> bool:
 
 def _path_is_descendant(path: str, ancestor: str) -> bool:
     if not ancestor:
-        return False
+        return bool(path)
     normalized = ancestor.rstrip("/")
     if not path.startswith(normalized) or len(path) == len(normalized):
         return False

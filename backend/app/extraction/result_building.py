@@ -309,13 +309,22 @@ def projection_field_states(
     """Derive field state from evidence and publication policy, never records."""
 
     entries_by_field: dict[str, list] = {}
+    variant_entries_by_field: dict[str, list] = {}
     for entry in projection.entries:
-        field = (
-            "image_url"
-            if entry.path.startswith("asset[") and entry.path.endswith(".url")
-            else entry.path.rsplit(".", 1)[-1]
-        )
-        entries_by_field.setdefault(field, []).append(entry)
+        if entry.path.startswith("asset[") and entry.path.endswith(".url"):
+            entries_by_field.setdefault("image_url", []).append(entry)
+        elif entry.path.startswith("variant["):
+            # Variant-scoped commercial facts are summarized separately under
+            # ``variants.*``; they must never mark the public parent field
+            # (``record.*``) as published. Flattening both to the same field name
+            # is the observability defect behind results 68/90, where a published
+            # variant price marked page-level ``price`` as ``captured_published``
+            # even though ``record.price`` was absent.
+            variant_entries_by_field.setdefault(
+                entry.path.rsplit(".", 1)[-1], []
+            ).append(entry)
+        else:
+            entries_by_field.setdefault(entry.path.rsplit(".", 1)[-1], []).append(entry)
     requested = {
         "image_url" if field == "image" else field for field in request.requested_fields
     }
@@ -438,6 +447,31 @@ def projection_field_states(
                     *(entry.reason_code for entry in entries if entry.reason_code),
                     *(code for code in disposition_reason_codes if code),
                     *state_reason_codes,
+                ),
+            )
+        )
+    for field in sorted(variant_entries_by_field):
+        variant_entries = variant_entries_by_field[field]
+        variant_state: FieldStateName
+        if any(entry.disposition == "publish" for entry in variant_entries):
+            variant_state = "captured_published"
+        elif any(entry.disposition == "suppress" for entry in variant_entries):
+            variant_state = "captured_suppressed"
+        elif any(entry.disposition == "review" for entry in variant_entries):
+            variant_state = "captured_conflicting"
+        else:
+            continue
+        states.append(
+            field_state(
+                field=f"variants.{field}",
+                state=variant_state,
+                evidence_ids=(
+                    evidence_id
+                    for entry in variant_entries
+                    for evidence_id in entry.evidence_ids
+                ),
+                reason_codes=tuple(
+                    entry.reason_code for entry in variant_entries if entry.reason_code
                 ),
             )
         )

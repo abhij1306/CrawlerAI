@@ -161,10 +161,31 @@ def test_acquisition_section_summarizes_transport() -> None:
     assert acquisition["method"] == "httpx"
     assert acquisition["status_code"] == 200
     assert acquisition["blocked"] is False
+    assert acquisition["capture_outcome"] == "ok"
     assert acquisition["platform_family"] == "shopify"
     assert acquisition["browser_outcome"] == "not_attempted"
     # falls back to acquisition_diagnostics.result when browser reason is empty
     assert acquisition["failure_reason"] == "rate_limited"
+
+
+def test_acquisition_section_reports_normalized_block_outcome() -> None:
+    acquisition_result = _acquisition()
+    acquisition_result.method = "browser"
+    acquisition_result.browser_diagnostics = {
+        "browser_outcome": "usable_content",
+        "challenge_evidence": ["active_provider:px-captcha"],
+    }
+
+    diagnosis = build_diagnosis(
+        acquisition_result=acquisition_result,
+        extraction_result=_result(verdict="blocked", transport_outcome="blocked"),
+    )
+
+    acquisition = diagnosis["acquisition"]
+    assert acquisition["browser_outcome"] == "usable_content"
+    assert acquisition["blocked"] is True
+    assert acquisition["capture_outcome"] == "blocked"
+    assert diagnosis["transport_outcome"] == "blocked"
 
 
 def test_field_section_carries_winner_and_rejected_with_evidence() -> None:

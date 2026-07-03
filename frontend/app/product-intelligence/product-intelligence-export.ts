@@ -1,5 +1,5 @@
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
-import type { ProductIntelligenceCandidate } from './product-intelligence-utils';
+import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { isRecord } from './product-intelligence-utils';
 
 export function downloadRows(
@@ -21,7 +21,7 @@ export function downloadRows(
   URL.revokeObjectURL(url);
 }
 
-function toIntelligenceExportRow(candidate: ProductIntelligenceCandidate) {
+function toIntelligenceExportRow(candidate: ProductDiscoveryCandidate) {
   const row = toIntelligenceRow(candidate);
   return {
     source_title: row.source_title,
@@ -39,7 +39,7 @@ function toIntelligenceExportRow(candidate: ProductIntelligenceCandidate) {
   };
 }
 
-function toIntelligenceRow(candidate: ProductIntelligenceCandidate) {
+function toIntelligenceRow(candidate: ProductDiscoveryCandidate) {
   const intelligence = isRecord(candidate.intelligence) ? candidate.intelligence : {};
   const record = isRecord(intelligence.canonical_record) ? intelligence.canonical_record : {};
   const parsedConfidence = Number(intelligence.confidence_score ?? 0);

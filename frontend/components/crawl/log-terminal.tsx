@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import React, { memo, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
+import type { LucideIcon } from 'lucide-react';
 
 import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
@@ -61,97 +62,91 @@ function useLogViewport(_logCount: number, ref?: RefObject<HTMLDivElement | null
 
   return targetRef;
 }
-function getLogIcon(level: string, message: string) {
-  const msg = message.toLowerCase();
-  const isWarn = level === 'warning' || level === 'warn';
-  const isError = logMessageIsError(level, message);
-  const hasUrl = /https?:\/\//i.test(message);
-
-  if (isError) return XCircle;
-  if (isWarn) return AlertTriangle;
-
-  if (msg.includes('starting crawl')) return Activity;
-  if (msg.includes('ignoring robots.txt')) return ShieldAlert;
-  if (msg.includes('extracted')) return Database;
-  if (msg.includes('normalized') || msg.includes('normalised')) return Layers;
-  if (msg.includes('persisted')) return HardDrive;
-  if (msg.includes('acquiring') || msg.includes('fetching')) return Globe;
-  if (
-    msg.includes('browser') ||
-    msg.includes('playwright') ||
-    msg.includes('patchright') ||
-    msg.includes('headless')
-  )
-    return Monitor;
-  if (msg.includes('record')) return Database;
-  if (msg.includes('page loaded') || msg.includes('page load')) return Zap;
-  if (
-    msg.includes('challenge') ||
-    msg.includes('blocked') ||
-    msg.includes('captcha') ||
-    msg.includes('bot check')
-  )
-    return ShieldAlert;
-  if (hasUrl) return Globe;
-  if (msg.includes('retry') || msg.includes('retrying') || msg.includes('refresh'))
-    return RefreshCw;
-  if (
-    msg.includes('complete') ||
-    msg.includes('success') ||
-    msg.includes('done') ||
-    msg.includes('finished')
-  )
-    return CheckCircle2;
-  return Dot;
+function includesAny(message: string, terms: readonly string[]) {
+  return terms.some((term) => message.includes(term));
 }
 
-function getLogIconStyle(level: string, message: string): { iconCls: string; bgCls: string } {
-  const msg = message.toLowerCase();
-  const isError = logMessageIsError(level, message);
-  const hasUrl = /https?:\/\//i.test(message);
+const LOG_ICON_RULES: ReadonlyArray<{ terms: readonly string[]; icon: LucideIcon }> = [
+  { terms: ['starting crawl'], icon: Activity },
+  { terms: ['ignoring robots.txt'], icon: ShieldAlert },
+  { terms: ['extracted'], icon: Database },
+  { terms: ['normalized', 'normalised'], icon: Layers },
+  { terms: ['persisted'], icon: HardDrive },
+  { terms: ['acquiring', 'fetching'], icon: Globe },
+  { terms: ['browser', 'playwright', 'patchright', 'headless'], icon: Monitor },
+  { terms: ['record'], icon: Database },
+  { terms: ['page loaded', 'page load'], icon: Zap },
+  { terms: ['challenge', 'blocked', 'captcha', 'bot check'], icon: ShieldAlert },
+];
 
-  if (isError) return { iconCls: 'text-danger', bgCls: 'bg-danger-bg' };
+const LOG_ICON_FINAL_RULES: ReadonlyArray<{ terms: readonly string[]; icon: LucideIcon }> = [
+  { terms: ['retry', 'retrying', 'refresh'], icon: RefreshCw },
+  { terms: ['complete', 'success', 'done', 'finished'], icon: CheckCircle2 },
+];
+
+type LogIconStyle = { iconCls: string; bgCls: string };
+
+const LOG_ICON_STYLE_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> = [
+  { terms: ['starting crawl'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+  {
+    terms: ['ignoring robots.txt'],
+    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
+  },
+  { terms: ['resolved'], style: { iconCls: 'text-muted ', bgCls: 'bg-zinc-500/10' } },
+  { terms: ['acquired'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+  { terms: ['extracted'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+  {
+    terms: ['normalized', 'normalised'],
+    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
+  },
+  { terms: ['persisted'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+  {
+    terms: ['page loaded', 'page load'],
+    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
+  },
+  {
+    terms: ['challenge', 'blocked', 'captcha', 'bot check'],
+    style: { iconCls: 'text-danger', bgCls: 'bg-danger-bg' },
+  },
+  { terms: ['acquiring', 'fetching'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+  {
+    terms: ['browser', 'patchright', 'playwright', 'headless'],
+    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
+  },
+  { terms: ['record'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+];
+
+const LOG_ICON_STYLE_FINAL_RULES: ReadonlyArray<{
+  terms: readonly string[];
+  style: LogIconStyle;
+}> = [
+  {
+    terms: ['complete', 'success', 'done', 'finished'],
+    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
+  },
+  { terms: ['retry', 'retrying'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+];
+
+function getLogIcon(level: string, message: string) {
+  const msg = message.toLowerCase();
+  if (logMessageIsError(level, message)) return XCircle;
+  if (level === 'warning' || level === 'warn') return AlertTriangle;
+  const matched = LOG_ICON_RULES.find((rule) => includesAny(msg, rule.terms));
+  if (matched) return matched.icon;
+  if (/https?:\/\//i.test(message)) return Globe;
+  return LOG_ICON_FINAL_RULES.find((rule) => includesAny(msg, rule.terms))?.icon ?? Dot;
+}
+
+function getLogIconStyle(level: string, message: string): LogIconStyle {
+  const msg = message.toLowerCase();
+  if (logMessageIsError(level, message)) return { iconCls: 'text-danger', bgCls: 'bg-danger-bg' };
   if (level === 'warning' || level === 'warn')
     return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
-
-  if (msg.includes('starting crawl')) return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  if (msg.includes('ignoring robots.txt'))
-    return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
-  if (msg.includes('resolved')) return { iconCls: 'text-muted ', bgCls: 'bg-zinc-500/10' };
-  if (msg.includes('acquired')) return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  if (msg.includes('extracted')) return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
-  if (msg.includes('normalized') || msg.includes('normalised'))
-    return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
-  if (msg.includes('persisted')) return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
-  if (msg.includes('page loaded') || msg.includes('page load'))
-    return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
-  if (
-    msg.includes('challenge') ||
-    msg.includes('blocked') ||
-    msg.includes('captcha') ||
-    msg.includes('bot check')
-  )
-    return { iconCls: 'text-danger', bgCls: 'bg-danger-bg' };
-  if (msg.includes('acquiring') || msg.includes('fetching'))
-    return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  if (
-    msg.includes('browser') ||
-    msg.includes('patchright') ||
-    msg.includes('playwright') ||
-    msg.includes('headless')
-  )
-    return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  if (msg.includes('record')) return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
-  if (hasUrl) return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  if (
-    msg.includes('complete') ||
-    msg.includes('success') ||
-    msg.includes('done') ||
-    msg.includes('finished')
-  )
-    return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
-  if (msg.includes('retry') || msg.includes('retrying'))
-    return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
+  const matched = LOG_ICON_STYLE_RULES.find((rule) => includesAny(msg, rule.terms));
+  if (matched) return matched.style;
+  if (/https?:\/\//i.test(message)) return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
+  const finalMatch = LOG_ICON_STYLE_FINAL_RULES.find((rule) => includesAny(msg, rule.terms));
+  if (finalMatch) return finalMatch.style;
   if (level === 'debug') return { iconCls: 'text-muted', bgCls: 'bg-transparent' };
   return {
     iconCls: 'text-secondary',

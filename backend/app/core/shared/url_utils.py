@@ -21,11 +21,13 @@ from app.core.config.extraction_rules import (
     CDN_IMAGE_QUERY_PARAMS,
     DETAIL_NON_PRODUCT_IMAGE_URL_HINTS,
     GIF_BASE64_PREFIX,
+    IMAGE_DIMENSION_QUERY_KEYS,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     PRIMARY_IMAGE_REJECT_URL_TOKENS,
     PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN,
     PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION,
     PRODUCT_ASSET_REJECT_URL_PATTERNS,
+    TRACKING_PIXEL_DIMENSION_PATTERN,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
     URL_DETECTION_TOKENS,
 )
@@ -389,11 +391,27 @@ def _is_placeholder_image_url(value: str) -> bool:
     return any(token in lowered for token in placeholder_image_url_tokens)
 
 
+def _is_tracking_pixel_url(text: str) -> bool:
+    """A genuine 1×1 tracking pixel, as opposed to an aspect-ratio crop marker.
+
+    ``_1x1_`` next to ``?width=1440&height=1440`` is a square product render and
+    must publish; only a standalone ``1x1`` dimension that declares no larger
+    size anywhere in the URL is a tracking pixel.
+    """
+    if not re.search(TRACKING_PIXEL_DIMENSION_PATTERN, text):
+        return False
+    if any(dimension > 1 for dimension in _image_query_dimensions(text)):
+        return False
+    return not re.search(r"(?<!\w)\d{2,}\s*[x×]\s*\d{2,}(?!\w)", text)
+
+
 def is_utility_image_url(value: object) -> bool:
     text = unquote(str(value or "").strip()).casefold()
     if not text:
         return False
     if _is_placeholder_image_url(text):
+        return True
+    if _is_tracking_pixel_url(text):
         return True
     if any(token in text for token in product_asset_reject_url_tokens):
         return True
@@ -436,23 +454,12 @@ def low_resolution_asset_urls(values: tuple[str, ...]) -> frozenset[str]:
 
 
 def _image_query_dimensions(value: object) -> tuple[int, ...]:
-    dimension_keys = {
-        "w",
-        "width",
-        "wid",
-        "imwidth",
-        "sw",
-        "h",
-        "height",
-        "hei",
-        "sh",
-    }
     return tuple(
         int(raw_value)
         for key, raw_value in parse_qsl(
             urlparse(str(value or "")).query, keep_blank_values=False
         )
-        if key.casefold() in dimension_keys and str(raw_value).isdigit()
+        if key.casefold() in IMAGE_DIMENSION_QUERY_KEYS and str(raw_value).isdigit()
     )
 
 

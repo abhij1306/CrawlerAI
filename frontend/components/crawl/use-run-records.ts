@@ -22,6 +22,101 @@ type UseRunRecordsOptions = {
 const EMPTY_RECORD_PAGES: Paginated<CrawlRecord>[] = [];
 const EMPTY_RECORDS: CrawlRecord[] = [];
 
+function nextPage(lastPage: Paginated<CrawlRecord>) {
+  const { page, limit, total } = lastPage.meta;
+  return page * limit < total ? page + 1 : undefined;
+}
+
+function nextJsonPage(lastPage: Paginated<CrawlRecord>) {
+  const { page, limit, total } = lastPage.meta;
+  const loaded = page * limit;
+  return loaded < total && loaded < CRAWL_DEFAULTS.JSON_RECORD_FETCH_CAP ? page + 1 : undefined;
+}
+
+function shouldRefetchTableOnMount(live: boolean, cachedData: unknown): 'always' | false {
+  const cachedPage = cachedData as { pages?: { items?: unknown[] }[] } | undefined;
+  return live || !cachedPage?.pages?.some((page) => page.items?.length) ? 'always' : false;
+}
+
+function recordFetchMode(
+  live: boolean,
+  outputTab: OutputTabKey,
+): { table: boolean; json: boolean; tableInterval: number | false; jsonInterval: number | false } {
+  const table = live || outputTab === 'table' || outputTab === 'logs';
+  const json = outputTab === 'json';
+  return {
+    table,
+    json,
+    tableInterval: live && table ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    jsonInterval: live && json ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+  };
+}
+
+function terminalSyncState({
+  run,
+  terminal,
+  verdict,
+  tableRecordsSettled,
+  knownTableRecordsTotal,
+}: {
+  run: CrawlRun | undefined;
+  terminal: boolean;
+  verdict: string;
+  tableRecordsSettled: boolean;
+  knownTableRecordsTotal: number;
+}) {
+  const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
+  const expectsRecords =
+    terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
+  return {
+    summaryRecordsFromRun,
+    needsSync:
+      tableRecordsSettled &&
+      expectsRecords &&
+      knownTableRecordsTotal < Math.max(1, summaryRecordsFromRun),
+  };
+}
+
+function deriveRecordView({
+  tablePages,
+  jsonPages,
+  jsonVisibleCount,
+  outputTab,
+}: {
+  tablePages: Paginated<CrawlRecord>[];
+  jsonPages: Paginated<CrawlRecord>[];
+  jsonVisibleCount: number;
+  outputTab: OutputTabKey;
+}) {
+  const tableRecords = tablePages.flatMap((page) => page.items);
+  const flattenedJsonRecords = jsonPages.flatMap((page) => page.items);
+  const latestTablePage = tablePages.at(-1);
+  const latestJsonPage = jsonPages.at(-1);
+  const records =
+    outputTab === 'json' ? flattenedJsonRecords : (latestTablePage?.items ?? EMPTY_RECORDS);
+  const tableTotal = latestTablePage?.meta?.total ?? tableRecords.length;
+  const recordsTotal =
+    latestJsonPage?.meta?.total ?? latestTablePage?.meta?.total ?? records.length;
+  const jsonRecords = records.slice(0, Math.min(records.length, jsonVisibleCount));
+  const recordsFetchCapReached = records.length >= CRAWL_DEFAULTS.JSON_RECORD_FETCH_CAP;
+  const hasMoreJsonRecords =
+    jsonRecords.length < records.length ||
+    (records.length < recordsTotal && !recordsFetchCapReached);
+  return {
+    records,
+    tableRecords,
+    tableTotal,
+    recordsTotal,
+    jsonRecords,
+    recordsFetchCapReached,
+    hasMoreTableRecords: tableRecords.length < tableTotal,
+    hasMoreJsonRecords,
+    recordsJson:
+      outputTab === 'json' ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2) : '',
+    latestTablePage,
+  };
+}
+
 export function useRunRecords({
   runId,
   run,
@@ -34,8 +129,7 @@ export function useRunRecords({
   // The live/log terminal derives payload previews, coverage, confidence, and
   // per-URL completion state from persisted records. Keep the lightweight
   // table records query active whenever that terminal is visible.
-  const shouldFetchTableRecords = live || outputTab === 'table' || outputTab === 'logs';
-  const shouldFetchJsonRecords = outputTab === 'json';
+  const fetchMode = recordFetchMode(live, outputTab);
   const tablePageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4;
   const jsonPageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE;
 
@@ -52,17 +146,11 @@ export function useRunRecords({
     queryFn: ({ pageParam, signal }) =>
       api.getRecords(runId, { page: pageParam, limit: tablePageSize }, { signal }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => {
-      const { page, limit, total } = lastPage.meta;
-      return page * limit < total ? page + 1 : undefined;
-    },
-    enabled: shouldFetchTableRecords,
-    refetchInterval: live && shouldFetchTableRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    getNextPageParam: nextPage,
+    enabled: fetchMode.table,
+    refetchInterval: fetchMode.tableInterval,
     refetchIntervalInBackground: false,
-    refetchOnMount: (query) => {
-      const cachedPage = query.state.data as { pages?: { items?: unknown[] }[] } | undefined;
-      return live || !cachedPage?.pages?.some((page) => page.items?.length) ? 'always' : false;
-    },
+    refetchOnMount: (query) => shouldRefetchTableOnMount(live, query.state.data),
   });
 
   const {
@@ -77,61 +165,45 @@ export function useRunRecords({
     queryFn: ({ pageParam, signal }) =>
       api.getRecords(runId, { page: pageParam, limit: jsonPageSize }, { signal }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => {
-      const { page, limit, total } = lastPage.meta;
-      return page * limit < total && page * limit < 800 ? page + 1 : undefined;
-    },
-    enabled: Boolean(run) && shouldFetchJsonRecords,
-    refetchInterval: live && shouldFetchJsonRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    getNextPageParam: nextJsonPage,
+    enabled: Boolean(run) && fetchMode.json,
+    refetchInterval: fetchMode.jsonInterval,
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
   });
 
   const tablePages = tableRecordsData?.pages ?? EMPTY_RECORD_PAGES;
   const jsonPages = jsonRecordsData?.pages ?? EMPTY_RECORD_PAGES;
-  const flattenedTableRecords = useMemo(
-    () => tablePages.flatMap((page) => page.items),
-    [tablePages],
-  );
-  const flattenedJsonRecords = useMemo(() => jsonPages.flatMap((page) => page.items), [jsonPages]);
-  const latestTablePage = tablePages.at(-1);
-  const latestJsonPage = jsonPages.at(-1);
-  const records = shouldFetchJsonRecords
-    ? flattenedJsonRecords
-    : (latestTablePage?.items ?? EMPTY_RECORDS);
-  const tableRecords = flattenedTableRecords;
-  const tableTotal = latestTablePage?.meta?.total ?? tableRecords.length;
-  const recordsTotal =
-    latestJsonPage?.meta?.total ?? latestTablePage?.meta?.total ?? records.length;
-  const jsonRecords = useMemo(
-    () => records.slice(0, Math.min(records.length, jsonVisibleCount)),
-    [jsonVisibleCount, records],
-  );
-  const recordsFetchCapReached = records.length >= 800;
-  const hasMoreTableRecords = tableRecords.length < tableTotal;
-  const hasMoreJsonRecords =
-    jsonRecords.length < records.length ||
-    (records.length < recordsTotal && !recordsFetchCapReached);
-  const recordsJson = useMemo(
-    () =>
-      outputTab === 'json' ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2) : '',
-    [jsonRecords, outputTab],
+  const {
+    records,
+    tableRecords,
+    tableTotal,
+    recordsTotal,
+    jsonRecords,
+    recordsFetchCapReached,
+    hasMoreTableRecords,
+    hasMoreJsonRecords,
+    recordsJson,
+    latestTablePage,
+  } = useMemo(
+    () => deriveRecordView({ tablePages, jsonPages, jsonVisibleCount, outputTab }),
+    [jsonPages, jsonVisibleCount, outputTab, tablePages],
   );
 
-  const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
   const knownTableRecordsTotal = Math.max(tableTotal, latestTablePage?.meta?.total ?? 0);
-  const terminalRecordsExpected =
-    terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
   // Only sync AFTER the initial table fetch has settled. Before it returns,
   // `tableRecordsData` is undefined and `knownTableRecordsTotal` is 0, which would
   // otherwise look like "records are missing" and fire a redundant refetch of the
   // same query while the initial request is still in flight. Failed initial fetches
   // still count as settled so terminal sync can recover completed runs.
   const tableRecordsSettled = tableRecordsData !== undefined || tableRecordsFetched;
-  const terminalRecordsNeedSync =
-    tableRecordsSettled &&
-    terminalRecordsExpected &&
-    knownTableRecordsTotal < Math.max(1, summaryRecordsFromRun);
+  const { summaryRecordsFromRun, needsSync: terminalRecordsNeedSync } = terminalSyncState({
+    run,
+    terminal,
+    verdict,
+    tableRecordsSettled,
+    knownTableRecordsTotal,
+  });
 
   useTerminalRecordSync({
     enabled: terminalRecordsNeedSync,

@@ -63,7 +63,14 @@ function withQuery(path: string, query: URLSearchParams) {
   return queryString ? `${path}?${queryString}` : path;
 }
 
-export type CategoryDiscoveryPayload = {
+function paginationQuery(params?: { page?: number; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.page !== undefined) query.set('page', String(params.page));
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  return query;
+}
+
+type CategoryDiscoveryPayload = {
   url?: string;
   urls?: string[];
   limit?: number;
@@ -72,7 +79,7 @@ export type CategoryDiscoveryPayload = {
   strategy?: 'static_then_rendered' | 'static_only' | 'rendered_only';
   validate_candidates?: boolean;
 };
-export type CategoryDiscoveryResponse = {
+type CategoryDiscoveryResponse = {
   status: string;
   source: string;
   urls: string[];
@@ -133,12 +140,10 @@ export const api = {
     },
     options?: ApiRequestOptions,
   ) => {
-    const query = new URLSearchParams();
+    const query = paginationQuery(params);
     if (params?.status) query.set('status', params.status);
     if (params?.run_type) query.set('run_type', params.run_type);
     if (params?.url_search) query.set('url_search', params.url_search);
-    if (params?.page !== undefined) query.set('page', String(params.page));
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
     const res = await apiClient.get<Paginated<CrawlRun>>(withQuery('/api/crawls', query), options);
     if (res?.items) {
       res.items = res.items.map((item) => strictValidate(crawlRunSchema, item, 'listCrawls'));
@@ -169,9 +174,7 @@ export const api = {
     params?: { page?: number; limit?: number },
     options?: ApiRequestOptions,
   ) => {
-    const query = new URLSearchParams();
-    if (params?.page !== undefined) query.set('page', String(params.page));
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const query = paginationQuery(params);
     const res = await apiClient.get<Paginated<CrawlRecord>>(
       withQuery(`/api/crawls/${runId}/records`, query),
       options,
@@ -203,8 +206,7 @@ export const api = {
   createProductIntelligenceJob: (payload: ProductIntelligenceJobCreatePayload) =>
     apiClient.post<ProductIntelligenceJob>('/api/product-intelligence/jobs', payload),
   listProductIntelligenceJobs: (params?: { limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const query = paginationQuery(params);
     return apiClient.get<ProductIntelligenceJob[]>(
       withQuery('/api/product-intelligence/jobs', query),
     );
@@ -214,8 +216,7 @@ export const api = {
   createDataEnrichmentJob: (payload: DataEnrichmentJobCreatePayload) =>
     apiClient.post<DataEnrichmentJob>('/api/data-enrichment/jobs', payload),
   listDataEnrichmentJobs: (params?: { limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const query = paginationQuery(params);
     return apiClient.get<DataEnrichmentJob[]>(withQuery('/api/data-enrichment/jobs', query));
   },
   getDataEnrichmentJob: (jobId: number) =>

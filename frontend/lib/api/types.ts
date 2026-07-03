@@ -16,8 +16,6 @@ export type RunStatus =
   | 'failed'
   | 'proxy_exhausted';
 
-export type CrawlPhase = 'config' | 'running' | 'complete';
-
 export type CrawlModule = 'category' | 'pdp';
 export type CrawlDomain = 'commerce' | 'jobs';
 export type CrawlSurface = 'ecommerce_listing' | 'ecommerce_detail' | 'job_listing' | 'job_detail';
@@ -86,19 +84,6 @@ export type ReviewSelection = {
   source_field: string;
   output_field: string;
   selected: boolean;
-};
-
-export type SelectorRuleInput = {
-  id?: number | null;
-  field_name: string;
-  surface?: string | null;
-  css_selector?: string | null;
-  xpath?: string | null;
-  regex?: string | null;
-  status?: string | null;
-  sample_value?: string | null;
-  source?: string | null;
-  is_active?: boolean;
 };
 
 export type CrawlRecord = {
@@ -182,13 +167,6 @@ export type SelectorRecord = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
-};
-
-export type SelectorDomainSummary = {
-  domain: string;
-  surface: string;
-  selector_count: number;
-  updated_at: string | null;
 };
 
 export type ProductIntelligenceOptions = {
@@ -934,17 +912,3 @@ export type CrawlConfig = {
   proxy_lines: string[];
   additional_fields: string[];
 };
-
-export interface RunNowResponse {
-  run_id: number;
-  dispatched_at: string;
-  url_count: number;
-  run_ids?: number[];
-}
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  page_size: number;
-}

@@ -57,6 +57,12 @@ class HtmlNode:
         parent = self.node.parent
         return HtmlNode(self.artifact_id, parent) if parent is not None else None
 
+    def previous_element(self) -> HtmlNode | None:
+        sibling = self.node.prev
+        while sibling is not None and str(sibling.tag or "").startswith("-"):
+            sibling = sibling.prev
+        return HtmlNode(self.artifact_id, sibling) if sibling is not None else None
+
     def attribute(self, name: str) -> str | None:
         if name not in self.node.attributes:
             return None

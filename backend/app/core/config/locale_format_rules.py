@@ -223,7 +223,14 @@ def _decimal_separator(text: str, *, locale_hint: str | None) -> str | None:
 
 def _separator_is_decimal(text: str, separator: str) -> bool:
     final_group_length = _last_group_length(text, separator)
-    return final_group_length in {1, 2}
+    if final_group_length in {1, 2}:
+        return True
+    # A grouping (thousands) separator only ever produces groups of exactly
+    # three digits. A separator that occurs once with a trailing group of four
+    # or more digits (e.g. "128.000000" from an ERP/JSON feed) therefore cannot
+    # be grouping — it is an over-precise decimal point. Treat it as the decimal
+    # separator instead of deleting it, which would multiply the value by 10ⁿ.
+    return final_group_length >= 4 and text.count(separator) == 1
 
 
 def _last_group_length(text: str, separator: str) -> int:

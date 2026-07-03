@@ -1,0 +1,285 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": ["src/index.{ts,tsx,js,jsx}", "src/main.{ts,tsx,js,jsx}", "app/**/page-view.tsx"],
+  "workspaces": {
+    "packages": ["."]
+  },
+  "duplicates": {
+    // Hide pair-only clones; focus on widespread copy-paste
+    // worth refactoring. Lower to 2 to report every duplicate pair.
+    "minOccurrences": 2
+    // Common additions (uncomment to enable):
+    // "ignore": [
+    //   "**/lib/**",          // for repos that publish transpiled output to lib/
+    //   "**/legacy/**",       // for repos with legacy-build artifacts
+    //   "**/__generated__/**", // Relay, GraphQL Code Generator
+    //   "**/generated/**"     // OpenAPI, Protobuf codegen
+    // ]
+  },
+  "rules": {
+    "unused-dependencies": "warn"
+  },
+  "health": {
+    "coverage": "coverage/coverage-final.json",
+    "thresholdOverrides": [
+      {
+        "files": ["app/admin/llm/page-view.tsx"],
+        "maxCyclomatic": 15,
+        "maxCognitive": 18,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["app/data-enrichment/page-view.tsx"],
+        "maxCyclomatic": 40,
+        "maxCognitive": 47,
+        "maxCrap": 40,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["app/product-intelligence/product-intelligence-utils.ts"],
+        "maxCyclomatic": 8,
+        "maxCognitive": 7,
+        "maxCrap": 57,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["app/product-intelligence/use-product-intelligence.ts"],
+        "maxCyclomatic": 29,
+        "maxCognitive": 51,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-config-logic.ts"],
+        "maxCyclomatic": 25,
+        "maxCognitive": 32,
+        "maxCrap": 183,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-config-screen.tsx"],
+        "maxCyclomatic": 14,
+        "maxCognitive": 20,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-config-state.ts"],
+        "maxCyclomatic": 12,
+        "maxCognitive": 6,
+        "maxCrap": 57,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-field-config-card.tsx"],
+        "maxCyclomatic": 7,
+        "maxCognitive": 13,
+        "maxCrap": 34,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-field-test.ts"],
+        "maxCyclomatic": 15,
+        "maxCognitive": 15,
+        "maxCrap": 211,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-run-prefill.ts"],
+        "maxCyclomatic": 8,
+        "maxCognitive": 10,
+        "maxCrap": 57,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-run-screen.tsx"],
+        "maxCyclomatic": 26,
+        "maxCognitive": 40,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-target-card.tsx"],
+        "maxCyclomatic": 15,
+        "maxCognitive": 47,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/crawl-terminal-tab-content.tsx"],
+        "maxCyclomatic": 6,
+        "maxCognitive": 29,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/form-fields.tsx"],
+        "maxCyclomatic": 11,
+        "maxCognitive": 17,
+        "maxCrap": 59,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/log-terminal-utils.ts"],
+        "maxCyclomatic": 22,
+        "maxCognitive": 48,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/log-terminal.tsx"],
+        "maxCyclomatic": 31,
+        "maxCognitive": 35,
+        "maxCrap": 39,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/run-summary.tsx"],
+        "maxCyclomatic": 22,
+        "maxCognitive": 13,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/use-crawl-field-actions.ts"],
+        "maxCyclomatic": 7,
+        "maxCognitive": 7,
+        "maxCrap": 43,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/crawl/use-log-terminal-state.ts"],
+        "maxCyclomatic": 9,
+        "maxCognitive": 23,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/layout/app-shell.tsx"],
+        "maxCyclomatic": 9,
+        "maxCognitive": 19,
+        "maxCrap": 43,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/selectors/domain-memory/build-workspaces.ts"],
+        "maxCyclomatic": 11,
+        "maxCognitive": 11,
+        "maxCrap": 43,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/selectors/domain-memory/knowledge-graph-tab.tsx"],
+        "maxCyclomatic": 22,
+        "maxCognitive": 22,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/selectors/domain-memory/use-domain-memory-workspace.ts"],
+        "maxCyclomatic": 18,
+        "maxCognitive": 34,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/selectors/domain-memory/utils.ts"],
+        "maxCyclomatic": 13,
+        "maxCognitive": 20,
+        "maxCrap": 117,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/ui/dropdown.tsx"],
+        "maxCyclomatic": 22,
+        "maxCognitive": 29,
+        "maxCrap": 111,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/ui/history-drawer.tsx"],
+        "maxCyclomatic": 8,
+        "maxCognitive": 6,
+        "maxCrap": 57,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/ui/patterns/controls.tsx"],
+        "maxCyclomatic": 12,
+        "maxCognitive": 20,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["components/ui/patterns/sections.tsx"],
+        "maxCyclomatic": 7,
+        "maxCognitive": 16,
+        "maxCrap": 43,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["lib/api/index.ts"],
+        "maxCyclomatic": 10,
+        "maxCognitive": 5,
+        "maxCrap": 91,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["lib/focus-trap.ts"],
+        "maxCyclomatic": 9,
+        "maxCognitive": 9,
+        "maxCrap": 73,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["lib/ui/status.ts"],
+        "maxCyclomatic": 14,
+        "maxCognitive": 11,
+        "maxCrap": 73,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["lib/ui/syntax.ts"],
+        "maxCyclomatic": 12,
+        "maxCognitive": 19,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["scripts/check-crawl-architecture.mjs"],
+        "maxCyclomatic": 21,
+        "maxCognitive": 52,
+        "maxCrap": 421,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["src/api/query-client.ts"],
+        "maxCyclomatic": 7,
+        "maxCognitive": 5,
+        "maxCrap": 43,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["src/app/auth-guards.tsx"],
+        "maxCyclomatic": 6,
+        "maxCognitive": 7,
+        "maxCrap": 31,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      },
+      {
+        "files": ["vite.config.ts"],
+        "maxCyclomatic": 10,
+        "maxCognitive": 7,
+        "maxCrap": 91,
+        "reason": "Existing measured debt; local ceiling prevents regression."
+      }
+    ]
+  },
+  "ignoreExports": [
+    {
+      "file": "components/**/*.module.css",
+      "exports": ["*"]
+    }
+  ]
+}

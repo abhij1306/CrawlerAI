@@ -30,8 +30,7 @@ export type PrefillLoadResult = {
   payload: PrefillPayload;
 };
 
-export type ProductIntelligenceCandidate =
-  ProductIntelligenceDiscoveryResponse['candidates'][number];
+export type ProductDiscoveryCandidate = ProductIntelligenceDiscoveryResponse['candidates'][number];
 
 export type CandidateGroup = {
   sourceIndex: number;
@@ -40,7 +39,7 @@ export type CandidateGroup = {
   sourcePrice: unknown;
   sourceCurrency: string;
   sourceUrl: string;
-  candidates: ProductIntelligenceCandidate[];
+  candidates: ProductDiscoveryCandidate[];
 };
 
 export const DEFAULT_OPTIONS: ProductIntelligenceOptions = {
@@ -102,37 +101,68 @@ export function detailToDiscovery(
     sourcesById.set(source.id, { source, index });
   });
   const matchesByCandidateId = new Map(detail.matches.map((match) => [match.candidate_id, match]));
-  const candidates = detail.candidates.map((candidate) => {
-    const sourceEntry = sourcesById.get(candidate.source_product_id);
-    const source = sourceEntry?.source;
-    const payload = candidate.payload ?? {};
-    const payloadIntelligence = isRecord(payload.intelligence) ? payload.intelligence : null;
-    const match = matchesByCandidateId.get(candidate.id);
-    const intelligence = payloadIntelligence ?? matchToIntelligence(match, candidate);
-    return {
-      source_record_id: source?.source_record_id ?? null,
-      source_run_id: source?.source_run_id ?? null,
-      source_url: source?.source_url ?? '',
-      source_title: source?.title ?? '',
-      source_brand: source?.brand ?? '',
-      source_price: source?.price ?? null,
-      source_currency: source?.currency ?? '',
-      source_index: sourceEntry?.index ?? 0,
-      url: candidate.url,
-      domain: candidate.domain,
-      source_type: candidate.source_type,
-      query_used: candidate.query_used,
-      search_rank: candidate.search_rank,
-      payload,
-      intelligence,
-    };
-  });
+  const candidates = detail.candidates.map((candidate) =>
+    discoveryCandidate(candidate, sourcesById, matchesByCandidateId),
+  );
   return {
     job_id: detail.job.id,
     options: detail.job.options ?? {},
     source_count: detail.source_products.length,
     candidate_count: candidates.length,
     candidates,
+  };
+}
+
+function discoveryCandidate(
+  candidate: ProductIntelligenceJobDetail['candidates'][number],
+  sourcesById: Map<
+    number,
+    { source: ProductIntelligenceJobDetail['source_products'][number]; index: number }
+  >,
+  matchesByCandidateId: Map<number, ProductIntelligenceJobDetail['matches'][number]>,
+): ProductDiscoveryCandidate {
+  const sourceEntry = sourcesById.get(candidate.source_product_id);
+  const source = sourceEntry?.source;
+  const payload = candidate.payload ?? {};
+  const payloadIntelligence = isRecord(payload.intelligence) ? payload.intelligence : null;
+  return {
+    ...discoverySourceFields(source, sourceEntry?.index),
+    url: candidate.url,
+    domain: candidate.domain,
+    source_type: candidate.source_type,
+    query_used: candidate.query_used,
+    search_rank: candidate.search_rank,
+    payload,
+    intelligence:
+      payloadIntelligence ?? matchToIntelligence(matchesByCandidateId.get(candidate.id), candidate),
+  };
+}
+
+function discoverySourceFields(
+  source: ProductIntelligenceJobDetail['source_products'][number] | undefined,
+  sourceIndex: number | undefined,
+) {
+  if (!source) {
+    return {
+      source_record_id: null,
+      source_run_id: null,
+      source_url: '',
+      source_title: '',
+      source_brand: '',
+      source_price: null,
+      source_currency: '',
+      source_index: sourceIndex ?? 0,
+    };
+  }
+  return {
+    source_record_id: source.source_record_id,
+    source_run_id: source.source_run_id,
+    source_url: source.source_url,
+    source_title: source.title,
+    source_brand: source.brand,
+    source_price: source.price,
+    source_currency: source.currency,
+    source_index: sourceIndex ?? 0,
   };
 }
 
@@ -207,7 +237,7 @@ export function parseDomainLines(value: string) {
   });
 }
 
-export function candidateConfidence(candidate: ProductIntelligenceCandidate) {
+export function candidateConfidence(candidate: ProductDiscoveryCandidate) {
   const intelligence = isRecord(candidate.intelligence) ? candidate.intelligence : {};
   const parsed = Number(intelligence.confidence_score ?? 0);
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : 0;
@@ -243,7 +273,7 @@ function stringArray(value: unknown) {
     : [];
 }
 
-function clampInt(value: unknown, min: number, max: number, fallback: number) {
+export function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const parsed = Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed)) {
     return fallback;

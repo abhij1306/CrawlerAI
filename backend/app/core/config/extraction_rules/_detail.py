@@ -130,6 +130,10 @@ DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
     r"\b(?:and|or|with|for|to|the|a|an|of|in|on|at|by)\s*$"
 )
 DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN = r"\d{1,3}%(?=[A-Z])|\d{1,2}oz(?=[A-Z])"
+# Shortest prose span worth salvaging when a description ends in a compacted,
+# separator-less feature list. Below this a trimmed head is a fragment, not a
+# usable description, so the candidate is left to the existing invalidity flags.
+DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH = 80
 DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
     r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now|more\s+items?)\b",
@@ -231,6 +235,23 @@ DETAIL_SHELL_TITLE_KEYS = frozenset(
 DETAIL_NOT_FOUND_HTTP_STATUS_CODES = frozenset({404, 410})
 DETAIL_SHELL_TITLE_FLAG = "shell_title"
 DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
+DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS = frozenset(
+    {"title", "price", "currency", "availability", "image_url"}
+)
+DETAIL_REVIEW_RISK_FINDING_RULE_IDS = frozenset(
+    {
+        DETAIL_SHELL_FINDING_RULE_ID,
+        "PUBLIC_RESOLUTION_DIVERGENCE",
+        "PRICE_WITHOUT_CURRENCY",
+        "CURRENCY_WITHOUT_PRICE",
+        "NON_POSITIVE_PRICE",
+        "INVALID_ORIGINAL_PRICE",
+        "PARENT_VARIANT_AVAILABILITY_CONFLICT",
+    }
+)
+DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS = ("price", "currency", "availability")
+DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME = "semantic_shell"
+DETAIL_CAPTURE_NOT_FOUND_OUTCOME = "not_found"
 VARIANT_COLOR_BRAND_CONFLICT_FLAG = "brand_as_variant_color"
 DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS = (
     "/public_config/",

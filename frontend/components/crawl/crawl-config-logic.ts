@@ -1,5 +1,6 @@
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
+import { mergeRunProfile } from '../../lib/crawl/run-profile';
 import {
   clampNumber,
   type CategoryMode,
@@ -114,35 +115,7 @@ export function defaultRunProfile(): DomainRunProfile {
 }
 
 export function cloneRunProfile(profile: DomainRunProfile | null | undefined): DomainRunProfile {
-  const base = defaultRunProfile();
-  if (!profile) {
-    return base;
-  }
-  return {
-    version: 1,
-    fetch_profile: {
-      ...base.fetch_profile,
-      ...(profile.fetch_profile ?? {}),
-    },
-    locality_profile: {
-      ...base.locality_profile,
-      ...(profile.locality_profile ?? {}),
-    },
-    diagnostics_profile: {
-      ...base.diagnostics_profile,
-      ...(profile.diagnostics_profile ?? {}),
-    },
-    acquisition_contract: {
-      ...base.acquisition_contract,
-      ...(profile.acquisition_contract ?? {}),
-      stale_after_failures: {
-        ...base.acquisition_contract.stale_after_failures,
-        ...(profile.acquisition_contract?.stale_after_failures ?? {}),
-      },
-    },
-    source_run_id: profile.source_run_id ?? null,
-    saved_at: profile.saved_at ?? null,
-  };
+  return mergeRunProfile(defaultRunProfile(), profile);
 }
 
 export function diagnosticsPresetForProfile(profile: DomainRunProfile): DiagnosticsPreset {

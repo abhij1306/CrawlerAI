@@ -29,9 +29,19 @@ _CALLBACK_KEY = "observability_run_report"
 _CLEAN_FIELD_STATES = frozenset(
     {"captured_and_resolved", "captured_published", "not_requested"}
 )
+# Parent field states that count as "the public parent already carries this fact"
+# for the parent/child divergence metric.
+_PARENT_PUBLISHED_FIELD_STATES = frozenset(
+    {"captured_and_resolved", "captured_published"}
+)
+# Commercial facts that should flow child -> parent; divergence is worth counting.
+_PARENT_CHILD_DIVERGENCE_FIELDS = ("price", "currency", "availability")
 # These findings are metrics emitted for every result, not failures. They remain
 # available in diagnose.json but must never inflate the run-level root-cause list.
 _INFORMATIONAL_FINDING_RULES = frozenset({"RECORD_COMPLETENESS"})
+# Finding scopes that describe discarded candidate evidence rather than the
+# public/selected record. Diagnostic-only: preserved per-page, never a run cause.
+_DIAGNOSTIC_ONLY_FINDING_SCOPES = frozenset({"candidate"})
 _EXAMPLE_LIMIT = 5
 
 
@@ -109,13 +119,22 @@ def _root_causes(
 ) -> list[tuple[str, dict[str, object]]]:
     """Group keys for one diagnose.json. Empty when nothing went wrong."""
     causes: dict[str, dict[str, object]] = {}
+    field_status: dict[str, str] = {}
     for field in _object_list(diagnosis.get("fields")):
         field_name = str(field.get("field") or "").strip() or "?"
+        status = str(field.get("status") or "").strip()
+        field_status[field_name] = status
+        # ``variants.*`` are a separate variant-scope summary (see
+        # projection_field_states). They stay in per-page diagnose.json but must
+        # not inflate run-level root causes with variant-only noise; the
+        # parent/child divergence they enable is folded in as its own metric
+        # below.
+        if field_name.startswith("variants."):
+            continue
         publication_policy = field.get("publication_policy")
         if publication_policy not in (None, "", [], {}):
             cause = f"publication_policy:{field_name}:{_scalar(publication_policy)}"
             causes.setdefault(cause, {"field": field_name})
-        status = str(field.get("status") or "").strip()
         if status and status not in _CLEAN_FIELD_STATES:
             causes.setdefault(
                 f"field:{field_name}:{status}",
@@ -130,6 +149,26 @@ def _root_causes(
                     f"field_reason:{field_name}:{status}:{reason}",
                     {"field": field_name, "status": status, "reason": reason},
                 )
+    # Run-level metric (audit Slice 1.5): a public parent commercial field is
+    # absent while the same field is published on a child variant. This is the
+    # divergence that path-aware field states make visible; surface it as its own
+    # deterministic root cause so operators can see structured child facts that
+    # never became parent facts.
+    for commercial_field in _PARENT_CHILD_DIVERGENCE_FIELDS:
+        parent_status = field_status.get(commercial_field, "")
+        child_status = field_status.get(f"variants.{commercial_field}", "")
+        if (
+            child_status == "captured_published"
+            and parent_status not in _PARENT_PUBLISHED_FIELD_STATES
+        ):
+            causes.setdefault(
+                f"parent_absent_child_published:{commercial_field}",
+                {
+                    "field": commercial_field,
+                    "parent_status": parent_status or "not_present",
+                    "child_status": child_status,
+                },
+            )
     for drop in _object_list(_mapping(diagnosis.get("variants")).get("dropped")):
         stage = str(drop.get("stage") or "?").strip()
         rule = str(drop.get("rule") or "?").strip()
@@ -140,6 +179,12 @@ def _root_causes(
     for finding in _object_list(diagnosis.get("findings")):
         rule_id = str(finding.get("rule_id") or "").strip()
         if not rule_id or rule_id in _INFORMATIONAL_FINDING_RULES:
+            continue
+        # Candidate-scope findings are evidence diagnostics about discarded
+        # candidates, not public-integrity failures. Keep them in per-page
+        # diagnose.json but never fold them into run-level root causes (audit
+        # Slice 1.4) — otherwise discarded-candidate offer-pair warnings dominate.
+        if str(finding.get("scope") or "").strip() in _DIAGNOSTIC_ONLY_FINDING_SCOPES:
             continue
         severity = str(finding.get("severity") or "").strip() or "unknown"
         blocking = bool(finding.get("blocking"))

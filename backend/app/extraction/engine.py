@@ -7,7 +7,12 @@ from time import perf_counter
 from typing import Literal, cast
 
 from app.core.config.extraction_rules import (
+    DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
+    DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
+    DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS,
+    DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS,
+    DETAIL_REVIEW_RISK_FINDING_RULE_IDS,
     DETAIL_SHELL_FINDING_RULE_ID,
 )
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
@@ -190,6 +195,14 @@ def extract(
         model_fallback=model_fallback,
     )
     field_states = resolution.field_states
+    retry = retry_request(verdict, publication.records, request, harvest.evidence)
+    review_required = _review_required(
+        request,
+        verdict=verdict,
+        findings=findings,
+        field_states=field_states,
+        retry=retry,
+    )
     extraction_metrics = metrics(
         harvest.evidence,
         resolution.graph,
@@ -240,13 +253,11 @@ def extract(
         derived_facts=resolution.derived_facts,
         evidence_dispositions=resolution.evidence_dispositions,
         field_states=field_states,
-        transport_outcome=request.capture.acquisition_outcome,
+        transport_outcome=_capture_outcome(request, verdict, findings),
         data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
         verdict=verdict,
-        retry_request=retry_request(
-            verdict, publication.records, request, harvest.evidence
-        ),
+        retry_request=retry,
         metrics=extraction_metrics,
         collector_outcomes=harvest.collector_outcomes,
         stage_outcomes=tuple(stage_outcomes),
@@ -261,6 +272,7 @@ def extract(
             stage_outcomes=tuple(stage_outcomes),
             field_states=field_states,
             failures=failures,
+            review_required=review_required,
             extractor_tier=extractor_tier,
             model_fallback=model_fallback,
             sentinel_observations=sentinel_observations,
@@ -610,7 +622,7 @@ def _blocked_result(
         derived_facts=(),
         evidence_dispositions=dispositions,
         field_states=states,
-        transport_outcome=request.capture.acquisition_outcome,
+        transport_outcome=_capture_outcome(request, "blocked", (finding,)),
         data_integrity="blocked",
         records=(),
         verdict="blocked",
@@ -636,6 +648,13 @@ def _blocked_result(
             stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
             field_states=states,
             failures=failures,
+            review_required=_review_required(
+                request,
+                verdict="blocked",
+                findings=(finding,),
+                field_states=states,
+                retry=None,
+            ),
         ),
     )
 
@@ -739,6 +758,80 @@ def _failure_classifications(
     )
 
 
+def _capture_outcome(
+    request: ExtractionRequest,
+    verdict: Verdict,
+    findings: tuple[Finding, ...],
+) -> str:
+    if request.capture.blocked or request.capture.acquisition_outcome == "blocked":
+        return "blocked"
+    if (
+        request.surface == Surface.ECOMMERCE_DETAIL
+        and request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
+    ):
+        return DETAIL_CAPTURE_NOT_FOUND_OUTCOME
+    if request.surface == Surface.ECOMMERCE_DETAIL and any(
+        row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
+    ):
+        return DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME
+    if verdict == "blocked":
+        return "blocked"
+    return request.capture.acquisition_outcome or "unknown"
+
+
+def _review_required(
+    request: ExtractionRequest,
+    *,
+    verdict: Verdict,
+    findings: tuple[Finding, ...],
+    field_states,
+    retry,
+) -> bool:
+    if verdict == "review":
+        return True
+    if retry is not None and retry.required:
+        return False
+    if any(
+        row.rule_id in DETAIL_REVIEW_RISK_FINDING_RULE_IDS and row.scope != "candidate"
+        for row in findings
+    ):
+        return True
+    if _parent_child_commercial_divergence(field_states):
+        return True
+    return _requested_high_value_field_unresolved(request, field_states)
+
+
+def _parent_child_commercial_divergence(field_states) -> bool:
+    states_by_field = {row.field: row.state for row in field_states}
+    for field in DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS:
+        child_state = states_by_field.get(f"variants.{field}")
+        parent_state = states_by_field.get(field)
+        if child_state == "captured_published" and parent_state not in {
+            "captured_published",
+            "captured_and_resolved",
+        }:
+            return True
+    return False
+
+
+def _requested_high_value_field_unresolved(
+    request: ExtractionRequest, field_states
+) -> bool:
+    if request.surface != Surface.ECOMMERCE_DETAIL:
+        return False
+    requested = {
+        "image_url" if field == "image" else field for field in request.requested_fields
+    } & DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS
+    if not requested:
+        return False
+    states_by_field = {row.field: row.state for row in field_states}
+    return any(
+        states_by_field.get(field)
+        not in {"captured_published", "captured_and_resolved"}
+        for field in requested
+    )
+
+
 def _failure(
     code,
     message: str,
@@ -761,6 +854,7 @@ def _diagnostic_summary(
     stage_outcomes: tuple[StageOutcome, ...],
     field_states,
     failures: tuple[FailureClassification, ...],
+    review_required: bool = False,
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
     model_fallback: ModelFallbackResult | None = None,
     sentinel_observations=(),
@@ -770,35 +864,14 @@ def _diagnostic_summary(
         for row in field_states
         if row.state in {"not_present_in_captured_sources", "source_unavailable"}
     )
-    trust_state = cast(
-        Literal[
-            "verified",
-            "partial",
-            "needs_review",
-            "rejected",
-            "blocked",
-            "unknown",
-        ],
-        "verified"
-        if verdict == "success"
-        else "partial"
-        if verdict == "partial"
-        else "needs_review"
-        if verdict == "review"
-        else "blocked"
-        if verdict == "blocked"
-        else "rejected"
-        if verdict in {"invalid", "error", "wrong_surface", "empty"} or not records
-        else "unknown",
-    )
     return DiagnosticSummary(
         decision_path=tuple(row.stage for row in stage_outcomes),
         extractor_tier="blocked" if verdict == "blocked" else extractor_tier,
-        trust_state=trust_state,
+        trust_state=_trust_state(verdict, records, review_required),
         missing_critical_fields=missing,
         failure_codes=tuple(row.code for row in failures),
         evidence_count=len(evidence),
-        review_required=verdict == "review",
+        review_required=review_required,
         model_invoked=model_fallback.invoked if model_fallback is not None else False,
         model_artifact_id=(
             model_fallback.artifact.artifact_id
@@ -820,3 +893,21 @@ def _diagnostic_summary(
         if sentinel_observations
         else None,
     )
+
+
+def _trust_state(
+    verdict: Verdict,
+    records: tuple[PublicRecord, ...],
+    review_required: bool,
+) -> Literal["verified", "partial", "needs_review", "rejected", "blocked", "unknown"]:
+    if review_required or verdict == "review":
+        return "needs_review"
+    if verdict == "success":
+        return "verified"
+    if verdict == "partial":
+        return "partial"
+    if verdict == "blocked":
+        return "blocked"
+    if verdict in {"invalid", "error", "wrong_surface", "empty"} or not records:
+        return "rejected"
+    return "unknown"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from app.core.config.extraction_rules import (
     DETAIL_SHELL_FINDING_RULE_ID,
@@ -17,6 +18,15 @@ from app.core.config.field_mappings import (
 from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
 from app.core.shared.ids import stable_id
+
+FindingScope = Literal[
+    "artifact",
+    "entity",
+    "candidate",
+    "selected_entity",
+    "selected_public_value",
+    "page",
+]
 
 
 def validate(
@@ -436,17 +446,31 @@ def _validate_offers(
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
     out: list[Finding] = []
-    price_without_currency: list[tuple[str, tuple[str, ...]]] = []
-    currency_without_price: list[tuple[str, tuple[str, ...]]] = []
+    # Split public-integrity from candidate diagnostics: a product-level offer
+    # (``variant_entity_id is None``) is the primary/public candidate, so its
+    # incompleteness is a page finding. Variant-bound offers are candidate
+    # evidence — most PRICE_WITHOUT_CURRENCY / CURRENCY_WITHOUT_PRICE warnings in
+    # a run describe discarded candidate offers on pages that already publish
+    # both parent price and currency, so they must stay diagnostic-only and never
+    # dominate the run-level root-cause report (audit Slice 1.3/1.4).
+    price_without_currency: dict[bool, list[tuple[str, tuple[str, ...]]]] = {
+        True: [],
+        False: [],
+    }
+    currency_without_price: dict[bool, list[tuple[str, tuple[str, ...]]]] = {
+        True: [],
+        False: [],
+    }
     for offer in entities.offers:
+        is_primary = offer.variant_entity_id is None
         has_price = bool(offer.fact_evidence.get("offer.price"))
         has_currency = bool(offer.fact_evidence.get("offer.currency"))
         if has_price and not has_currency:
-            price_without_currency.append(
+            price_without_currency[is_primary].append(
                 (offer.entity_id, offer.fact_evidence.get("offer.price", ()))
             )
         if has_currency and not has_price:
-            currency_without_price.append(
+            currency_without_price[is_primary].append(
                 (offer.entity_id, offer.fact_evidence.get("offer.currency", ()))
             )
         current = _decimal(offer.fact_evidence.get("offer.price", ()), by_id)
@@ -471,31 +495,45 @@ def _validate_offers(
                     True,
                 )
             )
-    out.extend(
-        _grouped_offer_completeness_findings(
-            rule="PRICE_WITHOUT_CURRENCY",
-            rows=price_without_currency,
-            message="Offer price lacks currency.",
+    for rule, buckets, message in (
+        (
+            "PRICE_WITHOUT_CURRENCY",
+            price_without_currency,
+            "Offer price lacks currency.",
+        ),
+        (
+            "CURRENCY_WITHOUT_PRICE",
+            currency_without_price,
+            "Offer currency lacks price.",
+        ),
+    ):
+        out.extend(
+            _grouped_offer_completeness_findings(
+                rule=rule, rows=buckets[True], message=message, scope="selected_entity"
+            )
         )
-    )
-    out.extend(
-        _grouped_offer_completeness_findings(
-            rule="CURRENCY_WITHOUT_PRICE",
-            rows=currency_without_price,
-            message="Offer currency lacks price.",
+        out.extend(
+            _grouped_offer_completeness_findings(
+                rule=rule, rows=buckets[False], message=message, scope="candidate"
+            )
         )
-    )
     return tuple(out)
 
 
 def _grouped_offer_completeness_findings(
-    *, rule: str, rows: list[tuple[str, tuple[str, ...]]], message: str
+    *,
+    rule: str,
+    rows: list[tuple[str, tuple[str, ...]]],
+    message: str,
+    scope: FindingScope,
 ) -> tuple[Finding, ...]:
     if not rows:
         return ()
     if len(rows) == 1:
         entity_id, evidence_ids = rows[0]
-        return (_finding(rule, (entity_id,), evidence_ids, message, False),)
+        return (
+            _finding(rule, (entity_id,), evidence_ids, message, False, scope=scope),
+        )
     evidence_ids = tuple(
         dict.fromkeys(evidence_id for _entity_id, ids in rows for evidence_id in ids)
     )
@@ -511,6 +549,7 @@ def _grouped_offer_completeness_findings(
                 "candidate_offer_count": len(rows),
                 "example_offer_entity_ids": examples,
             },
+            scope=scope,
         ),
     )
 
@@ -750,12 +789,13 @@ def _finding(
     message: str,
     blocking: bool,
     metadata: dict[str, object] | None = None,
+    scope: FindingScope | None = None,
 ) -> Finding:
     return Finding(
         finding_id=stable_id("finding", rule, entity_ids, evidence_ids),
         rule_id=rule,
         severity="high" if blocking else "medium",
-        scope="selected_entity" if entity_ids else "page",
+        scope=scope or ("selected_entity" if entity_ids else "page"),
         entity_ids=entity_ids,
         evidence_ids=evidence_ids,
         message=message,

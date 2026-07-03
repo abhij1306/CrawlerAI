@@ -1,6 +1,12 @@
 # Active Plan
 
-**Current:** None — the Extraction Correctness Overhaul (`docs/plans/crawlerai-adaptive-extraction-v2-plan.md`) is **COMPLETE** as of 2026-07-02.
+**Current:** `docs/plans/crawlerai-crawl-run-95-architectural-fixes.md` — COMPLETE as of 2026-07-03. Follow-on fixed the semantic/observability defects surfaced by the 95-URL crawl audit (`CrawlerAI_Crawl_Run_Analysis_and_Codebase_Audit.md`): trustworthy diagnostics, variant-control discovery, child ownership/aggregation, price-unit normalization, content-rejection narrowing, and review routing + terminal-state consistency. Architecture verdict stands (Harvest→Resolve→Publish valid; no new framework/acquisition redesign/site branches).
+**Started:** 2026-07-03
+**Closed:** 2026-07-03
+
+---
+
+**Predecessor:** the Extraction Correctness Overhaul (`docs/plans/crawlerai-adaptive-extraction-v2-plan.md`) is **COMPLETE** as of 2026-07-02.
 **Status:** COMPLETE — all phases 0–7 implemented and closed. Phase 7 (grounded LLM repair) landed the offline grounded-repair producer: proposals must cite `css:` evidence + an uncertainty reason, become `unverified_model` labels routed through the operator-correction compile/replay gate with activation withheld, and can never publish or activate values. A hot-path ratchet forbids extraction from importing the repair adapter or any LLM connector. Standing caveat: no production ML artifact is active because Phase 4 ended NO-GO (no passing candidate benchmark); the Phase 5 runtime fallback stays fail-closed by design.
 **Started:** 2026-07-02
 **Closed:** 2026-07-02

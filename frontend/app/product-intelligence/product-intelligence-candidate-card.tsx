@@ -17,7 +17,7 @@ import {
   isRecord,
   stringField,
 } from './product-intelligence-utils';
-import type { CandidateGroup, ProductIntelligenceCandidate } from './product-intelligence-utils';
+import type { CandidateGroup, ProductDiscoveryCandidate } from './product-intelligence-utils';
 
 export function CandidateGroupSection({
   group,
@@ -32,7 +32,7 @@ export function CandidateGroupSection({
   selectedUrlSet: Set<string>;
   onToggleExpanded: () => void;
   onToggleUrl: (url: string) => void;
-  onOpenJson: (candidate: ProductIntelligenceCandidate) => void;
+  onOpenJson: (candidate: ProductDiscoveryCandidate) => void;
 }) {
   return (
     <section className="group">
@@ -120,10 +120,10 @@ function CandidateCard({
   onToggleUrl,
   onOpenJson,
 }: {
-  candidate: ProductIntelligenceCandidate;
+  candidate: ProductDiscoveryCandidate;
   selected: boolean;
   onToggleUrl: (url: string) => void;
-  onOpenJson: (candidate: ProductIntelligenceCandidate) => void;
+  onOpenJson: (candidate: ProductDiscoveryCandidate) => void;
 }) {
   const score = candidateConfidence(candidate);
   const intelligence = isRecord(candidate.intelligence) ? candidate.intelligence : {};

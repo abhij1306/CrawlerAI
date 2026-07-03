@@ -16,7 +16,7 @@ import {
   SurfaceSection,
 } from '../../components/ui/patterns';
 import { api } from '../../lib/api';
-import type { CrawlRun } from '../../lib/api/types';
+import type { CrawlRun, Dashboard } from '../../lib/api/types';
 import { getDomain } from '../../lib/format/domain';
 import {
   dashboardStatusBarColor,
@@ -100,6 +100,135 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
   );
 }
 
+function DashboardMetrics({ data, loading }: Readonly<{ data?: Dashboard; loading: boolean }>) {
+  if (loading) {
+    return (
+      <MetricPulse>
+        {Array.from({ length: 4 }, (_, index) => (
+          <MetricPulseSkeleton key={index} />
+        ))}
+      </MetricPulse>
+    );
+  }
+  return (
+    <MetricPulse>
+      <MetricPulseItem
+        label="Total Runs"
+        value={(data?.total_runs ?? 0).toLocaleString()}
+        icon={Hash}
+      />
+      <MetricPulseItem
+        label="Active Runs"
+        value={(data?.active_runs ?? 0).toLocaleString()}
+        icon={Activity}
+        pulse={Boolean(data?.active_runs)}
+      />
+      <MetricPulseItem
+        label="Total Records"
+        value={(data?.total_records ?? 0).toLocaleString()}
+        icon={LayoutDashboard}
+      />
+      <MetricPulseItem
+        label="Unique Domains"
+        value={(data?.top_domains?.length ?? 0).toLocaleString()}
+        icon={Globe}
+      />
+    </MetricPulse>
+  );
+}
+
+function RecentRuns({ runs, loading }: Readonly<{ runs?: CrawlRun[]; loading: boolean }>) {
+  return (
+    <SurfaceSection
+      title="Recent Runs"
+      description="Last 10 jobs"
+      action={
+        <Link to="/runs" className="link-accent type-control no-underline hover:underline">
+          View all
+        </Link>
+      }
+      bodyClassName="p-4 space-y-2"
+    >
+      {loading ? (
+        <SkeletonRows count={6} className="p-4" />
+      ) : runs?.length ? (
+        runs.slice(0, 10).map((run) => <RunActivityRow key={run.id} run={run} />)
+      ) : (
+        <div className="py-4">
+          <EmptyPanel title="No runs yet" description="Submit a crawl to see activity here." />
+        </div>
+      )}
+    </SurfaceSection>
+  );
+}
+
+function TopDomains({ data, loading }: Readonly<{ data?: Dashboard; loading: boolean }>) {
+  const domains = data?.top_domains;
+  const max = domains?.[0]?.count ?? 1;
+  return (
+    <SurfaceSection title="Top Domains" description="By run count" bodyClassName="p-4 space-y-3">
+      {loading ? (
+        <SkeletonRows count={5} />
+      ) : domains?.length ? (
+        <div className="divide-y divide-border/50">
+          {domains.map((item) => (
+            <DomainBar key={item.domain} domain={item.domain} count={item.count} max={max} />
+          ))}
+        </div>
+      ) : (
+        <DataRegionEmpty
+          title="No domain data yet"
+          description="Run crawls to build domain distribution."
+          className="px-0 py-2"
+        />
+      )}
+    </SurfaceSection>
+  );
+}
+
+function RunStatusDistribution({
+  runs,
+  loading,
+}: Readonly<{ runs?: CrawlRun[]; loading: boolean }>) {
+  const statusCounts = (runs ?? []).reduce<Record<string, number>>((counts, run) => {
+    counts[run.status] = (counts[run.status] ?? 0) + 1;
+    return counts;
+  }, {});
+  const entries = Object.entries(statusCounts).sort(([, left], [, right]) => right - left);
+  const total = entries.reduce((count, [, value]) => count + value, 0);
+  if (loading || total === 0) {
+    return (
+      <DataRegionEmpty
+        title="No status data yet"
+        description="Run crawls to build status distribution."
+        className="px-0 py-0"
+      />
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-background-alt">
+        {entries.map(([status, count]) => (
+          <StatusSegment key={status} status={status} count={count} total={total} />
+        ))}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {entries.map(([status, count]) => (
+          <div
+            key={status}
+            className="flex items-center justify-between rounded-lg border border-border bg-background-alt px-3 py-2"
+          >
+            <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
+              {statusLabel(status)}
+            </Badge>
+            <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery({
@@ -116,18 +245,6 @@ export default function DashboardPage() {
       setIsRefreshing(false);
     }
   }
-
-  /* Derived stats */
-  const totalDomains = data?.top_domains?.length ?? 0;
-  const maxDomainCount = data?.top_domains?.[0]?.count ?? 1;
-
-  /* Status distribution */
-  const statusCounts = (data?.recent_runs ?? []).reduce<Record<string, number>>((acc, run) => {
-    acc[run.status] = (acc[run.status] ?? 0) + 1;
-    return acc;
-  }, {});
-  const totalInDistribution = Object.values(statusCounts).reduce((a, b) => a + b, 0);
-  const sortedStatusEntries = Object.entries(statusCounts).sort(([, a], [, b]) => b - a);
 
   return (
     <div className="page-stack-lg">
@@ -149,126 +266,16 @@ export default function DashboardPage() {
         }
       />
 
-      {/* ── Metric Pulse (Unified) ── */}
-      {isLoading ? (
-        <MetricPulse>
-          <MetricPulseSkeleton />
-          <MetricPulseSkeleton />
-          <MetricPulseSkeleton />
-          <MetricPulseSkeleton />
-        </MetricPulse>
-      ) : (
-        <MetricPulse>
-          <MetricPulseItem
-            label="Total Runs"
-            value={(data?.total_runs ?? 0).toLocaleString()}
-            icon={Hash}
-          />
-          <MetricPulseItem
-            label="Active Runs"
-            value={(data?.active_runs ?? 0).toLocaleString()}
-            icon={Activity}
-            pulse={Boolean(data?.active_runs)}
-          />
-          <MetricPulseItem
-            label="Total Records"
-            value={(data?.total_records ?? 0).toLocaleString()}
-            icon={LayoutDashboard}
-          />
-          <MetricPulseItem
-            label="Unique Domains"
-            value={totalDomains.toLocaleString()}
-            icon={Globe}
-          />
-        </MetricPulse>
-      )}
+      <DashboardMetrics data={data} loading={isLoading} />
 
       {/* ── Lower grid ── */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-        {/* Recent runs */}
-        <SurfaceSection
-          title="Recent Runs"
-          description="Last 10 jobs"
-          action={
-            <Link to="/runs" className="link-accent type-control no-underline hover:underline">
-              View all
-            </Link>
-          }
-          bodyClassName="p-4 space-y-2"
-        >
-          {isLoading ? (
-            <SkeletonRows count={6} className="p-4" />
-          ) : data?.recent_runs?.length ? (
-            data.recent_runs.slice(0, 10).map((run) => <RunActivityRow key={run.id} run={run} />)
-          ) : (
-            <div className="py-4">
-              <EmptyPanel title="No runs yet" description="Submit a crawl to see activity here." />
-            </div>
-          )}
-        </SurfaceSection>
-        {/* Top domains */}
-        <SurfaceSection
-          title="Top Domains"
-          description="By run count"
-          bodyClassName="p-4 space-y-3"
-        >
-          {isLoading ? (
-            <SkeletonRows count={5} />
-          ) : data?.top_domains?.length ? (
-            <div className="divide-y divide-border/50">
-              {data.top_domains.map((item) => (
-                <DomainBar
-                  key={item.domain}
-                  domain={item.domain}
-                  count={item.count}
-                  max={maxDomainCount}
-                />
-              ))}
-            </div>
-          ) : (
-            <DataRegionEmpty
-              title="No domain data yet"
-              description="Run crawls to build domain distribution."
-              className="px-0 py-2"
-            />
-          )}
-        </SurfaceSection>
+        <RecentRuns runs={data?.recent_runs} loading={isLoading} />
+        <TopDomains data={data} loading={isLoading} />
       </div>
 
       <SurfaceSection title="Run Status" description="Recent run distribution" bodyClassName="p-4">
-        {!isLoading && totalInDistribution > 0 ? (
-          <div className="space-y-4">
-            <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-background-alt">
-              {sortedStatusEntries.map(([status, count]) => (
-                <StatusSegment
-                  key={status}
-                  status={status}
-                  count={count}
-                  total={totalInDistribution}
-                />
-              ))}
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {sortedStatusEntries.map(([status, count]) => (
-                <div
-                  key={status}
-                  className="flex items-center justify-between rounded-lg border border-border bg-background-alt px-3 py-2"
-                >
-                  <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
-                    {statusLabel(status)}
-                  </Badge>
-                  <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <DataRegionEmpty
-            title="No status data yet"
-            description="Run crawls to build status distribution."
-            className="px-0 py-0"
-          />
-        )}
+        <RunStatusDistribution runs={data?.recent_runs} loading={isLoading} />
       </SurfaceSection>
     </div>
   );

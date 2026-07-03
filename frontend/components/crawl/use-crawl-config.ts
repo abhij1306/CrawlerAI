@@ -32,7 +32,7 @@ const httpUrlSchema = z
   );
 
 const validationStateSchema = z.enum(['idle', 'valid', 'invalid']);
-export const fieldRowSchema = z.object({
+const fieldRowSchema = z.object({
   id: z.string(),
   fieldName: z.string(),
   cssSelector: z.string(),

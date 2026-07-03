@@ -5,6 +5,7 @@ import type {
   KnowledgeContract,
 } from '../../../lib/api/types';
 import { isSpecialUseDomain } from '../../../lib/format/domain';
+import { mergeRunProfile } from '../../../lib/crawl/run-profile';
 import type { SurfaceWorkspace } from './types';
 
 export function surfaceLabel(surface: string) {
@@ -15,7 +16,7 @@ export function surfaceLabel(surface: string) {
   return surface.replace(/_/g, ' ');
 }
 
-export function titleCaseToken(value: string | null | undefined) {
+function titleCaseToken(value: string | null | undefined) {
   return String(value || '')
     .split(/[_\s]+/)
     .filter(Boolean)
@@ -77,7 +78,7 @@ function normalizeKnowledgeSourcePattern(source: string) {
   return `${collector}:${locator}`;
 }
 
-export function knowledgeValueLabel(value: unknown) {
+function knowledgeValueLabel(value: unknown) {
   if (value == null) return '';
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -217,24 +218,7 @@ function defaultDomainRunProfile(): DomainRunProfile {
 export function cloneDomainRunProfile(
   profile: DomainRunProfile | null | undefined,
 ): DomainRunProfile {
-  const base = defaultDomainRunProfile();
-  if (!profile) return base;
-  return {
-    version: 1,
-    fetch_profile: { ...base.fetch_profile, ...(profile.fetch_profile ?? {}) },
-    locality_profile: { ...base.locality_profile, ...(profile.locality_profile ?? {}) },
-    diagnostics_profile: { ...base.diagnostics_profile, ...(profile.diagnostics_profile ?? {}) },
-    acquisition_contract: {
-      ...base.acquisition_contract,
-      ...(profile.acquisition_contract ?? {}),
-      stale_after_failures: {
-        ...base.acquisition_contract.stale_after_failures,
-        ...(profile.acquisition_contract?.stale_after_failures ?? {}),
-      },
-    },
-    source_run_id: profile.source_run_id ?? null,
-    saved_at: profile.saved_at ?? null,
-  };
+  return mergeRunProfile(defaultDomainRunProfile(), profile);
 }
 
 export function parseOptionalClampedNumber(value: string, min: number, max: number) {

@@ -1,5 +1,5 @@
 import { Button } from '../ui/primitives';
-import type { FieldRow, FieldRowMessageTone, ValidationState } from './form-fields';
+import type { FieldRow, FieldRowMessageTone } from './form-fields';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
 import type { CrawlDomain, CrawlLog, CrawlRun, CrawlSurface } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
@@ -29,7 +29,6 @@ import {
   scoreFieldQuality,
   scoreRecordQuality,
 } from '../../lib/crawl/quality';
-import type { QualityLevel, QualitySnapshot } from '../../lib/crawl/quality';
 
 export {
   clampNumber,
@@ -52,9 +51,8 @@ export {
   uniqueStrings,
   validateAdditionalFieldName,
 };
-export type { QualityLevel, QualitySnapshot };
 export { buildLogSiteGroups, getLogStage, scrollViewportToBottom };
-export type { FieldRow, FieldRowMessageTone, ValidationState };
+export type { FieldRow, FieldRowMessageTone };
 
 export type CrawlTab = 'category' | 'pdp';
 export type CategoryMode = 'single' | 'sitemap' | 'bulk';

@@ -116,6 +116,7 @@ Primary files:
 - `components/crawl/use-crawl-route-sync.ts`
 - `components/crawl/use-crawl-submission.ts`
 - `components/crawl/domain-surface-config.ts`
+- `lib/crawl/run-profile.ts`
 - `components/crawl/crawl.module.css`
 - `components/crawl/shared.tsx`
 - `lib/constants/crawl-defaults.ts`
@@ -128,6 +129,7 @@ Responsibilities:
 - derive surface from the domain/tab dispatch map
 - build dispatch payload
 - collect advanced settings and additional fields
+- merge persisted run-profile sections through one shared helper used by Crawl Studio and Domain Memory
 - submit crawl or CSV run
 
 Current UI settings behavior reflects the backend contract:

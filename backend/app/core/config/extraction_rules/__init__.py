@@ -14,6 +14,7 @@ from ._jobs import *
 from ._detail_sections import *
 from ._variants import *
 from ._variant_options import *
+from ._control_roles import *
 from ._listing_structured import *
 from ._extra_exports import _EXTRA_EXPORTS
 
