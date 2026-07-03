@@ -41,6 +41,7 @@ from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRecipe
 from app.persistence.extraction_memory import (
     RecipeCompileError,
+    _merge_observed_sources,
     _sentinel_template_in_scope,
     activate_release_snapshot_for_run,
     active_release_snapshot_for_run,
@@ -997,6 +998,65 @@ async def test_successful_extraction_records_observed_field_preference(
             ],
             "status": "active",
         }
+    ]
+
+
+def test_observed_source_merge_uses_canonical_source_keys() -> None:
+    contract = {
+        "candidates": [
+            {"source": "jsonld:/products/0/name", "success_count": 1},
+        ],
+        "selected_source": "jsonld:/products/0/name",
+        "selection_origin": "generic",
+        "success_count": 1,
+        "rejection_count": 0,
+    }
+
+    _merge_observed_sources(contract, ["jsonld:/products/{index}/name"])
+
+    assert contract["candidates"] == [
+        {"source": "jsonld:/products/{index}/name", "success_count": 2}
+    ]
+    assert contract["selected_source"] == "jsonld:/products/{index}/name"
+    assert contract["rejection_count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_upsert_recipe_merge_payload_preserves_existing_contracts(
+    db_session: AsyncSession,
+) -> None:
+    template = await ensure_template(
+        db_session,
+        domain="shop.test",
+        surface="ecommerce_detail",
+        fingerprint="merge-payload",
+        route_pattern="/products/{id}",
+    )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": [{"canonical_field": "product.title"}]},
+    )
+    recipe, _compiled = await upsert_recipe(
+        db_session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": []},
+        merge_payload=lambda existing: {
+            "contracts": [
+                *list(existing.get("contracts", [])),
+                {"canonical_field": "product.price"},
+            ]
+        },
+    )
+
+    assert recipe.payload["contracts"] == [
+        {"canonical_field": "product.title"},
+        {"canonical_field": "product.price"},
     ]
 
 

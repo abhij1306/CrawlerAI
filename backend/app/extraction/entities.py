@@ -351,7 +351,9 @@ def _share_strong_product_identity(
     left: set[tuple[str, str]], right: set[tuple[str, str]]
 ) -> bool:
     strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
-    return any(kind in strong_kinds and identity in right for kind, identity in left)
+    return any(
+        (kind, identity) in right for kind, identity in left if kind in strong_kinds
+    )
 
 
 def _product_by_subject(

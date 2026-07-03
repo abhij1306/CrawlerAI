@@ -155,9 +155,15 @@ async def _acquire_browser_retry_result(
         attempt_timeout_seconds=remaining_url_budget_seconds(context),
     )
     session = getattr(context, "session", None)
-    commit = getattr(session, "commit", None)
-    if commit is not None:
+    commit = getattr(session, "commit", None) if session is not None else None
+    if callable(commit):
         await commit()
+    else:
+        await _log_pipeline_event(
+            context,
+            "warning",
+            "Skipping browser retry pre-acquire commit: context.session is missing or has no async commit API",
+        )
     try:
         from app.crawl.pipeline import extraction_loop
 

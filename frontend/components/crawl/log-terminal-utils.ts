@@ -85,6 +85,7 @@ export const LOG_PATTERNS = {
   ROBOTS_PREFIX: /^\[ROBOTS\]\s*/i,
   HEADLESS_BROWSER: /launched headless browser \(([^,]+),[^)]+\)/i,
   URL_PREFIX: /^\[url:(https?:\/\/[^\s\]]+)\]\s*/i,
+  FIRST_URL: /https?:\/\/[^\s]+/i,
   URL: /https?:\/\/[^\s]+/g,
   COUNTER: /\(\d+\/\d+\)/,
 } as const;
@@ -148,7 +149,7 @@ export function sanitizeLogMessage(message: string) {
 }
 
 export function parseStartingLog(message: string) {
-  const match = sanitizeLogMessage(message).match(LOG_PATTERNS.STARTING_CRAWL);
+  const match = LOG_PATTERNS.STARTING_CRAWL.exec(sanitizeLogMessage(message));
   if (!match) {
     return null;
   }
@@ -246,7 +247,12 @@ function hasSameStablePathIdentity(left: string, right: string) {
 }
 
 function siteLabel(url: string, index: number | null, total: number | null) {
-  const prefix = index && total ? `${index}/${total}` : index ? String(index) : null;
+  let prefix: string | null = null;
+  if (index && total) {
+    prefix = `${index}/${total}`;
+  } else if (index) {
+    prefix = String(index);
+  }
   return prefix ? `${prefix} ${url}` : url;
 }
 
@@ -317,16 +323,154 @@ function createRunGroupWithLogs(key: string, logs: CrawlLog[]) {
 }
 
 function firstUrlInLog(message: string): string {
-  return sanitizeLogMessage(message).match(/https?:\/\/[^\s]+/i)?.[0] ?? '';
+  return LOG_PATTERNS.FIRST_URL.exec(sanitizeLogMessage(message))?.[0] ?? '';
+}
+
+type LogGroupBuildState = {
+  groups: LogSiteGroupDraft[];
+  groupMap: Map<string, LogSiteGroupDraft>;
+  activeGroupKeyByUrl: Map<string, string>;
+  currentGroup: LogSiteGroupDraft | null;
+  pendingRunLogs: CrawlLog[];
+  untitledCounter: number;
+};
+
+function flushPendingRunLogs(state: LogGroupBuildState) {
+  if (!state.pendingRunLogs.length) {
+    return;
+  }
+  state.untitledCounter += 1;
+  state.groups.push(createRunGroupWithLogs(`run:${state.untitledCounter}`, state.pendingRunLogs));
+  state.pendingRunLogs = [];
+}
+
+function ensurePrefixedGroup(state: LogGroupBuildState, log: CrawlLog, url: string) {
+  const groupKey = state.activeGroupKeyByUrl.get(url);
+  let group = groupKey ? state.groupMap.get(groupKey) : undefined;
+  if (group) {
+    return group;
+  }
+  const key = `site:prefixed:${log.id}:${url}`;
+  group = createSiteGroup({ key, url, index: null, total: null });
+  state.groups.push(group);
+  state.groupMap.set(key, group);
+  state.activeGroupKeyByUrl.set(url, key);
+  return group;
+}
+
+function handlePrefixedLog(state: LogGroupBuildState, log: CrawlLog) {
+  const urlMatch = LOG_PATTERNS.URL_PREFIX.exec(log.message);
+  if (!urlMatch) {
+    return false;
+  }
+  const url = urlMatch[1];
+  const cleanLog = { ...log, message: log.message.replace(LOG_PATTERNS.URL_PREFIX, '') };
+  const group = ensurePrefixedGroup(state, log, url);
+  addLogToGroup(group, cleanLog, getLogStage(cleanLog.message));
+  state.currentGroup = group;
+  return true;
+}
+
+function handleStartingLog(state: LogGroupBuildState, log: CrawlLog, logIndex: number) {
+  const start = parseStartingLog(log.message);
+  if (!start) {
+    return false;
+  }
+  flushPendingRunLogs(state);
+  const key = `site:${start.index ?? logIndex}:${log.id}:${start.url}`;
+  const group = createSiteGroup({
+    key,
+    url: start.url,
+    index: start.index,
+    total: start.total,
+  });
+  state.groups.push(group);
+  state.groupMap.set(key, group);
+  state.activeGroupKeyByUrl.set(start.url, key);
+  addLogToGroup(group, log, 'system');
+  state.currentGroup = group;
+  return true;
+}
+
+function handleInferredUrlLog(state: LogGroupBuildState, log: CrawlLog, isParallel: boolean) {
+  const inferredUrl = firstUrlInLog(log.message);
+  if (!inferredUrl) {
+    return false;
+  }
+  const groupKey = state.activeGroupKeyByUrl.get(inferredUrl);
+  let group = groupKey ? state.groupMap.get(groupKey) : undefined;
+  if (group) {
+    addLogToGroup(group, log, getLogStage(log.message));
+    state.currentGroup = group;
+    return true;
+  }
+  if (state.currentGroup && !isParallel) {
+    return false;
+  }
+  group = createSiteGroup({
+    key: `site:inferred:${log.id}:${inferredUrl}`,
+    url: inferredUrl,
+    index: null,
+    total: null,
+  });
+  state.groups.push(group);
+  state.groupMap.set(group.key, group);
+  state.activeGroupKeyByUrl.set(inferredUrl, group.key);
+  if (!state.currentGroup) {
+    for (const pendingLog of state.pendingRunLogs) {
+      addLogToGroup(group, pendingLog, getLogStage(pendingLog.message));
+    }
+    state.pendingRunLogs = [];
+  }
+  addLogToGroup(group, log, getLogStage(log.message));
+  state.currentGroup = group;
+  return true;
+}
+
+function handleFallbackLog(state: LogGroupBuildState, log: CrawlLog, isParallel: boolean) {
+  if (isParallel && !state.currentGroup) {
+    state.pendingRunLogs.push(log);
+    return;
+  }
+  if (!state.currentGroup) {
+    state.pendingRunLogs.push(log);
+    return;
+  }
+  addLogToGroup(state.currentGroup, log, getLogStage(log.message));
+}
+
+function finalizeLogSiteGroup(group: LogSiteGroupDraft, records: CrawlRecord[]): LogSiteGroup {
+  const matchedRecords = group.url
+    ? records.filter((record) => matchesSiteUrl(record, group.url))
+    : [];
+  let lastStage: LogStage = 'system';
+  for (const stage of [...DISPLAY_LOG_STAGES, 'system'] as LogStage[]) {
+    if (group.stageLogs[stage].length > 0) {
+      lastStage = stage;
+    }
+  }
+  const hasError = group.logs.some((log) => logMessageIsError(log.level, log.message));
+  const hasWarning = !hasError && group.logs.some(isWarningLog);
+  return {
+    ...group,
+    records: matchedRecords,
+    hasError,
+    hasWarning,
+    lastStage,
+    recordCount: matchedRecords.length,
+  };
 }
 
 export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []): LogSiteGroup[] {
   const groups: LogSiteGroupDraft[] = [];
-  const groupMap = new Map<string, LogSiteGroupDraft>();
-  const activeGroupKeyByUrl = new Map<string, string>();
-  let currentGroup: LogSiteGroupDraft | null = null;
-  let pendingRunLogs: CrawlLog[] = [];
-  let untitledCounter = 0;
+  const state: LogGroupBuildState = {
+    groups,
+    groupMap: new Map<string, LogSiteGroupDraft>(),
+    activeGroupKeyByUrl: new Map<string, string>(),
+    currentGroup: null,
+    pendingRunLogs: [],
+    untitledCounter: 0,
+  };
 
   const isParallel = logs.some((log) => LOG_PATTERNS.URL_PREFIX.test(log.message));
 
@@ -334,131 +478,18 @@ export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []
     if (isHiddenLogMessage(log.message)) {
       continue;
     }
-
-    // 1. Check if the log message has a [url:...] prefix
-    const urlMatch = log.message.match(LOG_PATTERNS.URL_PREFIX);
-    if (urlMatch) {
-      const url = urlMatch[1];
-      const cleanMessage = log.message.replace(LOG_PATTERNS.URL_PREFIX, '');
-      const cleanLog = { ...log, message: cleanMessage };
-      const groupKey = activeGroupKeyByUrl.get(url);
-
-      // Look up or create group for this URL
-      let group = groupKey ? groupMap.get(groupKey) : undefined;
-      if (!group) {
-        const key = `site:prefixed:${log.id}:${url}`;
-        group = createSiteGroup({
-          key,
-          url,
-          index: null,
-          total: null,
-        });
-        groups.push(group);
-        groupMap.set(key, group);
-        activeGroupKeyByUrl.set(url, key);
-      }
-
-      addLogToGroup(group, cleanLog, getLogStage(cleanLog.message));
-      currentGroup = group;
+    if (handlePrefixedLog(state, log)) {
       continue;
     }
-
-    // 2. Check if the log is a starting log
-    const start = parseStartingLog(log.message);
-    if (start) {
-      if (pendingRunLogs.length) {
-        untitledCounter += 1;
-        groups.push(createRunGroupWithLogs(`run:${untitledCounter}`, pendingRunLogs));
-        pendingRunLogs = [];
-      }
-
-      const key = `site:${start.index ?? logIndex}:${log.id}:${start.url}`;
-      const group = createSiteGroup({
-        key,
-        url: start.url,
-        index: start.index,
-        total: start.total,
-      });
-      groups.push(group);
-      groupMap.set(key, group);
-      activeGroupKeyByUrl.set(start.url, key);
-
-      addLogToGroup(group, log, 'system');
-      currentGroup = group;
+    if (handleStartingLog(state, log, logIndex)) {
       continue;
     }
-
-    // 3. Inferred URL via log content
-    const inferredUrl = firstUrlInLog(log.message);
-    if (inferredUrl) {
-      const groupKey = activeGroupKeyByUrl.get(inferredUrl);
-      let group = groupKey ? groupMap.get(groupKey) : undefined;
-      if (group) {
-        addLogToGroup(group, log, getLogStage(log.message));
-        currentGroup = group;
-        continue;
-      }
-
-      if (!currentGroup || isParallel) {
-        group = createSiteGroup({
-          key: `site:inferred:${log.id}:${inferredUrl}`,
-          url: inferredUrl,
-          index: null,
-          total: null,
-        });
-        groups.push(group);
-        groupMap.set(group.key, group);
-        activeGroupKeyByUrl.set(inferredUrl, group.key);
-
-        // Attach leading run logs if this is the first URL group and currentGroup is null
-        if (!currentGroup && pendingRunLogs.length) {
-          for (const pendingLog of pendingRunLogs) {
-            addLogToGroup(group, pendingLog, getLogStage(pendingLog.message));
-          }
-          pendingRunLogs = [];
-        }
-        addLogToGroup(group, log, getLogStage(log.message));
-        currentGroup = group;
-        continue;
-      }
+    if (handleInferredUrlLog(state, log, isParallel)) {
+      continue;
     }
-
-    // 4. Fallback for logs without URL and without prefix
-    if (isParallel && !currentGroup) {
-      pendingRunLogs.push(log);
-    } else {
-      if (!currentGroup) {
-        pendingRunLogs.push(log);
-        continue;
-      }
-      addLogToGroup(currentGroup, log, getLogStage(log.message));
-    }
+    handleFallbackLog(state, log, isParallel);
   }
 
-  if (pendingRunLogs.length) {
-    untitledCounter += 1;
-    groups.push(createRunGroupWithLogs(`run:${untitledCounter}`, pendingRunLogs));
-  }
-
-  return groups.map((group) => {
-    const matchedRecords = group.url
-      ? records.filter((record) => matchesSiteUrl(record, group.url))
-      : [];
-    let lastStage: LogStage = 'system';
-    for (const stage of [...DISPLAY_LOG_STAGES, 'system'] as LogStage[]) {
-      if (group.stageLogs[stage].length > 0) {
-        lastStage = stage;
-      }
-    }
-    const hasError = group.logs.some((log) => logMessageIsError(log.level, log.message));
-    const hasWarning = !hasError && group.logs.some(isWarningLog);
-    return {
-      ...group,
-      records: matchedRecords,
-      hasError,
-      hasWarning,
-      lastStage,
-      recordCount: matchedRecords.length,
-    };
-  });
+  flushPendingRunLogs(state);
+  return groups.map((group) => finalizeLogSiteGroup(group, records));
 }

@@ -153,6 +153,27 @@ def test_nested_offer_url_promotes_to_top_level_product_root() -> None:
     assert root_admits_path(selection, "/offers/0")
 
 
+def test_slash_root_is_not_descendant_ancestor_for_matching_sibling() -> None:
+    objects = (
+        (
+            "/",
+            {"@type": "Product", "name": "Primary"},
+        ),
+        (
+            "/recommendations/0",
+            {
+                "@type": "Product",
+                "name": "Related",
+                "url": "https://shop.test/products/related",
+            },
+        ),
+    )
+
+    selection = select_product_roots(objects, "https://shop.test/products/related")
+
+    assert selection == RootSelection("selected", ("/recommendations/0",))
+
+
 def test_search_hit_rows_are_not_treated_as_product_variants() -> None:
     bundle = CaptureBundle(
         schema_version="capture.v1",

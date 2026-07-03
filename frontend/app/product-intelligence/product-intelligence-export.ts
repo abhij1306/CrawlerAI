@@ -51,8 +51,8 @@ function toIntelligenceRow(candidate: ProductDiscoveryCandidate) {
     domain: candidate.domain,
     record,
     confidence_score: confidenceScore,
-    confidence_label: String(intelligence.confidence_label ?? ''),
-    cleanup_source: String(intelligence.cleanup_source ?? ''),
+    confidence_label: scalarString(intelligence.confidence_label),
+    cleanup_source: scalarString(intelligence.cleanup_source),
     score_reasons: isRecord(intelligence.score_reasons) ? intelligence.score_reasons : {},
   };
 }
@@ -68,6 +68,15 @@ function toCsv(rows: Array<Record<string, unknown>>) {
 
 function csvCell(value: unknown) {
   const text =
-    typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
-  return `"${text.replace(/"/g, '""')}"`;
+    typeof value === 'object' && value !== null ? JSON.stringify(value) : scalarString(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function scalarString(value: unknown) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : '';
 }

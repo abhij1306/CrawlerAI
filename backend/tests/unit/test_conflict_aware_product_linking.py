@@ -78,6 +78,20 @@ def test_canonical_url_and_matching_sku_merge_product_subjects() -> None:
     assert len(entities.products) == 1
 
 
+def test_matching_sku_allows_different_url_resources_to_merge() -> None:
+    bundle = _bundle()
+    rows = (
+        _row(bundle, "one", "product.url", "https://shop.test/products/item-red"),
+        _row(bundle, "one", "product.sku", "ITEM-1"),
+        _row(bundle, "two", "product.url", "https://shop.test/products/item-blue"),
+        _row(bundle, "two", "product.sku", "item-1"),
+    )
+
+    entities = build_entities(bundle, rows)
+
+    assert len(entities.products) == 1
+
+
 def test_shared_url_does_not_merge_conflicting_skus() -> None:
     bundle = _bundle()
     rows = (

@@ -1,5 +1,6 @@
 # ruff: noqa: F403, F405
 from tests.unit.extraction_pipeline_test_support import *
+from app.extraction.engine import _trust_state
 
 
 def test_active_provider_shell_without_product_identity_is_blocked() -> None:
@@ -59,6 +60,10 @@ def test_blocked_result_finding_retains_supplied_evidence_ids() -> None:
     result = _blocked_result(request, (row,), ())
 
     assert result.findings[0].evidence_ids == (row.evidence_id,)
+
+
+def test_blocked_trust_state_wins_over_review_required() -> None:
+    assert _trust_state("blocked", (), True) == "blocked"
 
 
 def test_js_state_source_object_evidence_budget_is_reported() -> None:

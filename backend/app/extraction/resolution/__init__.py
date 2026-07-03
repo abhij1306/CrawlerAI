@@ -2346,4 +2346,3 @@ def _invalidity_reason(ev: Evidence) -> str | None:
     if generic:
         return min(generic)
     return None
-    (IMAGE_DIMENSION_QUERY_KEYS,)

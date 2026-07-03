@@ -57,10 +57,10 @@ export const MAX_SOURCE_PRODUCTS_LIMIT = 500;
 export const MAX_CANDIDATES_PER_PRODUCT_LIMIT = 25;
 
 export function loadPrefillPayload(): PrefillLoadResult {
-  if (typeof window === 'undefined') {
+  if (typeof globalThis.window === 'undefined') {
     return { error: '', payload: {} };
   }
-  const stored = window.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
+  const stored = globalThis.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
   if (!stored) {
     return { error: '', payload: {} };
   }
@@ -77,7 +77,7 @@ export function loadPrefillPayload(): PrefillLoadResult {
   } catch {
     return { error: 'Unable to read Product Intelligence prefill.', payload: {} };
   } finally {
-    window.sessionStorage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
+    globalThis.sessionStorage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
   }
 }
 
@@ -244,6 +244,9 @@ export function candidateConfidence(candidate: ProductDiscoveryCandidate) {
 }
 
 export function stringField(value: unknown) {
+  if (isRecord(value) || Array.isArray(value)) {
+    return '';
+  }
   const text = String(value ?? '').trim();
   return text === '--' || text === 'null' || text === 'undefined' ? '' : text;
 }
@@ -253,13 +256,19 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function formatPrice(value: unknown, currency = '') {
-  const numeric =
-    typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.]+/g, ''));
+  const numeric = typeof value === 'number' ? value : numericTextPrice(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
     return null;
   }
   const prefix = currency || '$';
   return `${prefix}${numeric.toFixed(2)}`;
+}
+
+function numericTextPrice(value: unknown) {
+  if (typeof value !== 'string') {
+    return Number.NaN;
+  }
+  return Number(value.replace(/[^0-9.]+/g, ''));
 }
 
 function stringArray(value: unknown) {

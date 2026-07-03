@@ -257,6 +257,7 @@ LONG_TEXT_FIELDS = frozenset(
     if str(field_name) != "features"
 )
 DETAIL_LONG_TEXT_RANK_FIELDS = frozenset({*LONG_TEXT_FIELDS, "features"})
+LISTING_CATEGORY_PATH_PREFIX = "/category/"
 LISTING_PRICE_NODE_SELECTORS = (
     "[itemprop='price']",
     "[class*='price']",
@@ -271,7 +272,7 @@ LISTING_PROMINENT_TITLE_TAGS = frozenset(
 LISTING_CHROME_TEXT_LIMIT = 800
 LISTING_CATEGORY_PATH_PREFIXES = (
     "/c/",
-    "/category/",
+    LISTING_CATEGORY_PATH_PREFIX,
     "/categories/",
     "/collection/",
     "/collections/",
@@ -382,14 +383,14 @@ NON_PRODUCT_IMAGE_HINTS = tuple(
             "dyo-icon",
             "/static-dyo/",
             "/media/catalog/category/",
-            "/category/",
+            LISTING_CATEGORY_PATH_PREFIX,
             "dropdown",
         ]
     )
 )
 DETAIL_NON_PRODUCT_IMAGE_URL_HINTS = (
     "/media/catalog/category/",
-    "/category/",
+    LISTING_CATEGORY_PATH_PREFIX,
     "/library-sites-sharedlibrary/",
     "/search-page-",
     "_nav.",

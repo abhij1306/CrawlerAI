@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 import hashlib
 import json
@@ -7,6 +8,7 @@ import uuid
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
@@ -205,30 +207,62 @@ async def upsert_recipe(
     kind: str,
     payload: dict,
     locale_policy_ref: str | None = None,
+    merge_payload: Callable[[dict], dict] | None = None,
 ) -> tuple[ExtractionRecipe, CompiledExtractionRecipe]:
+    def next_payload(existing: dict | None = None) -> dict:
+        if merge_payload is None:
+            return dict(payload)
+        return dict(merge_payload(deepcopy(existing or {})))
+
     recipe = (
         await session.execute(
-            select(ExtractionRecipe).where(
+            select(ExtractionRecipe)
+            .where(
                 ExtractionRecipe.template_id == template.id,
                 ExtractionRecipe.layer == layer,
                 ExtractionRecipe.kind == kind,
             )
+            .with_for_update()
         )
     ).scalar_one_or_none()
+    created = False
     if recipe is None:
         recipe = ExtractionRecipe(
             template_id=template.id,
             layer=layer,
             kind=kind,
-            payload=dict(payload),
+            payload=next_payload(),
             locale_policy_ref=locale_policy_ref,
         )
-        session.add(recipe)
-        await session.flush()
-    elif recipe.payload != payload or recipe.locale_policy_ref != locale_policy_ref:
-        recipe.payload = dict(payload)
+        try:
+            async with session.begin_nested():
+                session.add(recipe)
+                await session.flush()
+            created = True
+        except IntegrityError:
+            recipe = (
+                await session.execute(
+                    select(ExtractionRecipe)
+                    .where(
+                        ExtractionRecipe.template_id == template.id,
+                        ExtractionRecipe.layer == layer,
+                        ExtractionRecipe.kind == kind,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one()
+    if not created:
+        merged_payload = next_payload(recipe.payload)
+        if (
+            recipe.payload != merged_payload
+            or recipe.locale_policy_ref != locale_policy_ref
+        ):
+            recipe.payload = merged_payload
+            recipe.locale_policy_ref = locale_policy_ref
+            recipe.version += 1
+            await session.flush()
+    elif recipe.locale_policy_ref != locale_policy_ref:
         recipe.locale_policy_ref = locale_policy_ref
-        recipe.version += 1
         await session.flush()
     checksum = _checksum(recipe.payload)
     compiled = (
@@ -246,8 +280,19 @@ async def upsert_recipe(
             checksum=checksum,
             payload=dict(recipe.payload),
         )
-        session.add(compiled)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                session.add(compiled)
+                await session.flush()
+        except IntegrityError:
+            compiled = (
+                await session.execute(
+                    select(CompiledExtractionRecipe).where(
+                        CompiledExtractionRecipe.recipe_id == recipe.id,
+                        CompiledExtractionRecipe.checksum == checksum,
+                    )
+                )
+            ).scalar_one()
     return recipe, compiled
 
 
@@ -586,73 +631,68 @@ async def _record_observed_field_preferences(
         evidence = evidence_by_id.get(winner_id) if winner_id else None
         if evidence is None:
             continue
-        source = source_pattern(evidence.collector_id, evidence.locator.value)
+        source = normalize_source_pattern(
+            source_pattern(evidence.collector_id, evidence.locator.value)
+        )
         if source:
             observed_sources[evidence.fact_type] = [source]
     if not observed_sources:
         return
 
-    recipe = (
-        await session.execute(
-            select(ExtractionRecipe)
-            .where(
-                ExtractionRecipe.template_id == template.id,
-                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
-                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
-            )
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    contracts = [
-        dict(row)
-        for row in (
-            recipe.payload.get("contracts", [])
-            if recipe is not None and isinstance(recipe.payload, dict)
-            else []
-        )
-        if isinstance(row, dict)
-    ]
-    contracts_by_field = {
-        str(row.get("canonical_field") or ""): row for row in contracts
-    }
-    for canonical_field, sources in observed_sources.items():
-        contract = contracts_by_field.get(canonical_field)
-        if contract is None:
-            selected_source = sources[0]
-            contract = {
-                "id": str(uuid.uuid4()),
-                "template_id": str(template.id),
-                "surface": surface,
-                "canonical_field": canonical_field,
-                "candidates": [],
-                "latest_values": [],
-                "success_count": 0,
-                "rejection_count": 0,
-                "resolver_rule": EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
-                "selected_source": selected_source,
-                "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
-                "selection_history": [
-                    {
-                        "selected_source": selected_source,
-                        "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
-                    }
-                ],
-                "status": EXTRACTION_MEMORY_STATUS_ACTIVE,
-            }
-            contracts.append(contract)
-            contracts_by_field[canonical_field] = contract
-        _merge_observed_sources(contract, sources)
+    def merge_contracts(existing_payload: dict) -> dict:
+        contracts = [
+            dict(row)
+            for row in existing_payload.get("contracts", [])
+            if isinstance(row, dict)
+        ]
+        contracts_by_field = {
+            str(row.get("canonical_field") or ""): row for row in contracts
+        }
+        for canonical_field, sources in observed_sources.items():
+            contract = contracts_by_field.get(canonical_field)
+            if contract is None:
+                selected_source = sources[0]
+                contract = {
+                    "id": str(uuid.uuid4()),
+                    "template_id": str(template.id),
+                    "surface": surface,
+                    "canonical_field": canonical_field,
+                    "candidates": [],
+                    "latest_values": [],
+                    "success_count": 0,
+                    "rejection_count": 0,
+                    "resolver_rule": EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
+                    "selected_source": selected_source,
+                    "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
+                    "selection_history": [
+                        {
+                            "selected_source": selected_source,
+                            "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
+                        }
+                    ],
+                    "status": EXTRACTION_MEMORY_STATUS_ACTIVE,
+                }
+                contracts.append(contract)
+                contracts_by_field[canonical_field] = contract
+            _merge_observed_sources(contract, sources)
+        return {"contracts": contracts}
 
     await upsert_recipe(
         session,
         template=template,
         layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
         kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
-        payload={"contracts": contracts},
+        payload={"contracts": []},
+        merge_payload=merge_contracts,
     )
 
 
 def _merge_observed_sources(contract: dict, sources: list[str]) -> None:
+    canonical_sources = [
+        source
+        for source in (normalize_source_pattern(str(row or "")) for row in sources)
+        if source
+    ]
     candidates_by_source: dict[str, dict] = {}
     for candidate in contract.get("candidates", []):
         if not isinstance(candidate, dict):
@@ -660,7 +700,7 @@ def _merge_observed_sources(contract: dict, sources: list[str]) -> None:
         source = normalize_source_pattern(str(candidate.get("source") or ""))
         if source:
             candidates_by_source[source] = dict(candidate, source=source)
-    for source in sources:
+    for source in canonical_sources:
         candidate = candidates_by_source.setdefault(
             source, {"source": source, "success_count": 0}
         )
@@ -669,7 +709,9 @@ def _merge_observed_sources(contract: dict, sources: list[str]) -> None:
     current_source = normalize_source_pattern(
         str(contract.get("selected_source") or "")
     )
-    if current_source and current_source not in sources:
+    if current_source:
+        contract["selected_source"] = current_source
+    if current_source and current_source not in canonical_sources:
         contract["rejection_count"] = int(contract.get("rejection_count") or 0) + 1
     contract["success_count"] = int(contract.get("success_count") or 0) + 1
 

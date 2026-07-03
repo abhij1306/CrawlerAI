@@ -8,6 +8,7 @@ import type { LogSiteGroup } from './log-terminal-utils';
 
 const URL_TERMINAL_MESSAGE_PATTERN =
   /\b(processing failed|timed out|stopped after reaching max_records|(?:extracted|yielded)\s+0\s+records?|no (?:public )?records? extracted|rejected detail extraction)\b/i;
+const AUTO_EXPAND_GROUP = Symbol('auto-expand-group');
 
 function groupHasTerminalOutcome(group: LogSiteGroup) {
   return (
@@ -76,8 +77,8 @@ export function useLogTerminalState({
   const [peekedGroupKey, setPeekedGroupKey] = useState<string | null>(null);
   const [peekedRecordIndex, setPeekedRecordIndex] = useState(0);
   const [expandedGroupPreference, setExpandedGroupPreference] = useState<
-    string | null | '__auto__'
-  >('__auto__');
+    string | null | typeof AUTO_EXPAND_GROUP
+  >(AUTO_EXPAND_GROUP);
   const [triageCursor, setTriageCursor] = useState(0);
 
   const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
@@ -104,10 +105,7 @@ export function useLogTerminalState({
   );
   const inferredSerialEndMsByKey = useMemo(() => serialGroupEndMsByKey(groups), [groups]);
   const activePeekedGroupKey = useMemo(
-    () =>
-      peekedGroupKey && groups.some((group) => group.key === peekedGroupKey)
-        ? peekedGroupKey
-        : null,
+    () => (groups.some((group) => group.key === peekedGroupKey) ? peekedGroupKey : null),
     [groups, peekedGroupKey],
   );
   const peekedGroup = useMemo(
@@ -116,8 +114,7 @@ export function useLogTerminalState({
   );
   const expandedGroupKey = useMemo(() => {
     if (
-      expandedGroupPreference &&
-      expandedGroupPreference !== '__auto__' &&
+      typeof expandedGroupPreference === 'string' &&
       groups.some((group) => group.key === expandedGroupPreference)
     ) {
       return expandedGroupPreference;
@@ -143,8 +140,8 @@ export function useLogTerminalState({
     if (!live) {
       return;
     }
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const timer = globalThis.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => globalThis.clearInterval(timer);
   }, [live]);
 
   useEffect(() => {
@@ -166,8 +163,9 @@ export function useLogTerminalState({
       return [];
     }
     const start = parseApiDate(groups[0].logs[0]?.created_at ?? new Date().toISOString()).getTime();
+    const lastGroup = groups.at(-1);
     const end = parseApiDate(
-      groups[groups.length - 1].logs.at(-1)?.created_at ??
+      lastGroup?.logs.at(-1)?.created_at ??
         groups[0].logs[0]?.created_at ??
         new Date().toISOString(),
     ).getTime();
@@ -175,17 +173,15 @@ export function useLogTerminalState({
     return groups.map((group) => {
       const createdAt = group.logs[0]?.created_at ?? new Date().toISOString();
       const percent = ((parseApiDate(createdAt).getTime() - start) / range) * 100;
-      return {
-        key: group.key,
-        percent,
-        tone: group.hasError
-          ? 'bg-danger'
-          : group.hasWarning
-            ? 'bg-warning'
-            : group.recordCount > 0
-              ? 'bg-emerald-400'
-              : 'bg-white/15',
-      };
+      let tone = 'bg-white/15';
+      if (group.hasError) {
+        tone = 'bg-danger';
+      } else if (group.hasWarning) {
+        tone = 'bg-warning';
+      } else if (group.recordCount > 0) {
+        tone = 'bg-emerald-400';
+      }
+      return { key: group.key, percent, tone };
     });
   }, [groups]);
 

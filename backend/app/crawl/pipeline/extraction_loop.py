@@ -28,6 +28,7 @@ from app.crawl.robots_policy import (
     ROBOTS_MISSING,
     check_url_crawlability,
 )
+from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.extraction.contracts import ExtractionResult
@@ -538,13 +539,35 @@ async def _record_extraction_memory(
                 }
             )
     except Exception as exc:
-        await _log_pipeline_event(
-            context,
-            "error",
-            f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",
-            commit=False,
-        )
+        if isinstance(exc, PendingRollbackError) or _session_needs_rollback(
+            context.session
+        ):
+            logger.warning(
+                "Extraction-memory observation left the transaction unusable",
+                exc_info=True,
+            )
+            raise
+        try:
+            await _log_pipeline_event(
+                context,
+                "error",
+                f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",
+                commit=False,
+            )
+        except Exception as log_exc:
+            logger.warning(
+                "Failed to persist extraction-memory observation diagnostic",
+                exc_info=True,
+            )
+            if isinstance(log_exc, PendingRollbackError) or _session_needs_rollback(
+                context.session
+            ):
+                raise
     return extracted.result
+
+
+def _session_needs_rollback(session: AsyncSession) -> bool:
+    return getattr(session, "is_active", True) is False
 
 
 URLProcessingContext = _URLProcessingContext

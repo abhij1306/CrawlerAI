@@ -30,6 +30,15 @@ from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
+class CommitTrackingSession:
+    checked_out = False
+    commit_count = 0
+
+    async def commit(self) -> None:
+        self.checked_out = False
+        self.commit_count += 1
+
+
 def _detail_html() -> str:
     return """
     <html>
@@ -114,15 +123,7 @@ def test_parallel_url_concurrency_is_serial_when_celery_dispatch_is_disabled(
 async def test_acquisition_stage_releases_db_session_before_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _Session:
-        checked_out = False
-        commit_count = 0
-
-        async def commit(self) -> None:
-            self.checked_out = False
-            self.commit_count += 1
-
-    session = _Session()
+    session = CommitTrackingSession()
     context = SimpleNamespace(
         session=session,
         run=SimpleNamespace(id=101),
@@ -162,18 +163,60 @@ async def test_acquisition_stage_releases_db_session_before_fetch(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_extraction_memory_pending_rollback_is_not_swallowed() -> None:
+    class _Nested:
+        async def __aenter__(self):
+            raise PendingRollbackError("flush failed earlier")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Session:
+        is_active = False
+
+        def begin_nested(self):
+            return _Nested()
+
+        def add(self, *_args, **_kwargs):
+            raise AssertionError("poisoned sessions must not write diagnostics")
+
+        async def flush(self):
+            raise AssertionError("poisoned sessions must not flush diagnostics")
+
+    context = SimpleNamespace(
+        session=_Session(),
+        run=SimpleNamespace(id=101, extraction_release_snapshot_id=None),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        config=SimpleNamespace(persist_logs=True),
+    )
+    extracted = SimpleNamespace(
+        fetched=SimpleNamespace(
+            acquisition_result=PageAcquisitionResult(
+                request=SimpleNamespace(url=context.url),
+                final_url=context.url,
+                html="<html></html>",
+                method="test",
+                status_code=200,
+            )
+        ),
+        result=SimpleNamespace(),
+    )
+
+    with pytest.raises(PendingRollbackError):
+        await extraction_loop._record_extraction_memory(
+            context,
+            extracted,
+            url_result_id=1,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_extraction_stage_releases_db_session_after_selector_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _Session:
-        checked_out = False
-        commit_count = 0
-
-        async def commit(self) -> None:
-            self.checked_out = False
-            self.commit_count += 1
-
-    session = _Session()
+    session = CommitTrackingSession()
     context = SimpleNamespace(
         session=session,
         run=SimpleNamespace(id=102),

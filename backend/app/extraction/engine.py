@@ -925,14 +925,14 @@ def _trust_state(
     records: tuple[PublicRecord, ...],
     review_required: bool,
 ) -> Literal["verified", "partial", "needs_review", "rejected", "blocked", "unknown"]:
+    if verdict == "blocked":
+        return "blocked"
     if review_required or verdict == "review":
         return "needs_review"
     if verdict == "success":
         return "verified"
     if verdict == "partial":
         return "partial"
-    if verdict == "blocked":
-        return "blocked"
     if verdict in {"invalid", "error", "wrong_surface", "empty"} or not records:
         return "rejected"
     return "unknown"
