@@ -79,6 +79,8 @@ from app.extraction.resolution.assets import (
 from app.extraction.resolution.ranking import non_positive_money, rank
 from app.core.shared.ids import stable_id
 
+_rank = rank
+
 
 def inherit_variant_id_from_sku(
     row: dict[str, object], lineage_row: dict[str, object]

@@ -65,19 +65,24 @@ async def consume_public_rate_limit(
         minute_allowed = len(minute_bucket) < minute_limit
         burst_allowed = len(burst_bucket) < burst_limit
         if not minute_allowed or not burst_allowed:
-            minute_retry = _retry_after(
-                minute_bucket,
-                now=now,
-                window_seconds=PUBLIC_API_RATE_LIMIT_WINDOW_SECONDS,
-            )
-            burst_retry = _retry_after(
-                burst_bucket,
-                now=now,
-                window_seconds=PUBLIC_API_BURST_WINDOW_SECONDS,
-            )
-            retry_after = max(
-                1, min(value for value in (minute_retry, burst_retry) if value > 0)
-            )
+            retry_after_values: list[int] = []
+            if not minute_allowed:
+                retry_after_values.append(
+                    _retry_after(
+                        minute_bucket,
+                        now=now,
+                        window_seconds=PUBLIC_API_RATE_LIMIT_WINDOW_SECONDS,
+                    )
+                )
+            if not burst_allowed:
+                retry_after_values.append(
+                    _retry_after(
+                        burst_bucket,
+                        now=now,
+                        window_seconds=PUBLIC_API_BURST_WINDOW_SECONDS,
+                    )
+                )
+            retry_after = max(retry_after_values, default=1)
             return PublicRateLimitResult(
                 allowed=False,
                 limit=minute_limit,

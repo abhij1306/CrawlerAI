@@ -1,7 +1,9 @@
 from __future__ import annotations
 # pylint: disable=duplicate-code
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, String, Text
+from decimal import Decimal
+
+from sqlalchemy import Float, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -73,7 +75,7 @@ class ProductIntelligenceSourceProduct(CreatedAtMixin, Base):
     sku: Mapped[str] = mapped_column(String(255), default="")
     mpn: Mapped[str] = mapped_column(String(255), default="")
     gtin: Mapped[str] = mapped_column(String(255), default="")
-    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(16), default="")
     image_url: Mapped[str] = mapped_column(Text, default="")
     is_private_label: Mapped[bool] = mapped_column(default=False)
@@ -144,8 +146,10 @@ class ProductIntelligenceMatch(UpdatedAtMixin, Base):
         default=PRODUCT_INTELLIGENCE_REVIEW_PENDING,
         index=True,
     )
-    source_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    candidate_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    candidate_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
     currency: Mapped[str] = mapped_column(String(16), default="")
     availability: Mapped[str] = mapped_column(Text, default="")
     candidate_url: Mapped[str] = mapped_column(Text, default="")

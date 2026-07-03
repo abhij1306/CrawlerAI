@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2374,7 +2376,7 @@ async def test_product_intelligence_job_stores_source_products_and_llm_option(
     )
     assert source is not None
     assert source.is_private_label is True
-    assert source.price == pytest.approx(19.99)
+    assert source.price == Decimal("19.99")
 
 
 @pytest.mark.asyncio

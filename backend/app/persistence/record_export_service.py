@@ -4,6 +4,7 @@ import csv
 import json
 from collections.abc import AsyncIterator, Callable
 from io import StringIO
+from tempfile import TemporaryFile
 from urllib.parse import urlparse
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
@@ -36,7 +37,11 @@ from app.persistence.publish.quality_gate import (
     export_quality_headers,
     export_quality_report,
 )
-from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
+from app.persistence.record_artifacts import (
+    RecordArtifacts,
+    load_canonical_record_views,
+    load_record_artifacts,
+)
 from app.schemas.crawl import CrawlRecordProvenanceResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -210,17 +215,31 @@ async def _stream_export_rows(session: AsyncSession, run_id: int):
         page += 1
 
 
+async def _stream_export_record_views(session: AsyncSession, run_id: int):
+    page = 1
+    while True:
+        page_rows, total = await get_run_records(
+            session, run_id, page, MAX_RECORD_PAGE_SIZE
+        )
+        if not page_rows:
+            return
+        for record_view in await load_canonical_record_views(session, page_rows):
+            yield record_view
+        if page * MAX_RECORD_PAGE_SIZE >= int(total):
+            return
+        page += 1
+
+
 async def stream_export_json(session: AsyncSession, run_id: int):
     yield "[\n"
     first = True
-    async for row in _stream_export_rows(session, run_id):
+    async for record_view in _stream_export_record_views(session, run_id):
         if not first:
             yield ",\n"
-        artifacts = await load_record_artifacts(session, row)
         export_record = export_record_from_row(
-            row,
-            data=dict(artifacts.data),
-            source_trace=dict(artifacts.source_trace),
+            record_view,
+            data=dict(record_view.data),
+            source_trace=dict(record_view.source_trace),
         )
         yield json.dumps(export_record.data, indent=2)
         first = False
@@ -229,12 +248,11 @@ async def stream_export_json(session: AsyncSession, run_id: int):
 
 async def stream_export_csv(session: AsyncSession, run_id: int):
     fieldnames: set[str] = set()
-    async for row in _stream_export_rows(session, run_id):
-        artifacts = await load_record_artifacts(session, row)
+    async for record_view in _stream_export_record_views(session, run_id):
         export_record = export_record_from_row(
-            row,
-            data=dict(artifacts.data),
-            source_trace=dict(artifacts.source_trace),
+            record_view,
+            data=dict(record_view.data),
+            source_trace=dict(record_view.source_trace),
         )
         if not export_record.data:
             continue
@@ -250,12 +268,11 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
     yield buffer.getvalue()
     buffer.seek(0)
     buffer.truncate(0)
-    async for row in _stream_export_rows(session, run_id):
-        artifacts = await load_record_artifacts(session, row)
+    async for record_view in _stream_export_record_views(session, run_id):
         export_record = export_record_from_row(
-            row,
-            data=dict(artifacts.data),
-            source_trace=dict(artifacts.source_trace),
+            record_view,
+            data=dict(record_view.data),
+            source_trace=dict(record_view.source_trace),
         )
         if not export_record.data:
             continue
@@ -266,12 +283,32 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
 
 
 async def stream_export_tables_csv(session: AsyncSession, run_id: int):
-    table_rows: list[dict] = []
-    async for row in _stream_export_rows(session, run_id):
-        artifacts = await load_record_artifacts(session, row)
-        table_rows.extend(artifact_table_rows(row, artifacts=artifacts))
-    async for chunk in stream_table_rows_csv(table_rows):
-        yield chunk
+    fieldnames: set[str] = set()
+    with TemporaryFile(mode="w+", encoding="utf-8", newline="") as row_buffer:
+        async for record_view in _stream_export_record_views(session, run_id):
+            for table_row in artifact_table_rows(
+                record_view.record, artifacts=record_view.artifacts
+            ):
+                fieldnames.update(table_row.keys())
+                row_buffer.write(json.dumps(table_row, separators=(",", ":")) + "\n")
+        if not fieldnames:
+            return
+        ordered_fieldnames = sorted(fieldnames)
+        buffer = StringIO()
+        writer = csv.DictWriter(
+            buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
+        )
+        writer.writeheader()
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        row_buffer.seek(0)
+        for line in row_buffer:
+            table_row = json.loads(line)
+            writer.writerow(table_row)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
 
 
 async def stream_table_rows_csv(table_rows: list[dict]):
@@ -321,12 +358,11 @@ async def stream_export_discoverist(session: AsyncSession, run_id: int):
 async def stream_export_artifacts_json(session: AsyncSession, run_id: int):
     yield "[\n"
     first = True
-    async for row in _stream_export_rows(session, run_id):
+    async for record_view in _stream_export_record_views(session, run_id):
         if not first:
             yield ",\n"
-        artifacts = await load_record_artifacts(session, row)
         yield json.dumps(
-            record_artifact_bundle(row, artifacts=artifacts),
+            record_artifact_bundle(record_view.record, artifacts=record_view.artifacts),
             indent=2,
         )
         first = False

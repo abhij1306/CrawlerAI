@@ -182,7 +182,11 @@ def _variant_parent_fallback(
             low_resolution_urls=low_resolution_urls,
         )
     ]
-    owners = {asset.variant_entity_id for _rank, asset, _accepted in candidates}
+    owners = {
+        asset.variant_entity_id
+        for _rank, asset, _accepted in candidates
+        if asset.variant_entity_id is not None
+    }
     if len(selected_ids) == 1:
         allowed_ids = selected_ids
     elif len(owners) == 1:

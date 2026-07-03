@@ -1,7 +1,7 @@
 from __future__ import annotations
 # pylint: disable=duplicate-code
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,12 @@ CRAWL_RECORD_FK = "crawl_records.id"
 
 class DataEnrichmentJob(UpdatedAtMixin, CompletedAtMixin, Base):
     __tablename__ = "data_enrichment_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'enriched', 'degraded', 'failed')",
+            name="ck_data_enrichment_jobs_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -44,6 +50,10 @@ class DataEnrichmentJob(UpdatedAtMixin, CompletedAtMixin, Base):
 class EnrichedProduct(UpdatedAtMixin, Base):
     __tablename__ = "enriched_products"
     __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'enriched', 'degraded', 'failed')",
+            name="ck_enriched_products_status",
+        ),
         Index(
             "uq_enriched_products_source_record",
             "source_record_id",

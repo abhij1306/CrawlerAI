@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -509,7 +510,9 @@ def _discovered_candidate_payload(
         "source_url": source_url,
         "source_title": str(snapshot.get("title") or ""),
         "source_brand": str(snapshot.get("brand") or ""),
-        "source_price": source_price if isinstance(source_price, float) else None,
+        "source_price": float(source_price)
+        if isinstance(source_price, (Decimal, float))
+        else None,
         "source_currency": str(snapshot.get("currency") or ""),
         "source_index": source_index,
         "url": str(getattr(candidate, "url", "")),
@@ -627,7 +630,7 @@ def _as_float_or_default(value: object, default: float) -> float:
 
 
 def _as_price(value: object) -> float | None:
-    return float(value) if isinstance(value, (int, float)) else None
+    return float(value) if isinstance(value, (Decimal, int, float)) else None
 
 
 def _as_int(value: object) -> int | None:

@@ -80,6 +80,8 @@ async def run_prompt_task(
             task_type=task_type,
             started_at=started_at,
         )
+    if session.in_transaction():
+        await session.commit()
     raw, input_tokens, output_tokens = await _call_provider(
         config=config,
         system_prompt=system_prompt,

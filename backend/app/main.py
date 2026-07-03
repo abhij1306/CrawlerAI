@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -50,7 +51,7 @@ from app.core.rate_limit import (
     consume_sliding_window_limit,
 )
 from app.core.redis import close_redis
-from app.core.database import SessionLocal, dispose_engine, ensure_database_schema
+from app.core.database import SessionLocal, dispose_engine
 from app.core.public_auth import authenticate_public_api_key
 from app.core.telemetry import (
     configure_logging,
@@ -117,7 +118,6 @@ async def lifespan(_fastapi_app: FastAPI):
     except RuntimeError:
         logger.debug("Asyncio exception filter not installed; no running loop")
     validate_cookie_policy_config()
-    await ensure_database_schema()
     async with SessionLocal() as session:
         await bootstrap_admin_user(session)
         recovered = await recover_stale_local_runs(session)
@@ -153,6 +153,8 @@ app.add_middleware(
 @app.middleware("http")
 async def public_api_middleware(request: Request, call_next) -> Response:
     if not request.url.path.startswith(_PUBLIC_API_PREFIX):
+        return await call_next(request)
+    if request.method.upper() == "OPTIONS":
         return await call_next(request)
     request.state.public_api_started_at = perf_counter()
     request.state.public_rate_limit_headers = {
@@ -456,6 +458,7 @@ async def correlation_middleware(request: Request, call_next) -> Response:
     )
     if not correlation_id:
         correlation_id = generate_correlation_id()
+    request.state.correlation_id = correlation_id
     token = set_correlation_id(correlation_id)
     try:
         response = await call_next(request)
@@ -493,17 +496,18 @@ async def public_http_exception_handler(
         return JSONResponse(detail, status_code=exc.status_code, headers=exc.headers)
     nested_raw = detail.get("error")
     nested: dict[str, Any] = nested_raw if isinstance(nested_raw, dict) else {}
+    fallback_code = "REQUEST_FAILED"
+    fallback_message = str(exc.detail or "Request failed")
+    if exc.status_code == 404:
+        fallback_code = "NOT_FOUND"
+        fallback_message = "Not found"
+    elif exc.status_code == 405:
+        fallback_code = "METHOD_NOT_ALLOWED"
+        fallback_message = "Method not allowed"
     return public_error_response(
         request,
-        code=str(
-            detail.get("code") or nested.get("code") or PUBLIC_API_ERROR_INVALID_API_KEY
-        ),
-        message=str(
-            detail.get("message")
-            or nested.get("message")
-            or exc.detail
-            or "Request failed"
-        ),
+        code=str(detail.get("code") or nested.get("code") or fallback_code),
+        message=str(detail.get("message") or nested.get("message") or fallback_message),
         status_code=exc.status_code,
         details=detail.get("details")
         if isinstance(detail.get("details"), dict)
@@ -517,14 +521,15 @@ async def public_validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    errors = jsonable_encoder(exc.errors())
     if not request.url.path.startswith(_PUBLIC_API_PREFIX):
-        return JSONResponse({"detail": exc.errors()}, status_code=422)
+        return JSONResponse({"detail": errors}, status_code=422)
     return public_error_response(
         request,
         code="VALIDATION_ERROR",
         message="Request validation failed.",
         status_code=422,
-        details={"errors": exc.errors()},
+        details={"errors": errors},
     )
 
 

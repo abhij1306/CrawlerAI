@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.models.crawl_run import CrawlRecord, CrawlUrlResult
@@ -58,6 +59,7 @@ async def load_record_artifacts(
     record: CrawlRecord,
     *,
     root_dir: Path | None = None,
+    include_html: bool = True,
 ) -> RecordArtifacts:
     """Resolve a record's data + provenance + page HTML.
 
@@ -70,19 +72,20 @@ async def load_record_artifacts(
 
     repository = ArtifactRepository(root_dir=root_dir or settings.artifacts_dir)
     url_result_id = getattr(record, "url_result_id", None)
-    if url_result_id is None:
-        return _legacy_record_artifacts(record, repository=repository)
-    url_result = await session.get(CrawlUrlResult, int(url_result_id))
-    result_root = str(getattr(url_result, "manifest_uri", "") or "").strip()
-    if not result_root:
-        return _legacy_record_artifacts(record, repository=repository)
-    return RecordArtifacts(
-        status="canonical",
-        html=_read_result_html(repository, result_root),
-        data=_mapping(getattr(record, "data", {})),
-        raw_data=_mapping(getattr(record, "raw_data", {})),
-        discovered_data=_mapping(getattr(record, "discovered_data", {})),
-        source_trace=_mapping(getattr(record, "source_trace", {})),
+    result_roots: dict[int, str] = {}
+    if url_result_id is not None:
+        url_result = await session.get(CrawlUrlResult, int(url_result_id))
+    else:
+        url_result = None
+    if url_result_id is not None and url_result is not None:
+        result_roots[int(url_result_id)] = str(
+            getattr(url_result, "manifest_uri", "") or ""
+        ).strip()
+    return _artifacts_from_batch(
+        record,
+        repository=repository,
+        result_roots=result_roots,
+        include_html=include_html,
     )
 
 
@@ -92,13 +95,31 @@ async def load_canonical_record_views(
     *,
     root_dir: Path | None = None,
 ) -> list[CanonicalRecordView]:
+    repository = ArtifactRepository(root_dir=root_dir or settings.artifacts_dir)
+    url_result_ids = {
+        int(url_result_id)
+        for record in records
+        if (url_result_id := getattr(record, "url_result_id", None)) is not None
+    }
+    result_roots: dict[int, str] = {}
+    if url_result_ids:
+        result = await session.execute(
+            select(CrawlUrlResult.id, CrawlUrlResult.manifest_uri).where(
+                CrawlUrlResult.id.in_(url_result_ids)
+            )
+        )
+        result_roots = {
+            int(row_id): str(manifest_uri or "").strip()
+            for row_id, manifest_uri in result.all()
+        }
     return [
         CanonicalRecordView(
             record=record,
-            artifacts=await load_record_artifacts(
-                session,
+            artifacts=_artifacts_from_batch(
                 record,
-                root_dir=root_dir,
+                repository=repository,
+                result_roots=result_roots,
+                include_html=False,
             ),
         )
         for record in records
@@ -117,15 +138,58 @@ def _legacy_record_artifacts(
     record: CrawlRecord,
     *,
     repository: ArtifactRepository,
+    include_html: bool,
 ) -> RecordArtifacts:
     return RecordArtifacts(
         status="legacy",
-        html=_read_legacy_html(record, repository=repository),
+        html=_read_legacy_html(record, repository=repository) if include_html else "",
         raw_html_path=str(getattr(record, "raw_html_path", "") or "") or None,
         data=_mapping(getattr(record, "data", {})),
         raw_data=_mapping(getattr(record, "raw_data", {})),
         discovered_data=_mapping(getattr(record, "discovered_data", {})),
         source_trace=_mapping(getattr(record, "source_trace", {})),
+    )
+
+
+def _canonical_record_artifacts(
+    record: CrawlRecord,
+    *,
+    repository: ArtifactRepository,
+    result_root: str,
+    include_html: bool,
+) -> RecordArtifacts:
+    return RecordArtifacts(
+        status="canonical",
+        html=_read_result_html(repository, result_root) if include_html else "",
+        data=_mapping(getattr(record, "data", {})),
+        raw_data=_mapping(getattr(record, "raw_data", {})),
+        discovered_data=_mapping(getattr(record, "discovered_data", {})),
+        source_trace=_mapping(getattr(record, "source_trace", {})),
+    )
+
+
+def _artifacts_from_batch(
+    record: CrawlRecord,
+    *,
+    repository: ArtifactRepository,
+    result_roots: dict[int, str],
+    include_html: bool,
+) -> RecordArtifacts:
+    url_result_id = getattr(record, "url_result_id", None)
+    if url_result_id is None:
+        return _legacy_record_artifacts(
+            record, repository=repository, include_html=include_html
+        )
+    result_root = result_roots.get(int(url_result_id), "")
+    if not result_root:
+        return _legacy_record_artifacts(
+            record, repository=repository, include_html=include_html
+        )
+    return _canonical_record_artifacts(
+        record,
+        repository=repository,
+        result_root=result_root,
+        include_html=include_html,
     )
 
 

@@ -5,7 +5,16 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -56,6 +65,20 @@ class CompletedAtMixin:
 
 class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
     __tablename__ = "crawl_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'paused', 'completed', 'killed', "
+            "'failed', 'proxy_exhausted')",
+            name="ck_crawl_runs_status",
+        ),
+        Index("ix_crawl_runs_user_created_at", "user_id", text("created_at DESC")),
+        Index("ix_crawl_runs_status_created_at", "status", "created_at"),
+        Index(
+            "ix_crawl_runs_active_created_at",
+            "created_at",
+            postgresql_where=text("status IN ('pending', 'running', 'paused')"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey(USERS_FK), index=True)
@@ -187,6 +210,12 @@ class CrawlUrlResult(UpdatedAtMixin, CompletedAtMixin, Base):
 class CrawlRecord(CreatedAtMixin, Base):
     __tablename__ = "crawl_records"
     __table_args__ = (
+        CheckConstraint(
+            "enrichment_status IN ('unenriched', 'pending', 'running', "
+            "'enriched', 'degraded', 'failed')",
+            name="ck_crawl_records_enrichment_status",
+        ),
+        Index("ix_crawl_records_run_created_id", "run_id", "created_at", "id"),
         Index(
             "uq_crawl_records_run_identity",
             "run_id",

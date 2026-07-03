@@ -3,6 +3,7 @@ import logging
 from datetime import UTC, datetime
 from typing import cast
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionLocal
@@ -29,7 +30,7 @@ from app.core.config.data_enrichment import (
     data_enrichment_settings,
 )
 from app.crawl.access_service import (
-    require_accessible_record,
+    AccessDeniedError,
     require_accessible_run,
 )
 from app.enrichment.deterministic import (
@@ -85,8 +86,15 @@ async def create_data_enrichment_job(
     accepted_records: list[CrawlRecord] = []
     skipped_status = 0
     skipped_surface = 0
+    run_ids = {record.run_id for record in source_records}
+    runs_by_id = {
+        run.id: run
+        for run in (
+            await session.scalars(select(CrawlRun).where(CrawlRun.id.in_(run_ids)))
+        ).all()
+    }
     for record in source_records:
-        run = await session.get(CrawlRun, record.run_id)
+        run = runs_by_id.get(record.run_id)
         if (
             run is None
             or str(run.surface or "").strip().lower() != ECOMMERCE_DETAIL_SURFACE
@@ -216,6 +224,7 @@ async def run_job(session: AsyncSession, job: DataEnrichmentJob) -> None:
         try:
             product.status = DATA_ENRICHMENT_STATUS_RUNNING
             record.enrichment_status = DATA_ENRICHMENT_STATUS_RUNNING
+            await session.commit()
             await _enrich_product(
                 session,
                 job=job,
@@ -518,28 +527,40 @@ async def _upsert_enriched_product(
     job: DataEnrichmentJob,
     record: CrawlRecord,
 ) -> EnrichedProduct:
-    existing = (
-        await session.scalars(
-            select(EnrichedProduct).where(EnrichedProduct.source_record_id == record.id)
+    now = datetime.now(UTC)
+    reset_values = _empty_enriched_product_values()
+    statement = (
+        insert(EnrichedProduct)
+        .values(
+            job_id=job.id,
+            source_run_id=record.run_id,
+            source_record_id=record.id,
+            source_url=record.source_url,
+            status=DATA_ENRICHMENT_STATUS_PENDING,
+            diagnostics={},
+            created_at=now,
+            updated_at=now,
+            **reset_values,
         )
-    ).first()
-    if existing is not None:
-        existing.job_id = job.id
-        existing.source_run_id = record.run_id
-        existing.source_url = record.source_url
-        existing.status = DATA_ENRICHMENT_STATUS_PENDING
-        _clear_enriched_fields(existing)
-        existing.diagnostics = {}
-        return existing
-    product = EnrichedProduct(
-        job_id=job.id,
-        source_run_id=record.run_id,
-        source_record_id=record.id,
-        source_url=record.source_url,
-        status=DATA_ENRICHMENT_STATUS_PENDING,
-        diagnostics={},
+        .on_conflict_do_update(
+            index_elements=[EnrichedProduct.source_record_id],
+            index_where=EnrichedProduct.source_record_id.is_not(None),
+            set_={
+                "job_id": job.id,
+                "source_run_id": record.run_id,
+                "source_url": record.source_url,
+                "status": DATA_ENRICHMENT_STATUS_PENDING,
+                "diagnostics": {},
+                "updated_at": now,
+                **reset_values,
+            },
+        )
+        .returning(EnrichedProduct.id)
     )
-    session.add(product)
+    product_id = (await session.execute(statement)).scalar_one()
+    product = await session.get(EnrichedProduct, int(product_id))
+    if product is None:
+        raise RuntimeError(f"EnrichedProduct upsert failed: record_id={record.id}")
     return product
 
 
@@ -552,12 +573,22 @@ async def _load_source_records(
 ) -> list[CrawlRecord]:
     record_ids = _source_record_ids(payload)
     if record_ids:
-        records: list[CrawlRecord] = []
-        for record_id in record_ids[: cast(int, options["max_source_records"])]:
-            records.append(
-                await require_accessible_record(session, record_id=record_id, user=user)
-            )
-        return records
+        limited_ids = record_ids[: cast(int, options["max_source_records"])]
+        query = (
+            select(CrawlRecord)
+            .join(CrawlRun, CrawlRun.id == CrawlRecord.run_id)
+            .where(CrawlRecord.id.in_(limited_ids))
+        )
+        if user.role != "admin":
+            query = query.where(CrawlRun.user_id == user.id)
+        rows = list((await session.scalars(query)).all())
+        records_by_id = {record.id: record for record in rows}
+        missing_ids = [
+            record_id for record_id in limited_ids if record_id not in records_by_id
+        ]
+        if missing_ids:
+            raise AccessDeniedError("Record not found")
+        return [records_by_id[record_id] for record_id in limited_ids]
 
     source_run_id = positive_int(payload.get("source_run_id"))
     if source_run_id is None:
@@ -702,21 +733,28 @@ def _normalized_options(value: object) -> dict[str, object]:
 
 
 def _clear_enriched_fields(product: EnrichedProduct) -> None:
-    for field_name in (
-        "price_normalized",
-        "color_family",
-        "size_normalized",
-        "size_system",
-        "gender_normalized",
-        "materials_normalized",
-        "availability_normalized",
-        "seo_keywords",
-        "category_path",
-        "taxonomy_version",
-        "intent_attributes",
-        "audience",
-        "style_tags",
-        "ai_discovery_tags",
-        "suggested_bundles",
-    ):
+    for field_name in _empty_enriched_product_values():
         setattr(product, field_name, None)
+
+
+def _empty_enriched_product_values() -> dict[str, object | None]:
+    return {
+        field_name: None
+        for field_name in (
+            "price_normalized",
+            "color_family",
+            "size_normalized",
+            "size_system",
+            "gender_normalized",
+            "materials_normalized",
+            "availability_normalized",
+            "seo_keywords",
+            "category_path",
+            "taxonomy_version",
+            "intent_attributes",
+            "audience",
+            "style_tags",
+            "ai_discovery_tags",
+            "suggested_bundles",
+        )
+    }

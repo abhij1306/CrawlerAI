@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -111,7 +111,6 @@ class ExtractionReleaseSnapshot(CreatedAtMixin, Base):
     """Immutable recipe release frozen for one crawl run."""
 
     __tablename__ = "extraction_release_snapshots"
-
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
@@ -130,6 +129,9 @@ class ExtractionManifest(CreatedAtMixin, Base):
     __tablename__ = "extraction_manifests"
     __table_args__ = (
         Index("uq_extraction_manifests_url_result", "url_result_id", unique=True),
+        Index("ix_extraction_manifests_release_snapshot_id", "release_snapshot_id"),
+        Index("ix_extraction_manifests_template_id", "template_id"),
+        Index("ix_extraction_manifests_compiled_recipe_id", "compiled_recipe_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -161,6 +163,7 @@ class ExtractionOperatorLabel(CreatedAtMixin, Base):
     __tablename__ = "extraction_operator_labels"
     __table_args__ = (
         Index("ix_extraction_operator_labels_scope", "domain", "surface", "label_kind"),
+        Index("ix_extraction_operator_labels_template_id", "template_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -188,6 +191,16 @@ class ExtractionObservation(CreatedAtMixin, Base):
     __tablename__ = "extraction_observations"
     __table_args__ = (
         Index("ix_extraction_observations_template_run", "template_id", "run_id"),
+        Index("ix_extraction_observations_run_id", "run_id"),
+        Index("ix_extraction_observations_url_result_id", "url_result_id"),
+        Index(
+            "ix_extraction_observations_sentinel_critical",
+            "template_id",
+            postgresql_where=text(
+                "verdict = 'critical_drift' "
+                "AND payload->>'kind' = 'sentinel_challenger'"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

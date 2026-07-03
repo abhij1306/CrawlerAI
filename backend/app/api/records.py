@@ -20,6 +20,7 @@ from app.crawl.access_service import (
 )
 from app.crawl.record_reconciliation import load_records_with_reconciliation
 from app.persistence.record_export_service import (
+    CSV_MEDIA_TYPE,
     MAX_RECORD_PAGE_SIZE,
     RECORD_PROVENANCE_NOT_FOUND_RESPONSE,
     RUN_NOT_FOUND_RESPONSE,
@@ -43,6 +44,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = APIRouter(tags=["records"])
 
 
+class CsvStreamingResponse(StreamingResponse):
+    media_type = CSV_MEDIA_TYPE
+
+
 def _route_responses(
     responses: object,
 ) -> dict[int | str, dict[str, object]]:
@@ -54,6 +59,17 @@ def _route_responses(
             continue
         normalized_key: int | str = key if isinstance(key, (int, str)) else str(key)
         normalized[normalized_key] = dict(value)
+    return normalized
+
+
+def _stream_route_responses(
+    responses: object, *, media_type: str
+) -> dict[int | str, dict[str, object]]:
+    normalized = _route_responses(responses)
+    normalized[200] = {
+        "content": {media_type: {"schema": {"type": "string"}}},
+        "description": "Streaming export",
+    }
     return normalized
 
 
@@ -136,7 +152,10 @@ async def export_json(
 
 @router.get(
     "/api/crawls/{run_id}/export/csv",
-    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
+    responses=_stream_route_responses(
+        RUN_NOT_FOUND_RESPONSE, media_type=CSV_MEDIA_TYPE
+    ),
+    response_class=CsvStreamingResponse,
 )
 async def export_csv(
     run_id: int,
@@ -149,7 +168,10 @@ async def export_csv(
 
 @router.get(
     "/api/crawls/{run_id}/export/tables.csv",
-    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
+    responses=_stream_route_responses(
+        RUN_NOT_FOUND_RESPONSE, media_type=CSV_MEDIA_TYPE
+    ),
+    response_class=CsvStreamingResponse,
 )
 async def export_tables_csv(
     run_id: int,
@@ -175,7 +197,10 @@ async def export_artifacts_json(
 
 @router.get(
     "/api/crawls/{run_id}/export/discoverist",
-    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
+    responses=_stream_route_responses(
+        RUN_NOT_FOUND_RESPONSE, media_type=CSV_MEDIA_TYPE
+    ),
+    response_class=CsvStreamingResponse,
 )
 async def export_discoverist(
     run_id: int,

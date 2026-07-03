@@ -151,7 +151,17 @@ async def list_runs(
         .limit(limit)
     )
     rows = result.all()
-    total = int(rows[0][1]) if rows else 0
+    if rows:
+        total = int(rows[0][1])
+    else:
+        total = int(
+            (
+                await session.execute(
+                    select(func.count()).select_from(query.subquery())
+                )
+            ).scalar()
+            or 0
+        )
     return [row[0] for row in rows], total
 
 
@@ -186,7 +196,7 @@ async def get_run_records(
     result = await session.execute(
         select(CrawlRecord)
         .where(CrawlRecord.run_id == run_id)
-        .order_by(CrawlRecord.created_at.asc())
+        .order_by(CrawlRecord.created_at.asc(), CrawlRecord.id.asc())
         .offset((page - 1) * limit)
         .limit(limit)
     )

@@ -329,6 +329,8 @@ async def discover_product_intelligence_candidates(
         raise ValueError("Product Intelligence needs at least one source product")
     if source_run_id is not None:
         await require_accessible_run(session, run_id=source_run_id, user=user)
+    if session.in_transaction():
+        await session.commit()
 
     discovered_payloads: list[dict[str, object]] = []
     max_source_products = _option_int(
@@ -484,6 +486,8 @@ async def _run_job(session: AsyncSession, job: ProductIntelligenceJob) -> None:
             )
         ).all()
     )
+    if session.in_transaction():
+        await session.commit()
 
     candidates_to_poll = []
 
@@ -584,6 +588,8 @@ async def _poll_candidate_and_score(
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
 ) -> None:
+    job_id = int(job.id)
+    candidate_id = int(candidate.id)
     deadline = (
         asyncio.get_running_loop().time()
         + product_intelligence_settings.candidate_poll_seconds
@@ -592,9 +598,31 @@ async def _poll_candidate_and_score(
         scored = await _score_candidate_if_ready(session, job, candidate)
         if scored:
             return
+        if session.in_transaction():
+            await session.commit()
         await asyncio.sleep(
             product_intelligence_settings.candidate_poll_interval_seconds
         )
+        refreshed_job = await session.get(
+            ProductIntelligenceJob, job_id, populate_existing=True
+        )
+        refreshed_candidate = await session.get(
+            ProductIntelligenceCandidate, candidate_id, populate_existing=True
+        )
+        if refreshed_job is None or refreshed_candidate is None:
+            return
+        job = refreshed_job
+        candidate = refreshed_candidate
+    refreshed_job = await session.get(
+        ProductIntelligenceJob, job_id, populate_existing=True
+    )
+    refreshed_candidate = await session.get(
+        ProductIntelligenceCandidate, candidate_id, populate_existing=True
+    )
+    if refreshed_job is None or refreshed_candidate is None:
+        return
+    job = refreshed_job
+    candidate = refreshed_candidate
     candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
     await _update_job_summary(session, job)
     await session.flush()

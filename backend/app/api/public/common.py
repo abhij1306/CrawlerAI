@@ -80,7 +80,10 @@ def public_rate_headers(request: Request) -> dict[str, str]:
 
 
 def _public_meta(request: Request) -> dict[str, Any]:
-    meta: dict[str, Any] = {"request_id": request.headers.get("x-request-id", "")}
+    request_id = str(getattr(request.state, "correlation_id", "") or "")
+    if not request_id:
+        request_id = request.headers.get("x-request-id", "")
+    meta: dict[str, Any] = {"request_id": request_id}
     started_at = getattr(request.state, "public_api_started_at", None)
     if isinstance(started_at, (int, float)):
         meta["duration_ms"] = int(max(0.0, perf_counter() - float(started_at)) * 1000)
