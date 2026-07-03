@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,11 +45,6 @@ class ContractSelectionRequest(BaseModel):
     template_id: uuid.UUID | None = None
     surface: str | None = None
     canonical_field: str | None = None
-
-
-class RebuildRequest(BaseModel):
-    domain: str = Field(min_length=1)
-    expected_version: int | None = None
 
 
 class SelectorContractRequest(BaseModel):
@@ -433,25 +428,6 @@ async def knowledge_contract_selection(
     await _store_contract(session, template, contract)
     await session.commit()
     return {"contract": contract, "updated_contract_count": 1}
-
-
-@router.post("/rebuild")
-async def knowledge_rebuild(
-    payload: RebuildRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
-) -> dict[str, Any]:
-    domain = normalize_domain(payload.domain)
-    versions = [
-        await _recipe_version(session, row.id)
-        for row in await _domain_templates(session, domain)
-    ]
-    current = max(versions, default=0)
-    if payload.expected_version is not None and payload.expected_version != current:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Version conflict"
-        )
-    return {"domain": domain, "current_version": current + 1, "status": "pending"}
 
 
 @router.delete("/purge")

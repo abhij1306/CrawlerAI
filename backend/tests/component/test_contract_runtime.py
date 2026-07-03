@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.extraction_memory.contract_runtime import (
@@ -22,6 +23,7 @@ from app.extraction.contracts import (
     Decision,
     Evidence,
     ExtractionResult,
+    FieldEvidenceState,
     RejectedEvidence,
     ResolutionResult,
     SentinelObservation,
@@ -903,6 +905,99 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
     assert frozen["templates"][0]["sentinel_suspended"] is True
     assert not release.payload["templates"][0].get("sentinel_suspended", False)
     assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_successful_extraction_records_observed_field_preference(
+    db_session: AsyncSession, test_user
+) -> None:
+    run = CrawlRun(
+        id=903,
+        user_id=test_user.id,
+        run_type="crawl",
+        url="https://example.com/products/widget",
+        status="running",
+        surface="ecommerce_detail",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        final_url=run.url,
+        surface="ecommerce_detail",
+        generation=1,
+    )
+    db_session.add(url_result)
+    await db_session.flush()
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        records=(CommerceDetailRecord(title="Widget", url=run.url),),
+        evidence=(
+            _evidence(
+                "ev-title",
+                "jsonld",
+                "/products/123/name",
+                "product.title",
+                "Widget",
+            ),
+        ),
+        field_states=(
+            FieldEvidenceState(
+                field="title",
+                state="captured_published",
+                evidence_ids=("ev-title",),
+            ),
+        ),
+        verdict="success",
+    )
+
+    await record_extraction_result(
+        db_session,
+        run_id=run.id,
+        url_result_id=url_result.id,
+        release_snapshot_id=None,
+        url=url_result.final_url,
+        surface="ecommerce_detail",
+        result=result,
+    )
+
+    recipe = (
+        await db_session.execute(
+            select(ExtractionRecipe).where(
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
+            )
+        )
+    ).scalar_one()
+    assert recipe.payload["contracts"] == [
+        {
+            "id": recipe.payload["contracts"][0]["id"],
+            "template_id": str(recipe.template_id),
+            "surface": "ecommerce_detail",
+            "canonical_field": "product.title",
+            "candidates": [
+                {
+                    "source": "jsonld:/products/{index}/name",
+                    "success_count": 1,
+                }
+            ],
+            "latest_values": [],
+            "success_count": 1,
+            "rejection_count": 0,
+            "resolver_rule": "observed_published_evidence",
+            "selected_source": "jsonld:/products/{index}/name",
+            "selection_origin": "generic",
+            "selection_history": [
+                {
+                    "selected_source": "jsonld:/products/{index}/name",
+                    "source": "successful_crawl",
+                }
+            ],
+            "status": "active",
+        }
+    ]
 
 
 @pytest.mark.asyncio

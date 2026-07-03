@@ -154,6 +154,7 @@ async def _acquire_browser_retry_result(
         ),
         attempt_timeout_seconds=remaining_url_budget_seconds(context),
     )
+    await context.session.commit()
     try:
         from app.crawl.pipeline import extraction_loop
 

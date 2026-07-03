@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.core.config.extraction_rules import DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS
+from app.core.config.extraction_rules import (
+    DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS,
+)
 from app.crawl.pipeline.run_complete_callbacks import register_run_complete_callback
 
 logger = logging.getLogger(__name__)

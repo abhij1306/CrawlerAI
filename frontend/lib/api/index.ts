@@ -25,7 +25,6 @@ import type {
   DomainRunProfileLookup,
   DomainRunProfileRecord,
   DomainRunProfile,
-  ExtractionMemoryResponse,
   GroundedCorrectionPayload,
   GroundedCorrectionResponse,
   FieldCommitPayload,
@@ -349,10 +348,6 @@ export const api = {
   getPreviewHtml: (url: string) =>
     apiClient.getText(`/api/selectors/preview-html?url=${encodeURIComponent(url)}`),
   listKnowledgeSites: () => apiClient.get<{ sites: KnowledgeSiteRecord[] }>('/api/knowledge/sites'),
-  getExtractionMemory: (domain: string) =>
-    apiClient.get<ExtractionMemoryResponse>(
-      withQuery('/api/knowledge/memory', new URLSearchParams({ domain })),
-    ),
   getKnowledgeGraph: (params?: {
     domain?: string;
     root_entity_id?: string;

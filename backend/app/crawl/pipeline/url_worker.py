@@ -65,6 +65,8 @@ async def process_url_in_owned_session(
             update_run_state=False,
             persist_logs=True,
         )
+        if not log_start:
+            await url_session.commit()
         try:
             with logfire_span(
                 "pipeline.url",

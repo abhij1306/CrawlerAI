@@ -251,6 +251,7 @@ async def _run_acquisition_stage(
         prefetched=bool(prefetched_acquisition),
     ) as span:
         acquisition_request = await build_acquisition_request(context)
+        await context.session.commit()
         acquisition_result = prefetched_acquisition or await acquire(
             acquisition_request
         )

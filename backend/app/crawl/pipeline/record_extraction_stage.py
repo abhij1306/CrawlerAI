@@ -76,6 +76,7 @@ async def _extract_records_for_acquisition(
         requested_fields=list(context.requested_fields),
     )
     selector_rules = await _load_selector_rules(context, acquisition_result.final_url)
+    await context.session.commit()
     result = await _run_record_extraction(
         context,
         acquisition_result=acquisition_result,
@@ -135,6 +136,7 @@ async def _run_record_extraction(
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
     runtime_snapshot = await _load_runtime_snapshot(context)
+    await context.session.commit()
     extract_records_impl = getattr(
         extraction_loop,
         "extract_records_for_acquisition_result",

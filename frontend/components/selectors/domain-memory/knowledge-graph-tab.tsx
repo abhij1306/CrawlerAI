@@ -37,6 +37,7 @@ export function KnowledgeGraphTab({ selectedWorkspace }: KnowledgeGraphTabProps)
       ? query.error.message
       : 'Unable to load extraction preferences.'
     : '';
+  const contracts = data?.contracts ?? [];
 
   function runSelect(contract: KnowledgeContract, selectedSource: string) {
     if (!selectedSource) return;
@@ -68,13 +69,9 @@ export function KnowledgeGraphTab({ selectedWorkspace }: KnowledgeGraphTabProps)
         <DataRegionLoading count={5} className="p-0" />
       ) : (
         <>
-          <PreferenceScope
-            domain={selectedWorkspace.domain}
-            site={site}
-            contracts={data?.contracts ?? []}
-          />
+          <PreferenceScope domain={selectedWorkspace.domain} site={site} contracts={contracts} />
           <ContractPanel
-            contracts={data?.contracts ?? []}
+            contracts={contracts}
             pendingContractId={
               selectSource.isPending ? (selectSource.variables?.contract.id ?? '') : ''
             }
@@ -130,7 +127,7 @@ function ContractPanel({
     return (
       <DataRegionEmpty
         title="No extraction preferences yet"
-        description="Source choices appear after this domain produces accepted extraction evidence."
+        description="Source choices appear after a crawl observes usable field candidates or an operator activates a grounded correction."
         className="p-0"
       />
     );

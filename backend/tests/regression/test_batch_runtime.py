@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
 from app.models.crawl_settings import CrawlRunSettings
 from app.crawl import batch_runtime as batch_runtime_module
+from app.crawl.pipeline import extraction_loop
+from app.crawl.pipeline import record_extraction_stage
 from app.crawl.batch_runtime import (
     _parallel_url_concurrency,
     _parallel_worker_record_limit,
@@ -104,6 +107,125 @@ def test_parallel_url_concurrency_is_serial_when_celery_dispatch_is_disabled(
     )
 
     assert _parallel_url_concurrency(10, settings_view) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_acquisition_stage_releases_db_session_before_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Session:
+        checked_out = False
+        commit_count = 0
+
+        async def commit(self) -> None:
+            self.checked_out = False
+            self.commit_count += 1
+
+    session = _Session()
+    context = SimpleNamespace(
+        session=session,
+        run=SimpleNamespace(id=101),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        requested_fields=[],
+        config=SimpleNamespace(persist_logs=False),
+    )
+
+    async def _fake_build_acquisition_request(ctx):
+        ctx.session.checked_out = True
+        return SimpleNamespace(url=ctx.url)
+
+    async def _fake_acquire(request):
+        assert session.checked_out is False
+        assert session.commit_count >= 1
+        return PageAcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="<html></html>",
+            method="test",
+            status_code=200,
+        )
+
+    monkeypatch.setattr(
+        extraction_loop,
+        "build_acquisition_request",
+        _fake_build_acquisition_request,
+    )
+    monkeypatch.setattr(extraction_loop, "acquire", _fake_acquire)
+
+    await extraction_loop._run_acquisition_stage(
+        context,
+        prefetched_acquisition=None,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_extraction_stage_releases_db_session_after_selector_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Session:
+        checked_out = False
+        commit_count = 0
+
+        async def commit(self) -> None:
+            self.checked_out = False
+            self.commit_count += 1
+
+    session = _Session()
+    context = SimpleNamespace(
+        session=session,
+        run=SimpleNamespace(id=102),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        requested_fields=[],
+    )
+    acquisition_result = PageAcquisitionResult(
+        request=SimpleNamespace(url=context.url),
+        final_url=context.url,
+        html="<html></html>",
+        method="test",
+        status_code=200,
+    )
+    fetched = SimpleNamespace(
+        context=context,
+        acquisition_result=acquisition_result,
+        url_metrics={},
+    )
+
+    async def _fake_load_selector_rules(ctx, page_url: str):
+        del page_url
+        ctx.session.checked_out = True
+        return []
+
+    async def _fake_run_record_extraction(ctx, *, acquisition_result, selector_rules):
+        del acquisition_result, selector_rules
+        assert ctx.session.checked_out is False
+        assert ctx.session.commit_count >= 1
+        return URLProcessingResult(records=[], verdict="empty")
+
+    monkeypatch.setattr(
+        record_extraction_stage,
+        "_load_selector_rules",
+        _fake_load_selector_rules,
+    )
+    monkeypatch.setattr(
+        record_extraction_stage,
+        "_run_record_extraction",
+        _fake_run_record_extraction,
+    )
+
+    (
+        result,
+        selector_rules,
+    ) = await record_extraction_stage._extract_records_for_acquisition(
+        context,
+        fetched,
+    )
+
+    assert result.verdict == "empty"
+    assert selector_rules == []
 
 
 @pytest.mark.asyncio

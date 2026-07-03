@@ -11,12 +11,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
+    EXTRACTION_CONTRACT_CANDIDATE_LIMIT,
+    EXTRACTION_CONTRACT_HISTORY_LIMIT,
+    EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS,
+    EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
+    EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
+    EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_TEMPLATE,
     EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
     SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
@@ -28,7 +35,9 @@ from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.extraction_memory.templates import (
     extract_tech_signals,
     fingerprint_template,
+    normalize_source_pattern,
     normalize_route,
+    source_pattern,
 )
 from app.models.crawl_run import CrawlRun
 from app.models.extraction_memory import (
@@ -484,6 +493,12 @@ async def record_extraction_result(
         tech_signals=extract_tech_signals(result),
         run_id=run_id,
     )
+    await _record_observed_field_preferences(
+        session,
+        template=template,
+        surface=surface,
+        result=result,
+    )
     observation = ExtractionObservation(
         template_id=template.id,
         run_id=run_id,
@@ -534,6 +549,163 @@ async def record_extraction_result(
         manifest.payload = manifest_payload
     await session.flush()
     return manifest
+
+
+async def _record_observed_field_preferences(
+    session: AsyncSession,
+    *,
+    template: ExtractionTemplate,
+    surface: str,
+    result: ExtractionResult,
+) -> None:
+    if (
+        result.verdict not in EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS
+        or not result.records
+    ):
+        return
+    evidence_by_id = {row.evidence_id: row for row in result.evidence}
+    winner_ids = {
+        row.accepted_evidence_ids[0]
+        for row in result.decisions
+        if row.status == "resolved" and row.accepted_evidence_ids
+    }
+    observed_sources: dict[str, list[str]] = {}
+    for state in result.field_states:
+        if state.state not in {"captured_published", "captured_and_resolved"}:
+            continue
+        if state.field.startswith("variants."):
+            continue
+        winner_id = next(
+            (
+                evidence_id
+                for evidence_id in state.evidence_ids
+                if evidence_id in winner_ids
+            ),
+            next(iter(state.evidence_ids), None),
+        )
+        evidence = evidence_by_id.get(winner_id) if winner_id else None
+        if evidence is None:
+            continue
+        source = source_pattern(evidence.collector_id, evidence.locator.value)
+        if source:
+            observed_sources[evidence.fact_type] = [source]
+    if not observed_sources:
+        return
+
+    recipe = (
+        await session.execute(
+            select(ExtractionRecipe)
+            .where(
+                ExtractionRecipe.template_id == template.id,
+                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    contracts = [
+        dict(row)
+        for row in (
+            recipe.payload.get("contracts", [])
+            if recipe is not None and isinstance(recipe.payload, dict)
+            else []
+        )
+        if isinstance(row, dict)
+    ]
+    contracts_by_field = {
+        str(row.get("canonical_field") or ""): row for row in contracts
+    }
+    for canonical_field, sources in observed_sources.items():
+        contract = contracts_by_field.get(canonical_field)
+        if contract is None:
+            selected_source = sources[0]
+            contract = {
+                "id": str(uuid.uuid4()),
+                "template_id": str(template.id),
+                "surface": surface,
+                "canonical_field": canonical_field,
+                "candidates": [],
+                "latest_values": [],
+                "success_count": 0,
+                "rejection_count": 0,
+                "resolver_rule": EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
+                "selected_source": selected_source,
+                "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
+                "selection_history": [
+                    {
+                        "selected_source": selected_source,
+                        "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
+                    }
+                ],
+                "status": EXTRACTION_MEMORY_STATUS_ACTIVE,
+            }
+            contracts.append(contract)
+            contracts_by_field[canonical_field] = contract
+        _merge_observed_sources(contract, sources)
+
+    await upsert_recipe(
+        session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": contracts},
+    )
+
+
+def _merge_observed_sources(contract: dict, sources: list[str]) -> None:
+    candidates_by_source: dict[str, dict] = {}
+    for candidate in contract.get("candidates", []):
+        if not isinstance(candidate, dict):
+            continue
+        source = normalize_source_pattern(str(candidate.get("source") or ""))
+        if source:
+            candidates_by_source[source] = dict(candidate, source=source)
+    for source in sources:
+        candidate = candidates_by_source.setdefault(
+            source, {"source": source, "success_count": 0}
+        )
+        candidate["success_count"] = int(candidate.get("success_count") or 0) + 1
+
+    current_source = normalize_source_pattern(
+        str(contract.get("selected_source") or "")
+    )
+    if current_source and current_source not in sources:
+        contract["rejection_count"] = int(contract.get("rejection_count") or 0) + 1
+    contract["success_count"] = int(contract.get("success_count") or 0) + 1
+
+    ordered = sorted(
+        candidates_by_source.values(),
+        key=lambda row: (-int(row.get("success_count") or 0), str(row.get("source"))),
+    )
+    selected_candidate = candidates_by_source.get(current_source)
+    limited = ordered[:EXTRACTION_CONTRACT_CANDIDATE_LIMIT]
+    if selected_candidate is not None and selected_candidate not in limited:
+        limited[-1:] = [selected_candidate]
+    contract["candidates"] = limited
+
+    if (
+        str(contract.get("selection_origin") or "")
+        != EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC
+        or not ordered
+    ):
+        return
+    best_source = str(ordered[0].get("source") or "")
+    current_count = int(
+        (candidates_by_source.get(current_source) or {}).get("success_count") or 0
+    )
+    best_count = int(ordered[0].get("success_count") or 0)
+    selected_source = current_source if current_count == best_count else best_source
+    if selected_source == current_source:
+        return
+    contract["selected_source"] = selected_source
+    history = list(contract.get("selection_history") or [])
+    history.append(
+        {
+            "selected_source": selected_source,
+            "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
+        }
+    )
+    contract["selection_history"] = history[-EXTRACTION_CONTRACT_HISTORY_LIMIT:]
 
 
 async def _record_sentinel_observations(
