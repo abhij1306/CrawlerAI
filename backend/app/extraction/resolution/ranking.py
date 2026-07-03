@@ -22,7 +22,7 @@ _URL_FACT_TYPES = frozenset(
 )
 
 
-def _non_positive_money(value: object) -> bool:
+def non_positive_money(value: object) -> bool:
     try:
         return Decimal(str(value)) <= 0
     except (InvalidOperation, ValueError):
@@ -34,7 +34,7 @@ def _value_quality(ev: Evidence) -> int:
 
     fact_type = ev.fact_type
     if fact_type in _PRICE_FACT_TYPES:
-        return 1 if _non_positive_money(ev.value) or not _parses_money(ev.value) else 0
+        return 1 if non_positive_money(ev.value) or not _parses_money(ev.value) else 0
     if fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
         return 0 if _is_iso4217_shape(ev.value) else 1
     if fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
@@ -65,7 +65,7 @@ def _is_absolute_url(value: object) -> bool:
     return parts.scheme in {"http", "https"} and bool(parts.netloc)
 
 
-def _rank(ev: Evidence) -> tuple[object, ...]:
+def rank(ev: Evidence) -> tuple[object, ...]:
     quality = _value_quality(ev)
     directness = {"direct": 0, "embedded": 1, "inferred": 2}.get(ev.directness, 3)
     reliability = {

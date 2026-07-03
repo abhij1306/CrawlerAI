@@ -1,7 +1,5 @@
-# Shared domain normalisation utility.
-#
-# Single implementation of INV-MEM-01: domain keys are scheme-stripped and
-# www-normalised.  All modules MUST use this instead of local _domain() helpers.
+# INV-MEM-01 owner: domain keys are scheme-stripped and www-normalised.
+# Use this module instead of local domain-normalisation helpers.
 from __future__ import annotations
 
 from urllib.parse import urlparse, urlsplit

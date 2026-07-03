@@ -14,13 +14,13 @@ paths = [
 [ratchets]
 semantic_derivation_owner = "app/extraction/resolution/__init__.py"
 variant_eligibility_owner = "app/extraction/resolution/__init__.py"
-asset_selection_owner = "app/extraction/resolution/__init__.py"
+asset_selection_owner = "app/extraction/resolution/assets.py"
 publication_owner = "app/extraction/publication.py"
 post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 13993
+physical_loc_budget = 13913
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -32,26 +32,27 @@ default_module_cyclomatic_complexity_budget = 20
 "collectors/jsonld.py" = 703
 "collectors/metadata.py" = 183
 "collectors/url.py" = 100
-"contracts.py" = 864
+"contracts.py" = 850
 "documents.py" = 240
-"engine.py" = 886
-"entities.py" = 738
+"engine.py" = 878
+"entities.py" = 734
 "field_states.py" = 37
 "jobs.py" = 458
 "json_walk.py" = 65
-"listing.py" = 425
+"listing.py" = 431
 "model_runtime.py" = 440
 "pipeline.py" = 728
 "publication.py" = 617
 "replay.py" = 321
-"resolution/__init__.py" = 2207
+"resolution/__init__.py" = 1917
+"resolution/assets.py" = 248
 "resolution/price_units.py" = 161
 "resolution/ranking.py" = 134
 "result_building.py" = 663
 "sentinel.py" = 251
 "surfaces.py" = 125
 "targeting.py" = 147
-"validation.py" = 761
+"validation.py" = 743
 
 [ratchets.module_cyclomatic_complexity_budgets]
 "collectors/_helpers.py" = 23

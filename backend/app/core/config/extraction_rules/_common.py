@@ -71,7 +71,7 @@ DETAIL_PRODUCT_IMAGE_CUE_SELECTOR = (
     "main img, article img, [role='main'] img, "
     "[class*='product' i] img, [id*='product' i] img, [data-testid*='product' i] img"
 )
-LISTING_VISUAL_PRICE_REGEX_PATTERN = r"(?:₹|Rs\.?|INR|\$|€|£)\s?[\d,.]+"
+LISTING_VISUAL_PRICE_REGEX_PATTERN = r"(?:R\$|₹|Rs\.?|INR|\$|€|£)\s?[\d,.]+"
 TRACKING_PIXEL_PATTERNS = (
     "facebook.com/tr?",
     "facebook.com/tr&id=",
@@ -253,8 +253,9 @@ CSS_NOISE_PATTERN = (
     r"(?:^|\s)(?:@media|@supports|\.?[a-z0-9_-]+\s*\{|"
     r"(?:padding|margin|display|position|font-size|line-height|z-index)\s*:)"
 )
-CURRENCY_CODES = ("USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY", "CNY")
+CURRENCY_CODES = ("USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY", "CNY", "BRL")
 CURRENCY_SYMBOL_MAP = {
+    "R$": "BRL",
     "$": "USD",
     "\u20ac": "EUR",
     "\u00a3": "GBP",

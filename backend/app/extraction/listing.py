@@ -16,6 +16,7 @@ from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_URL_SELECTORS,
 )
 from app.core.config.extraction_rules import (
+    CURRENCY_SYMBOL_MAP,
     LISTING_VISUAL_PRICE_REGEX_PATTERN,
     LISTING_NAVIGATION_TITLE_HINTS,
     LISTING_TITLE_CONTROL_ATTRIBUTES,
@@ -45,6 +46,10 @@ from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import (
     listing_detail_like_path,
     listing_url_is_structural,
+)
+
+_LISTING_PRICE_SYMBOL_PATTERN = "|".join(
+    re.escape(symbol) for symbol in sorted(CURRENCY_SYMBOL_MAP, key=len, reverse=True)
 )
 
 
@@ -222,7 +227,7 @@ def _restore_market_locale_product_path(
         return product_url
     page = urlparse(page_url)
     product = urlparse(product_url)
-    if page.netloc.casefold() != product.netloc.casefold():
+    if not same_site(page_url, product_url):
         return product_url
     page_parts = _path_parts(page.path)
     product_parts = _path_parts(product.path)
@@ -466,7 +471,10 @@ def _clean_text(value: object) -> str | None:
 
 def _clean_price(value: object) -> str | None:
     if text := _clean_text(value):
-        match = re.search(r"([$€£₹]?\s*\d[\d,]*(?:\.\d{1,2})?)", text)
+        match = re.search(
+            rf"((?:{_LISTING_PRICE_SYMBOL_PATTERN})?\s*\d[\d,]*(?:\.\d{{1,2}})?)",
+            text,
+        )
         return match.group(1).replace(",", "").strip() if match else None
     return None
 

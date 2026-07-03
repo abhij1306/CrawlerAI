@@ -109,9 +109,7 @@ def extract(
         generic_collector_ids = {
             row.collector_id for row in generic_harvest.collector_outcomes
         }
-        # Keep only the recipe-specific outcomes (e.g. css_recipe) that the
-        # generic collectors don't already report — prepending the full recipe
-        # outcome set would double-count shared collectors (url) in metrics().
+        # Keep recipe-only outcomes to avoid double-counting shared collectors.
         recipe_only_outcomes = tuple(
             row
             for row in harvest.collector_outcomes
@@ -336,9 +334,7 @@ def _execute_attempt(
 
 
 def _needs_contract_fallback(verdict: Verdict) -> bool:
-    # "review" means extraction produced a usable record that merely needs
-    # human confirmation — it is a success outcome and must not trigger the
-    # expensive model fallback. Only truly deficient results fall back.
+    # Review is usable output and does not require model fallback.
     return verdict in {"empty", "partial"}
 
 
@@ -873,11 +869,7 @@ def _diagnostic_summary(
     model_fallback: ModelFallbackResult | None = None,
     sentinel_observations=(),
 ) -> DiagnosticSummary:
-    # ``missing_critical_fields`` reports the unfulfilled *contract* fields so it
-    # agrees with the verdict and trust state (Crawl-Run-2 §4.5). The contract
-    # scorer publishes exactly that set as RECORD_COMPLETENESS ``missing_fields``;
-    # fall back to the raw not-present field-state scan for surfaces that emit no
-    # completeness contract (e.g. job_detail).
+    # Prefer contract gaps; some surfaces only expose raw field-state gaps.
     completeness = next(
         (row for row in findings if row.rule_id == "RECORD_COMPLETENESS"), None
     )

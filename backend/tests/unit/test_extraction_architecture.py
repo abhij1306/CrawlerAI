@@ -223,7 +223,7 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
     # Re-architecture exception: resolution is now a package, field-state
     # construction and Sentinel comparison have their own modules so semantic
     # ownership can stay honest.
-    assert len(files) <= 28
+    assert len(files) <= 29
     assert (
         sum(_physical_line_count(path) for path in files)
         <= ratchets["physical_loc_budget"]
@@ -538,7 +538,7 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
     assert (
         ratchets["variant_eligibility_owner"] == "app/extraction/resolution/__init__.py"
     )
-    assert ratchets["asset_selection_owner"] == "app/extraction/resolution/__init__.py"
+    assert ratchets["asset_selection_owner"] == "app/extraction/resolution/assets.py"
     assert ratchets["publication_owner"] == "app/extraction/publication.py"
     assert ratchets["post_resolution_mutation_allowed"] is False
     assert ratchets["contracts_bypass_ownership_allowed"] is False

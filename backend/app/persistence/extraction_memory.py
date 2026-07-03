@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
-    EXTRACTION_CONTRACT_CANDIDATE_LIMIT,
-    EXTRACTION_CONTRACT_HISTORY_LIMIT,
     EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS,
     EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
     EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
@@ -49,6 +47,9 @@ from app.models.extraction_memory import (
     ExtractionRecipe,
     ExtractionReleaseSnapshot,
     ExtractionTemplate,
+)
+from app.persistence.extraction_memory_sources import (
+    merge_observed_sources as _merge_observed_sources,
 )
 
 if TYPE_CHECKING:
@@ -685,69 +686,6 @@ async def _record_observed_field_preferences(
         payload={"contracts": []},
         merge_payload=merge_contracts,
     )
-
-
-def _merge_observed_sources(contract: dict, sources: list[str]) -> None:
-    canonical_sources = [
-        source
-        for source in (normalize_source_pattern(str(row or "")) for row in sources)
-        if source
-    ]
-    candidates_by_source: dict[str, dict] = {}
-    for candidate in contract.get("candidates", []):
-        if not isinstance(candidate, dict):
-            continue
-        source = normalize_source_pattern(str(candidate.get("source") or ""))
-        if source:
-            candidates_by_source[source] = dict(candidate, source=source)
-    for source in canonical_sources:
-        candidate = candidates_by_source.setdefault(
-            source, {"source": source, "success_count": 0}
-        )
-        candidate["success_count"] = int(candidate.get("success_count") or 0) + 1
-
-    current_source = normalize_source_pattern(
-        str(contract.get("selected_source") or "")
-    )
-    if current_source:
-        contract["selected_source"] = current_source
-    if current_source and current_source not in canonical_sources:
-        contract["rejection_count"] = int(contract.get("rejection_count") or 0) + 1
-    contract["success_count"] = int(contract.get("success_count") or 0) + 1
-
-    ordered = sorted(
-        candidates_by_source.values(),
-        key=lambda row: (-int(row.get("success_count") or 0), str(row.get("source"))),
-    )
-    selected_candidate = candidates_by_source.get(current_source)
-    limited = ordered[:EXTRACTION_CONTRACT_CANDIDATE_LIMIT]
-    if selected_candidate is not None and selected_candidate not in limited:
-        limited[-1:] = [selected_candidate]
-    contract["candidates"] = limited
-
-    if (
-        str(contract.get("selection_origin") or "")
-        != EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC
-        or not ordered
-    ):
-        return
-    best_source = str(ordered[0].get("source") or "")
-    current_count = int(
-        (candidates_by_source.get(current_source) or {}).get("success_count") or 0
-    )
-    best_count = int(ordered[0].get("success_count") or 0)
-    selected_source = current_source if current_count == best_count else best_source
-    if selected_source == current_source:
-        return
-    contract["selected_source"] = selected_source
-    history = list(contract.get("selection_history") or [])
-    history.append(
-        {
-            "selected_source": selected_source,
-            "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
-        }
-    )
-    contract["selection_history"] = history[-EXTRACTION_CONTRACT_HISTORY_LIMIT:]
 
 
 async def _record_sentinel_observations(

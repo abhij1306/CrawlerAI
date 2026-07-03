@@ -893,11 +893,7 @@ CollectorOutcomeStatus = Literal[
 
 
 class CollectorOutcome(FrozenModel):
-    """Per-collector outcome captured during the collect stage.
-
-    Self-contained and bounded for ``diagnose.json``: identifies the collector,
-    what happened (``CollectorOutcomeStatus``), and how much evidence it yielded.
-    """
+    """Bounded per-collector outcome for diagnostics."""
 
     collector_id: str
     outcome: CollectorOutcomeStatus
@@ -909,11 +905,7 @@ class CollectorOutcome(FrozenModel):
 
 
 class StageOutcome(FrozenModel):
-    """Per-stage outcome of the deterministic extraction pipeline.
-
-    ``stage`` is the pipeline step (collect, normalize, build_graph, ...);
-    ``outcome`` reuses the collector vocabulary so diagnose readers learn one set.
-    """
+    """Per-stage deterministic pipeline outcome."""
 
     stage: str
     outcome: CollectorOutcomeStatus
@@ -921,12 +913,7 @@ class StageOutcome(FrozenModel):
 
 
 class ContractOutcome(FrozenModel):
-    """Per-field outcome when frozen extraction contracts are applied (Slice 7).
-
-    Records whether a contract's preferred source was used (hit), fell back to
-    generic resolution (fallback), or encountered other states. Emitted into
-    diagnose.json to support debugging learned extractions.
-    """
+    """Per-field outcome from applying a frozen extraction contract."""
 
     field: str
     outcome: str
@@ -971,12 +958,7 @@ class PublicationResult(FrozenModel):
 
 
 class VariantDrop(FrozenModel):
-    """One dropped variant row, recorded with full root-cause identity.
-
-    Spec §6 requires every dropped variant to record ``row, stage, rule, reason``
-    so a missing/incorrect variant is explainable from ``diagnose.json`` alone.
-    ``row`` is a bounded identity preview (sku/url/price), never the full payload.
-    """
+    """Dropped variant with bounded identity and root-cause fields."""
 
     row: str
     stage: str

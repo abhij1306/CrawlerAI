@@ -339,21 +339,13 @@ def _product_identity_sets_compatible(
             value for identity_kind, value in right if identity_kind == kind
         }
         if left_values and right_values and left_values.isdisjoint(right_values):
-            if kind == "product.url_resource" and _share_strong_product_identity(
-                left, right
+            strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
+            if kind == "product.url_resource" and any(
+                identity in right for identity in left if identity[0] in strong_kinds
             ):
                 continue
             return False
     return True
-
-
-def _share_strong_product_identity(
-    left: set[tuple[str, str]], right: set[tuple[str, str]]
-) -> bool:
-    strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
-    return any(
-        (kind, identity) in right for kind, identity in left if kind in strong_kinds
-    )
 
 
 def _product_by_subject(

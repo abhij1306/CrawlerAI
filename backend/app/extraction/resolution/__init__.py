@@ -23,7 +23,6 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
-    IMAGE_DIMENSION_QUERY_KEYS,
     PRODUCT_ASSET_IDENTITY_FACT_TYPES,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
@@ -35,7 +34,6 @@ from app.core.config.locale_format_rules import (
     CURRENCY_SYMBOL_TO_ISO,
     currency_hint_from_page_url,
 )
-from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
 from app.core.config import field_mappings
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
@@ -51,11 +49,8 @@ from app.core.records.url_identity import (
     conflicting_product_asset_urls,
 )
 from app.core.shared.url_utils import (
-    asset_url_identity,
-    is_utility_image_url,
     low_resolution_asset_urls,
     public_asset_delivery_url,
-    structured_extensionless_image_url,
 )
 from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.field_coerce_text import (
@@ -74,7 +69,14 @@ from app.extraction.resolution.price_units import (
     _price_unit_derived_facts,
     _price_unit_repairs,
 )
-from app.extraction.resolution.ranking import _non_positive_money, _rank
+from app.extraction.resolution.assets import (
+    accepted_asset_evidence,
+    asset_rank,
+    invalid_primary_asset_evidence,
+    normalize_asset_url,
+    resolve_product_assets,
+)
+from app.extraction.resolution.ranking import non_positive_money, rank
 from app.core.shared.ids import stable_id
 
 
@@ -164,7 +166,7 @@ def resolve(
         if evidence_id in by_id
     )
     conflicting_urls = frozenset(
-        _normalized_asset_url(value)
+        normalize_asset_url(value)
         for value in conflicting_product_asset_urls(
             tuple(
                 ev.value
@@ -175,7 +177,7 @@ def resolve(
         )
     )
     low_resolution_urls = frozenset(
-        _normalized_asset_url(value) for value in low_resolution_asset_urls(asset_urls)
+        normalize_asset_url(value) for value in low_resolution_asset_urls(asset_urls)
     )
     derived_facts = _derived(
         decisions,
@@ -234,7 +236,7 @@ def resolve(
             ),
         ),
     )
-    asset_decisions = _resolve_product_assets(
+    asset_decisions = resolve_product_assets(
         entities.assets,
         by_id,
         conflicting_urls,
@@ -572,9 +574,7 @@ def _aggregate_variant_field(
 ) -> tuple[DerivedFact, ...]:
     values = [row.values.get(public_field) for row in variants]
     if not values or any(value in (None, "", [], {}, ()) for value in values):
-        # A subset of variants carry the fact. Never fabricate a complete
-        # aggregate from partial coverage; for price, publish a documented
-        # bounded range (and a default-variant display price when one exists).
+        # Partial prices may publish a bounded range, never a false aggregate.
         if public_field == "price":
             return _aggregate_partial_variant_price(
                 entity_id,
@@ -657,13 +657,7 @@ def _aggregate_partial_variant_price(
     existing_fact_keys: frozenset[tuple[str, str]],
     selected_variant_ids: frozenset[str],
 ) -> tuple[DerivedFact, ...]:
-    """Parent price policy when only a subset of variants carry a price.
-
-    Publishes a documented bounded ``price_min``/``price_max`` range (never a
-    single value masquerading as a complete aggregate) plus, when a default /
-    selected variant is priced, that variant's price as the parent display price
-    with explicit lineage. A lone priced variant with no default yields nothing.
-    """
+    """Publish bounded partial prices and an explicitly selected display price."""
     priced = [
         row for row in variants if row.values.get("price") not in (None, "", [], {}, ())
     ]
@@ -864,14 +858,14 @@ def _resolve_variants(
     for asset in entities.assets:
         if not asset.variant_entity_id:
             continue
-        accepted = _accepted_asset_evidence(asset, evidence_by_id)
+        accepted = accepted_asset_evidence(asset, evidence_by_id)
         current_asset = asset_by_variant.get(asset.variant_entity_id)
         current_accepted = (
-            _accepted_asset_evidence(current_asset, evidence_by_id)
+            accepted_asset_evidence(current_asset, evidence_by_id)
             if current_asset
             else None
         )
-        if current_asset is None or _asset_rank(asset, accepted) < _asset_rank(
+        if current_asset is None or asset_rank(asset, accepted) < asset_rank(
             current_asset, current_accepted
         ):
             asset_by_variant[asset.variant_entity_id] = asset
@@ -1363,7 +1357,7 @@ def _offer_atomic_price_currency_preferences(
     ]
     if not pairs:
         return None
-    price, currency = min(pairs, key=lambda pair: (_rank(pair[0]), _rank(pair[1])))
+    price, currency = min(pairs, key=lambda pair: (rank(pair[0]), rank(pair[1])))
     return {
         price_fact: (price.evidence_id,),
         currency_fact: (currency.evidence_id,),
@@ -1552,20 +1546,18 @@ def _resolve_asset(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> Decision:
-    # Dangling evidence IDs (referenced by the asset but absent from
-    # evidence_by_id) are treated as invalid so the primary-asset rejection
-    # path triggers correctly when no usable evidence remains.
+    # Missing evidence is invalid, so an asset cannot resolve from dangling IDs.
     invalid_ids = tuple(
         eid
         for eid in asset.url_evidence_ids
         if eid not in evidence_by_id
-        or _invalid_primary_asset_evidence(evidence_by_id[eid])
+        or invalid_primary_asset_evidence(evidence_by_id[eid])
     )
     valid_ids = tuple(
         eid
         for eid in asset.url_evidence_ids
         if eid in evidence_by_id
-        and not _invalid_primary_asset_evidence(evidence_by_id[eid])
+        and not invalid_primary_asset_evidence(evidence_by_id[eid])
     )
     if invalid_ids and not valid_ids:
         return Decision(
@@ -1586,7 +1578,7 @@ def _resolve_asset(
             rule_id="PRIMARY_ASSET_REJECTION",
             status="unresolved",
         )
-    preferred = _accepted_asset_evidence(asset, evidence_by_id)
+    preferred = accepted_asset_evidence(asset, evidence_by_id)
     decision = _resolve_scalar(
         asset.entity_id,
         field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
@@ -1600,309 +1592,6 @@ def _resolve_asset(
     return decision
 
 
-def _invalid_primary_asset_url(value: object) -> bool:
-    return is_utility_image_url(value)
-
-
-def _invalid_primary_asset_evidence(evidence: Evidence) -> bool:
-    if not _invalid_primary_asset_url(evidence.value):
-        return False
-    path = urlsplit(str(evidence.value or "")).path.rsplit("/", 1)[-1]
-    structured_image_relationship = (
-        evidence.collector_id in {"jsonld", "opengraph", "microdata"}
-        and evidence.relation_type in {"product_asset", "variant_asset"}
-        and "image" in evidence.locator.value.casefold()
-    )
-    return not (
-        structured_image_relationship
-        and "." not in path
-        and structured_extensionless_image_url(evidence.value)
-    )
-
-
-def _resolve_product_assets(
-    assets: tuple[AssetEntity, ...],
-    evidence_by_id: dict[str, Evidence],
-    conflicting_urls: frozenset[str],
-    low_resolution_urls: frozenset[str],
-    *,
-    variants: tuple[VariantEntity, ...] = (),
-    variant_decisions: tuple[VariantDecision, ...] = (),
-) -> tuple[AssetDecision, ...]:
-    ranked = [
-        (rank, asset, accepted)
-        for asset in assets
-        if asset.variant_entity_id is None
-        for accepted in [_accepted_asset_evidence(asset, evidence_by_id)]
-        for rank in [_asset_rank(asset, accepted)]
-    ]
-    valid = [
-        (rank, asset, accepted)
-        for rank, asset, accepted in ranked
-        if accepted
-        and not _asset_rejection_reasons(
-            _resolved_asset_url(accepted),
-            evidence=accepted,
-            conflicting_urls=conflicting_urls,
-            low_resolution_urls=low_resolution_urls,
-        )
-    ]
-    valid.sort(key=lambda item: item[0])
-    decisions: list[AssetDecision] = []
-    seen_identity: set[str] = set()
-    seen_delivery: set[str] = set()
-    for index, (_rank_value, asset, accepted) in enumerate(valid):
-        if len(decisions) >= PRODUCT_ASSET_MAX_COUNT:
-            break
-        delivery_url = _resolved_asset_url(accepted)
-        delivery_identity = _asset_delivery_identity(delivery_url)
-        if asset.identity_key in seen_identity or delivery_identity in seen_delivery:
-            continue
-        seen_identity.add(asset.identity_key)
-        seen_delivery.add(delivery_identity)
-        decisions.append(
-            AssetDecision(
-                asset_entity_id=asset.entity_id,
-                url=delivery_url,
-                accepted_evidence_ids=(accepted.evidence_id,),
-                role="primary" if not decisions else "additional",
-                rank=index,
-                rule_id=(
-                    "PRODUCT_ASSET_PRIMARY"
-                    if not decisions
-                    else "PRODUCT_ASSET_ADDITIONAL"
-                ),
-            )
-        )
-    rejected = [
-        AssetDecision(
-            asset_entity_id=asset.entity_id,
-            url=_resolved_asset_url(accepted),
-            accepted_evidence_ids=(),
-            role="rejected",
-            rank=len(valid) + index,
-            rule_id="PRODUCT_ASSET_REJECT",
-            rejection_reasons=_asset_rejection_reasons(
-                _resolved_asset_url(accepted),
-                evidence=accepted,
-                conflicting_urls=conflicting_urls,
-                low_resolution_urls=low_resolution_urls,
-            ),
-        )
-        for index, (_rank_value, asset, accepted) in enumerate(ranked)
-        if accepted
-        and _asset_rejection_reasons(
-            _resolved_asset_url(accepted),
-            evidence=accepted,
-            conflicting_urls=conflicting_urls,
-            low_resolution_urls=low_resolution_urls,
-        )
-    ]
-    if decisions:
-        return tuple(decisions + rejected)
-    fallback = _variant_parent_asset_fallback(
-        assets,
-        variants,
-        variant_decisions,
-        evidence_by_id,
-        conflicting_urls=conflicting_urls,
-        low_resolution_urls=low_resolution_urls,
-    )
-    return tuple((*fallback, *rejected))
-
-
-def _variant_parent_asset_fallback(
-    assets: tuple[AssetEntity, ...],
-    variants: tuple[VariantEntity, ...],
-    variant_decisions: tuple[VariantDecision, ...],
-    evidence_by_id: dict[str, Evidence],
-    *,
-    conflicting_urls: frozenset[str],
-    low_resolution_urls: frozenset[str],
-) -> tuple[AssetDecision, ...]:
-    eligible_ids = {
-        row.variant_entity_id for row in variant_decisions if row.status == "eligible"
-    }
-    selected_ids = {
-        row.entity_id
-        for row in variants
-        if row.selected and row.entity_id in eligible_ids
-    }
-    candidates = [
-        (_asset_rank(asset, accepted), asset, accepted)
-        for asset in assets
-        if asset.variant_entity_id in eligible_ids
-        for accepted in [_accepted_asset_evidence(asset, evidence_by_id)]
-        if accepted is not None
-        and not _asset_rejection_reasons(
-            _resolved_asset_url(accepted),
-            evidence=accepted,
-            conflicting_urls=conflicting_urls,
-            low_resolution_urls=low_resolution_urls,
-        )
-    ]
-    owners_with_usable_assets = {
-        asset.variant_entity_id
-        for _rank, asset, _accepted in candidates
-        if asset.variant_entity_id is not None
-    }
-    if len(selected_ids) == 1:
-        allowed_ids = selected_ids
-    elif len(owners_with_usable_assets) == 1:
-        allowed_ids = owners_with_usable_assets
-    else:
-        return ()
-    candidates = [
-        (rank, asset, accepted)
-        for rank, asset, accepted in candidates
-        if asset.variant_entity_id in allowed_ids
-    ]
-    if not candidates:
-        return ()
-    _rank_value, asset, accepted = min(candidates, key=lambda item: item[0])
-    return (
-        AssetDecision(
-            asset_entity_id=asset.entity_id,
-            url=_resolved_asset_url(accepted),
-            accepted_evidence_ids=(accepted.evidence_id,),
-            role="primary",
-            rank=0,
-            rule_id="VARIANT_ASSET_PARENT_FALLBACK",
-        ),
-    )
-
-
-def _asset_rejection_reasons(
-    url: str,
-    *,
-    evidence: Evidence | None = None,
-    conflicting_urls: frozenset[str],
-    low_resolution_urls: frozenset[str],
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if not url:
-        reasons.append("invalid_asset_delivery_url")
-    if url in conflicting_urls:
-        reasons.append("product_identity_conflict")
-    if url in low_resolution_urls:
-        reasons.append("low_resolution_transform")
-    if (
-        _invalid_primary_asset_evidence(evidence)
-        if evidence is not None
-        else _invalid_primary_asset_url(url)
-    ):
-        reasons.append("invalid_primary_asset")
-    return tuple(reasons)
-
-
-def _normalized_asset_url(value: object) -> str:
-    normalized = asset_url_identity(value)
-    return normalized[0] if normalized else str(value)
-
-
-def _resolved_asset_url(evidence: Evidence) -> str:
-    return public_asset_delivery_url(evidence.value) or ""
-
-
-def _asset_delivery_identity(value: object) -> str:
-    normalized = asset_url_identity(value)
-    return normalized[1] if normalized else str(value)
-
-
-def _accepted_asset_evidence(
-    asset: AssetEntity,
-    evidence_by_id: dict[str, Evidence],
-) -> Evidence | None:
-    candidates = [
-        evidence_by_id[eid] for eid in asset.url_evidence_ids if eid in evidence_by_id
-    ]
-    if not candidates:
-        return None
-    return min(
-        candidates,
-        key=lambda row: (
-            int(_invalid_primary_asset_evidence(row)),
-            int(public_asset_delivery_url(row.value) is None),
-            int(urlsplit(str(row.value)).scheme.casefold() != "https"),
-            -_asset_requested_dimension(row.value),
-            _rank(row),
-        ),
-    )
-
-
-def _asset_requested_dimension(value: object) -> int:
-    dimensions = [
-        int(raw_value)
-        for key, raw_value in parse_qsl(
-            urlsplit(str(value or "")).query, keep_blank_values=False
-        )
-        if key.casefold() in IMAGE_DIMENSION_QUERY_KEYS and str(raw_value).isdigit()
-    ]
-    return max(dimensions, default=0)
-
-
-def _asset_rank(
-    asset: AssetEntity,
-    accepted: Evidence | None,
-) -> tuple[
-    int,
-    int,
-    int,
-    int,
-    tuple[object, ...],
-    str,
-]:
-    if accepted is None:
-        return (99, 99, 99, 99, (99, 99, 99, 0.0, ""), asset.entity_id)
-    # Rank using only the accepted evidence so an asset's global ordering
-    # reflects the quality of its chosen URL, not the best of any (possibly
-    # rejected) evidence collected for that asset.
-    role = _asset_role_rank(str(accepted.value))
-    collector_rank = _asset_collector_rank(accepted)
-    source_order = _asset_source_order(accepted)
-    source_rank = _rank(accepted)
-    insecure_scheme = int(urlsplit(str(accepted.value)).scheme.casefold() != "https")
-    return (
-        role,
-        collector_rank,
-        source_order,
-        insecure_scheme,
-        source_rank,
-        asset.entity_id,
-    )
-
-
-def _asset_role_rank(url: str) -> int:
-    text = str(url or "").casefold()
-    if any(token in text for token in ("main", "primary", "hero", "pdp")):
-        return 0
-    if any(token in text for token in ("product", "detail", "gallery", "diagram")):
-        return 1
-    return 2
-
-
-def _asset_source_order(ev: Evidence) -> int:
-    for token in reversed(
-        str(ev.locator.value or "").replace("[", "/").replace("]", "").split("/")
-    ):
-        if token.isdigit():
-            return int(token)
-    return 99
-
-
-def _asset_collector_rank(ev: Evidence) -> int:
-    return {
-        "jsonld": 0,
-        "opengraph": 1,
-        "microdata": 2,
-        "dom": 3,
-        "css_recipe": 3,
-        "js_state": 4,
-        "network": 5,
-        "url": 6,
-    }.get(ev.collector_id, 9)
-
-
 def _resolve_scalar(
     entity_id: str,
     fact_type: str,
@@ -1913,7 +1602,7 @@ def _resolve_scalar(
     preferred_evidence_ids: tuple[str, ...] = (),
 ) -> Decision:
     candidates = sorted(
-        (evidence_by_id[eid] for eid in ids if eid in evidence_by_id), key=_rank
+        (evidence_by_id[eid] for eid in ids if eid in evidence_by_id), key=rank
     )
     blocking = {
         eid for finding in findings if finding.blocking for eid in finding.evidence_ids
@@ -1932,9 +1621,7 @@ def _resolve_scalar(
             entity_id=entity_id,
             fact_type=fact_type,
             accepted_evidence_ids=(),
-            # Carry the *specific* invalidity reason (e.g. invalid_currency,
-            # non_positive_price) instead of a generic "invalid_value" so
-            # diagnose.json explains exactly why every candidate was dropped.
+            # Preserve the concrete rejection reason for diagnostics.
             rejected=tuple(
                 RejectedEvidence(
                     evidence_id=ev.evidence_id,
@@ -1972,7 +1659,7 @@ def _resolve_scalar(
             return reason
         return (
             "stable_tiebreak"
-            if _rank(ev)[:-1] == _rank(winner)[:-1]
+            if rank(ev)[:-1] == rank(winner)[:-1]
             else "lower_confidence"
         )
 
@@ -2319,18 +2006,12 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
 
 
 def _invalidity_reason(ev: Evidence) -> str | None:
-    """The specific reason a candidate is inadmissible, or ``None`` if valid.
-
-    Returns the concrete flag / rule (e.g. ``invalid_currency``,
-    ``non_positive_price``) rather than a bool so ``_resolve_scalar`` can thread
-    *why* a captured candidate was rejected into the Decision — and from there
-    into diagnose.json's per-field ``reason_codes``.
-    """
+    """Return the concrete rejection reason, or ``None`` when admissible."""
 
     if ev.fact_type in {
         field_mappings.OFFER_PRICE_FACT_TYPE,
         field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-    } and _non_positive_money(ev.value):
+    } and non_positive_money(ev.value):
         return "non_positive_price"
     flags = set(ev.flags)
     title_rejections = flags & (DETAIL_TITLE_REJECTION_FLAGS - {"truncated_title"})

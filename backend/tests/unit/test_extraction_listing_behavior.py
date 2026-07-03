@@ -84,6 +84,24 @@ def test_ecommerce_listing_reads_drifted_test_data_product_card_attrs() -> None:
         assert [row["title"] for row in result.records] == ["Trail Shoe"]
 
 
+def test_ecommerce_listing_preserves_brazilian_real_price_symbol() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-card">
+            <a href="/kit-2-cuecas/p" title="Kit 2 Cuecas">Kit 2 Cuecas</a>
+            <span class="price">R$ 269</span>
+          </article>
+        </main>
+        """,
+        "https://www.calvinklein.com.br/masculino/underwear/kits-de-cueca",
+        max_records=5,
+    )
+
+    assert result.records[0]["price"] == "R$ 269"
+
+
 def test_ecommerce_listing_result_is_replayable() -> None:
     result = _extract(
         "ecommerce_listing",
@@ -184,7 +202,7 @@ def test_ecommerce_listing_restores_market_locale_shop_product_links() -> None:
           </div>
           <div data-product-id="x000010397">
             <a
-              href="https://arcteryx.com/mens/norvan-ld-4-gtx-shoe-0397"
+              href="https://www.arcteryx.com/mens/norvan-ld-4-gtx-shoe-0397"
               title="Norvan LD 4 GTX Shoe Men's"
             >
               <img src="/images/norvan.jpg" alt="Norvan LD 4 GTX Shoe Men's">
@@ -199,7 +217,7 @@ def test_ecommerce_listing_restores_market_locale_shop_product_links() -> None:
 
     assert [row["title"] for row in result.records] == ["Norvan LD 4 GTX Shoe Men's"]
     assert [row["url"] for row in result.records] == [
-        "https://arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397"
+        "https://www.arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397"
     ]
 
 

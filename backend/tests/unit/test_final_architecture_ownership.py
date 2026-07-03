@@ -13,17 +13,17 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_recovery.py": 746,
     "acquisition/browser_result_builder.py": 714,
-    "core/config/extraction_rules/_detail.py": 1018,
+    "core/config/extraction_rules/_detail.py": 1016,
     "extraction/collectors/dom.py": 1096,
     "extraction/collectors/jsonld.py": 703,
     "extraction/collectors/js_state.py": 908,
-    "extraction/contracts.py": 864,
-    "extraction/engine.py": 886,
-    "extraction/entities.py": 738,
+    "extraction/contracts.py": 850,
+    "extraction/engine.py": 878,
+    "extraction/entities.py": 734,
     "extraction/pipeline.py": 728,
-    "extraction/resolution/__init__.py": 2207,
-    "extraction/validation.py": 761,
-    "persistence/extraction_memory.py": 783,
+    "extraction/resolution/__init__.py": 1917,
+    "extraction/validation.py": 743,
+    "persistence/extraction_memory.py": 767,
 }
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
@@ -94,11 +94,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("intelligence/matching.py", "extract_search_result_snapshot"): 22,
     ("observability/diagnose.py", "build_diagnosis"): 25,
     ("observability/run_report.py", "_root_causes"): 37,
-    ("persistence/extraction_memory.py", "_merge_observed_sources"): 25,
-    (
-        "persistence/extraction_memory.py",
-        "_record_observed_field_preferences",
-    ): 24,
     ("persistence/publish/metrics.py", "build_url_metrics"): 30,
 }
 
@@ -150,7 +145,7 @@ PACKAGE_LOC_BUDGETS = {
     "enrichment": 2_021,
     "connectors": 2_467,
     "intelligence": 3_216,
-    "extraction": 13_993,
+    "extraction": 13_913,
     # Phase 7 documented feature exception: the grounded LLM repair adapter
     # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
     # runs in the hot path and cannot publish or activate values; the budget is
