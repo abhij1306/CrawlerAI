@@ -1,6 +1,6 @@
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
-import { mergeRunProfile } from '../../lib/crawl/run-profile';
+import { defaultRunProfileBase, mergeRunProfile } from '../../lib/crawl/run-profile';
 import {
   clampNumber,
   type CategoryMode,
@@ -78,40 +78,7 @@ const DIAGNOSTICS_PRESETS: Record<DiagnosticsPreset, DomainRunProfile['diagnosti
 };
 
 export function defaultRunProfile(): DomainRunProfile {
-  return {
-    version: 1,
-    fetch_profile: {
-      fetch_mode: 'auto',
-      extraction_source: 'raw_html',
-      js_mode: 'auto',
-      include_iframes: false,
-      traversal_mode: null,
-      request_delay_ms: CRAWL_DEFAULTS.REQUEST_DELAY_MS,
-      host_memory_ttl_seconds: null,
-    },
-    locality_profile: {
-      geo_country: 'auto',
-      language_hint: null,
-      currency_hint: null,
-    },
-    diagnostics_profile: { ...DIAGNOSTICS_PRESETS.standard },
-    acquisition_contract: {
-      preferred_browser_engine: 'auto',
-      prefer_browser: false,
-      handoff_eligible: false,
-      handoff_cookie_engine: 'auto',
-      required_rendering: false,
-      required_traversal: false,
-      required_network_payloads: false,
-      last_quality_success: null,
-      stale_after_failures: {
-        failure_count: 0,
-        stale: false,
-      },
-    },
-    source_run_id: null,
-    saved_at: null,
-  };
+  return defaultRunProfileBase();
 }
 
 export function cloneRunProfile(profile: DomainRunProfile | null | undefined): DomainRunProfile {

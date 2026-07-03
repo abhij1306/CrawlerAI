@@ -129,7 +129,7 @@ def build_diagnosis(
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "verdict": extraction_result.verdict,
-        "transport_outcome": extraction_result.transport_outcome,
+        "transport_outcome": getattr(extraction_result, "transport_outcome", "unknown"),
         "data_integrity": extraction_result.data_integrity,
         "manifest": _manifest_context(extraction_result).model_dump(mode="json"),
         "diagnostics": _diagnostic_summary(extraction_result).model_dump(mode="json"),

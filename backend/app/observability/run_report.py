@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.core.config.extraction_rules import DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS
 from app.crawl.pipeline.run_complete_callbacks import register_run_complete_callback
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,6 @@ _CLEAN_FIELD_STATES = frozenset(
 _PARENT_PUBLISHED_FIELD_STATES = frozenset(
     {"captured_and_resolved", "captured_published"}
 )
-# Commercial facts that should flow child -> parent; divergence is worth counting.
-_PARENT_CHILD_DIVERGENCE_FIELDS = ("price", "currency", "availability")
 # These findings are metrics emitted for every result, not failures. They remain
 # available in diagnose.json but must never inflate the run-level root-cause list.
 _INFORMATIONAL_FINDING_RULES = frozenset({"RECORD_COMPLETENESS"})
@@ -154,7 +153,7 @@ def _root_causes(
     # divergence that path-aware field states make visible; surface it as its own
     # deterministic root cause so operators can see structured child facts that
     # never became parent facts.
-    for commercial_field in _PARENT_CHILD_DIVERGENCE_FIELDS:
+    for commercial_field in DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS:
         parent_status = field_status.get(commercial_field, "")
         child_status = field_status.get(f"variants.{commercial_field}", "")
         if (

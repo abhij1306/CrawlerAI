@@ -124,6 +124,8 @@ def has_product_option_signal(tokens: frozenset[str], *, axis: str = "") -> bool
     """True when a select positively signals a product option (never a control)."""
     if tokens & SELECT_PRODUCT_OPTION_SIGNAL_TOKENS:
         return True
+    if axis.casefold() == "color" and "colour" in tokens:
+        return True
     return bool(axis) and axis.casefold() in tokens
 
 

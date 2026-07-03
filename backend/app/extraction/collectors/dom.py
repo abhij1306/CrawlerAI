@@ -773,10 +773,17 @@ def _variant_controls(
     # Non-select swatch / button controls carrying an explicit axis label.
     for axis, selectors in {
         "size": ('[data-option-name*="size" i]', '[aria-label*="size" i]'),
-        "color": ('[data-option-name*="color" i]', '[aria-label*="color" i]'),
+        "color": (
+            '[data-option-name*="color" i]',
+            '[data-option-name*="colour" i]',
+            '[aria-label*="color" i]',
+            '[aria-label*="colour" i]',
+        ),
     }.items():
         for selector in selectors:
             for tag in doc.css(selector):
+                if tag.tag() == "select":
+                    continue
                 raw_value = str(
                     tag.attribute("value") or tag.attribute("aria-label") or tag.text()
                 ).strip()
@@ -816,9 +823,12 @@ def _select_option_axis(select: HtmlNode, doc: HtmlNode) -> str | None:
 
 def _select_label_text(select: HtmlNode, doc: HtmlNode) -> str:
     """Text of the ``<label>`` bound to ``select`` (via ``for``/id or adjacency)."""
+    parent = select.parent()
+    if parent is not None and parent.tag() == "label":
+        return parent.text()
     select_id = str(select.attribute("id") or "").strip()
-    if select_id and '"' not in select_id:
-        label = doc.css_first(f'label[for="{select_id}"]')
+    if select_id:
+        label = next(iter(doc.safe_css(f'label[for="{select_id}"]')), None)
         if label is not None:
             return label.text()
     previous = select.previous_element()

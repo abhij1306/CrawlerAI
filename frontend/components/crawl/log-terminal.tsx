@@ -62,70 +62,87 @@ function useLogViewport(_logCount: number, ref?: RefObject<HTMLDivElement | null
 
   return targetRef;
 }
+type LogIconStyle = { iconCls: string; bgCls: string };
+
+type LogIconRule = { terms: readonly string[]; icon: LucideIcon; style: LogIconStyle };
+
 function includesAny(message: string, terms: readonly string[]) {
   return terms.some((term) => message.includes(term));
 }
 
-const LOG_ICON_RULES: ReadonlyArray<{ terms: readonly string[]; icon: LucideIcon }> = [
-  { terms: ['starting crawl'], icon: Activity },
-  { terms: ['ignoring robots.txt'], icon: ShieldAlert },
-  { terms: ['extracted'], icon: Database },
-  { terms: ['normalized', 'normalised'], icon: Layers },
-  { terms: ['persisted'], icon: HardDrive },
-  { terms: ['acquiring', 'fetching'], icon: Globe },
-  { terms: ['browser', 'playwright', 'patchright', 'headless'], icon: Monitor },
-  { terms: ['record'], icon: Database },
-  { terms: ['page loaded', 'page load'], icon: Zap },
-  { terms: ['challenge', 'blocked', 'captcha', 'bot check'], icon: ShieldAlert },
-];
-
-const LOG_ICON_FINAL_RULES: ReadonlyArray<{ terms: readonly string[]; icon: LucideIcon }> = [
-  { terms: ['retry', 'retrying', 'refresh'], icon: RefreshCw },
-  { terms: ['complete', 'success', 'done', 'finished'], icon: CheckCircle2 },
-];
-
-type LogIconStyle = { iconCls: string; bgCls: string };
-
-const LOG_ICON_STYLE_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> = [
-  { terms: ['starting crawl'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+const LOG_ICON_RULES: readonly LogIconRule[] = [
+  {
+    terms: ['starting crawl'],
+    icon: Activity,
+    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
+  },
   {
     terms: ['ignoring robots.txt'],
+    icon: ShieldAlert,
     style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
   },
-  { terms: ['resolved'], style: { iconCls: 'text-muted ', bgCls: 'bg-zinc-500/10' } },
-  { terms: ['acquired'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
-  { terms: ['extracted'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+  {
+    terms: ['resolved'],
+    icon: CheckCircle2,
+    style: { iconCls: 'text-muted ', bgCls: 'bg-zinc-500/10' },
+  },
+  { terms: ['acquired'], icon: Globe, style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
+  {
+    terms: ['extracted'],
+    icon: Database,
+    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
+  },
   {
     terms: ['normalized', 'normalised'],
+    icon: Layers,
     style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
   },
-  { terms: ['persisted'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+  {
+    terms: ['persisted'],
+    icon: HardDrive,
+    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
+  },
   {
     terms: ['page loaded', 'page load'],
+    icon: Zap,
     style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
   },
   {
     terms: ['challenge', 'blocked', 'captcha', 'bot check'],
+    icon: ShieldAlert,
     style: { iconCls: 'text-danger', bgCls: 'bg-danger-bg' },
   },
-  { terms: ['acquiring', 'fetching'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
   {
-    terms: ['browser', 'patchright', 'playwright', 'headless'],
+    terms: ['acquiring', 'fetching'],
+    icon: Globe,
     style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
   },
-  { terms: ['record'], style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
+  {
+    terms: ['browser', 'patchright', 'playwright', 'headless'],
+    icon: Monitor,
+    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
+  },
+  { terms: ['record'], icon: Database, style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
 ];
 
-const LOG_ICON_STYLE_FINAL_RULES: ReadonlyArray<{
-  terms: readonly string[];
-  style: LogIconStyle;
-}> = [
+const LOG_ICON_STYLE_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> =
+  LOG_ICON_RULES.map(({ terms, style }) => ({ terms, style }));
+
+const LOG_ICON_FINAL_RULES: readonly LogIconRule[] = [
+  {
+    terms: ['retry', 'retrying', 'refresh'],
+    icon: RefreshCw,
+    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
+  },
   {
     terms: ['complete', 'success', 'done', 'finished'],
+    icon: CheckCircle2,
     style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
   },
-  { terms: ['retry', 'retrying'], style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
 ];
+
+const LOG_ICON_STYLE_FINAL_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> =
+  LOG_ICON_FINAL_RULES.map(({ terms, style }) => ({ terms, style }));
 
 function getLogIcon(level: string, message: string) {
   const msg = message.toLowerCase();

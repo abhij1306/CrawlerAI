@@ -97,10 +97,9 @@ def test_variant_prices_do_not_publish_parent_commercial_fields() -> None:
     }
 
     # Parent commercial fields have no published parent entry -> must be absent.
-    assert states["price"] != "captured_published"
-    assert states["currency"] != "captured_published"
-    assert states["availability"] != "captured_published"
     assert states["price"] == "not_present_in_captured_sources"
+    assert states["currency"] == "not_present_in_captured_sources"
+    assert states["availability"] == "not_present_in_captured_sources"
 
     # The variant facts are summarized separately and remain visible.
     assert states["variants.price"] == "captured_published"
@@ -213,10 +212,60 @@ def test_control_role_classifier_rejects_and_admits_generically() -> None:
     assert not is_rejected_control(size)
     assert has_product_option_signal(size, axis="size")
 
+    colour = control_signal_tokens(["product-option-colour", "Colour"])
+    assert not is_rejected_control(colour)
+    assert has_product_option_signal(colour, axis="color")
+
     # Bare/opaque select: no reject signal, but also no product-option signal.
     opaque = control_signal_tokens(["kib-field-29722"])
     assert not is_rejected_control(opaque)
     assert not has_product_option_signal(opaque, axis="")
+
+
+def test_colour_and_wrapped_select_controls_create_color_axis() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><body><main>
+          <h1>Trail Shoe</h1>
+          <form class="product-form">
+            <label>Colour
+              <select name="product-colour">
+                <option>Black</option><option>Bone</option>
+              </select>
+            </label>
+            <select data-option-name="Colour"><option>Red</option></select>
+            <button data-option-name="colour">Blue</button>
+          </form>
+        </main></body></html>
+        """,
+        "https://shop.test/p",
+        requested_fields=("title",),
+    )
+
+    assert _dom_option_values(result).get("option.color", set()) == {
+        "Black",
+        "Bone",
+        "Red",
+        "Blue",
+    }
+
+
+def test_select_label_lookup_ignores_css_special_id_without_crashing() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><body><main>
+          <h1>Trail Shoe</h1>
+          <label for='product"]colour'>Colour</label>
+          <select id='product"]colour'><option>Black</option></select>
+        </main></body></html>
+        """,
+        "https://shop.test/p",
+        requested_fields=("title",),
+    )
+
+    assert _dom_option_values(result).get("option.color", set()) == {"Black"}
 
 
 # --- Slice 3: child ownership + commercial projection policy ---------------

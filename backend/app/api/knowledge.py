@@ -133,7 +133,7 @@ async def knowledge_memory(
         manifest_rows,
         release_rows,
     ) = await _memory_rows(session, normalized_domain)
-    latest_compiled = {}
+    latest_compiled: dict[uuid.UUID, CompiledExtractionRecipe] = {}
     for row in compiled_rows:
         latest_compiled.setdefault(row.recipe_id, row)
 
@@ -249,7 +249,7 @@ async def _memory_rows(
         if recipe_ids
         else []
     )
-    latest_compiled = {}
+    latest_compiled: dict[uuid.UUID, CompiledExtractionRecipe] = {}
     for row in compiled_rows:
         latest_compiled.setdefault(row.recipe_id, row)
 

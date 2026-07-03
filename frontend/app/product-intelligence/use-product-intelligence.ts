@@ -7,6 +7,7 @@ import type { HistoryItem } from '../../components/ui/history-drawer';
 import { api } from '../../lib/api';
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { searchProviderLabel } from './product-intelligence-utils';
 import {
   DEFAULT_OPTIONS,
@@ -18,7 +19,6 @@ import {
   searchProvider,
 } from './product-intelligence-utils';
 
-type DiscoveryCandidate = ProductIntelligenceDiscoveryResponse['candidates'][number];
 type SourceRecord = NonNullable<
   ReturnType<typeof loadPrefillPayload>['payload']['records']
 >[number];
@@ -68,8 +68,8 @@ function selectedCandidateUrls(
   return Array.from(new Set(selectedUrls)).filter((url) => available.has(url));
 }
 
-function groupCandidates(candidates: DiscoveryCandidate[]) {
-  const groups = new Map<number, DiscoveryCandidate[]>();
+function groupCandidates(candidates: ProductDiscoveryCandidate[]) {
+  const groups = new Map<number, ProductDiscoveryCandidate[]>();
   for (const candidate of candidates) {
     const index = candidate.source_index ?? 0;
     groups.set(index, [...(groups.get(index) ?? []), candidate]);
@@ -85,7 +85,7 @@ function groupCandidates(candidates: DiscoveryCandidate[]) {
   }));
 }
 
-function candidateDistribution(candidates: DiscoveryCandidate[]) {
+function candidateDistribution(candidates: ProductDiscoveryCandidate[]) {
   const distribution = { high: 0, medium: 0, low: 0 };
   for (const candidate of candidates) {
     const score = candidateConfidence(candidate);
@@ -96,7 +96,7 @@ function candidateDistribution(candidates: DiscoveryCandidate[]) {
   return distribution;
 }
 
-function selectedSummary(urls: string[], candidates: DiscoveryCandidate[]) {
+function selectedSummary(urls: string[], candidates: ProductDiscoveryCandidate[]) {
   if (!urls.length) return null;
   const selected = new Set(urls);
   const domains = new Set<string>();
@@ -148,7 +148,7 @@ async function requestDiscovery({
   };
 }
 
-function toggleFilteredSelection(current: string[], candidates: DiscoveryCandidate[]) {
+function toggleFilteredSelection(current: string[], candidates: ProductDiscoveryCandidate[]) {
   const filteredUrls = candidates.flatMap((candidate) => (candidate.url ? [candidate.url] : []));
   const selected = new Set(current);
   if (filteredUrls.length && filteredUrls.every((url) => selected.has(url))) {
@@ -170,9 +170,9 @@ export function useProductIntelligence() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(initialPrefill.error);
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
-  const [jsonModalCandidate, setJsonModalCandidate] = useState<
-    ProductIntelligenceDiscoveryResponse['candidates'][number] | null
-  >(null);
+  const [jsonModalCandidate, setJsonModalCandidate] = useState<ProductDiscoveryCandidate | null>(
+    null,
+  );
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -373,7 +373,7 @@ export function useProductIntelligence() {
 export type ProductIntelligenceController = ReturnType<typeof useProductIntelligence>;
 
 function candidateVisible(
-  candidate: ProductIntelligenceDiscoveryResponse['candidates'][number],
+  candidate: ProductDiscoveryCandidate,
   searchText: string,
   confidenceFilter: 'all' | 'high' | 'medium' | 'low',
 ) {

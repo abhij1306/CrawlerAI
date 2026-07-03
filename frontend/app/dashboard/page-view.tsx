@@ -164,7 +164,7 @@ function RecentRuns({ runs, loading }: Readonly<{ runs?: CrawlRun[]; loading: bo
 
 function TopDomains({ data, loading }: Readonly<{ data?: Dashboard; loading: boolean }>) {
   const domains = data?.top_domains;
-  const max = domains?.[0]?.count ?? 1;
+  const max = Math.max(1, ...(domains ?? []).map((domain) => domain.count));
   return (
     <SurfaceSection title="Top Domains" description="By run count" bodyClassName="p-4 space-y-3">
       {loading ? (
