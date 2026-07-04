@@ -9,7 +9,6 @@ zyte/
 /test-sites-issues
 TEST_SITES.md
 TEST_SITES copy.md
-.codacy/
 .kilo/
 traffic-policy.yml
 serena.md

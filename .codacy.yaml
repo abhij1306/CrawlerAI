@@ -1,9 +1,0 @@
----
-engines:
-  bandit:
-    exclude_paths:
-      - "backend/tests/**"
-  prospector:
-    exclude_paths:
-      - "backend/app/services/config/extraction_rules/**"
-      - "backend/app/services/js_state/state_normalizer/**"
