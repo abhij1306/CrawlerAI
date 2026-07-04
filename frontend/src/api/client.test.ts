@@ -85,6 +85,31 @@ describe('apiClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry ordinary GET network failures', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await expect(apiClient.get('/api/ping')).rejects.toThrow('offline');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries explicitly opted-in idempotent network failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await expect(apiClient.get('/api/ping', { retryNetworkFailures: true })).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('forwards AbortSignal and request identifiers', async () => {
     const controller = new AbortController();
     const fetchMock = vi

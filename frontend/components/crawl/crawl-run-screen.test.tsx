@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { queryKeys } from '@/api/query-keys';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
-import { POLLING_INTERVALS } from '../../lib/constants/timing';
+import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timing';
 import { TopBarProvider } from '../layout/top-bar-context';
 import { LogTerminal } from './log-terminal';
 import { CrawlRunScreen } from './crawl-run-screen';
@@ -283,14 +283,14 @@ function renderRunScreen(runId = 101) {
       },
     },
   });
-  render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <TopBarProvider>
         <CrawlRunScreen runId={runId} />
       </TopBarProvider>
     </QueryClientProvider>,
   );
-  return { queryClient };
+  return { queryClient, ...view };
 }
 
 function renderRunScreenWithClient(queryClient: QueryClient, runId = 101) {
@@ -717,6 +717,26 @@ describe('CrawlRunScreen', () => {
     expect(await screen.findByText(/"title": "Item 1"/)).toBeInTheDocument();
   });
 
+  it('polls only JSON records for live runs when the JSON tab is visible', async () => {
+    routeMock.searchParams = 'run_id=42&output=json';
+    apiMock.getCrawl.mockResolvedValue(runningRun(101));
+
+    renderRunScreen();
+
+    await waitFor(() => {
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 25 },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+    expect(apiMock.getRecords).not.toHaveBeenCalledWith(
+      101,
+      { page: 1, limit: 100 },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
   it('refetches table records on mount even if the cache contains a fresh empty page', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -1072,6 +1092,54 @@ describe('CrawlRunScreen', () => {
     await waitFor(() => {
       expect(MockWebSocket.instances).toHaveLength(1);
     });
+  });
+
+  it('reconnects the log websocket after a transient close while polling remains available', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    apiMock.getCrawl.mockResolvedValue(runningRun(101));
+    apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
+
+    renderRunScreen();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      MockWebSocket.instances[0].onopen?.();
+      MockWebSocket.instances[0].onclose?.();
+    });
+
+    expect(apiMock.getCrawlLogs).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      vi.advanceTimersByTime(WEBSOCKET_RECONNECT.MIN_DELAY_MS);
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(MockWebSocket.instances[1].url).toContain('after_id=1');
+  });
+
+  it('does not reconnect the log websocket after unmount', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    apiMock.getCrawl.mockResolvedValue(runningRun(101));
+    apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
+
+    const { unmount } = renderRunScreen();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    vi.useFakeTimers();
+    unmount();
+    act(() => {
+      MockWebSocket.instances[0].onclose?.();
+      vi.advanceTimersByTime(WEBSOCKET_RECONNECT.MAX_DELAY_MS);
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
   });
 
   it('keeps final per-url duration from the latest persisted record timestamp', async () => {

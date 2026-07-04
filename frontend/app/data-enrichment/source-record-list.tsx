@@ -1,0 +1,50 @@
+import { Badge } from '../../components/ui/primitives';
+import type { DataEnrichmentSourceRecordInput } from '../../lib/api/types';
+
+function recordTitle(record: DataEnrichmentSourceRecordInput) {
+  const title = record.data?.title;
+  return typeof title === 'string' && title.trim()
+    ? title
+    : record.source_url?.replace(/^https?:\/\/(www\.)?/, '') || `Record #${record.id}`;
+}
+
+export function SourceRecordList({
+  records,
+}: Readonly<{ records: DataEnrichmentSourceRecordInput[] }>) {
+  return (
+    <div className="divide-y divide-divider overflow-auto">
+      {records.map((record, index) => {
+        const badgeValue = record.id ?? record.source_url;
+        return (
+          <div
+            key={record.id ?? record.source_url ?? index}
+            className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-accent/[0.04]"
+          >
+            <span className="w-6 shrink-0 font-mono text-xs text-muted">{index + 1}</span>
+            <div className="min-w-0 flex-1">
+              <div className="type-body-sm truncate font-medium">{recordTitle(record)}</div>
+              <div className="type-caption flex items-center gap-2">
+                {record.source_url ? (
+                  <a
+                    href={record.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate text-accent opacity-80 hover:underline"
+                    title={record.source_url}
+                  >
+                    {record.source_url}
+                  </a>
+                ) : null}
+              </div>
+            </div>
+            {badgeValue ? (
+              <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-xs opacity-60">
+                #{badgeValue}
+              </Badge>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

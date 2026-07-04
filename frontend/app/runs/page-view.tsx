@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useReducer } from 'react';
+import { useEffect } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightCircle, Copy, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
-import { Badge, Button, Dropdown, Input, Tooltip } from '../../components/ui/primitives';
+import { Button, Dropdown, Input } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import {
   DataRegionEmpty,
@@ -13,214 +13,19 @@ import {
   DataRegionLoading,
   InlineAlert,
   PageHeader,
-  StatusDot,
   SurfacePanel,
   TableSurface,
 } from '../../components/ui/patterns';
 import { api } from '../../lib/api';
-import type { CrawlRun, RunStatus } from '../../lib/api/types';
-import { formatRunsDate as formatDate } from '../../lib/format/date';
-import { getDomain } from '../../lib/format/domain';
-import { isSubduedStatus, runExecutionLabel, runExecutionTone } from '../../lib/ui/status';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table';
-import { cn } from '../../lib/utils';
-
-type StatusFilter = '' | RunStatus;
-
-type RunsPageState = {
-  domainFilter: string;
-  statusFilter: StatusFilter;
-  appliedDomainFilter: string;
-  appliedStatusFilter: StatusFilter;
-  pendingDeleteIds: Set<number>;
-  actionError: string;
-  deleteTarget: CrawlRun | null;
-};
-
-type RunsPageAction =
-  | { type: 'domainFilterChanged'; value: string }
-  | { type: 'statusFilterChanged'; value: StatusFilter }
-  | { type: 'filtersApplied' }
-  | { type: 'filtersReset' }
-  | { type: 'deleteStarted'; runId: number }
-  | { type: 'deleteSucceeded' }
-  | { type: 'deleteFailed'; message: string }
-  | { type: 'deleteSettled'; runId: number }
-  | { type: 'deleteRequested'; run: CrawlRun }
-  | { type: 'deleteDialogClosed' };
-
-const initialRunsPageState: RunsPageState = {
-  domainFilter: '',
-  statusFilter: '',
-  appliedDomainFilter: '',
-  appliedStatusFilter: '',
-  pendingDeleteIds: new Set(),
-  actionError: '',
-  deleteTarget: null,
-};
-
-function runsPageReducer(state: RunsPageState, action: RunsPageAction): RunsPageState {
-  switch (action.type) {
-    case 'domainFilterChanged':
-      return { ...state, domainFilter: action.value };
-    case 'statusFilterChanged':
-      return { ...state, statusFilter: action.value };
-    case 'filtersApplied':
-      return {
-        ...state,
-        appliedDomainFilter: state.domainFilter.trim(),
-        appliedStatusFilter: state.statusFilter,
-      };
-    case 'filtersReset':
-      return {
-        ...state,
-        domainFilter: '',
-        statusFilter: '',
-        appliedDomainFilter: '',
-        appliedStatusFilter: '',
-      };
-    case 'deleteStarted': {
-      const pendingDeleteIds = new Set(state.pendingDeleteIds);
-      pendingDeleteIds.add(action.runId);
-      return { ...state, pendingDeleteIds, actionError: '' };
-    }
-    case 'deleteSucceeded':
-      return { ...state, actionError: '', deleteTarget: null };
-    case 'deleteFailed':
-      return { ...state, actionError: action.message };
-    case 'deleteSettled': {
-      const pendingDeleteIds = new Set(state.pendingDeleteIds);
-      pendingDeleteIds.delete(action.runId);
-      return { ...state, pendingDeleteIds };
-    }
-    case 'deleteRequested':
-      return { ...state, deleteTarget: action.run };
-    case 'deleteDialogClosed':
-      return { ...state, deleteTarget: null };
-  }
-}
-
-/* ─── Run row ────────────────────────────────────────────────────────────── */
-function RunRow({
-  run,
-  pendingDelete,
-  onDelete,
-}: Readonly<{ run: CrawlRun; pendingDelete: boolean; onDelete: () => void }>) {
-  const recordCount =
-    typeof run.result_summary?.record_count === 'number' ? run.result_summary.record_count : 0;
-  const canDelete = !['pending', 'running', 'paused'].includes(run.status);
-  const domain = getDomain(run.url);
-
-  return (
-    <TableRow className="group">
-      {/* Domain + URL */}
-      <TableCell className="overflow-visible">
-        <div className="flex items-center gap-2.5">
-          <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
-          <div className="flex min-w-0 items-center gap-2">
-            <Tooltip content={run.url} align="start">
-              <Link
-                to={`/crawl?run_id=${run.id}`}
-                className="link-accent text-primary block max-w-[280px] truncate font-medium no-underline transition-colors"
-              >
-                {domain || `Run #${run.id}`}
-              </Link>
-            </Tooltip>
-
-            <div className="flex items-center gap-1 opacity-10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  void navigator.clipboard.writeText(run.url);
-                }}
-                className="inline-flex min-h-6 min-w-6 items-center justify-center text-muted transition-colors hover:text-accent"
-                title="Copy URL"
-                aria-label="Copy URL"
-              >
-                <Copy className="size-3" />
-              </button>
-              <a
-                href={run.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-6 min-w-6 items-center justify-center text-muted transition-colors hover:text-accent"
-                title="Open original URL"
-                aria-label="Open original URL"
-              >
-                <ExternalLink className="size-3" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </TableCell>
-
-      {/* Mode */}
-      <TableCell>
-        <span className="rounded-sm bg-background-elevated px-1.5 py-0.5 text-muted">
-          {formatRunType(run.run_type)}
-        </span>
-      </TableCell>
-
-      {/* Status */}
-      <TableCell>
-        <Badge
-          tone={runExecutionTone(run.status, run.result_summary)}
-          flat={isSubduedStatus(run.status)}
-        >
-          {runExecutionLabel(run.status, run.result_summary)}
-        </Badge>
-      </TableCell>
-
-      {/* Records */}
-      <TableCell className="text-right">
-        <span className={cn('tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}>
-          {recordCount > 0 ? recordCount.toLocaleString() : '—'}
-        </span>
-      </TableCell>
-
-      {/* Date */}
-      <TableCell className="text-right">
-        <span className="text-muted tabular-nums">{formatDate(run.created_at)}</span>
-      </TableCell>
-
-      {/* Actions */}
-      <TableCell className="text-right whitespace-nowrap">
-        <div className="flex items-center justify-end gap-1.5 px-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-          <Button variant="action" size="sm" asChild>
-            <Link to={`/crawl?run_id=${run.id}`}>
-              Open
-              <ArrowRightCircle className="ml-1 size-3" />
-            </Link>
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={onDelete}
-            disabled={!canDelete || pendingDelete}
-          >
-            <Trash2 className="size-3" />
-            {pendingDelete ? '…' : 'Delete'}
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
+import type { CrawlRun } from '../../lib/api/types';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '../../components/ui/table';
+import { RunRow } from './run-row';
+import { useRunsPageState, type StatusFilter } from './use-runs-page-state';
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function RunsPage() {
   const queryClient = useQueryClient();
-  const [state, dispatch] = useReducer(runsPageReducer, initialRunsPageState);
+  const { state, dispatch } = useRunsPageState();
   const {
     domainFilter,
     statusFilter,
@@ -416,11 +221,4 @@ export default function RunsPage() {
       />
     </div>
   );
-}
-
-function formatRunType(value: string) {
-  if (value === 'crawl') return 'Single';
-  if (value === 'batch') return 'Batch';
-  if (value === 'csv') return 'CSV';
-  return value;
 }

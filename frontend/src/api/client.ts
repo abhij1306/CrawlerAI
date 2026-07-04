@@ -54,6 +54,7 @@ export type ApiRequestOptions = {
   headers?: HeadersInit;
   requestId?: string;
   idempotencyKey?: string;
+  retryNetworkFailures?: boolean;
 };
 
 type ResponseKind = 'json' | 'text' | 'blob';
@@ -94,7 +95,10 @@ async function fetchResponse(path: string, options: InternalRequestOptions, requ
 }
 
 function canRetryNetworkFailure(options: InternalRequestOptions) {
-  return options.method === 'GET' || Boolean(options.idempotencyKey);
+  return (
+    Boolean(options.retryNetworkFailures) &&
+    (options.method === 'GET' || Boolean(options.idempotencyKey))
+  );
 }
 
 async function requestResponse(path: string, options: InternalRequestOptions) {

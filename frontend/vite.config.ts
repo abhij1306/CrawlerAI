@@ -77,8 +77,6 @@ export default defineConfig({
       typeCheck: true,
     },
     rules: {
-      'jsx-a11y/label-has-associated-control': 'off',
-      'jsx-a11y/prefer-tag-over-role': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-useless-escape': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
@@ -100,6 +98,16 @@ export default defineConfig({
         files: ['src/routing/image.tsx'],
         rules: {
           'jsx-a11y/alt-text': 'off',
+        },
+      },
+      {
+        files: [
+          'components/crawl/form-fields.tsx',
+          'components/crawl/records-table.tsx',
+          'components/ui/dropdown.tsx',
+        ],
+        rules: {
+          'jsx-a11y/prefer-tag-over-role': 'off',
         },
       },
     ],

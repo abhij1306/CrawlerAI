@@ -38,17 +38,28 @@ function shouldRefetchTableOnMount(live: boolean, cachedData: unknown): 'always'
   return live || !cachedPage?.pages?.some((page) => page.items?.length) ? 'always' : false;
 }
 
+function activeRunInterval(run: CrawlRun | undefined) {
+  const createdAt = Date.parse(run?.created_at ?? '');
+  return Number.isFinite(createdAt) &&
+    Date.now() - createdAt > POLLING_INTERVALS.ACTIVE_JOB_FAST_WINDOW_MS
+    ? POLLING_INTERVALS.ACTIVE_JOB_SLOW_MS
+    : POLLING_INTERVALS.ACTIVE_JOB_MS;
+}
+
 function recordFetchMode(
   live: boolean,
+  terminal: boolean,
   outputTab: OutputTabKey,
+  run: CrawlRun | undefined,
 ): { table: boolean; json: boolean; tableInterval: number | false; jsonInterval: number | false } {
-  const table = live || outputTab === 'table' || outputTab === 'logs';
+  const table = outputTab === 'table' || outputTab === 'logs' || terminal;
   const json = outputTab === 'json';
+  const interval = activeRunInterval(run);
   return {
     table,
     json,
-    tableInterval: live && table ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
-    jsonInterval: live && json ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    tableInterval: live && table ? interval : false,
+    jsonInterval: live && json ? interval : false,
   };
 }
 
@@ -129,7 +140,7 @@ export function useRunRecords({
   // The live/log terminal derives payload previews, coverage, confidence, and
   // per-URL completion state from persisted records. Keep the lightweight
   // table records query active whenever that terminal is visible.
-  const fetchMode = recordFetchMode(live, outputTab);
+  const fetchMode = recordFetchMode(live, terminal, outputTab, run);
   const tablePageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4;
   const jsonPageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE;
 

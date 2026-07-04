@@ -1,6 +1,6 @@
 # Frontend Architecture
 
-> Last updated: 2026-06-20
+> Last updated: 2026-07-04
 
 This document describes the live frontend structure, what it actually calls in the backend, and the remaining client/backend drift that should stay visible.
 
@@ -92,18 +92,34 @@ Primary files:
 - `src/api/query-client.ts`
 - `src/api/query-keys.ts`
 - `lib/api/index.ts`
+- `lib/api/auth.ts`
+- `lib/api/dashboard.ts`
+- `lib/api/crawls.ts`
+- `lib/api/data-enrichment.ts`
+- `lib/api/product-intelligence.ts`
+- `lib/api/domain-memory.ts`
+- `lib/api/selectors.ts`
+- `lib/api/knowledge.ts`
+- `lib/api/admin.ts`
+- `lib/api/jobs.ts`
 - `lib/api/types.ts`
 
 Responsibilities:
 
-- HTTP transport, bounded GET retry, abort signals, and request IDs
+- HTTP transport, abort signals, and request IDs
 - one query-key factory and application query defaults
-- typed endpoint facade for backend calls
+- typed domain endpoint modules for backend calls
+- short compatibility facade for callers not yet migrated to direct domain imports
 - API typing
 - auth-aware fetch wrapper
 - URL helpers for review HTML and selector preview HTML
 
 This layer is the frontend/backend contract chokepoint.
+
+Retry ownership:
+
+- React Query owns query retries.
+- Transport-level network retries are opt-in through explicit request options for rare idempotent non-query operations.
 
 ### 3.3 Crawl config and dispatch
 
@@ -170,7 +186,11 @@ Important live data features:
 
 - run records use cleaned `data`, `review_bucket`, and `source_trace`
 - provenance API is typed and available through `getRecordProvenance`
-- log websocket fallback is isolated in `use-run-log-stream.ts`
+- log websocket fallback and reconnect are isolated in `use-run-log-stream.ts`
+- log websockets reconnect after transient close with capped exponential backoff and jitter
+- log polling remains active while the websocket is disconnected, then stops after reconnect
+- live run detail, records, and log fallback polling use fast initial intervals and slower long-run intervals
+- JSON output polling avoids concurrent table record polling except when the visible view, log terminal, or terminal reconciliation requires table records
 
 ### 3.5 Operator surfaces
 
@@ -178,8 +198,14 @@ Primary files:
 
 - `app/dashboard/page.tsx`
 - `app/runs/page-view.tsx`
+- `app/runs/use-runs-page-state.ts`
+- `app/runs/run-row.tsx`
 - `app/jobs/page.tsx`
 - `app/selectors/page.tsx`
+- `app/data-enrichment/page-view.tsx`
+- `app/data-enrichment/data-enrichment-state.ts`
+- `app/data-enrichment/enriched-product-view.tsx`
+- `app/data-enrichment/source-record-list.tsx`
 - `app/admin/users/page.tsx`
 - `app/admin/llm/page.tsx`
 
@@ -210,6 +236,7 @@ Global CSS policy:
 - Crawl Studio feature CSS lives under `components/crawl/`.
 - Table CSS lives under `components/ui/table.module.css`.
 - New JSX should use semantic Tailwind tokens such as `bg-background`, `text-muted`, `border-border`, and `shadow-card`. Raw `bg-[var(--...)]`, `text-[var(--...)]`, `border-[var(--...)]`, and `shadow-[var(--...)]` escapes are blocked by `frontend/scripts/check-token-escapes.mjs`.
+- JSX accessibility rules `label-has-associated-control` and `prefer-tag-over-role` are globally active. Narrow file overrides are allowed only where existing primitives intentionally emulate native controls.
 
 ## 4. Live Backend API Usage
 
@@ -306,13 +333,23 @@ Frontend tests currently cover:
 - selector hydration/cache invalidation
 - output-tab URL state
 - central request abort/retry behavior
+- websocket log reconnect, polling fallback, and reconnect cleanup
+- visible-dataset live record polling
+- explicit transport retry opt-in and React Query retry ownership
+- Data Enrichment, App Shell, and architecture policy checks
 
 There is also Playwright e2e coverage under `frontend/e2e`.
+
+Policy and CI checks:
+
+- `frontend/scripts/check-frontend-architecture.mjs` enforces feature-owner line budgets, API owner files, and Data Enrichment ownership boundaries.
+- `frontend/scripts/check-bundle-budgets.mjs` enforces JS/CSS route asset budgets after build and is wired into CI.
+- `check:policy` runs token, crawl architecture, frontend architecture, and bundle budget checks.
 
 ## 8. Architectural Notes
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
-- `src/api/client.ts` owns transport; `lib/api/index.ts` remains the typed endpoint facade.
+- `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; `lib/api/index.ts` is a compatibility facade only.
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.

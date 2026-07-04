@@ -18,9 +18,14 @@ export function useRunWorkspace(runId: number) {
     queryFn: ({ signal }) => api.getCrawl(runId, { signal }),
     refetchInterval: (query) => {
       const currentRun = query.state.data as CrawlRun | undefined;
-      return currentRun && ACTIVE_STATUSES.has(currentRun.status)
-        ? POLLING_INTERVALS.ACTIVE_JOB_MS
-        : false;
+      if (!currentRun || !ACTIVE_STATUSES.has(currentRun.status)) {
+        return false;
+      }
+      const createdAt = Date.parse(currentRun.created_at);
+      return Number.isFinite(createdAt) &&
+        Date.now() - createdAt > POLLING_INTERVALS.ACTIVE_JOB_FAST_WINDOW_MS
+        ? POLLING_INTERVALS.ACTIVE_JOB_SLOW_MS
+        : POLLING_INTERVALS.ACTIVE_JOB_MS;
     },
     refetchIntervalInBackground: false,
     refetchOnMount: (query) => {
