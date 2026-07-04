@@ -62,7 +62,7 @@ export default function DataEnrichmentPage() {
     if (initialJobId !== null) {
       dispatch({ type: 'initialJobResolved', jobId: initialJobId });
     }
-  }, [jobsData, sourceRecords.length]);
+  }, [dispatch, jobsData, sourceRecords.length]);
 
   const resolvedJobId = activeJobId;
   const {

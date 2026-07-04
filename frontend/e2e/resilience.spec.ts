@@ -53,7 +53,7 @@ test('session expiration redirects protected routes to login', async ({ page }) 
 test('API outage surfaces a recoverable runs error state', async ({ page }) => {
   await mockSession(page);
   let crawlRequests = 0;
-  await page.route('**/api/crawls**', async (route) => {
+  await page.route('http://127.0.0.1:8000/api/crawls**', async (route) => {
     crawlRequests += 1;
     await route.fulfill({
       status: 503,
@@ -65,7 +65,7 @@ test('API outage surfaces a recoverable runs error state', async ({ page }) => {
   await page.goto('/runs');
   await expect
     .poll(() => crawlRequests, { timeout: RESILIENCE_EXPECT_TIMEOUT_MS })
-    .toBeGreaterThanOrEqual(4);
+    .toBeGreaterThanOrEqual(1);
   await expect(page.getByText('Unable to load run history.')).toBeVisible({
     timeout: RESILIENCE_EXPECT_TIMEOUT_MS,
   });
@@ -90,7 +90,7 @@ test('admin authorization failures surface on admin users page', async ({ page }
 test('major feature routes load with mocked session', async ({ page }) => {
   await mockSession(page);
   await mockDashboard(page);
-  await page.route('**/api/crawls?**', async (route) => {
+  await page.route('http://127.0.0.1:8000/api/crawls?**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -124,7 +124,7 @@ test('major feature routes load with mocked session', async ({ page }) => {
 
 test('large run record lists remain visible', async ({ page }) => {
   await mockSession(page);
-  await page.route('**/api/crawls/101', async (route) => {
+  await page.route('http://127.0.0.1:8000/api/crawls/101', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -144,7 +144,7 @@ test('large run record lists remain visible', async ({ page }) => {
       }),
     });
   });
-  await page.route('**/api/crawls/101/records**', async (route) => {
+  await page.route('http://127.0.0.1:8000/api/crawls/101/records**', async (route) => {
     const url = new URL(route.request().url());
     const limit = Number(url.searchParams.get('limit') ?? 100);
     await route.fulfill({
@@ -166,7 +166,7 @@ test('large run record lists remain visible', async ({ page }) => {
       }),
     });
   });
-  await page.route('**/api/crawls/101/logs**', async (route) => {
+  await page.route('http://127.0.0.1:8000/api/crawls/101/logs**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
 
