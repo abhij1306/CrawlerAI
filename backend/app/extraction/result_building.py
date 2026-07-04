@@ -5,6 +5,7 @@ import typing
 from typing import Any
 
 from app.core.config.extraction_rules._detail import (
+    DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
 )
@@ -12,6 +13,7 @@ from app.core.config import field_mappings
 from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.records.field_policy import canonical_fields_for_surface
+from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
@@ -213,6 +215,18 @@ def field_evidence_states(
         if isinstance(source_capabilities, dict)
         else ()
     )
+    detail_outcome = (
+        str(source_capabilities.get("detail_outcome") or "").strip()
+        if isinstance(source_capabilities, dict)
+        else ""
+    ) or normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=bool(request.capture.blocked),
+        acquisition_outcome=request.capture.acquisition_outcome,
+    )
+    terminal_unavailable = request.surface.value == "ecommerce_detail" and (
+        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    )
     by_fact = {
         fact: tuple(row for row in evidence if row.fact_type == fact)
         for fact in set(public_to_fact.values())
@@ -250,7 +264,11 @@ def field_evidence_states(
         if present:
             state = "captured_and_resolved"
             reasons: tuple[str, ...] = ()
-        elif field in affected or (field == "image_url" and "images" in affected):
+        elif (
+            terminal_unavailable
+            or field in affected
+            or (field == "image_url" and "images" in affected)
+        ):
             state = "source_unavailable"
             reasons = ("product_data_source_unavailable",)
         elif any(row.status == "conflicted" for row in relevant_decisions):
@@ -350,6 +368,19 @@ def projection_field_states(
         if isinstance(source_capabilities, dict)
         else ()
     )
+    detail_outcome = (
+        str(source_capabilities.get("detail_outcome") or "").strip()
+        if isinstance(source_capabilities, dict)
+        else ""
+    ) or normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=bool(request.capture.blocked),
+        acquisition_outcome=request.capture.acquisition_outcome,
+    )
+    terminal_unavailable = (
+        request.surface.value == "ecommerce_detail"
+        and detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    )
     fact_by_field = {
         **field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
         "title": "job.title"
@@ -394,7 +425,11 @@ def projection_field_states(
                 evidence_id for entry in entries for evidence_id in entry.evidence_ids
             )
         )
-        if field == "variants" and variant_entity_ids:
+        if terminal_unavailable and (
+            field in requested or field in contract_required or field in surface_fields
+        ):
+            state = "source_unavailable"
+        elif field == "variants" and variant_entity_ids:
             state = "captured_published"
         elif any(entry.disposition == "publish" for entry in entries):
             state = "captured_published"

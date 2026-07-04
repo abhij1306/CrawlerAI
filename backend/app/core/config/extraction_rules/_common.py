@@ -121,6 +121,25 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "you_may_also_like",
     }
 )
+ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS = frozenset(
+    {
+        "alternative",
+        "alternatives",
+        "edge",
+        "edges",
+        "families",
+        "family",
+        "member",
+        "members",
+        "recommendation",
+        "recommendations",
+        "related",
+        "relatedproduct",
+        "relatedproducts",
+        "search",
+        "similar",
+    }
+)
 ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS = frozenset(
     {
         "alsobought",
@@ -385,6 +404,12 @@ LOW_CONTENT_SHELL_PHRASES = (
     "loading",
     "please wait",
 )
+LOW_CONTENT_TERMINAL_SHELL_PHRASES = (
+    "access denied",
+    "site maintenance",
+    "something went wrong",
+    "temporarily unavailable",
+)
 PRICE_FIELDS = frozenset({"price", "sale_price", "original_price"})
 REVIEW_CONTAINER_KEYS = frozenset({"reviews", "review", "ratings", "rating"})
 SOURCE_TIERS = {
@@ -560,6 +585,7 @@ __all__ = [
     "DETAIL_SURFACE_KEYWORD",
     "ECOMMERCE_DETAIL_SURFACE",
     "ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS",
+    "ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS",
     "ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS",
     "VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS",
     "VARIANT_COLOR_AXIS_TOKENS",
@@ -616,6 +642,7 @@ __all__ = [
     "LISTING_UTILITY_URL_TOKENS",
     "LISTING_WEAK_TITLES",
     "LOW_CONTENT_SHELL_PHRASES",
+    "LOW_CONTENT_TERMINAL_SHELL_PHRASES",
     "PRICE_FIELDS",
     "REVIEW_CONTAINER_KEYS",
     "SOURCE_TIERS",

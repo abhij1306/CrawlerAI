@@ -56,6 +56,7 @@ from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.field_coerce_text import (
     infer_brand_from_page_identity,
     infer_brand_from_product_url,
+    infer_brand_from_marked_title_path,
     infer_brand_from_title_marker,
 )
 from app.core.records.url_identity import (
@@ -1968,6 +1969,10 @@ def _brand_from_title(
     if existing_brands:
         return None
     for rule_id, value in (
+        (
+            "brand_from_marked_title_path",
+            infer_brand_from_marked_title_path(url=page_url, title=title),
+        ),
         ("brand_from_title_marker", infer_brand_from_title_marker(title)),
         (
             "brand_from_product_url",

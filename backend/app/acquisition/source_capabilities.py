@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.core.config.extraction_rules import DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+from app.core.records.detail_outcome import normalized_detail_outcome
+
 PRODUCT_DATA_ENDPOINT_TYPES = frozenset({"product_api", "graphql"})
 OFFER_FIELD_FAMILIES = ("price", "currency", "availability")
 VARIANT_FIELD_FAMILIES = ("variants",)
@@ -71,11 +74,21 @@ def build_source_capability_diagnostics(
 
     shell_outcome = str(browser_outcome or "").strip().casefold()
     http_error = isinstance(status_code, int) and status_code >= 400
+    detail_outcome = normalized_detail_outcome(
+        http_status=status_code,
+        blocked=blocked,
+        browser_outcome=shell_outcome,
+    )
     terminal_shell = bool(
         blocked or shell_outcome in {"challenge_page", "low_content_shell"}
     )
+    terminal_detail_unavailable = (
+        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    )
     product_source_unavailable = bool(
-        http_error or (observed and failed and not succeeded) or terminal_shell
+        http_error
+        or (observed and failed and not succeeded)
+        or terminal_detail_unavailable
     )
     browser = browser_diagnostics or {}
     interaction_present = bool(
@@ -85,7 +98,7 @@ def build_source_capability_diagnostics(
     )
 
     affected_fields: list[str] = []
-    if terminal_shell:
+    if terminal_detail_unavailable:
         affected_fields.extend(DETAIL_FIELD_FAMILIES)
     elif product_source_unavailable:
         affected_fields.extend(OFFER_FIELD_FAMILIES)
@@ -98,6 +111,7 @@ def build_source_capability_diagnostics(
         "product_data_source_succeeded": bool(succeeded),
         "product_data_source_unavailable": product_source_unavailable,
         "terminal_shell": terminal_shell,
+        "detail_outcome": detail_outcome,
         "status_code": status_code,
         "browser_outcome": shell_outcome or None,
         "interaction_controls_present": interaction_present,

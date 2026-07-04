@@ -276,6 +276,10 @@ EMBEDDED_STATE_GLOBAL_KEYS = (
     "_RestockRocketConfig.product",
     "meta",
 )
+EMBEDDED_STATE_JSON_CALL_KEYS = (
+    "dataLayer.push",
+    "dataLayer.concat",
+)
 EMBEDDED_STATE_PRODUCT_META_KEY = "meta"
 EMBEDDED_STATE_PRODUCT_META_CONTAINER_KEY = "product"
 EMBEDDED_STATE_PRODUCT_META_VARIANTS_KEY = "variants"

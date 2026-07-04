@@ -55,6 +55,7 @@ def embedded_state_payloads(
     *,
     selector: str,
     global_keys: tuple[str, ...],
+    json_call_keys: tuple[str, ...] = (),
     max_scripts: int,
     max_script_chars: int,
     exclude_node: Callable[[object], bool] | None = None,
@@ -80,6 +81,7 @@ def embedded_state_payloads(
             continue
         text = str(node.text(separator="", strip=True) or "")[:max_script_chars]
         yield from _assigned_state_payloads(text, global_keys, index)
+        yield from _json_call_state_payloads(text, json_call_keys, index)
 
 
 def _assigned_state_payloads(
@@ -113,6 +115,25 @@ def _assigned_state_payloads(
         yield f"/embedded/{state_key}/{script_index}", payload
 
 
+def _json_call_state_payloads(
+    text: str, json_call_keys: tuple[str, ...], script_index: int
+) -> Iterable[tuple[str, object]]:
+    decoder = json.JSONDecoder()
+    for state_key in json_call_keys:
+        parts = tuple(part for part in state_key.split(".") if part)
+        if len(parts) != 2:
+            continue
+        carrier, method = (re.escape(part) for part in parts)
+        pattern = re.compile(
+            rf"(?<![\w$]){carrier}\s*\.\s*{method}\s*\(",
+        )
+        for match in pattern.finditer(text):
+            payload = _decode_call_json(text, match.end(), decoder)
+            if payload is None:
+                continue
+            yield f"/embedded/{state_key}/{script_index}", payload
+
+
 def _decode_assigned_json(
     text: str, offset: int, decoder: json.JSONDecoder
 ) -> object | None:
@@ -122,6 +143,22 @@ def _decode_assigned_json(
     try:
         value, _ = decoder.raw_decode(remainder)
     except (TypeError, ValueError):
+        return None
+    return value
+
+
+def _decode_call_json(
+    text: str, offset: int, decoder: json.JSONDecoder
+) -> object | None:
+    remainder = text[offset:].lstrip()
+    if not remainder.startswith(("{", "[")):
+        return None
+    try:
+        value, end = decoder.raw_decode(remainder)
+    except (TypeError, ValueError):
+        return None
+    tail = remainder[end:].lstrip()
+    if not tail.startswith(")"):
         return None
     return value
 

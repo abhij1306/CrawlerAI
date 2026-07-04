@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.acquisition.runtime import classify_blocked_page
-from app.acquisition.browser_readiness import classify_browser_outcome
+from app.acquisition.browser_readiness import (
+    classify_browser_outcome,
+    classify_low_content_reason,
+)
 from app.acquisition.fetch.fetch_context import is_blocked_html
 
 
@@ -179,6 +182,33 @@ def test_active_provider_metadata_without_probe_does_not_override_usable_page() 
     )
 
     assert outcome == "usable_content"
+
+
+@pytest.mark.unit
+def test_terminal_phrase_in_product_body_does_not_override_product_jsonld() -> None:
+    html = """
+    <html><head><title>Trail Shoe</title>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Trail Shoe",
+      "image": "https://shop.test/i/trail.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "129.00",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/OutOfStock"
+      }
+    }
+    </script></head>
+    <body><main><h1>Trail Shoe</h1>
+    <p>This item is temporarily unavailable.</p></main></body></html>
+    """
+
+    reason = classify_low_content_reason(html, html_bytes=len(html.encode()))
+
+    assert reason is None
 
 
 @pytest.mark.unit

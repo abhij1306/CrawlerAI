@@ -5,7 +5,11 @@ from collections import defaultdict
 from pydantic import Field
 
 from app.core.config.extraction_rules import is_rejected_option_value
-from app.core.records.url_identity import detail_url_resource_identity
+from app.core.records.url_identity import (
+    detail_title_from_url,
+    detail_url_resource_identity,
+    semantic_identity_tokens,
+)
 from app.core.shared.ids import stable_id
 from app.core.shared.url_utils import asset_url_identity
 from app.extraction.contracts import (
@@ -128,6 +132,11 @@ def _select_primary_product_roots(
     target_identity = detail_url_resource_identity(
         bundle.final_url or bundle.requested_url
     )
+    target_title_tokens = set(
+        semantic_identity_tokens(
+            detail_title_from_url(bundle.final_url or bundle.requested_url)
+        )
+    )
     ranked: list[tuple[int, str, ProductEntity]] = []
     for product in products:
         rows = [
@@ -136,7 +145,11 @@ def _select_primary_product_roots(
             for evidence_id in ids
             if evidence_id in by_id
         ]
-        score = _primary_product_root_score(rows, target_identity=target_identity)
+        score = _primary_product_root_score(
+            rows,
+            target_identity=target_identity,
+            target_title_tokens=target_title_tokens,
+        )
         ranked.append((score, product.entity_id, product))
     ranked.sort(key=lambda item: (-item[0], item[1]))
     if not ranked or ranked[0][0] <= 0:
@@ -146,7 +159,9 @@ def _select_primary_product_roots(
     return (ranked[0][2],)
 
 
-def _primary_product_root_score(rows: list[Evidence], *, target_identity: str) -> int:
+def _primary_product_root_score(
+    rows: list[Evidence], *, target_identity: str, target_title_tokens: set[str]
+) -> int:
     score = 0
     for row in rows:
         if row.entity_hint is not None and row.entity_hint.selected is True:
@@ -157,6 +172,14 @@ def _primary_product_root_score(rows: list[Evidence], *, target_identity: str) -
                 score += 80
             elif identity:
                 score -= 20
+        if row.fact_type == "product.title" and target_title_tokens:
+            title_tokens = set(semantic_identity_tokens(str(row.value)))
+            if title_tokens == target_title_tokens:
+                score += 40
+            elif target_title_tokens and target_title_tokens <= title_tokens:
+                score += 15
+            elif title_tokens & target_title_tokens:
+                score += 5
         if row.collector_id == "url" and row.fact_type == "product.url":
             score += 10
         if row.subject_scope == "product":
@@ -311,10 +334,23 @@ def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
             value = _normalized_identity_value(row.value)
             if value:
                 identities.add((row.fact_type, value))
+        if row.collector_id == "jsonld":
+            node_id = _normalized_identity_value(row.metadata.get("jsonld_node_id"))
+            node_path = _normalized_identity_value(row.metadata.get("jsonld_node_path"))
+            if node_id:
+                identities.add(("jsonld.node_id", node_id))
+            elif node_path and not any(
+                row.fact_type == "product.url" and str(row.value).strip()
+                for row in rows
+            ):
+                identities.add(("jsonld.node_path", node_path))
         if row.fact_type == "product.url":
             resource_identity = detail_url_resource_identity(str(row.value))
             if resource_identity:
                 identities.add(("product.url_resource", resource_identity))
+            exact_url = _normalized_identity_value(row.value)
+            if exact_url:
+                identities.add(("product.url", exact_url))
     return identities
 
 
@@ -339,6 +375,8 @@ def _product_identity_sets_compatible(
             value for identity_kind, value in right if identity_kind == kind
         }
         if left_values and right_values and left_values.isdisjoint(right_values):
+            if kind == "jsonld.node_path":
+                continue
             strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
             if kind == "product.url_resource" and any(
                 identity in right for identity in left if identity[0] in strong_kinds

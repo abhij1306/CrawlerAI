@@ -999,6 +999,7 @@ class ExtractionResult(FrozenModel):
     derived_facts: tuple[DerivedFact, ...] = ()
     evidence_dispositions: tuple[EvidenceDisposition, ...] = ()
     field_states: tuple[FieldEvidenceState, ...] = ()
+    publication: PublicationProjection | None = None
     transport_outcome: str = "unknown"
     data_integrity: Literal[
         "clean",

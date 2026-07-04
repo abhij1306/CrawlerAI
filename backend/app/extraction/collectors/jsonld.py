@@ -36,6 +36,7 @@ from app.extraction.collectors.js_state import (
     select_product_roots,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
+from app.core.records.url_identity import detail_url_resource_identity
 from app.core.shared.ids import stable_id
 
 
@@ -133,7 +134,10 @@ def _standalone_variant(
         else text_value(parent)
     )
     product_subject = stable_id(
-        "subject", bundle.bundle_id, "product", parent_url or bundle.final_url
+        "subject",
+        bundle.bundle_id,
+        "product",
+        parent_url or bundle.final_url,
     )
     source_subject_ids = _source_subject_ids(bundle, row)
     out = [
@@ -175,6 +179,17 @@ def _product(
     variant_subject_ids: frozenset[str],
 ) -> list[Evidence]:
     product_identity = _jsonld_identity(obj)
+    explicit_node_id = text_value(obj.get(_JSONLD_ID_KEY))
+    node_path_identity = explicit_node_id or f"{artifact_id}:{path}"
+    product_subject_identity = (
+        explicit_node_id
+        or text_value(obj.get("sku"))
+        or text_value(obj.get("productGroupID"))
+        or text_value(obj.get("productID"))
+        or text_value(obj.get("productId"))
+        or node_path_identity
+        or text_value(obj.get("url"))
+    )
     source_subject_ids = _source_subject_ids(bundle, obj)
     hint = EntityHint(
         entity_type="product",
@@ -186,7 +201,7 @@ def _product(
         "subject",
         bundle.bundle_id,
         "product",
-        hint.url or bundle.final_url or product_identity,
+        product_subject_identity or product_identity or bundle.final_url,
     )
     out = [
         evidence(
@@ -202,6 +217,10 @@ def _product(
             subject_id=product_subject,
             subject_scope="product",
             source_subject_ids=source_subject_ids,
+            metadata={
+                "jsonld_node_id": explicit_node_id,
+                "jsonld_node_path": path if not explicit_node_id else "",
+            },
         )
         for key, fact in ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES.items()
         if text_value(obj.get(key))
@@ -512,18 +531,49 @@ def _variant(
     declared_axes: tuple[str, ...] = (),
 ) -> list[Evidence]:
     sku = text_value(row.get("sku"))
-    variant_identity = _jsonld_identity(row) or path
+    guarded_offer_url = _guarded_standalone_offer_url(bundle, row)
+    variant_identity = _jsonld_identity(row) or guarded_offer_url or path
     hint = EntityHint(
         entity_type="variant",
         product_id=text_value(row.get("productGroupID")) or None,
-        variant_id=text_value(row.get(_JSONLD_ID_KEY)) or None,
+        variant_id=text_value(row.get(_JSONLD_ID_KEY)) or guarded_offer_url or None,
         sku=sku or None,
-        url=text_value(row.get("url")) or None,
+        url=text_value(row.get("url")) or guarded_offer_url or None,
     )
     group = f"variant:{artifact_id}:{variant_identity}"
     subject_id = group
     source_subject_ids = _source_subject_ids(bundle, row, include_sku=True)
     out: list[Evidence] = []
+    if hint.variant_id and not any(
+        text_value(row.get(key)) for key in ("sku", "gtin", "url")
+    ):
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                "jsonld",
+                "variant.id",
+                hint.variant_id,
+                SourceLocator(
+                    kind="json_pointer",
+                    value=(
+                        f"{path}/{_JSONLD_ID_KEY}"
+                        if text_value(row.get(_JSONLD_ID_KEY))
+                        else f"{path}/offers/url"
+                    ),
+                ),
+                group_id=group,
+                hint=hint,
+                directness="embedded",
+                confidence=0.88,
+                subject_id=subject_id,
+                subject_scope="variant",
+                parent_subject_id=product_subject,
+                parent_scope="product",
+                relation_type="product_variant",
+                source_subject_ids=source_subject_ids,
+            )
+        )
     emitted_axes: set[str] = set()
     for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
         value = (
@@ -616,6 +666,31 @@ def _variant(
     return out
 
 
+def _guarded_standalone_offer_url(
+    bundle: CaptureBundle, row: dict[str, Any]
+) -> str | None:
+    if not _is_standalone_variant(row):
+        return None
+    if any(text_value(row.get(key)) for key in ("sku", "gtin", "url")):
+        return None
+    target_identity = detail_url_resource_identity(bundle.final_url)
+    if not target_identity:
+        return None
+    offers = row.get("offers")
+    offer_rows = offers if isinstance(offers, list) else [offers]
+    offer_urls = {
+        text_value(offer.get("url"))
+        for offer in offer_rows
+        if isinstance(offer, dict)
+    }
+    matches = [
+        url
+        for url in offer_urls
+        if url and detail_url_resource_identity(url) == target_identity
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _declared_variant_axes(value: Any) -> tuple[str, ...]:
     rows = value if isinstance(value, list) else [value]
     return tuple(
@@ -682,9 +757,11 @@ def _variant_color(row: dict[str, Any], *, product_brand: str = "") -> str:
 def _jsonld_identity(row: dict[str, Any]) -> str:
     return (
         text_value(row.get(_JSONLD_ID_KEY))
-        or text_value(row.get("url"))
         or text_value(row.get("sku"))
         or text_value(row.get("productGroupID"))
+        or text_value(row.get("productID"))
+        or text_value(row.get("productId"))
+        or text_value(row.get("url"))
     )
 
 

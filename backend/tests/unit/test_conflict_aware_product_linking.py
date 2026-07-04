@@ -34,6 +34,7 @@ def _row(
     value: str,
     *,
     collector_id: str = "jsonld",
+    metadata: dict[str, object] | None = None,
 ):
     return evidence(
         bundle,
@@ -44,6 +45,7 @@ def _row(
         SourceLocator(kind="json_pointer", value=f"/{subject}/{fact_type}"),
         hint=EntityHint(entity_type="product"),
         subject_id=subject,
+        metadata=metadata or {},
     )
 
 
@@ -123,6 +125,65 @@ def test_url_collector_fallback_only_merges_matching_resource() -> None:
     products = _link_products(rows)
 
     assert len(products) == 2
+
+
+def test_url_only_title_overlap_does_not_merge_sibling_brand_product() -> None:
+    bundle = _bundle()
+    rows = (
+        _row(bundle, "url", "product.url", "https://shop.test/products/nike-air-max-90", collector_id="url"),
+        _row(bundle, "url", "product.title", "Nike Air Max 90", collector_id="url"),
+        _row(bundle, "sibling", "product.title", "Nike Dunk Low"),
+        _row(bundle, "sibling", "product.brand", "Nike"),
+    )
+
+    products = _link_products(rows)
+
+    assert len(products) == 2
+
+
+def test_jsonld_node_path_difference_does_not_block_url_title_merge() -> None:
+    bundle = _bundle()
+    rows = (
+        _row(
+            bundle,
+            "script-one",
+            "product.title",
+            "Trail Shoe",
+            metadata={"jsonld_node_path": "/@graph/0"},
+        ),
+        _row(
+            bundle,
+            "script-one",
+            "product.url",
+            "https://shop.test/products/trail-shoe",
+            metadata={"jsonld_node_path": "/@graph/0"},
+        ),
+        _row(
+            bundle,
+            "script-two",
+            "product.title",
+            "Trail Shoe",
+            metadata={"jsonld_node_path": "/@graph/3"},
+        ),
+        _row(
+            bundle,
+            "script-two",
+            "product.url",
+            "https://shop.test/products/trail-shoe",
+            metadata={"jsonld_node_path": "/@graph/3"},
+        ),
+        _row(
+            bundle,
+            "script-two",
+            "product.brand",
+            "Invoro",
+            metadata={"jsonld_node_path": "/@graph/3"},
+        ),
+    )
+
+    products = _link_products(rows)
+
+    assert len(products) == 1
 
 
 def test_owner_product_id_rejects_conflicting_parent_products() -> None:

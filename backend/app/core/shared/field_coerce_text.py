@@ -134,6 +134,27 @@ def infer_brand_from_title_marker(title: object) -> str | None:
     return brand
 
 
+def infer_brand_from_marked_title_path(*, url: str, title: object) -> str | None:
+    text = clean_text(title)
+    if not text or not any(marker in text for marker in ("\u2122", "\u00ae")):
+        return None
+    marker_positions = [
+        index for marker in ("\u2122", "\u00ae") if (index := text.find(marker)) >= 0
+    ]
+    marker_prefix = text[: min(marker_positions) + 1] if marker_positions else ""
+    brand_tokens = slug_tokens(marker_prefix)
+    if not brand_tokens or len(brand_tokens) > LISTING_BRAND_MAX_WORDS:
+        return None
+    first_token = brand_tokens[0]
+    if first_token in DETAIL_BRAND_PREFIX_STOP_TOKENS:
+        return None
+    path_tokens = slug_tokens(urlparse(str(url or "")).path)
+    for start in range(0, len(path_tokens) - len(brand_tokens) + 1):
+        if path_tokens[start : start + len(brand_tokens)] == brand_tokens:
+            return marker_prefix.strip(" |-–—'") or None
+    return None
+
+
 def infer_brand_from_page_identity(
     *,
     url: str,
@@ -297,15 +318,6 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
                 return " ".join(token.capitalize() for token in brand_tokens)
     path_token_set = {token for part in path_parts for token in slug_tokens(part)}
     words = text.split()
-    # Marketplace fallback: when the title's first two slug tokens are also the
-    # leading two tokens of a long product-slug path segment (>=5 tokens), treat
-    # the title's first stop-free word as the brand. The 5-token floor avoids
-    # firing on short brand-host slugs like calvinklein.us/bags/structured-
-    # commuter-bag.html (3 tokens), where the title leads with a product
-    # descriptor and the host carries the brand. Long marketplace product slugs
-    # (StockX/Nike, Firstcry/Babyhug, Chewy/Wellness) clear the floor. Runs
-    # before the all-caps fallback so "Wellness CORE+" returns "Wellness", not
-    # the all-caps product-line token "CORE+".
     leading_word = words[0].strip(" |-–—'") if words else ""
     title_anchor = title_parts[:2]
     matching_title_anchor_index = next(
@@ -317,14 +329,9 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
         -1,
     )
     leading_word_token = "".join(slug_tokens(leading_word))
-    has_product_id_signal = any(re.search(r"\d", part) for part in path_parts)
-    has_brand_route_signal = (
-        matching_title_anchor_index == 0 and has_product_id_signal
-    ) or (
-        matching_title_anchor_index > 0
-        and slug_tokens(path_parts[matching_title_anchor_index - 1])
-        == [leading_word_token]
-    )
+    has_brand_route_signal = matching_title_anchor_index > 0 and slug_tokens(
+        path_parts[matching_title_anchor_index - 1]
+    ) == [leading_word_token]
     if (
         len(title_anchor) == 2
         and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS

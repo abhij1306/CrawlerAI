@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Literal, cast
 
 from app.core.config.extraction_rules import (
+    DETAIL_CAPTURE_BLOCKED_OUTCOME,
     DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
     DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
@@ -15,11 +16,13 @@ from app.core.config.extraction_rules import (
     DETAIL_REVIEW_RISK_FINDING_RULE_IDS,
     DETAIL_SHELL_FINDING_RULE_ID,
     DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS,
+    DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.contract_runtime import match_template
 from app.core.extraction_memory.templates import normalize_route
+from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.ids import stable_id
 from app.extraction.adapters import SurfaceAdapter, adapter_for, harvest_compiled_recipe
 from app.extraction.contracts import (
@@ -57,6 +60,7 @@ from app.extraction.result_building import (
     data_integrity_status,
     evidence_dispositions,
     field_evidence_states,
+    field_state,
     is_shell_record,
     metrics,
     retry_request,
@@ -194,7 +198,14 @@ def extract(
         evidence=harvest.evidence,
         model_fallback=model_fallback,
     )
-    field_states = resolution.field_states
+    transport_outcome = _capture_outcome(
+        request, verdict, findings, publication.records
+    )
+    field_states = _terminal_detail_field_states(
+        request,
+        resolution.field_states,
+        transport_outcome=transport_outcome,
+    )
     retry = retry_request(verdict, publication.records, request, harvest.evidence)
     review_required = _review_required(
         request,
@@ -253,9 +264,8 @@ def extract(
         derived_facts=resolution.derived_facts,
         evidence_dispositions=resolution.evidence_dispositions,
         field_states=field_states,
-        transport_outcome=_capture_outcome(
-            request, verdict, findings, publication.records
-        ),
+        publication=resolution.publication,
+        transport_outcome=transport_outcome,
         data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
         verdict=verdict,
@@ -281,6 +291,36 @@ def extract(
             sentinel_observations=sentinel_observations,
         ),
     )
+
+
+def _terminal_detail_field_states(
+    request: ExtractionRequest,
+    states,
+    *,
+    transport_outcome: str,
+):
+    if (
+        request.surface != Surface.ECOMMERCE_DETAIL
+        or transport_outcome not in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    ):
+        return states
+    requested = {
+        "image_url" if field == "image" else field for field in request.requested_fields
+    }
+    out = []
+    for row in states:
+        if row.field in requested or row.state != "not_requested":
+            out.append(
+                field_state(
+                    field=row.field,
+                    state="source_unavailable",
+                    evidence_ids=row.evidence_ids,
+                    reason_codes=("product_data_source_unavailable",),
+                )
+            )
+        else:
+            out.append(row)
+    return tuple(out)
 
 
 def _execute_attempt(
@@ -525,11 +565,16 @@ def _assess(
     wrong_surface = any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings)
     if request.surface == Surface.ECOMMERCE_DETAIL:
         record = records[0] if records else None
+        detail_outcome = _normalized_detail_outcome(request, records, findings)
         thin_not_found = (
             request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
             and _is_thin_detail_record(record)
         )
-        if _is_semantic_detail_shell(request, records, findings) or thin_not_found:
+        if (
+            detail_outcome
+            in {DETAIL_CAPTURE_NOT_FOUND_OUTCOME, DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME}
+            or thin_not_found
+        ):
             return "error"
     if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
         return "error" if request.surface == Surface.JOB_DETAIL else "invalid"
@@ -693,6 +738,20 @@ def _failure_classifications(
                 evidence,
             ),
         )
+    if request.surface == Surface.ECOMMERCE_DETAIL:
+        detail_outcome = _normalized_detail_outcome(request, records, findings)
+        if detail_outcome in {
+            DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
+            DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
+        }:
+            return (
+                _failure(
+                    "insufficient_input_bundle",
+                    "Terminal detail source could not supply usable product content.",
+                    findings,
+                    evidence,
+                ),
+            )
     if verdict == "wrong_surface" or target.status == "wrong_surface":
         return (
             _failure(
@@ -749,18 +808,49 @@ def _capture_outcome(
     findings: tuple[Finding, ...],
     records: tuple[PublicRecord, ...],
 ) -> str:
+    if request.surface == Surface.ECOMMERCE_DETAIL:
+        return _normalized_detail_outcome(request, records, findings)
     if request.capture.blocked or request.capture.acquisition_outcome == "blocked":
         return "blocked"
-    if (
-        request.surface == Surface.ECOMMERCE_DETAIL
-        and request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
-    ):
-        return DETAIL_CAPTURE_NOT_FOUND_OUTCOME
-    if _is_semantic_detail_shell(request, records, findings):
-        return DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME
     if verdict == "blocked":
         return "blocked"
     return request.capture.acquisition_outcome or "unknown"
+
+
+def _normalized_detail_outcome(
+    request: ExtractionRequest,
+    records: tuple[PublicRecord, ...],
+    findings: tuple[Finding, ...],
+) -> str:
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    configured = (
+        str(source_capabilities.get("detail_outcome") or "").strip()
+        if isinstance(source_capabilities, dict)
+        else ""
+    )
+    if configured in {
+        DETAIL_CAPTURE_BLOCKED_OUTCOME,
+        DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
+        DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
+    }:
+        return configured
+    browser = dict(request.capture.acquisition_diagnostics or {}).get(
+        "browser_diagnostics"
+    )
+    browser_outcome = (
+        str(browser.get("browser_outcome") or "").strip()
+        if isinstance(browser, dict)
+        else None
+    )
+    return normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=bool(request.capture.blocked),
+        acquisition_outcome=request.capture.acquisition_outcome,
+        browser_outcome=browser_outcome,
+        semantic_shell=_is_semantic_detail_shell(request, records, findings),
+    )
 
 
 def _is_semantic_detail_shell(

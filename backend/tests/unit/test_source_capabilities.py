@@ -96,7 +96,7 @@ def test_attach_preserves_existing_acquisition_diagnostics() -> None:
     assert capabilities["product_data_source_unavailable"] is True
 
 
-def test_http_error_marks_source_unavailable_without_terminal_shell() -> None:
+def test_detail_not_found_marks_all_detail_fields_unavailable() -> None:
     report = build_source_capability_diagnostics(
         html="<html><h1>Missing product</h1></html>",
         network_payloads=[],
@@ -105,11 +105,18 @@ def test_http_error_marks_source_unavailable_without_terminal_shell() -> None:
     )
 
     assert report["terminal_shell"] is False
+    assert report["detail_outcome"] == "not_found"
     assert report["product_data_source_unavailable"] is True
     assert report["affected_field_families"] == (
+        "title",
+        "brand",
+        "description",
+        "sku",
         "price",
         "currency",
         "availability",
+        "image_url",
+        "images",
         "variants",
     )
 

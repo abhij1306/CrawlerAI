@@ -34,6 +34,7 @@ from app.extraction.contracts import (
     ExtractionResult,
     FailureClassification,
     FieldEvidenceState,
+    PublicationEntry,
     SourceLocator,
 )
 
@@ -60,7 +61,7 @@ def build_diagnosis(
         str(key): value for key, value in dict(rejected_public_fields or {}).items()
     }
     evidence_by_id = {row.evidence_id: row for row in extraction_result.evidence}
-    decision_by_field = _decisions_by_public_field(extraction_result.decisions)
+    projection_by_field = _projection_entries_by_public_field(extraction_result)
 
     fields_total = len(extraction_result.field_states)
     fields_section, fields_truncated = _bounded(
@@ -137,12 +138,20 @@ def build_diagnosis(
             row.model_dump(mode="json")
             for row in _failure_classifications(extraction_result)
         ],
-        "acquisition": _acquisition_section(acquisition_result),
+        "acquisition": _acquisition_section(
+            acquisition_result,
+            capture_outcome=_known_capture_outcome(
+                getattr(extraction_result, "transport_outcome", "")
+            ),
+        ),
         "metrics": extraction_result.metrics.model_dump(mode="json"),
         "fields": [
             _field_section(
                 state,
-                decision=decision_by_field.get(state.field),
+                publication_entry=projection_by_field.get(state.field),
+                decision=_decisions_by_public_field(extraction_result.decisions).get(
+                    state.field
+                ),
                 evidence_by_id=evidence_by_id,
                 publication_policy=rejected_public.get(state.field),
             )
@@ -183,6 +192,11 @@ def _bounded(items: Sequence[Any], limit: int) -> tuple[list[Any], bool]:
     return rows[:limit], True
 
 
+def _known_capture_outcome(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text if text and text != "unknown" else None
+
+
 def _manifest_context(extraction_result: object) -> ExecutionManifestContext:
     value = getattr(extraction_result, "manifest_context", None)
     return (
@@ -204,7 +218,9 @@ def _failure_classifications(
     return tuple(row for row in value or () if isinstance(row, FailureClassification))
 
 
-def _acquisition_section(acquisition_result: Any) -> dict[str, object]:
+def _acquisition_section(
+    acquisition_result: Any, *, capture_outcome: str | None = None
+) -> dict[str, object]:
     browser = _mapping(getattr(acquisition_result, "browser_diagnostics", {}))
     diagnostics = _mapping(getattr(acquisition_result, "acquisition_diagnostics", {}))
     result = _mapping(diagnostics.get("result"))
@@ -215,7 +231,8 @@ def _acquisition_section(acquisition_result: Any) -> dict[str, object]:
         "method": str(getattr(acquisition_result, "method", "") or ""),
         "status_code": getattr(acquisition_result, "status_code", None),
         "blocked": blocked,
-        "capture_outcome": _acquisition_capture_outcome(acquisition_result, blocked),
+        "capture_outcome": capture_outcome
+        or _acquisition_capture_outcome(acquisition_result, blocked),
         "platform_family": getattr(acquisition_result, "platform_family", None),
         "browser_outcome": browser.get("browser_outcome"),
         "failure_reason": browser.get("failure_reason") or result.get("failure_reason"),
@@ -226,6 +243,10 @@ def _acquisition_capture_outcome(acquisition_result: Any, blocked: bool) -> str:
     if blocked:
         return "blocked"
     status_code = getattr(acquisition_result, "status_code", None)
+    diagnostics = _mapping(getattr(acquisition_result, "acquisition_diagnostics", {}))
+    source_capabilities = _mapping(diagnostics.get("source_capabilities"))
+    if detail_outcome := source_capabilities.get("detail_outcome"):
+        return str(detail_outcome)
     if status_code in DETAIL_NOT_FOUND_HTTP_STATUS_CODES:
         return DETAIL_CAPTURE_NOT_FOUND_OUTCOME
     if isinstance(status_code, int) and status_code >= 500:
@@ -236,6 +257,7 @@ def _acquisition_capture_outcome(acquisition_result: Any, blocked: bool) -> str:
 def _field_section(
     state: FieldEvidenceState,
     *,
+    publication_entry: PublicationEntry | None,
     decision: Decision | None,
     evidence_by_id: Mapping[str, Evidence],
     publication_policy: object,
@@ -246,7 +268,7 @@ def _field_section(
     }
     if state.reason_codes:
         section["reason_codes"] = list(state.reason_codes)
-    winner = _winner(decision, evidence_by_id)
+    winner = _winner(publication_entry, decision, evidence_by_id)
     if winner is not None:
         section["winner"] = winner
     rejected = _rejected(decision, evidence_by_id)
@@ -258,9 +280,30 @@ def _field_section(
 
 
 def _winner(
+    publication_entry: PublicationEntry | None,
     decision: Decision | None,
     evidence_by_id: Mapping[str, Evidence],
 ) -> dict[str, object] | None:
+    if publication_entry is not None and publication_entry.disposition == "publish":
+        row: dict[str, object] = {
+            "value": _preview(publication_entry.value),
+            "entity_id": publication_entry.entity_id,
+            "path": publication_entry.path,
+            "rule_id": publication_entry.rule_id,
+            "evidence_ids": list(publication_entry.evidence_ids),
+        }
+        if publication_entry.parent_entity_id:
+            row["parent_entity_id"] = publication_entry.parent_entity_id
+        if publication_entry.selected_fact_id:
+            row["selected_fact_id"] = publication_entry.selected_fact_id
+        if publication_entry.derived_fact_id:
+            row["derived_fact_id"] = publication_entry.derived_fact_id
+        if publication_entry.evidence_ids:
+            evidence = evidence_by_id.get(publication_entry.evidence_ids[0])
+            if evidence is not None:
+                row["collector_id"] = evidence.collector_id
+                row["locator"] = _locator(evidence.locator)
+        return {key: value for key, value in row.items() if value not in (None, "", [])}
     if decision is None or not decision.accepted_evidence_ids:
         return None
     evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
@@ -330,6 +373,48 @@ def _decisions_by_public_field(
         ):
             by_field[field] = decision
     return by_field
+
+
+def _projection_entries_by_public_field(
+    extraction_result: ExtractionResult,
+) -> dict[str, PublicationEntry]:
+    authorized_fields = {
+        state.field
+        for state in getattr(extraction_result, "field_states", ()) or ()
+        if str(getattr(state, "state", "") or "")
+        in {"captured_published", "resolved"}
+    }
+    record_fields = {
+        key
+        for record in getattr(extraction_result, "records", ()) or ()
+        if isinstance(record, dict)
+        for key, value in record.items()
+        if value not in (None, "", [], {})
+    }
+    projection = getattr(extraction_result, "publication", None)
+    entries = tuple(getattr(projection, "entries", ()) or ())
+    by_field: dict[str, PublicationEntry] = {}
+    for entry in entries:
+        if not isinstance(entry, PublicationEntry) or entry.disposition != "publish":
+            continue
+        field = _public_field_from_projection_path(entry.path)
+        if (
+            field
+            and field in authorized_fields
+            and field in record_fields
+            and field not in by_field
+        ):
+            by_field[field] = entry
+    return by_field
+
+
+def _public_field_from_projection_path(path: str) -> str | None:
+    text = str(path or "")
+    if text.startswith("record."):
+        return text.rsplit(".", 1)[-1]
+    if text.startswith("asset[") and text.endswith(".url"):
+        return "image_url"
+    return None
 
 
 def _preview(value: object, *, limit: int = _PREVIEW_LIMIT) -> object:

@@ -23,6 +23,7 @@ from app.core.config.extraction_rules import (
     LISTING_DETAIL_URL_MARKERS,
     LISTING_SHELL_FRAMEWORK_TOKENS,
     LOW_CONTENT_SHELL_PHRASES,
+    LOW_CONTENT_TERMINAL_SHELL_PHRASES,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.shared.field_coerce import clean_text, coerce_int as _coerce_int
@@ -665,7 +666,20 @@ def classify_low_content_reason(
     if not analysis.html.strip():
         return "empty_html"
     title_text = analysis.title_text.lower()
-    if any(phrase in title_text for phrase in LOW_CONTENT_SHELL_PHRASES):
+    if any(
+        phrase in title_text
+        for phrase in (*LOW_CONTENT_SHELL_PHRASES, *LOW_CONTENT_TERMINAL_SHELL_PHRASES)
+    ):
+        return "empty_terminal_page"
+    lowered_text = analysis.normalized_text.lower()
+    has_product_evidence = analyze_extractable_content(
+        html,
+        analysis=analysis,
+    ).detail
+    if (
+        not has_product_evidence
+        and any(phrase in lowered_text for phrase in LOW_CONTENT_TERMINAL_SHELL_PHRASES)
+    ):
         return "empty_terminal_page"
     if len(analysis.visible_text.strip()) >= 120:
         return None
@@ -680,7 +694,6 @@ def classify_low_content_reason(
         )
     ):
         return None
-    lowered_text = analysis.normalized_text.lower()
     if any(phrase in lowered_text for phrase in LOW_CONTENT_SHELL_PHRASES):
         return "empty_terminal_page"
     if html_bytes <= 8_000:

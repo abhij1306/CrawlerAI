@@ -12,6 +12,7 @@ from app.extraction.collectors.js_state import (
     StructuredHarvestResult,
     budget_outcome,
     network_row,
+    path_is_nested_sibling_product,
     prioritize_evidence_rows,
     root_admits_path,
     select_product_roots,
@@ -105,6 +106,10 @@ class NetworkCollector:
             selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path):
+                    continue
+                if isinstance(obj, dict) and path_is_nested_sibling_product(
+                    selection, path, obj, bundle.final_url
+                ):
                     continue
                 if isinstance(obj, dict):
                     admitted_source_objects += 1

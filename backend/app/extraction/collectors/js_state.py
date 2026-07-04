@@ -41,6 +41,7 @@ from app.core.records.js_state_scope import (
     has_product_context as _has_product_context,
     path_product_identity_conflicts as _path_product_identity_conflicts,
     path_tokens as _path_tokens,
+    path_is_nested_sibling_product,
     root_admits_path,
     select_product_roots,
 )
@@ -118,6 +119,10 @@ class JsStateCollector:
             selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path):
+                    continue
+                if isinstance(obj, dict) and path_is_nested_sibling_product(
+                    selection, path, obj, bundle.final_url
+                ):
                     continue
                 if isinstance(obj, dict):
                     admitted_source_objects += 1
@@ -274,6 +279,7 @@ def _state_payloads(bundle: CaptureBundle, artifacts):
             document,
             selector=variant_policy.EMBEDDED_STATE_SCRIPT_SELECTOR,
             global_keys=variant_policy.EMBEDDED_STATE_GLOBAL_KEYS,
+            json_call_keys=variant_policy.EMBEDDED_STATE_JSON_CALL_KEYS,
             max_scripts=variant_policy.EMBEDDED_STATE_MAX_SCRIPTS,
             max_script_chars=variant_policy.EMBEDDED_STATE_MAX_SCRIPT_CHARS,
             exclude_node=_embedded_state_node_is_noise,

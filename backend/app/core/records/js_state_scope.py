@@ -9,7 +9,10 @@ from typing import Any, Literal
 from urllib.parse import unquote, urlparse
 
 from app.core.config import variant_policy
-from app.core.config.extraction_rules import ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS
+from app.core.config.extraction_rules import (
+    ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
+    ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS,
+)
 from app.core.config.field_mappings import (
     ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS,
     ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
@@ -285,6 +288,26 @@ def root_admits_path(selection: RootSelection, path: str) -> bool:
     if selection.status == "ambiguous":
         return False
     return True
+
+
+def path_is_nested_sibling_product(
+    selection: RootSelection,
+    path: str,
+    obj: dict,
+    final_url: str,
+) -> bool:
+    if selection.status != "selected":
+        return False
+    normalized = str(path).rstrip("/")
+    if any(normalized == str(root).rstrip("/") for root in selection.roots):
+        return False
+    if not path_is_within_selected_root(normalized, selection.roots):
+        return False
+    if not (path_tokens(normalized) & ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS):
+        return False
+    if not has_product_context(normalized, obj):
+        return False
+    return not _object_matches_target(obj, _target_signals(final_url))
 
 
 def selected_product_root_paths(
