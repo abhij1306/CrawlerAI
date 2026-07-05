@@ -676,9 +676,8 @@ def classify_low_content_reason(
         html,
         analysis=analysis,
     ).detail
-    if (
-        not has_product_evidence
-        and any(phrase in lowered_text for phrase in LOW_CONTENT_TERMINAL_SHELL_PHRASES)
+    if not has_product_evidence and any(
+        phrase in lowered_text for phrase in LOW_CONTENT_TERMINAL_SHELL_PHRASES
     ):
         return "empty_terminal_page"
     if len(analysis.visible_text.strip()) >= 120:

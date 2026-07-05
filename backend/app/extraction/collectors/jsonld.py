@@ -581,11 +581,18 @@ def _variant(
             if key == "color"
             else _variant_size(row)
             if key == "size"
-            else text_value(row.get(key))
+            else text_value(row.get(key)) or (guarded_offer_url if key == "url" else "")
         )
         if value:
             if fact.startswith("variant.option."):
                 emitted_axes.add(fact.rsplit(".", 1)[-1])
+            locator_value = (
+                f"{path}/offers/url"
+                if key == "url"
+                and value == guarded_offer_url
+                and not text_value(row.get(key))
+                else f"{path}/{key}"
+            )
             out.append(
                 evidence(
                     bundle,
@@ -593,7 +600,7 @@ def _variant(
                     "jsonld",
                     fact,
                     value,
-                    SourceLocator(kind="json_pointer", value=f"{path}/{key}"),
+                    SourceLocator(kind="json_pointer", value=locator_value),
                     group_id=group,
                     hint=hint,
                     directness="embedded",
@@ -679,9 +686,7 @@ def _guarded_standalone_offer_url(
     offers = row.get("offers")
     offer_rows = offers if isinstance(offers, list) else [offers]
     offer_urls = {
-        text_value(offer.get("url"))
-        for offer in offer_rows
-        if isinstance(offer, dict)
+        text_value(offer.get("url")) for offer in offer_rows if isinstance(offer, dict)
     }
     matches = [
         url

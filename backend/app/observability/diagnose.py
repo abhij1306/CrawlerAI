@@ -381,15 +381,13 @@ def _projection_entries_by_public_field(
     authorized_fields = {
         state.field
         for state in getattr(extraction_result, "field_states", ()) or ()
-        if str(getattr(state, "state", "") or "")
-        in {"captured_published", "resolved"}
+        if str(getattr(state, "state", "") or "") in {"captured_published", "resolved"}
     }
     record_fields = {
         key
         for record in getattr(extraction_result, "records", ()) or ()
-        if isinstance(record, dict)
-        for key, value in record.items()
-        if value not in (None, "", [], {})
+        for key, value in _record_items(record)
+        if value not in (None, "", [], {}) and not str(key).startswith("_")
     }
     projection = getattr(extraction_result, "publication", None)
     entries = tuple(getattr(projection, "entries", ()) or ())
@@ -406,6 +404,14 @@ def _projection_entries_by_public_field(
         ):
             by_field[field] = entry
     return by_field
+
+
+def _record_items(record: object) -> tuple[tuple[str, object], ...]:
+    if isinstance(record, dict):
+        return tuple(record.items())
+    if hasattr(record, "model_dump"):
+        return tuple(record.model_dump().items())
+    return ()
 
 
 def _public_field_from_projection_path(path: str) -> str | None:

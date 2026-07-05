@@ -20,6 +20,7 @@ from app.core.config.public_record_policy import (
     PUBLIC_RECORD_NUMERIC_BRAND_PATTERN,
     PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN,
 )
+from app.core.config.url_path_markers import ECOMMERCE_DETAIL_PATH_MARKERS
 from app.core.shared.text_coerce import clean_text, coerce_text, slug_tokens
 
 _PUBLIC_RECORD_BARCODE_LENGTHS_SET = frozenset(PUBLIC_RECORD_BARCODE_LENGTHS or ())
@@ -235,7 +236,7 @@ def infer_brand_from_page_identity(
         )
     ):
         return compact_core.capitalize()
-    if not generic_host and title_tokens and title_words:
+    if existing and not generic_host and title_tokens and title_words:
         first = title_tokens[0]
         path_tokens = slug_tokens(urlparse(str(url or "")).path)
         corroborations = sum(first in slug_tokens(value) for value in evidence_values)
@@ -249,18 +250,45 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
     title_parts = slug_tokens(text)
     if len(title_parts) < 2:
         return None
+    first_token = title_parts[0] if title_parts else ""
     path_parts = [
         part.split(".", 1)[0]
         for part in (urlparse(str(url or "")).path or "").split("/")
         if part
     ]
+    path_text = urlparse(str(url or "")).path or ""
+    path_tokens = slug_tokens(path_text)
+    first_word = text.split(" ", 1)[0].strip(" |-–—'") if text else ""
+    if (
+        len(title_parts) >= 2
+        and path_tokens[:2] == title_parts[:2]
+        and first_word
+        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+        and (any(marker in path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS[:1]))
+    ):
+        return first_word
+    if (
+        len(title_parts) >= 4
+        and path_tokens[:2] == title_parts[:2]
+        and first_word
+        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+        and len(path_parts) == 1
+    ):
+        return first_word
+    if (
+        any(marker in text for marker in ("\u2122", "\u00ae"))
+        and path_parts
+        and slug_tokens(path_parts[-1])[:1] == title_parts[:1]
+        and first_word
+        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+    ):
+        return first_word
     title_segments = text.split(" - ", 1) if text else []
     leading_segment = title_segments[0].strip(" |-–—") if title_segments else ""
     trailing_segment = (
         title_segments[1].strip(" |-–—") if len(title_segments) == 2 else ""
     )
     leading_tokens = slug_tokens(leading_segment)
-    first_token = title_parts[0] if title_parts else ""
     if (
         " - " in text
         and leading_segment[:1].isupper()

@@ -9,6 +9,7 @@ from typing import Literal, cast
 from app.core.config.extraction_rules import (
     DETAIL_CAPTURE_BLOCKED_OUTCOME,
     DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
+    DETAIL_CAPTURE_OK_OUTCOME,
     DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS,
@@ -845,7 +846,9 @@ def _normalized_detail_outcome(
         else None
     )
     return normalized_detail_outcome(
-        http_status=request.capture.http_status,
+        http_status=None
+        if configured == DETAIL_CAPTURE_OK_OUTCOME
+        else request.capture.http_status,
         blocked=bool(request.capture.blocked),
         acquisition_outcome=request.capture.acquisition_outcome,
         browser_outcome=browser_outcome,

@@ -59,6 +59,7 @@ from app.core.shared.field_coerce_text import (
     infer_brand_from_marked_title_path,
     infer_brand_from_title_marker,
 )
+from app.core.shared.text_coerce import slug_tokens
 from app.core.records.url_identity import (
     detail_url_resource_identity,
     detail_style_code_from_url,
@@ -1968,16 +1969,23 @@ def _brand_from_title(
         return None
     if existing_brands:
         return None
+    marker_brand = infer_brand_from_title_marker(title)
+    if (
+        marker_brand
+        and len(slug_tokens(marker_brand)) == 1
+        and has_independent_product_signal
+    ):
+        return marker_brand, "brand_from_title_marker"
     for rule_id, value in (
         (
             "brand_from_marked_title_path",
             infer_brand_from_marked_title_path(url=page_url, title=title),
         ),
-        ("brand_from_title_marker", infer_brand_from_title_marker(title)),
         (
             "brand_from_product_url",
             infer_brand_from_product_url(url=page_url, title=title),
         ),
+        ("brand_from_title_marker", marker_brand),
     ):
         if value and has_independent_product_signal:
             return value, rule_id

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.acquisition.browser_readiness import analyze_extractable_content
 from app.core.config.extraction_rules import DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
 from app.core.records.detail_outcome import normalized_detail_outcome
 
@@ -74,8 +75,9 @@ def build_source_capability_diagnostics(
 
     shell_outcome = str(browser_outcome or "").strip().casefold()
     http_error = isinstance(status_code, int) and status_code >= 400
+    has_detail_evidence = analyze_extractable_content(html).detail
     detail_outcome = normalized_detail_outcome(
-        http_status=status_code,
+        http_status=None if http_error and has_detail_evidence else status_code,
         blocked=blocked,
         browser_outcome=shell_outcome,
     )

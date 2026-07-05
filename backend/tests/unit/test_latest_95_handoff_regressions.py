@@ -7,6 +7,7 @@ from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.shared.field_coerce_text import (
     infer_brand_from_marked_title_path,
+    infer_brand_from_page_identity,
     infer_brand_from_product_url,
 )
 from app.extraction import Surface, extract
@@ -276,6 +277,20 @@ def test_brand_derivation_requires_independent_manufacturer_signal() -> None:
         )
         is None
     )
+    assert (
+        infer_brand_from_page_identity(
+            url=(
+                "https://retailer.com/products/sparkling-prebiotic-beverage-"
+                "vinegar-seltzer"
+            ),
+            title="Sparkling Prebiotic Beverage Vinegar Seltzer",
+            evidence_values=(
+                "Sparkling Prebiotic Beverage Vinegar Seltzer",
+                "sparkling-prebiotic-beverage-vinegar-seltzer",
+            ),
+        )
+        is None
+    )
 
     result = _extract(
         "ecommerce_detail",
@@ -389,7 +404,7 @@ def test_diagnose_suppresses_projection_winner_when_records_rejected() -> None:
         fact_type="product.title",
         raw_value="Missing Product",
         value="Missing Product",
-        locator=SourceLocator(kind="url", value="https://shop.test/p"),
+        locator=SourceLocator(kind="url_component", value="path"),
         directness="inferred",
         confidence=0.4,
         subject_id="product:1",
@@ -400,9 +415,7 @@ def test_diagnose_suppresses_projection_winner_when_records_rejected() -> None:
         records=(),
         evidence=(evidence_row,),
         decisions=(),
-        field_states=(
-            FieldEvidenceState(field="title", state="source_unavailable"),
-        ),
+        field_states=(FieldEvidenceState(field="title", state="source_unavailable"),),
         publication=CommerceDetailProjection(
             record_entity_id="product:1",
             entries=(
@@ -410,6 +423,7 @@ def test_diagnose_suppresses_projection_winner_when_records_rejected() -> None:
                     path="record.title",
                     entity_id="product:1",
                     value="Missing Product",
+                    selected_fact_id="selected-title",
                     rule_id="url_title",
                     evidence_ids=("ev-title",),
                 ),

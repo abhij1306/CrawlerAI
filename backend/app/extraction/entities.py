@@ -137,14 +137,10 @@ def _select_primary_product_roots(
             detail_title_from_url(bundle.final_url or bundle.requested_url)
         )
     )
+    product_by_subject = _product_by_subject(products, evidence)
     ranked: list[tuple[int, str, ProductEntity]] = []
     for product in products:
-        rows = [
-            by_id[evidence_id]
-            for ids in product.attribute_evidence.values()
-            for evidence_id in ids
-            if evidence_id in by_id
-        ]
+        rows = _product_selection_rows(product, by_id, product_by_subject)
         score = _primary_product_root_score(
             rows,
             target_identity=target_identity,
@@ -157,6 +153,32 @@ def _select_primary_product_roots(
     if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         return products
     return (ranked[0][2],)
+
+
+def _product_selection_rows(
+    product: ProductEntity,
+    by_id: dict[str, Evidence],
+    product_by_subject: dict[str, str],
+) -> list[Evidence]:
+    rows = [
+        by_id[evidence_id]
+        for ids in product.attribute_evidence.values()
+        for evidence_id in ids
+        if evidence_id in by_id
+    ]
+    product_id = product.entity_id
+    rows.extend(
+        row
+        for row in by_id.values()
+        if row.fact_type.startswith(("variant.", "offer."))
+        and _owner_product_id(
+            [row],
+            product_by_subject,
+            allowed_relations=frozenset({"product_variant", "variant_offer"}),
+        )
+        == product_id
+    )
+    return rows
 
 
 def _primary_product_root_score(
@@ -180,6 +202,8 @@ def _primary_product_root_score(
                 score += 15
             elif title_tokens & target_title_tokens:
                 score += 5
+        if row.fact_type in {"variant.gtin", "variant.sku"}:
+            score += 130
         if row.collector_id == "url" and row.fact_type == "product.url":
             score += 10
         if row.subject_scope == "product":
@@ -203,18 +227,14 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
         by_subject[ev.subject_id].append(ev)
     groups: list[list[Evidence]] = []
     group_identities: list[set[tuple[str, str]]] = []
+    child_rows_by_parent_subject: dict[str, list[Evidence]] = defaultdict(list)
+    for ev in evidence:
+        if ev.fact_type == "variant.url" and ev.relation_type == "product_variant":
+            for subject_id in _parent_subject_aliases(ev):
+                child_rows_by_parent_subject[subject_id].append(ev)
     for subject, rows in sorted(by_subject.items()):
-        identities = _product_identities(rows)
-        matched = next(
-            (
-                index
-                for index, existing in enumerate(group_identities)
-                if identities
-                and _product_identity_sets_match(existing, identities)
-                and _product_identity_sets_compatible(existing, identities)
-            ),
-            None,
-        )
+        identities = _product_identities(rows + child_rows_by_parent_subject[subject])
+        matched = _matching_product_group_index(group_identities, identities)
         if matched is None:
             groups.append(list(rows))
             group_identities.append(set(identities) or {("subject", subject)})
@@ -223,6 +243,7 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
         group_identities[matched].update(identities)
     _merge_url_only_groups(groups, group_identities)
     _merge_exact_title_groups(groups, group_identities)
+    _merge_single_structured_url_shell(groups, group_identities)
     products: list[ProductEntity] = []
     for identities, rows in sorted(
         zip(group_identities, groups), key=lambda item: tuple(sorted(item[0]))
@@ -251,6 +272,23 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
             )
         )
     return tuple(products)
+
+
+def _matching_product_group_index(
+    group_identities: list[set[tuple[str, str]]],
+    identities: set[tuple[str, str]],
+) -> int | None:
+    if not identities:
+        return None
+    return next(
+        (
+            index
+            for index, existing in enumerate(group_identities)
+            if _product_identity_sets_match(existing, identities)
+            and _product_identity_sets_compatible(existing, identities)
+        ),
+        None,
+    )
 
 
 def _merge_exact_title_groups(
@@ -322,6 +360,45 @@ def _merge_url_only_groups(
         group_identities[target].update(group_identities.pop(index))
 
 
+def _merge_single_structured_url_shell(
+    groups: list[list[Evidence]],
+    group_identities: list[set[tuple[str, str]]],
+) -> None:
+    url_only = [
+        index
+        for index, rows in enumerate(groups)
+        if rows and all(row.collector_id == "url" for row in rows)
+    ]
+    structured = [
+        index
+        for index, rows in enumerate(groups)
+        if any(row.collector_id != "url" for row in rows)
+    ]
+    if len(url_only) != 1 or len(structured) != 1:
+        return
+    source, target = url_only[0], structured[0]
+    if not any(
+        kind in {"jsonld.node_id", "product.id"}
+        for kind, _value in group_identities[target]
+    ):
+        return
+    if not (
+        _title_identity_tokens(groups[source]) & _title_identity_tokens(groups[target])
+    ):
+        return
+    groups[target].extend(groups.pop(source))
+    group_identities[target].update(group_identities.pop(source))
+
+
+def _title_identity_tokens(rows: list[Evidence]) -> set[str]:
+    return {
+        token
+        for row in rows
+        if row.fact_type == "product.title"
+        for token in semantic_identity_tokens(str(row.value))
+    }
+
+
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
     identities: set[tuple[str, str]] = set()
     for row in rows:
@@ -339,15 +416,18 @@ def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
             node_path = _normalized_identity_value(row.metadata.get("jsonld_node_path"))
             if node_id:
                 identities.add(("jsonld.node_id", node_id))
+                if resource_identity := detail_url_resource_identity(node_id):
+                    identities.add(("product.url_resource", resource_identity))
             elif node_path and not any(
                 row.fact_type == "product.url" and str(row.value).strip()
                 for row in rows
             ):
                 identities.add(("jsonld.node_path", node_path))
-        if row.fact_type == "product.url":
+        if row.fact_type in {"product.url", "variant.url"}:
             resource_identity = detail_url_resource_identity(str(row.value))
             if resource_identity:
                 identities.add(("product.url_resource", resource_identity))
+        if row.fact_type == "product.url":
             exact_url = _normalized_identity_value(row.value)
             if exact_url:
                 identities.add(("product.url", exact_url))
@@ -378,8 +458,14 @@ def _product_identity_sets_compatible(
             if kind == "jsonld.node_path":
                 continue
             strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
-            if kind == "product.url_resource" and any(
+            if kind in {"product.url", "product.url_resource"} and any(
                 identity in right for identity in left if identity[0] in strong_kinds
+            ):
+                continue
+            if kind == "product.url" and any(
+                identity in right
+                for identity in left
+                if identity[0] == "product.url_resource"
             ):
                 continue
             return False

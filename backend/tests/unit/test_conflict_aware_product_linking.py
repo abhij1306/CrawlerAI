@@ -130,7 +130,13 @@ def test_url_collector_fallback_only_merges_matching_resource() -> None:
 def test_url_only_title_overlap_does_not_merge_sibling_brand_product() -> None:
     bundle = _bundle()
     rows = (
-        _row(bundle, "url", "product.url", "https://shop.test/products/nike-air-max-90", collector_id="url"),
+        _row(
+            bundle,
+            "url",
+            "product.url",
+            "https://shop.test/products/nike-air-max-90",
+            collector_id="url",
+        ),
         _row(bundle, "url", "product.title", "Nike Air Max 90", collector_id="url"),
         _row(bundle, "sibling", "product.title", "Nike Dunk Low"),
         _row(bundle, "sibling", "product.brand", "Nike"),
