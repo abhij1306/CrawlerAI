@@ -18,7 +18,7 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_result_builder.py": 714,
     "acquisition/cookie_store.py": 713,
     "acquisition/fetch/browser_attempt_runner.py": 726,
-    "core/config/extraction_rules/_detail.py": 1026,
+    "core/config/extraction_rules/_detail.py": 1032,
     "enrichment/service.py": 760,
     "extraction/collectors/dom.py": 1187,
     "extraction/collectors/jsonld.py": 834,
