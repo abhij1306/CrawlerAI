@@ -52,7 +52,7 @@ jobs:
 
       - name: Dependency vulnerability scan
         working-directory: frontend
-        run: vp pm audit --audit-level=high
+        run: vp pm audit -- --audit-level=high
 
       - name: Build frontend and check bundle budgets
         working-directory: frontend

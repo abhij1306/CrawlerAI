@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-
-from selectolax.lexbor import LexborNode
+from typing import Any
 
 from app.core.config.evaluation import EXTRACTION_V3_FLAT_MAP_EXCLUDED_TAGS
 from app.extraction.documents import HtmlDocument
@@ -57,7 +56,7 @@ def chunk_flat_map(flat_map: FlatMap, *, target_tokens: int) -> tuple[FlatMap, .
     return tuple(chunks)
 
 
-def _root_node(document: HtmlDocument, root_path: str | None) -> LexborNode | None:
+def _root_node(document: HtmlDocument, root_path: str | None) -> Any | None:
     if root_path:
         for node in document.nodes():
             if node.dom_path() == root_path:
@@ -69,7 +68,7 @@ def _root_node(document: HtmlDocument, root_path: str | None) -> LexborNode | No
     return html.node if html is not None else None
 
 
-def _excluded(node: LexborNode) -> bool:
+def _excluded(node: Any) -> bool:
     tag = str(node.tag or "").lower()
     if (
         not tag
@@ -87,7 +86,7 @@ def _excluded(node: LexborNode) -> bool:
     return False
 
 
-def _direct_text(node: LexborNode) -> str:
+def _direct_text(node: Any) -> str:
     pieces: list[str] = []
     child = node.child
     while child is not None:
@@ -99,9 +98,9 @@ def _direct_text(node: LexborNode) -> str:
     return " ".join(" ".join(pieces).split())
 
 
-def _absolute_path(node: LexborNode) -> str:
+def _absolute_path(node: Any) -> str:
     parts: list[str] = []
-    current: LexborNode | None = node
+    current: Any | None = node
     while current is not None:
         tag = str(current.tag or "").lower()
         if not tag or tag.startswith("-"):
@@ -133,7 +132,7 @@ def _rough_token_count(value: str) -> int:
     return max(1, (len(compact) + 3) // 4)
 
 
-def _same_node(left: LexborNode | None, right: LexborNode | None) -> bool:
+def _same_node(left: Any | None, right: Any | None) -> bool:
     if left is None or right is None:
         return left is right
     return int(left.mem_id) == int(right.mem_id)
