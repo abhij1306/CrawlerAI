@@ -370,6 +370,17 @@ def _merge_url_only_groups(
         group_identities[target].update(group_identities.pop(index))
 
 
+# A single URL-only product shell is merged into the single structured product
+# group when that group carries a strong product identity. jsonld/product.id
+# cover the structured-collector case; product.sku/gtin/mpn additionally cover the
+# generalized (grounded-LLM) tier, whose product facts lack a groundable
+# product.url (the flat map is text-only) and would otherwise strand brand/sku/
+# description on a product entity the url shell out-scores and discards.
+_STRUCTURED_SHELL_IDENTITY_KINDS: frozenset[str] = frozenset(
+    {"jsonld.node_id", "product.id", "product.sku", "product.gtin", "product.mpn"}
+)
+
+
 def _merge_single_structured_url_shell(
     groups: list[list[Evidence]],
     group_identities: list[set[tuple[str, str]]],
@@ -388,7 +399,7 @@ def _merge_single_structured_url_shell(
         return
     source, target = url_only[0], structured[0]
     if not any(
-        kind in {"jsonld.node_id", "product.id"}
+        kind in _STRUCTURED_SHELL_IDENTITY_KINDS
         for kind, _value in group_identities[target]
     ):
         return
