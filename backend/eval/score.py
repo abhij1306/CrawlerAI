@@ -10,6 +10,7 @@ from typing import Any
 from app.core.config.evaluation import (
     EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS,
     EXTRACTION_V3_LABEL_CORE_FIELDS,
+    EXTRACTION_V3_VARIANT_EXPECTED_BUCKETS,
 )
 
 from eval.corpus import DEFAULT_AUDIT_PATH, DEFAULT_RUN_DIR, CorpusPage, load_pages
@@ -37,7 +38,11 @@ class ScoreReport:
         }
 
 
-def score_records_against_labels(pages: tuple[CorpusPage, ...]) -> ScoreReport:
+def score_records_against_labels(
+    pages: tuple[CorpusPage, ...],
+    *,
+    record_payloads: dict[int, dict[str, Any]] | None = None,
+) -> ScoreReport:
     counts = {field: Counter() for field in EXTRACTION_V3_LABEL_CORE_FIELDS}
     variant_scores: list[float] = []
     variant_exact = 0
@@ -46,7 +51,7 @@ def score_records_against_labels(pages: tuple[CorpusPage, ...]) -> ScoreReport:
     for page in pages:
         if not page.label:
             continue
-        record = _first_record(page.result_dir)
+        record = _first_record(page, record_payloads)
         html = _page_html(page.result_dir)
         for field in EXTRACTION_V3_LABEL_CORE_FIELDS:
             expected = page.label.get("fields", {}).get(field)
@@ -86,26 +91,30 @@ def score_records_against_labels(pages: tuple[CorpusPage, ...]) -> ScoreReport:
             "mean_page_score": variant_score,
         },
         hallucination_proxy_rate=_ratio(hallucination_values, extracted_values),
-        defect_counts=baseline_defects(pages),
+        defect_counts=baseline_defects(pages, record_payloads=record_payloads),
     )
 
 
-def baseline_defects(pages: tuple[CorpusPage, ...]) -> dict[str, int]:
+def baseline_defects(
+    pages: tuple[CorpusPage, ...],
+    *,
+    record_payloads: dict[int, dict[str, Any]] | None = None,
+) -> dict[str, int]:
     defects = Counter()
     for page in pages:
-        record_payload = _record_payload(page.result_dir)
+        record_payload = _record_payload_for_page(page, record_payloads)
         records = record_payload.get("records") or []
         if int(record_payload.get("record_count", len(records)) or 0) == 0:
             defects["empty_records"] += 1
             defects["missing_price_on_commerce_detail"] += 1
-            if page.variant_bucket in {"embedded_json", "dom_only", "partial"}:
+            if page.variant_bucket in EXTRACTION_V3_VARIANT_EXPECTED_BUCKETS:
                 defects["empty_variants_where_expected"] += 1
             continue
         first = records[0] if records else {}
         if not _present(first.get("price")):
             defects["missing_price_on_commerce_detail"] += 1
         if (
-            page.variant_bucket in {"embedded_json", "dom_only", "partial"}
+            page.variant_bucket in EXTRACTION_V3_VARIANT_EXPECTED_BUCKETS
             and not first.get("variants")
         ):
             defects["empty_variants_where_expected"] += 1
@@ -163,20 +172,47 @@ def _actual_field(field: str, record: dict[str, Any]) -> Any:
                 images.append(value)
         return images
     if field == "category":
-        return record.get("category")
+        # Mirror the proposal-time fallback (corpus.py `_proposal_value`): labels
+        # built from `category_breadcrumb` must be scored against the same source,
+        # else every breadcrumb-derived category reads as a false negative.
+        category = record.get("category")
+        if category:
+            return category
+        structured = record.get("structured")
+        return (
+            structured.get("category_breadcrumb")
+            if isinstance(structured, dict)
+            else None
+        )
     return record.get(field)
 
 
-def _first_record(result_dir: Path) -> dict[str, Any]:
-    records = _record_payload(result_dir).get("records") or []
+def _first_record(
+    page: CorpusPage, record_payloads: dict[int, dict[str, Any]] | None
+) -> dict[str, Any]:
+    records = _record_payload_for_page(page, record_payloads).get("records") or []
     return records[0] if records else {}
+
+
+def _record_payload_for_page(
+    page: CorpusPage, record_payloads: dict[int, dict[str, Any]] | None
+) -> dict[str, Any]:
+    if record_payloads is not None:
+        return record_payloads.get(
+            page.result_id,
+            {"record_count": 0, "records": []},
+        )
+    return _record_payload(page.result_dir)
 
 
 def _record_payload(result_dir: Path) -> dict[str, Any]:
     path = result_dir / "record.json"
     if not path.exists():
         return {"record_count": 0, "records": []}
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"record_count": 0, "records": []}
     return payload if isinstance(payload, dict) else {"record_count": 0, "records": []}
 
 

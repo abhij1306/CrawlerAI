@@ -1,0 +1,316 @@
+{
+  "baseline_on_verified_labels": {
+    "defect_counts": {
+      "empty_records": 0,
+      "empty_variants_where_expected": 3,
+      "missing_price_on_commerce_detail": 1
+    },
+    "field_counts": {
+      "availability": {
+        "fn": 1,
+        "fp": 0,
+        "tp": 7
+      },
+      "brand": {
+        "fn": 1,
+        "fp": 1,
+        "tp": 6
+      },
+      "category": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "currency": {
+        "fn": 1,
+        "fp": 0,
+        "tp": 7
+      },
+      "description": {
+        "fn": 5,
+        "fp": 4,
+        "tp": 3
+      },
+      "gtin": {
+        "fn": 0,
+        "fp": 0,
+        "tp": 0
+      },
+      "images": {
+        "fn": 6,
+        "fp": 6,
+        "tp": 2
+      },
+      "mpn": {
+        "fn": 0,
+        "fp": 1,
+        "tp": 1
+      },
+      "price": {
+        "fn": 3,
+        "fp": 2,
+        "tp": 5
+      },
+      "sale_price": {
+        "fn": 2,
+        "fp": 0,
+        "tp": 0
+      },
+      "sku": {
+        "fn": 4,
+        "fp": 1,
+        "tp": 4
+      },
+      "title": {
+        "fn": 3,
+        "fp": 3,
+        "tp": 5
+      }
+    },
+    "field_metrics": {
+      "availability": {
+        "f1": 0.933333,
+        "precision": 1.0,
+        "recall": 0.875
+      },
+      "brand": {
+        "f1": 0.857143,
+        "precision": 0.857143,
+        "recall": 0.857143
+      },
+      "category": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "currency": {
+        "f1": 0.933333,
+        "precision": 1.0,
+        "recall": 0.875
+      },
+      "description": {
+        "f1": 0.4,
+        "precision": 0.428571,
+        "recall": 0.375
+      },
+      "gtin": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "images": {
+        "f1": 0.25,
+        "precision": 0.25,
+        "recall": 0.25
+      },
+      "mpn": {
+        "f1": 0.666667,
+        "precision": 0.5,
+        "recall": 1.0
+      },
+      "price": {
+        "f1": 0.666667,
+        "precision": 0.714286,
+        "recall": 0.625
+      },
+      "sale_price": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "sku": {
+        "f1": 0.615385,
+        "precision": 0.8,
+        "recall": 0.5
+      },
+      "title": {
+        "f1": 0.625,
+        "precision": 0.625,
+        "recall": 0.625
+      }
+    },
+    "hallucination_proxy_rate": 0.155172,
+    "page_count": 8,
+    "variant_matrix_accuracy": 0.623016,
+    "variant_metrics": {
+      "exact_pages": 3,
+      "mean_page_score": 0.623016,
+      "pages_with_expected_variants": 6
+    }
+  },
+  "candidate": {
+    "defect_counts": {
+      "empty_records": 8,
+      "empty_variants_where_expected": 6,
+      "missing_price_on_commerce_detail": 8
+    },
+    "field_counts": {
+      "availability": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "brand": {
+        "fn": 7,
+        "fp": 0,
+        "tp": 0
+      },
+      "category": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "currency": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "description": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "gtin": {
+        "fn": 0,
+        "fp": 0,
+        "tp": 0
+      },
+      "images": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "mpn": {
+        "fn": 1,
+        "fp": 0,
+        "tp": 0
+      },
+      "price": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "sale_price": {
+        "fn": 2,
+        "fp": 0,
+        "tp": 0
+      },
+      "sku": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      },
+      "title": {
+        "fn": 8,
+        "fp": 0,
+        "tp": 0
+      }
+    },
+    "field_metrics": {
+      "availability": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "brand": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "category": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "currency": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "description": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "gtin": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "images": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "mpn": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "price": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "sale_price": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "sku": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "title": {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0
+      }
+    },
+    "hallucination_proxy_rate": 0.0,
+    "page_count": 8,
+    "variant_matrix_accuracy": 0.0,
+    "variant_metrics": {
+      "exact_pages": 0,
+      "mean_page_score": 0.0,
+      "pages_with_expected_variants": 6
+    }
+  },
+  "candidate_runtime": {
+    "collector_ids": [],
+    "extractor_tiers": [],
+    "model_invocations": 0
+  },
+  "corpus_pages": 91,
+  "engine": "v3",
+  "frozen_baseline_defect_counts": {
+    "empty_records": 5,
+    "empty_variants_where_expected": 11,
+    "missing_price_on_commerce_detail": 13
+  },
+  "gate_passed": false,
+  "gate_reasons": [
+    "generalized_adapter_missing",
+    "generalized_tier_not_invoked",
+    "regressed_verified:empty_records",
+    "regressed_verified:missing_price_on_commerce_detail",
+    "regressed_verified:empty_variants_where_expected",
+    "field_f1_regressed:title",
+    "field_f1_regressed:description",
+    "field_f1_regressed:price",
+    "field_f1_regressed:currency",
+    "field_f1_regressed:availability",
+    "field_f1_regressed:brand",
+    "field_f1_regressed:mpn",
+    "field_f1_regressed:sku",
+    "field_f1_regressed:images"
+  ],
+  "llm_config_supplied": false,
+  "no_recipes": true,
+  "no_selectors": true,
+  "schema_version": "extraction_v3_eval.v1",
+  "selector_collectors_seen": [],
+  "tier": "generalized",
+  "verified_pages": 8
+}

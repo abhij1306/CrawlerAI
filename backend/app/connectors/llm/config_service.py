@@ -12,7 +12,10 @@ from app.core.config.field_mappings import PROMPT_REGISTRY
 from app.core.config.llm_runtime import SUPPORTED_LLM_PROVIDERS
 from app.core.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
 from app.core.config.evaluation import GROUNDED_REPAIR_PROMPT_REGISTRY
-from app.core.config.evaluation import GENERALIZED_EXTRACTION_PROMPT_REGISTRY
+from app.core.config.evaluation import (
+    GENERALIZED_EXTRACTION_LLM_TASK,
+    GENERALIZED_EXTRACTION_PROMPT_REGISTRY,
+)
 from app.core.config.product_intelligence import PRODUCT_INTELLIGENCE_PROMPT_REGISTRY
 from app.connectors.llm.payloads import SUPPORTED_TASK_TYPES
 from sqlalchemy import select
@@ -221,6 +224,44 @@ def resolve_provider_api_key(*, provider: str, encrypted_value: str) -> str:
     if decrypted:
         return decrypted
     return provider_env_key(provider)
+
+
+def default_generalized_config_snapshot(
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    task_type: str = GENERALIZED_EXTRACTION_LLM_TASK,
+) -> dict[str, Any] | None:
+    """Build a provider-agnostic generalized-extraction config from configured keys.
+
+    Mirrors the UI provider catalog rather than hardcoding a provider: when
+    ``provider`` is not pinned, the first catalog provider that has an API key set
+    is used (Mistral is the catalog default), so whichever provider the operator
+    configured drives the generalized tier. Returns ``None`` when no provider has a
+    usable key, so callers can fall back to an explicit ``--llm-config`` snapshot.
+    """
+    normalized = str(provider or "").strip().lower()
+    for definition in _LLM_PROVIDER_DEFINITIONS:
+        if normalized and definition["provider"] != normalized:
+            continue
+        settings_attr = definition.get("settings_attr")
+        has_key = bool(
+            settings_attr
+            and str(getattr(settings, str(settings_attr), "") or "").strip()
+        )
+        # An explicitly pinned provider is honored even without a detected key
+        # (it may arrive via env at call time); an unpinned provider must already
+        # have a key so auto-selection never picks an unusable provider.
+        if not has_key and not normalized:
+            continue
+        recommended = definition["recommended_models"]
+        return {
+            "provider": definition["provider"],
+            "model": str(model) if model else str(recommended[0]),
+            "api_key_encrypted": "",
+            "task_type": task_type,
+        }
+    return None
 
 
 def llm_provider_catalog() -> list[dict[str, Any]]:

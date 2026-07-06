@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config.evaluation import GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID
+from app.connectors.llm.config_service import default_generalized_config_snapshot
+from app.core.config.evaluation import (
+    GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
+    GENERALIZED_EXTRACTION_LLM_TASK,
+)
 from app.extraction.contracts import (
     EntityHint,
     ModelEvidenceCandidate,
@@ -227,9 +231,17 @@ def test_label_score_runs_on_synthetic_verified_label(tmp_path: Path) -> None:
 
 def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
     _write_verified_label(label_dir)
+    # Neutralize the env-based default provider so this exercises the genuine
+    # "no adapter configured" path deterministically, regardless of whether a
+    # MISTRALAI_API_KEY happens to be present in the developer's/CI's .env.
+    monkeypatch.setattr(
+        "eval.run.default_generalized_config_snapshot",
+        lambda **_: None,
+    )
 
     report = run_v3_engine(
         run_dir=run_dir,
@@ -251,8 +263,7 @@ def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
     assert "generalized_adapter_missing" in report["gate_reasons"]
     assert "generalized_tier_not_invoked" in report["gate_reasons"]
     assert any(
-        reason.startswith("not_strictly_better:")
-        or reason.startswith("regressed:")
+        reason.startswith("regressed_verified:")
         for reason in report["gate_reasons"]
     )
 
@@ -277,12 +288,67 @@ def test_v3_engine_gate_can_invoke_supplied_generalized_adapter(tmp_path: Path) 
     assert "generalized_tier_not_invoked" not in report["gate_reasons"]
 
 
+def test_default_config_snapshot_honors_explicit_provider() -> None:
+    # A pinned provider is honored even without a detected key (the key may arrive
+    # via env at call time) and drives the provider-agnostic snapshot.
+    snapshot = default_generalized_config_snapshot(provider="groq", model="some-model")
+
+    assert snapshot is not None
+    assert snapshot["provider"] == "groq"
+    assert snapshot["model"] == "some-model"
+    assert snapshot["task_type"] == GENERALIZED_EXTRACTION_LLM_TASK
+
+
+def test_default_config_snapshot_auto_selects_configured_provider(monkeypatch) -> None:
+    # Unpinned: the first catalog provider with a configured key wins (Mistral is
+    # the catalog default), and its recommended model is filled in.
+    import app.core.config as config_module
+
+    for attr in (
+        "mistral_api_key",
+        "groq_api_key",
+        "nvidia_api_key",
+        "openrouter_api_key",
+        "anthropic_api_key",
+    ):
+        monkeypatch.setattr(config_module.settings, attr, "", raising=False)
+    monkeypatch.setattr(config_module.settings, "groq_api_key", "sk-test", raising=False)
+
+    snapshot = default_generalized_config_snapshot()
+
+    assert snapshot is not None
+    assert snapshot["provider"] == "groq"
+    assert snapshot["model"]
+
+
+def test_default_config_snapshot_none_when_unconfigured(monkeypatch) -> None:
+    import app.core.config as config_module
+
+    for attr in (
+        "mistral_api_key",
+        "groq_api_key",
+        "nvidia_api_key",
+        "openrouter_api_key",
+        "anthropic_api_key",
+    ):
+        monkeypatch.setattr(config_module.settings, attr, "", raising=False)
+
+    assert default_generalized_config_snapshot() is None
+
+
 def test_v3_engine_require_pass_returns_nonzero_for_red_gate(
     tmp_path: Path,
     capsys,
+    monkeypatch,
 ) -> None:
     run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
     _write_verified_label(label_dir)
+    # Keep the CLI gate path offline and deterministic: don't let an env-provided
+    # provider key resolve a live hosted adapter during candidate extraction.
+    monkeypatch.setattr(
+        "eval.run.default_generalized_config_snapshot",
+        lambda **_: None,
+    )
 
     code = main(
         [

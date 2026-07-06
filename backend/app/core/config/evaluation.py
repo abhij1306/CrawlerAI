@@ -246,6 +246,11 @@ EXTRACTION_V3_VARIANT_BUCKETS: Final[tuple[str, ...]] = (
     "single_sku",
     "unknown",
 )
+# Buckets whose pages carry a real variant matrix, so an empty variants list is a
+# defect. Excludes single_sku (no variants expected) and unknown (unclassified).
+EXTRACTION_V3_VARIANT_EXPECTED_BUCKETS: Final[frozenset[str]] = frozenset(
+    {"embedded_json", "dom_only", "partial"}
+)
 EXTRACTION_V3_LABEL_CORE_FIELDS: Final[tuple[str, ...]] = (
     "title",
     "description",
