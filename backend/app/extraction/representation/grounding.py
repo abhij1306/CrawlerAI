@@ -71,7 +71,7 @@ def _normalize_forms(value: str) -> tuple[str, ...]:
             forms.append(clean)
             continue
         whole, cents = clean.split(".", 1)
-        if cents == "00":
+        if not cents.strip("0"):
             forms.append(whole)
         forms.append(f"{whole}{cents}")
     return tuple(dict.fromkeys(form for form in forms if form))

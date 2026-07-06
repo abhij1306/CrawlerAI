@@ -11,6 +11,7 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
     DETAIL_IDENTITY_CODE_MAX_LENGTH,
     DETAIL_IDENTITY_CODE_MIN_LENGTH,
+    DETAIL_URL_PRODUCT_SLUG_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
     DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
@@ -284,6 +285,31 @@ def detail_url_resource_identity(url: str) -> str:
     host = str(parsed.hostname or "").casefold().strip(".")
     path = unquote(parsed.path).casefold().rstrip("/")
     return f"{host}{path}" if host and path else ""
+
+
+def detail_url_product_slug(url: str) -> str:
+    """Prefix-independent product identity: the terminal path segment only.
+
+    ``detail_url_resource_identity`` keys on the whole path, so the *same*
+    product captured under different navigation prefixes reads as two products
+    (e.g. Shopify ``/collections/hoodies/products/<slug>`` requested vs the
+    JSON-LD/OG canonical ``/products/<slug>``). The terminal ``<slug>`` is the
+    real product key on every major platform; matching on it lets identity
+    verification recognise the canonical as the requested product while a
+    *different* terminal slug (a sibling variant page, a recommended product)
+    still fails to match. Returns a casefolded alphanumeric key, or "" when the
+    URL is not product-like or the slug is too short to be a stable identity.
+    """
+    text = str(url or "").strip()
+    if not text or not detail_url_looks_like_product(text):
+        return ""
+    path = unquote(urlparse(text).path).rstrip("/")
+    segment = path.rsplit("/", 1)[-1] if path else ""
+    segment = re.sub(
+        DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
+    )
+    normalized = re.sub(r"[^a-z0-9]+", "", segment.casefold())
+    return normalized if len(normalized) >= DETAIL_URL_PRODUCT_SLUG_MIN_LENGTH else ""
 
 
 def detail_url_looks_like_product(url: str) -> bool:

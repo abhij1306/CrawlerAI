@@ -10,6 +10,7 @@ from app.extraction.contracts import (
 )
 from app.core.records.url_identity import (
     detail_identity_codes_from_url,
+    detail_url_product_slug,
     detail_url_resource_identity,
 )
 from app.extraction.entities import EntitySet
@@ -215,15 +216,35 @@ def _identity_mismatched_roots(
     }
     if not wanted_resource_ids:
         return set()
+    wanted_slugs = {
+        slug
+        for url in (request.capture.final_url, request.capture.requested_url)
+        if (slug := detail_url_product_slug(url))
+    }
     by_id = {row.evidence_id: row for row in evidence}
     mismatched: set[str] = set()
     for product in graph.products:
         product_url_ids = product.attribute_evidence.get("product.url", ())
-        captured_resource_ids = {
-            resource_id
+        captured_rows = [
+            row
             for evidence_id in product_url_ids
             if (row := by_id.get(evidence_id)) is not None
             if row.collector_id != "url"
+        ]
+        # Prefix-independent identity: a captured canonical whose terminal
+        # product slug equals the requested URL's is the *same* product even
+        # when the whole-path resource id differs (e.g. Shopify captured under
+        # /collections/x/products/<slug> vs the /products/<slug> canonical).
+        captured_slugs = {
+            slug
+            for row in captured_rows
+            if (slug := detail_url_product_slug(str(row.value)))
+        }
+        if wanted_slugs and captured_slugs & wanted_slugs:
+            continue
+        captured_resource_ids = {
+            resource_id
+            for row in captured_rows
             if (resource_id := detail_url_resource_identity(str(row.value)))
         }
         if captured_resource_ids and captured_resource_ids.isdisjoint(

@@ -162,6 +162,10 @@ JOB_LISTING_HUB_TERMINAL_SUFFIXES = (
 )
 DETAIL_IDENTITY_CODE_MIN_LENGTH = 8
 DETAIL_IDENTITY_CODE_MAX_LENGTH = 48
+# Terminal product-slug identity floor. Slugs are human-readable path segments
+# (``luna-1``, ``balm-dotcom``) not opaque style codes, so they carry a stable
+# product identity at a much shorter length than the opaque-code floor above.
+DETAIL_URL_PRODUCT_SLUG_MIN_LENGTH = 4
 DETAIL_TITLE_FALLBACK_CODE_PATTERN = r"[A-Za-z0-9]{4,12}"
 DETAIL_TITLE_FALLBACK_MIN_SEMANTIC_TOKENS = 2
 DETAIL_TITLE_FALLBACK_ROUTE_TOKENS = frozenset({"dp", "s"})

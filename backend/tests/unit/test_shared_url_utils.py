@@ -6,6 +6,7 @@ from app.core.records.url_identity import (
     conflicting_product_asset_urls,
     detail_title_from_url,
     detail_url_looks_like_product,
+    detail_url_product_slug,
     detail_url_resource_identity,
 )
 from app.core.shared.url_utils import (
@@ -49,6 +50,35 @@ def test_descriptive_html_detail_url_has_resource_identity() -> None:
     assert detail_url_resource_identity(url) == (
         "www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
     )
+
+
+def test_product_slug_is_prefix_independent_for_same_product() -> None:
+    # Same Shopify product captured under a collection prefix vs its canonical
+    # must resolve to the same terminal slug so identity verification accepts it.
+    requested = (
+        "https://31philliplim.com/collections/the-luna-bag-1/products/luna-1"
+    )
+    canonical = "https://31philliplim.com/products/luna-1"
+    assert detail_url_product_slug(requested) == "luna1"
+    assert detail_url_product_slug(canonical) == "luna1"
+
+
+def test_product_slug_differs_for_distinct_variant_pages() -> None:
+    # Different product/variant terminals must not collide (the zappos color
+    # variant case that should stay rejected).
+    assert (
+        detail_url_product_slug(
+            "https://www.zappos.com/p/womens-hoka-bondi-9/product/9984296"
+        )
+        != detail_url_product_slug(
+            "https://www.zappos.com/p/hoka-clifton-10/product/9984297"
+        )
+    )
+
+
+def test_product_slug_empty_for_non_product_or_short_segment() -> None:
+    assert detail_url_product_slug("https://shop.test/collections/hoodies") == ""
+    assert detail_url_product_slug("") == ""
 
 
 def test_product_endpoint_with_identity_query_has_resource_identity() -> None:
