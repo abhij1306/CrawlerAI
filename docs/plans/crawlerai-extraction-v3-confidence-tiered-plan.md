@@ -230,7 +230,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 1 — Tiers + router (commerce-detail)
 
 ### Slice 1.1: Generalized extractor tier (rebuild `model_runtime`)
-**Status:** TODO
+**Status:** IN PROGRESS — runtime fallback now builds the scoped flat path→text page, passes that representation to the injectable generalized adapter, gates every published model value through `ground(...)`, and marks accepted evidence with `extraction_method="generalized"`. JSON-schema/provider integration and full `eval.run --engine v3 --tier generalized` gate remain.
 **Files:** `app/extraction/model_runtime.py` (rebuild), `app/extraction/representation/*`, `app/core/config/evaluation.py`
 **What:** Replace the compact-DOM input with the flat map; JSON-schema-constrained decoding; per-field schema carries **semantic senses** (`sale_price_after_discount` vs `list_price`, not `price`); every value routed through the grounding gate before becoming `Evidence`; emit `extraction_method="generalized"`. **Llama via the hosted API behind a provider-agnostic client** (no self-hosting — see Decisions).
 **Verify:** `eval.run --engine v3 --tier generalized --no-recipes --no-selectors` beats baseline on commerce-detail: **price on ≥ 90/91, 0 empty, sale_price recovered where present**; grounding-failure rate < 5%.

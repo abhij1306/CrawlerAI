@@ -23,6 +23,7 @@ from app.core.config.evaluation import (
     COMPACT_REPRESENTATION_MAX_NODES,
     COMPACT_REPRESENTATION_MAX_TEXT_CHARS,
     COMPACT_REPRESENTATION_SCHEMA_VERSION,
+    EXTRACTION_V3_FLAT_MAP_PAGE_SCHEMA_VERSION,
     UNIVERSAL_MODEL_COLLECTOR_ID,
     UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
 )
@@ -36,6 +37,8 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
+from app.extraction.representation import build_scoped_flat_map, ground
+from app.extraction.representation.flat_map import FlatMap
 
 ModelRuntimeOutcome = Literal[
     "disabled",
@@ -75,12 +78,29 @@ class RuntimeCompactPage(RuntimeRepresentationModel):
     truncated: bool = False
 
 
+class RuntimeFlatMapEntry(RuntimeRepresentationModel):
+    path: str
+    text: str
+
+
+class RuntimeFlatMapPage(RuntimeRepresentationModel):
+    schema_version: str = EXTRACTION_V3_FLAT_MAP_PAGE_SCHEMA_VERSION
+    source: RuntimeCompactSource
+    entries: tuple[RuntimeFlatMapEntry, ...]
+    market_tags: tuple[str, ...] = ()
+    token_count: int = 0
+    scope_path: str | None = None
+    fallback_reason: str | None = None
+    vision_recommended: bool = False
+    chunk_count: int = 0
+
+
 class RuntimeModelAdapter(Protocol):
     adapter_id: str
 
     def predict(
         self,
-        page: RuntimeCompactPage,
+        page: RuntimeFlatMapPage,
         artifact: UniversalModelArtifact,
         *,
         timeout_ms: int,
@@ -135,7 +155,7 @@ def run_model_fallback(
             detail="no HTML artifact is available for compact representation",
         )
     artifact_id, html = source
-    page = build_runtime_compact_page(
+    page = build_runtime_flat_map_page(
         html=html,
         artifact_id=artifact_id,
         market_tags=_market_tags(request),
@@ -244,9 +264,34 @@ def build_runtime_compact_page(
     )
 
 
+def build_runtime_flat_map_page(
+    *,
+    html: str,
+    artifact_id: str,
+    market_tags: tuple[str, ...] = (),
+) -> RuntimeFlatMapPage:
+    scoped = build_scoped_flat_map(HtmlDocument(artifact_id, html))
+    return RuntimeFlatMapPage(
+        source=RuntimeCompactSource(
+            artifact_id=artifact_id,
+            content_hash=hashlib.sha256(html.encode("utf-8")).hexdigest(),
+        ),
+        entries=tuple(
+            RuntimeFlatMapEntry(path=path, text=text)
+            for path, text in scoped.flat_map.items()
+        ),
+        market_tags=market_tags,
+        token_count=scoped.token_count,
+        scope_path=scoped.scope_path,
+        fallback_reason=scoped.fallback_reason,
+        vision_recommended=scoped.vision_recommended,
+        chunk_count=len(scoped.chunks),
+    )
+
+
 def _predict_with_timeout(
     adapter: RuntimeModelAdapter,
-    page: RuntimeCompactPage,
+    page: RuntimeFlatMapPage,
     artifact: UniversalModelArtifact,
 ) -> UniversalModelResult:
     # Unbounded so a timed-out prediction can still deposit its (now-ignored)
@@ -337,34 +382,57 @@ def _result_identity_error(
 
 def _grounded_evidence(
     request: ExtractionRequest,
-    page: RuntimeCompactPage,
+    page: RuntimeFlatMapPage,
     artifact: UniversalModelArtifact,
     result: UniversalModelResult,
 ) -> tuple[tuple[Evidence, ...], int]:
-    nodes_by_path = {node.path: node for node in page.nodes}
+    flat_map = _flat_map(page)
     rows: list[Evidence] = []
     rejected = 0
     for candidate in result.predictions:
         if candidate.confidence < artifact.confidence_threshold:
             continue
-        node = nodes_by_path.get(candidate.source_path)
-        if (
-            candidate.artifact_id != page.source.artifact_id
-            or node is None
-            or not _value_is_grounded(candidate.raw_value, node)
-            or not _canonical_value_is_grounded(request, candidate, node)
-        ):
+        grounding = _candidate_grounding(request, candidate, flat_map)
+        if candidate.artifact_id != page.source.artifact_id or grounding is None:
             rejected += 1
             continue
-        rows.append(_candidate_evidence(request, artifact, candidate, node))
+        rows.append(
+            _candidate_evidence(
+                request,
+                artifact,
+                candidate,
+                source_text=flat_map[grounding.source_path or candidate.source_path],
+                grounding_match_type=grounding.match_type,
+            )
+        )
     return tuple(rows), rejected
+
+
+def _flat_map(page: RuntimeFlatMapPage) -> FlatMap:
+    return FlatMap((entry.path, entry.text) for entry in page.entries)
+
+
+def _candidate_grounding(request, candidate, flat_map):
+    if candidate.source_path not in flat_map:
+        return None
+    result = ground(candidate.value, flat_map, (candidate.source_path,))
+    if result.grounded:
+        return result
+    if candidate.fact_type in {"product.url", "asset.image_url"}:
+        base_url = request.capture.final_url or request.capture.requested_url
+        canonical = _normalize_source_value(candidate.value)
+        if canonical == _normalize_source_value(urljoin(base_url, str(candidate.raw_value))):
+            return ground(candidate.raw_value, flat_map, (candidate.source_path,))
+    return None
 
 
 def _candidate_evidence(
     request: ExtractionRequest,
     artifact: UniversalModelArtifact,
     candidate: ModelEvidenceCandidate,
-    node: RuntimeCompactNode,
+    *,
+    source_text: str,
+    grounding_match_type: str,
 ) -> Evidence:
     return Evidence(
         evidence_id=stable_id(
@@ -384,9 +452,7 @@ def _candidate_evidence(
         locator=SourceLocator(
             kind="dom_path",
             value=candidate.source_path,
-            preview=_bounded_text(
-                node.text or next(iter(node.attributes.values()), "")
-            ),
+            preview=_bounded_text(source_text),
         ),
         entity_hint=candidate.entity_hint,
         group_id=candidate.group_id,
@@ -398,6 +464,8 @@ def _candidate_evidence(
             "model_artifact_version": artifact.artifact_version,
             "model_family": artifact.model_family,
             "benchmark_report_id": artifact.benchmark_report_id,
+            "extraction_method": "generalized",
+            "grounding_match_type": grounding_match_type,
         },
         surface=request.surface,
         subject_id=candidate.subject_id,
@@ -405,52 +473,6 @@ def _candidate_evidence(
         subject_scope=candidate.subject_scope,
         relation_type=candidate.relation_type,
     )
-
-
-def _value_is_grounded(value: object, node: RuntimeCompactNode) -> bool:
-    needle = _normalize_source_value(value)
-    if not needle:
-        return False
-    sources = (node.text, *node.attributes.values())
-    return any(
-        needle == normalized or _contains_on_token_boundary(normalized, needle)
-        for source in sources
-        if (normalized := _normalize_source_value(source))
-    )
-
-
-def _contains_on_token_boundary(haystack: str, needle: str) -> bool:
-    # Substring grounding must align on whitespace/word boundaries so a short
-    # value (e.g. a size "s" or price fragment "12") cannot ground against an
-    # unrelated node that merely happens to contain those characters.
-    start = haystack.find(needle)
-    while start != -1:
-        end = start + len(needle)
-        before_ok = start == 0 or not haystack[start - 1].isalnum()
-        after_ok = end == len(haystack) or not haystack[end].isalnum()
-        if before_ok and after_ok:
-            return True
-        start = haystack.find(needle, start + 1)
-    return False
-
-
-def _canonical_value_is_grounded(
-    request: ExtractionRequest,
-    candidate: ModelEvidenceCandidate,
-    node: RuntimeCompactNode,
-) -> bool:
-    if _value_is_grounded(candidate.value, node):
-        return True
-    raw = _normalize_source_value(candidate.raw_value)
-    canonical = _normalize_source_value(candidate.value)
-    if raw and canonical and canonical in raw:
-        return True
-    if candidate.fact_type in {"product.url", "asset.image_url"}:
-        base_url = request.capture.final_url or request.capture.requested_url
-        return canonical == _normalize_source_value(
-            urljoin(base_url, str(candidate.raw_value))
-        )
-    return False
 
 
 def _normalize_source_value(value: object) -> str:

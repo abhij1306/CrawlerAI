@@ -12,7 +12,7 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.engine import extract
-from app.extraction.model_runtime import RuntimeCompactPage, _normalize_source_value
+from app.extraction.model_runtime import RuntimeFlatMapPage, _normalize_source_value
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
@@ -62,13 +62,13 @@ class GroundedListingAdapter:
 
     def predict(
         self,
-        page: RuntimeCompactPage,
+        page: RuntimeFlatMapPage,
         artifact: UniversalModelArtifact,
         *,
         timeout_ms: int,
     ) -> UniversalModelResult:
         self.calls += 1
-        node = next(row for row in page.nodes if row.text == "Trail Shoe")
+        entry = next(row for row in page.entries if "Trail Shoe" in row.text)
         hint = EntityHint(
             entity_type="product",
             url="https://shop.test/p/trail-shoe",
@@ -81,7 +81,7 @@ class GroundedListingAdapter:
                 ModelEvidenceCandidate(
                     prediction_id="title",
                     artifact_id=page.source.artifact_id,
-                    source_path=node.path,
+                    source_path=entry.path,
                     fact_type="product.title",
                     raw_value="Trail Shoe",
                     value="Trail Shoe",
@@ -93,7 +93,7 @@ class GroundedListingAdapter:
                 ModelEvidenceCandidate(
                     prediction_id="url",
                     artifact_id=page.source.artifact_id,
-                    source_path=node.path,
+                    source_path=entry.path,
                     fact_type="product.url",
                     raw_value="/p/trail-shoe",
                     value="https://shop.test/p/trail-shoe",
@@ -158,7 +158,7 @@ def test_deterministic_success_never_builds_or_invokes_model() -> None:
 def test_missing_or_unapproved_artifact_disables_fallback_cleanly() -> None:
     adapter = MustNotRunAdapter()
     result = extract(
-        _request("<main><span href='/p/trail-shoe'>Trail Shoe</span></main>"),
+        _request("<main><span>Trail Shoe /p/trail-shoe</span></main>"),
         model_adapter=adapter,
     )
 
@@ -172,7 +172,7 @@ def test_grounded_model_evidence_reenters_normal_resolve_and_publish() -> None:
     adapter = GroundedListingAdapter()
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
         model_adapter=adapter,
@@ -190,6 +190,7 @@ def test_grounded_model_evidence_reenters_normal_resolve_and_publish() -> None:
         title_evidence.evidence_id
         in result.records[0]["_lineage"]["title"]["evidence_ids"]
     )
+    assert title_evidence.metadata["extraction_method"] == "generalized"
     assert result.diagnostics.extractor_tier == "ml"
     assert result.diagnostics.model_outcome == "produced_evidence"
     assert result.metrics.universal_representation_build_count == 1
@@ -209,7 +210,7 @@ def test_ungrounded_model_value_is_rejected_before_resolution() -> None:
 
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
         model_adapter=UngroundedAdapter(),
@@ -224,7 +225,7 @@ def test_ungrounded_model_value_is_rejected_before_resolution() -> None:
 def test_model_timeout_degrades_to_classified_zero_record_failure() -> None:
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
         model_adapter=TimeoutAdapter(),
@@ -245,7 +246,7 @@ def test_blocking_model_adapter_is_cut_off_at_runtime_boundary() -> None:
 
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=snapshot,
         ),
         model_adapter=BlockingAdapter(),
@@ -264,7 +265,7 @@ def test_model_budget_overrun_discards_all_predictions() -> None:
 
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
         model_adapter=OverBudgetAdapter(),
@@ -283,7 +284,7 @@ def test_model_result_identity_mismatch_fails_closed() -> None:
 
     result = extract(
         _request(
-            "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
         model_adapter=WrongIdentityAdapter(),

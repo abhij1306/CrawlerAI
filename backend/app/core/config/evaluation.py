@@ -90,6 +90,9 @@ GROUNDED_REPAIR_PROMPT_REGISTRY: Final[dict[str, dict[str, str]]] = {
 COMPACT_REPRESENTATION_SCHEMA_VERSION: Final[Literal["compact_page.v2"]] = (
     "compact_page.v2"
 )
+EXTRACTION_V3_FLAT_MAP_PAGE_SCHEMA_VERSION: Final[Literal["flat_map_page.v1"]] = (
+    "flat_map_page.v1"
+)
 COMPACT_REPRESENTATION_MAX_NODES: Final[int] = 80
 COMPACT_REPRESENTATION_MAX_TEXT_CHARS: Final[int] = 120
 COMPACT_REPRESENTATION_ATTRIBUTES: Final[tuple[str, ...]] = (
