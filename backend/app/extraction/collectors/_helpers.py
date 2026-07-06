@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.core.config.extraction_rules import AVAILABILITY_URL_MAP
-from app.extraction.documents import DocumentStore, HtmlDocument
+from app.extraction.documents import DocumentStore, HtmlDocument, HtmlNode
 from app.extraction.contracts import (
     BRAND_ROLES,
     BrandRole,
@@ -15,6 +15,15 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 from app.core.shared.ids import stable_id
+
+_NON_TEXT_DESCENDANT_TAGS = "style, script"
+
+
+def text_without_non_text_descendants(node: HtmlNode) -> str:
+    clone = HtmlDocument(node.artifact_id, node.html())
+    for child in clone.safe_css(_NON_TEXT_DESCENDANT_TAGS):
+        child.node.decompose()
+    return " ".join(clone.visible_text().split())
 
 
 def first_artifact(bundle: CaptureBundle, artifact_type: str):

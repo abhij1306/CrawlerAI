@@ -12,6 +12,7 @@ TEST_SITES copy.md
 .kilo/
 traffic-policy.yml
 serena.md
+chatgpt_audit
 
 .hypothesis/
 .scannerwork/

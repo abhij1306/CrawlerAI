@@ -5,7 +5,11 @@ import re
 from html import unescape
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
-from app.extraction.collectors._helpers import evidence, html_doc
+from app.extraction.collectors._helpers import (
+    evidence,
+    html_doc,
+    text_without_non_text_descendants,
+)
 from app.core.config.extraction_rules import (
     SELECT_CONTROL_SIGNAL_ATTRIBUTES,
     control_signal_tokens,
@@ -305,7 +309,7 @@ def _description_node_value(node: HtmlNode) -> str:
         value = str(node.attribute(attribute) or "").strip()
         if value:
             return " ".join(value.split())
-    return " ".join(node.text(separator=" ", strip=True).split())
+    return text_without_non_text_descendants(node)
 
 
 def _product_offer_evidence(

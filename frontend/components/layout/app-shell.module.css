@@ -177,21 +177,18 @@
   text-decoration: none;
   transition:
     background-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--transition-fast);
+    color var(--transition-fast);
 }
 
 :global(.app-nav-item:hover) {
   background: rgba(255, 255, 255, 0.72);
   color: var(--text-primary);
   text-decoration: none;
-  transform: translateX(2px);
 }
 
 :global(html[data-theme='dark'] .app-nav-item:hover) {
   background: var(--accent-soft);
   color: var(--text-primary);
-  transform: translateX(2px);
 }
 
 :global(.app-nav-item:focus-visible) {
@@ -209,9 +206,6 @@
   color: var(--text-primary) !important;
   font-weight: var(--weight-semibold);
   border-left: 0;
-  box-shadow:
-    0 1px 2px rgba(18, 18, 22, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
   position: relative;
 }
 :global(.app-nav-item.is-active::before) {
@@ -223,19 +217,14 @@
   width: 3px;
   border-radius: 9999px;
   background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
 }
 
 :global(html[data-theme='dark'] .app-nav-item.is-active) {
   background: var(--accent-subtle) !important;
   color: var(--accent-text) !important;
-  box-shadow:
-    0 4px 12px color-mix(in srgb, var(--accent) 15%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 :global(html[data-theme='dark'] .app-nav-item.is-active::before) {
   background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
 }
 
 :global(.app-nav-icon) {

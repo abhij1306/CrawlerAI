@@ -423,6 +423,28 @@ def test_product_panel_description_is_collected_without_requested_field() -> Non
     )
 
 
+def test_product_panel_description_ignores_inline_style_text() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Nike Dunk Low Retro White Black</h1>
+          <section class="product-description">
+            Product Description
+            <style>.css-11s7xk7{font-family:var(--chakra-fonts-body);color:red;}</style>
+            From the school-spirited College Colors Program to the vibrant Nike CO.JP collection.
+          </section>
+        </main>
+        """,
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+    )
+
+    description = result.records[0]["description"]
+    assert "From the school-spirited College Colors Program" in description
+    assert ".css-11s7xk7" not in description
+    assert "font-family" not in description
+
+
 def test_product_panel_description_beats_hard_boundary_meta_excerpt() -> None:
     excerpt = "A" * 320
     result = _extract(
