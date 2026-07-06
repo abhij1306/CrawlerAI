@@ -56,6 +56,9 @@ def test_label_score_runs_on_verified_seed_labels() -> None:
     )
 
     assert report["verified_pages"] == 8
+    assert report["page_count"] == 8
+    assert report["variant_metrics"]["pages_with_expected_variants"] == 6
+    assert report["field_counts"]["price"]["tp"] >= 1
     assert 0.0 <= report["hallucination_proxy_rate"] <= 1.0
     assert 0.0 <= report["variant_matrix_accuracy"] <= 1.0
 

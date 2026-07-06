@@ -17,15 +17,21 @@ from eval.corpus import DEFAULT_AUDIT_PATH, DEFAULT_RUN_DIR, CorpusPage, load_pa
 
 @dataclass(frozen=True, slots=True)
 class ScoreReport:
+    page_count: int
     field_metrics: dict[str, dict[str, float]]
+    field_counts: dict[str, dict[str, int]]
     variant_matrix_accuracy: float
+    variant_metrics: dict[str, float | int]
     hallucination_proxy_rate: float
     defect_counts: dict[str, int]
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "page_count": self.page_count,
             "field_metrics": self.field_metrics,
+            "field_counts": self.field_counts,
             "variant_matrix_accuracy": self.variant_matrix_accuracy,
+            "variant_metrics": self.variant_metrics,
             "hallucination_proxy_rate": self.hallucination_proxy_rate,
             "defect_counts": self.defect_counts,
         }
@@ -33,7 +39,7 @@ class ScoreReport:
 
 def score_records_against_labels(pages: tuple[CorpusPage, ...]) -> ScoreReport:
     counts = {field: Counter() for field in EXTRACTION_V3_LABEL_CORE_FIELDS}
-    variant_total = 0
+    variant_scores: list[float] = []
     variant_exact = 0
     hallucination_values = 0
     extracted_values = 0
@@ -60,14 +66,25 @@ def score_records_against_labels(pages: tuple[CorpusPage, ...]) -> ScoreReport:
                 extracted_values += 1
                 if _normalize_scalar(actual) not in _normalize_scalar(html):
                     hallucination_values += 1
-        expected_variants = page.label.get("variants") or []
-        actual_variants = record.get("variants") or []
-        variant_total += 1 if expected_variants else 0
-        if expected_variants and _normalize_scalar(expected_variants) == _normalize_scalar(actual_variants):
-            variant_exact += 1
+        expected_variants = _variant_rows(page.label.get("variants"))
+        if expected_variants:
+            score = _variant_matrix_score(expected_variants, record.get("variants"))
+            variant_scores.append(score)
+            if score == 1.0:
+                variant_exact += 1
+    variant_score = _ratio(sum(variant_scores), len(variant_scores))
     return ScoreReport(
+        page_count=len(pages),
         field_metrics={field: _metrics(counter) for field, counter in counts.items()},
-        variant_matrix_accuracy=_ratio(variant_exact, variant_total),
+        field_counts={
+            field: _field_count_dict(counter) for field, counter in counts.items()
+        },
+        variant_matrix_accuracy=variant_score,
+        variant_metrics={
+            "pages_with_expected_variants": len(variant_scores),
+            "exact_pages": variant_exact,
+            "mean_page_score": variant_score,
+        },
         hallucination_proxy_rate=_ratio(hallucination_values, extracted_values),
         defect_counts=baseline_defects(pages),
     )
@@ -87,9 +104,15 @@ def baseline_defects(pages: tuple[CorpusPage, ...]) -> dict[str, int]:
         first = records[0] if records else {}
         if not _present(first.get("price")):
             defects["missing_price_on_commerce_detail"] += 1
-        if page.variant_bucket in {"embedded_json", "dom_only", "partial"} and not first.get("variants"):
+        if (
+            page.variant_bucket in {"embedded_json", "dom_only", "partial"}
+            and not first.get("variants")
+        ):
             defects["empty_variants_where_expected"] += 1
-    return {key: int(defects.get(key, 0)) for key in EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS}
+    return {
+        key: int(defects.get(key, 0))
+        for key in EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS
+    }
 
 
 def baseline_report(
@@ -121,10 +144,24 @@ def _metrics(counter: Counter[str]) -> dict[str, float]:
     }
 
 
+def _field_count_dict(counter: Counter[str]) -> dict[str, int]:
+    return {
+        "tp": int(counter["tp"]),
+        "fp": int(counter["fp"]),
+        "fn": int(counter["fn"]),
+    }
+
+
 def _actual_field(field: str, record: dict[str, Any]) -> Any:
     if field == "images":
+        images = []
         image = record.get("image_url")
-        return [image] if image else []
+        if image:
+            images.append(image)
+        for value in record.get("additional_images") or []:
+            if value and value not in images:
+                images.append(value)
+        return images
     if field == "category":
         return record.get("category")
     return record.get(field)
@@ -159,7 +196,17 @@ def _present(value: Any) -> bool:
 
 
 def _matches(expected: Any, actual: Any) -> bool:
+    if isinstance(expected, list) and isinstance(actual, list):
+        return _list_match(expected, actual)
     return _normalize_scalar(expected) == _normalize_scalar(actual)
+
+
+def _list_match(expected: list[Any], actual: list[Any]) -> bool:
+    expected_values = {_normalize_scalar(value) for value in expected if _present(value)}
+    actual_values = {_normalize_scalar(value) for value in actual if _present(value)}
+    if not expected_values:
+        return not actual_values
+    return expected_values <= actual_values
 
 
 def _normalize_scalar(value: Any) -> str:
@@ -173,6 +220,67 @@ def _normalize_scalar(value: Any) -> str:
 
 def _ratio(numerator: float, denominator: float) -> float:
     return round(float(numerator) / float(denominator), 6) if denominator else 0.0
+
+
+def _variant_rows(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, dict)]
+
+
+def _variant_matrix_score(
+    expected_variants: list[dict[str, Any]],
+    actual_variants: Any,
+) -> float:
+    actual_rows = _variant_rows(actual_variants)
+    if not expected_variants:
+        return 1.0 if not actual_rows else 0.0
+    if not actual_rows:
+        return 0.0
+    expected_keys = set().union(*(row.keys() for row in expected_variants))
+    score_total = 0.0
+    used_actual: set[int] = set()
+    for expected in expected_variants:
+        best_index = -1
+        best_score = 0.0
+        for index, actual in enumerate(actual_rows):
+            if index in used_actual:
+                continue
+            row_score = _variant_row_score(expected, actual, expected_keys)
+            if row_score > best_score:
+                best_index = index
+                best_score = row_score
+        if best_index >= 0:
+            used_actual.add(best_index)
+        score_total += best_score
+    coverage = min(len(actual_rows), len(expected_variants)) / len(expected_variants)
+    return round((score_total / len(expected_variants)) * coverage, 6)
+
+
+def _variant_row_score(
+    expected: dict[str, Any],
+    actual: dict[str, Any],
+    expected_keys: set[str],
+) -> float:
+    keys = [key for key in sorted(expected_keys) if _present(expected.get(key))]
+    if not keys:
+        return 0.0
+    matched = sum(
+        1
+        for key in keys
+        if _normalize_variant_value(expected.get(key))
+        == _normalize_variant_value(actual.get(key))
+    )
+    return matched / len(keys)
+
+
+def _normalize_variant_value(value: Any) -> str:
+    text = _normalize_scalar(value)
+    if text in {"instock", "available"}:
+        return "in_stock"
+    if text in {"outofstock", "soldout", "unavailable"}:
+        return "out_of_stock"
+    return text
 
 
 def _audit_baseline_defects(audit_path: Path) -> dict[str, int] | None:

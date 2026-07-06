@@ -210,7 +210,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** `python -m eval.corpus --stats` prints 91 labeled, 0 unlabeled; every label validates against the label schema; variant-bucket counts match the audit (7/17/12/55).
 
 ### Slice 0.2: Scorer + frozen baseline
-**Status:** IN PROGRESS — baseline defect gate landed and reproduces audit counts; full field scorer waits for human-verified labels.
+**Status:** IN PROGRESS — baseline defect gate landed, field counts/precision/recall/F1 and variant matrix scoring run on verified labels; full 91-page scoreboard waits for human verification.
 **Files:** `backend/eval/score.py`, `backend/eval/run.py`, `backend/eval/reports/baseline.json`
 **What:** Per-field precision/recall/F1, variant-matrix accuracy (option-set + per-variant field match), and a hallucination proxy (value absent from source). `run.py --baseline` scores today's `app.extraction.extract` and freezes the report.
 **Verify:** `python -m eval.run --baseline` reproduces the audit's defect counts (**5 empty, 13 missing-price, 11 empty-variants**) within ±1. This frozen scoreboard is the number every later slice must beat.
