@@ -1,0 +1,146 @@
+{
+  "field_grounding": {
+    "availability": {
+      "exact": 0,
+      "grounding_rate": 0.0,
+      "none": 8,
+      "normalized": 0
+    },
+    "brand": {
+      "exact": 7,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 0
+    },
+    "color": {
+      "exact": 3,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 0
+    },
+    "currency": {
+      "exact": 1,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 7
+    },
+    "description": {
+      "exact": 1,
+      "grounding_rate": 0.75,
+      "none": 2,
+      "normalized": 5
+    },
+    "mpn": {
+      "exact": 1,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 0
+    },
+    "price": {
+      "exact": 3,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 5
+    },
+    "sale_price": {
+      "exact": 1,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 1
+    },
+    "size": {
+      "exact": 1,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 0
+    },
+    "sku": {
+      "exact": 3,
+      "grounding_rate": 0.5,
+      "none": 4,
+      "normalized": 1
+    },
+    "title": {
+      "exact": 8,
+      "grounding_rate": 1.0,
+      "none": 0,
+      "normalized": 0
+    }
+  },
+  "grounded_values": 48,
+  "grounding_failure_rate": 0.225806,
+  "ungrounded_examples": [
+    {
+      "dir": 1,
+      "field": "availability",
+      "value": "OutOfStock"
+    },
+    {
+      "dir": 1,
+      "field": "sku",
+      "value": "9906444108117"
+    },
+    {
+      "dir": 2,
+      "field": "availability",
+      "value": "InStock"
+    },
+    {
+      "dir": 2,
+      "field": "sku",
+      "value": "9144977653948"
+    },
+    {
+      "dir": 3,
+      "field": "availability",
+      "value": "InStock"
+    },
+    {
+      "dir": 8,
+      "field": "availability",
+      "value": "out_of_stock"
+    },
+    {
+      "dir": 17,
+      "field": "availability",
+      "value": "InStock"
+    },
+    {
+      "dir": 17,
+      "field": "sku",
+      "value": "4353268842578"
+    },
+    {
+      "dir": 18,
+      "field": "availability",
+      "value": "in_stock"
+    },
+    {
+      "dir": 18,
+      "field": "description",
+      "value": "These versatile, everyday sport socks are built for movement in every form\u2014from daily training to a round of pickleba..."
+    },
+    {
+      "dir": 24,
+      "field": "availability",
+      "value": "InStock"
+    },
+    {
+      "dir": 24,
+      "field": "description",
+      "value": "Customers praise exceptional comfort and true-to-size fit ideal for daily wear\nReviewers highlight timeless minimalis..."
+    },
+    {
+      "dir": 24,
+      "field": "sku",
+      "value": "M20324"
+    },
+    {
+      "dir": 30,
+      "field": "availability",
+      "value": "limited_stock"
+    }
+  ],
+  "ungrounded_values": 14,
+  "verified_pages": 8
+}

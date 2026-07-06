@@ -113,12 +113,14 @@ def _absolute_path(node: LexborNode) -> str:
         parent_tag = str(parent.tag or "").lower() if parent is not None else ""
         index = 1
         if parent is not None and parent_tag != "#document":
-            for sibling in parent.iter():
-                if sibling is current:
+            sibling = parent.child
+            while sibling is not None:
+                if _same_node(sibling, current):
                     break
                 sibling_tag = str(sibling.tag or "").lower()
-                if sibling.parent is parent and sibling_tag == tag:
+                if _same_node(sibling.parent, parent) and sibling_tag == tag:
                     index += 1
+                sibling = sibling.next
         parts.append(f"{tag}[{index}]")
         current = parent
     return "/" + "/".join(reversed(parts))
@@ -129,3 +131,9 @@ def _rough_token_count(value: str) -> int:
     if not compact:
         return 0
     return max(1, (len(compact) + 3) // 4)
+
+
+def _same_node(left: LexborNode | None, right: LexborNode | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    return int(left.mem_id) == int(right.mem_id)

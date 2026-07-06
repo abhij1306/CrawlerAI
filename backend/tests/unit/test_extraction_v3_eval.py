@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from eval.corpus import stats, write_proposals
+from eval.grounding import grounding_report
 from eval.run import run_baseline, run_label_score
 
 
@@ -61,6 +62,18 @@ def test_label_score_runs_on_verified_seed_labels() -> None:
     assert report["field_counts"]["price"]["tp"] >= 1
     assert 0.0 <= report["hallucination_proxy_rate"] <= 1.0
     assert 0.0 <= report["variant_matrix_accuracy"] <= 1.0
+
+
+def test_grounding_report_runs_on_verified_seed_labels() -> None:
+    report = grounding_report(
+        run_dir=RUN_DIR,
+        audit_path=AUDIT_PATH,
+        label_dir=LABEL_DIR,
+    )
+
+    assert report["verified_pages"] == 8
+    assert report["grounded_values"] >= 1
+    assert 0.0 <= report["grounding_failure_rate"] <= 1.0
 
 
 def test_baseline_reproduces_frozen_defect_counts(tmp_path: Path) -> None:

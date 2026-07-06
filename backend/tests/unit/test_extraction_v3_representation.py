@@ -66,7 +66,7 @@ def test_grounding_exact_normalized_and_miss() -> None:
             "html",
             """
             <html><body>
-              <main><h1>Trail Shoe</h1><p>Price $19.98</p></main>
+              <main><h1>Trail Shoe</h1><p>Price $19.98</p><p>List $19</p></main>
             </body></html>
             """,
         )
@@ -74,12 +74,15 @@ def test_grounding_exact_normalized_and_miss() -> None:
 
     exact = ground("Trail Shoe", flat_map)
     normalized = ground("1998", flat_map)
+    whole_dollars = ground("19.00", flat_map)
     miss = ground("Imaginary Product", flat_map)
 
     assert exact.grounded is True
     assert exact.match_type == "exact"
     assert normalized.grounded is True
     assert normalized.match_type == "normalized"
+    assert whole_dollars.grounded is True
+    assert whole_dollars.match_type == "normalized"
     assert miss.grounded is False
     assert miss.match_type == "none"
 
@@ -107,7 +110,8 @@ def test_audit_sample_scoping_is_nonempty_and_capped() -> None:
         assert scoped.token_count <= EXTRACTION_V3_MAX_INPUT_TOKENS
 
     assert by_dir[47].fallback_reason == "scoped_region_below_min_tokens"
-    assert by_dir[94].vision_recommended is False
+    assert by_dir[94].vision_recommended is True
+    assert by_dir[94].fallback_reason == "full_flat_map_above_token_cap"
 
 
 def test_audit_sample_report_summarizes_representation_gate() -> None:
