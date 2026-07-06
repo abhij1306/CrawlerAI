@@ -5,9 +5,15 @@ from pathlib import Path
 
 import pytest
 
+from app.core.config.evaluation import GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID
+from app.extraction.contracts import (
+    EntityHint,
+    ModelEvidenceCandidate,
+    UniversalModelResult,
+)
 from eval.corpus import stats, write_proposals
 from eval.grounding import grounding_report
-from eval.run import run_baseline, run_label_score
+from eval.run import main, run_baseline, run_label_score, run_v3_engine
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -114,6 +120,40 @@ def _write_verified_label(label_dir: Path) -> None:
     )
 
 
+class EvalModelAdapter:
+    adapter_id = GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID
+
+    def predict(self, page, artifact, *, timeout_ms):
+        del timeout_ms
+        entry = next(row for row in page.entries if "Trail Shirt" in row.text)
+        hint = EntityHint(
+            entity_type="product",
+            url="https://example.com/products/shirt",
+        )
+        return UniversalModelResult(
+            adapter_id=self.adapter_id,
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            predictions=(
+                ModelEvidenceCandidate(
+                    prediction_id="title",
+                    artifact_id=page.source.artifact_id,
+                    source_path=entry.path,
+                    fact_type="product.title",
+                    raw_value="Trail Shirt",
+                    value="Trail Shirt",
+                    subject_id="model-product-1",
+                    subject_scope="product",
+                    confidence=0.95,
+                    entity_hint=hint,
+                ),
+            ),
+            latency_ms=1.0,
+            memory_mb=16.0,
+            cost_usd=0.001,
+        )
+
+
 def test_corpus_registers_commerce_detail_pages_without_false_verification(
     tmp_path: Path,
 ) -> None:
@@ -183,6 +223,89 @@ def test_label_score_runs_on_synthetic_verified_label(tmp_path: Path) -> None:
     assert report["variant_metrics"]["pages_with_expected_variants"] == 1
     assert report["field_counts"]["price"]["tp"] == 1
     assert report["variant_matrix_accuracy"] == 1.0
+
+
+def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
+    _write_verified_label(label_dir)
+
+    report = run_v3_engine(
+        run_dir=run_dir,
+        audit_path=audit_path,
+        label_dir=label_dir,
+        tier="generalized",
+        no_recipes=True,
+        no_selectors=True,
+        out=None,
+    )
+
+    assert report["engine"] == "v3"
+    assert report["verified_pages"] == 1
+    assert report["no_recipes"] is True
+    assert report["no_selectors"] is True
+    assert report["selector_collectors_seen"] == []
+    assert "dom" not in report["candidate_runtime"]["collector_ids"]
+    assert report["gate_passed"] is False
+    assert "generalized_adapter_missing" in report["gate_reasons"]
+    assert "generalized_tier_not_invoked" in report["gate_reasons"]
+    assert any(
+        reason.startswith("not_strictly_better:")
+        or reason.startswith("regressed:")
+        for reason in report["gate_reasons"]
+    )
+
+
+def test_v3_engine_gate_can_invoke_supplied_generalized_adapter(tmp_path: Path) -> None:
+    run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
+    _write_verified_label(label_dir)
+
+    report = run_v3_engine(
+        run_dir=run_dir,
+        audit_path=audit_path,
+        label_dir=label_dir,
+        tier="generalized",
+        no_recipes=True,
+        no_selectors=True,
+        model_adapter=EvalModelAdapter(),
+        out=None,
+    )
+
+    assert report["candidate_runtime"]["model_invocations"] == 1
+    assert report["candidate_runtime"]["extractor_tiers"] == ["ml"]
+    assert "generalized_tier_not_invoked" not in report["gate_reasons"]
+
+
+def test_v3_engine_require_pass_returns_nonzero_for_red_gate(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
+    _write_verified_label(label_dir)
+
+    code = main(
+        [
+            "--engine",
+            "v3",
+            "--tier",
+            "generalized",
+            "--no-recipes",
+            "--no-selectors",
+            "--require-pass",
+            "--run-dir",
+            str(run_dir),
+            "--audit-path",
+            str(audit_path),
+            "--label-dir",
+            str(label_dir),
+            "--out",
+            str(tmp_path / "v3_gate.json"),
+        ]
+    )
+
+    assert code == 1
+    assert json.loads(capsys.readouterr().out)["gate_passed"] is False
 
 
 def test_grounding_report_runs_on_verified_seed_labels(tmp_path: Path) -> None:

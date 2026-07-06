@@ -6,3 +6,5 @@ Do not infer missing facts. Do not browse. Do not use outside knowledge.
 Prefer current sell price for offer.price and struck-through compare-at price for offer.original_price.
 Use ISO currency codes when visible or directly implied by a visible symbol in the same price text.
 Use schema_version generalized_extraction_response.v1.
+For variant rows, use one subject_id per variant. Emit variant.* and variant.option.* facts with subject_scope "variant".
+Emit variant-specific offer.* facts with the same subject_id as parent_subject_id, subject_scope "offer", relation_type "variant_offer", and a shared group_id per variant offer.

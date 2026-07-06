@@ -173,9 +173,14 @@ def extract(
             ),
         )
         if model_fallback.evidence:
+            fallback_evidence = (
+                model_fallback.evidence
+                if _identity_failure(attempt)
+                else (*attempt.harvest.evidence, *model_fallback.evidence)
+            )
             model_harvest = attempt.harvest.model_copy(
                 update={
-                    "evidence": (*attempt.harvest.evidence, *model_fallback.evidence),
+                    "evidence": fallback_evidence,
                 }
             )
             attempt = _execute_attempt(
@@ -377,6 +382,10 @@ def _execute_attempt(
 def _needs_contract_fallback(verdict: Verdict) -> bool:
     # Review is usable output and does not require model fallback.
     return verdict in {"empty", "partial"}
+
+
+def _identity_failure(attempt: _ExtractionAttempt) -> bool:
+    return any(row.reason == "identity_mismatch" for row in attempt.resolution.target.rejected_roots)
 
 
 def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:

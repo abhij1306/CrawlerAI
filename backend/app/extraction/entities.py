@@ -152,6 +152,12 @@ def _select_primary_product_roots(
         return products
     if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         return products
+    selected_rows = _product_selection_rows(ranked[0][2], by_id, product_by_subject)
+    if _rows_are_url_only(selected_rows) and any(
+        not _rows_are_url_only(_product_selection_rows(product, by_id, product_by_subject))
+        for _score, _entity_id, product in ranked[1:]
+    ):
+        return products
     return (ranked[0][2],)
 
 
@@ -179,6 +185,10 @@ def _product_selection_rows(
         == product_id
     )
     return rows
+
+
+def _rows_are_url_only(rows: list[Evidence]) -> bool:
+    return bool(rows) and all(row.collector_id == "url" for row in rows)
 
 
 def _primary_product_root_score(

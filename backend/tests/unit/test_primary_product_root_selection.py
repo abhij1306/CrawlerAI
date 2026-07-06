@@ -6,12 +6,28 @@ from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import (
     CaptureBundle,
     EntityHint,
+    ExtractionRequest,
     RequestContext,
     SourceLocator,
 )
 from app.extraction.entities import build_entities
+from app.extraction.targeting import scoped_graph, select_commerce_target
+from app.extraction.surfaces import surface_spec, Surface
 
 pytestmark = pytest.mark.unit
+
+
+class _Reader:
+    document_store = None
+
+    def read_text(self, artifact):
+        raise AssertionError("not used")
+
+    def read_json(self, artifact):
+        raise AssertionError("not used")
+
+    def exists(self, artifact_id: str) -> bool:
+        return False
 
 
 def _bundle() -> CaptureBundle:
@@ -120,3 +136,33 @@ def test_ambiguous_roots_remain_unselected_instead_of_arbitrary_choice() -> None
     entities = build_entities(bundle, tuple(rows))
 
     assert len(entities.products) == 2
+
+
+def test_single_wrong_product_root_is_rejected_before_publication() -> None:
+    bundle = _bundle()
+    rows = (
+        *_product_rows(
+            bundle,
+            "product-related",
+            "https://shop.test/products/related-shirt",
+            "Related Shirt",
+        ),
+    )
+    entities = build_entities(bundle, rows)
+    request = ExtractionRequest(
+        surface=Surface.ECOMMERCE_DETAIL,
+        capture=bundle,
+        artifact_reader=_Reader(),
+    )
+
+    target = select_commerce_target(
+        entities,
+        rows,
+        request,
+        surface_spec(Surface.ECOMMERCE_DETAIL),
+    )
+    scoped = scoped_graph(entities, target)
+
+    assert target.status == "missing"
+    assert target.rejected_roots[0].reason == "identity_mismatch"
+    assert not scoped.products

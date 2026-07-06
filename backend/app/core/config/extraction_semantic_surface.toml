@@ -20,27 +20,27 @@ post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 14568
+physical_loc_budget = 14848
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
 "__init__.py" = 19
 "adapters.py" = 489
 "collectors/_helpers.py" = 233
-"collectors/dom.py" = 1100
+"collectors/dom.py" = 1245
 "collectors/js_state.py" = 914
 "collectors/jsonld.py" = 783
 "collectors/metadata.py" = 188
 "collectors/url.py" = 100
 "contracts.py" = 851
 "documents.py" = 240
-"engine.py" = 967
-"entities.py" = 850
+"engine.py" = 974
+"entities.py" = 858
 "field_states.py" = 37
 "jobs.py" = 457
 "json_walk.py" = 65
 "listing.py" = 431
-"model_runtime.py" = 460
+"model_runtime.py" = 477
 "pipeline.py" = 728
 "publication.py" = 617
 "representation/__init__.py" = 13
@@ -55,7 +55,7 @@ default_module_cyclomatic_complexity_budget = 20
 "result_building.py" = 698
 "sentinel.py" = 251
 "surfaces.py" = 125
-"targeting.py" = 147
+"targeting.py" = 250
 "validation.py" = 743
 
 [ratchets.module_cyclomatic_complexity_budgets]

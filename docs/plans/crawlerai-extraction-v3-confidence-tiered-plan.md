@@ -210,7 +210,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** `python -m eval.corpus --stats` prints 91 labeled, 0 unlabeled; every label validates against the label schema; variant-bucket counts match the audit (7/17/12/55).
 
 ### Slice 0.2: Scorer + frozen baseline
-**Status:** IN PROGRESS — baseline defect gate landed, field counts/precision/recall/F1 and variant matrix scoring run on verified labels; full 91-page scoreboard waits for human verification.
+**Status:** IN PROGRESS — baseline defect gate landed, field counts/precision/recall/F1 and variant matrix scoring run on verified labels; `eval.run --engine v3 --tier generalized --no-recipes --no-selectors` now scores candidate extraction and fails closed when the full corpus is not verified or selector-free candidate metrics regress. `--require-pass` makes the gate exit nonzero for CI. Full 91-page scoreboard waits for human verification.
 **Files:** `backend/eval/score.py`, `backend/eval/run.py`, `backend/eval/reports/baseline.json`
 **What:** Per-field precision/recall/F1, variant-matrix accuracy (option-set + per-variant field match), and a hallucination proxy (value absent from source). `run.py --baseline` scores today's `app.extraction.extract` and freezes the report.
 **Verify:** `python -m eval.run --baseline` reproduces the audit's defect counts (**5 empty, 13 missing-price, 11 empty-variants**) within ±1. This frozen scoreboard is the number every later slice must beat.
@@ -242,25 +242,25 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** deterministic-only recovery matches the audit floor (title 93%, price 87%, image 90%) and lifts **sale_price on Shopify pages to ~100%** via `compare_at_price`.
 
 ### Slice 1.3: Variant matrix extraction (dedicated — the hardest sub-problem)
-**Status:** IN PROGRESS — embedded JS-state variant rows now have focused coverage for Shopify ProductJson option-name hydration (`options` + `option1/2/3`), variant price/original-price, currency, availability, SKU, and variant id. DOM/generalized variant matrix extraction and full variant-page eval target remain.
+**Status:** IN PROGRESS — embedded JS-state variant rows now have focused coverage for Shopify ProductJson option-name hydration (`options` + `option1/2/3`), variant price/original-price, currency, availability, SKU, and variant id. Generalized-tier prompts/schema now include variant option and variant-offer facts. DOM/generalized variant matrix extraction and full variant-page eval target remain.
 **Files:** `app/extraction/variants.py`, `platforms/*` (variant readers), generalized-tier variant schema
 **What:** Two-path variant extraction into the canonical matrix (per-variant option values + price + availability + sku): **(a)** embedded readers for the ~7 pages with full variant JSON (Shopify variants array, JSON-LD offers, SFCC); **(b)** the **generalized tier** for the ~29 dom_only/partial pages — flat-map the option region, extract the matrix under schema, ground every per-variant value. Guard against the audit's false-positive class (feature-flag JSON like `{"name":"off","value":false}` is not a variant).
 **Verify:** on the ~36 variant pages, beat the baseline's **11 empty-variant failures** (target: ≤ 2 empty where variants exist); embedded-path pages exact-match; no feature-flag false positives.
 
 ### Slice 1.4: Record-first establishment + identity verification (adopted from V2 §7–§14)
-**Status:** TODO
+**Status:** IN PROGRESS — single-root wrong-product captures are now rejected before publication, including the URL-only shell case where requested-URL fallback evidence was previously selected after captured product identity failed. Focused engine-level regression passes. The five audit image-contamination pages (24/34/39/40/74) now replay at ≤20 total product assets. Full attach-mechanism coverage remains.
 **Files:** `app/extraction/entities.py`, `app/extraction/resolution/*`, `app/extraction/targeting.py`, new `app/extraction/attach.py`, tests
 **What:** Implement the mandatory control flow that wraps every tier: (1) **establish records** (product/variants/offers) via establisher chains — boundary from structured source or grounded-LLM proposal on the scoped flat map, never a global candidate pool; (2) **verify identity** (product id/sku/canonical-URL vs requested page) before any attachment — a record failing identity is dropped, never published; (3) **attach sources only via the four mechanisms** (same-source, key join, structural containment, validated single-record) with the grounding gate enforced at attach time; (4) completeness recorded separately from confidence. This is where the audit's cross-product image contamination (5 pages) and mis-attributed variants are structurally prevented.
 **Verify:** the 5 audit image-contamination pages produce zero cross-product assets; a synthetic wrong-product response fails identity and is dropped, not published; no field attaches to a record that failed identity.
 
 ### Slice 1.5: Cascade router + cold-start/fallback routing
-**Status:** TODO
+**Status:** IN PROGRESS — active-recipe identity failure now routes through grounded model fallback and discards failed recipe/generic evidence for that fallback attempt, so stale recipe values cannot win after generalized recovery. Integration coverage proves a bad recipe URL publishes the correct grounded model record with `extractor_tier="ml"` and `model_fallback` in the decision path. Full cascade eval gate remains.
 **Files:** `app/extraction/engine.py`, `app/extraction/pipeline.py`, `app/core/records/*` router glue
 **What:** Explicit cascade `deterministic → recipe (cache hit) → generalized (per-page) → vision`, orchestrating the record-first flow (1.4) at each tier. Routing: `no_active_recipe|cold_start → generalized`; `identity_failure|required_source_missing|coverage_below_minimum → generalized per-page`, publish the correct record, **then** log the drift signal (existing `SentinelObservation`). No page left unextracted.
 **Verify:** integration test — a page that fails recipe identity still publishes a correct grounded record; `extractor_tier` reflects the path taken; full-cascade `eval.run` ≥ baseline on all commerce-detail fields.
 
 ### Slice 1.6: Amend Anti-Complexity laws + budgets
-**Status:** TODO
+**Status:** DONE — generalized fallback budgets now live in core config and runtime enforces the shared latency/cost/input-token ceilings before publication. Oversized flat maps degrade with a diagnostic and no model invocation. Engineering strategy now states budgeted per-page LLM fallback and no silent recipe degradation while keeping recipe replacement manual. Verified with focused model fallback, runtime, architecture, identity, and asset suites.
 **Files:** `docs/ENGINEERING_STRATEGY.md`, `app/core/config/*` budget entries
 **What:** Amend Law #20 (runtime LLM is a budgeted first-class tier) and add Law #21 (no page silently unextracted/degraded due to missing/drifted recipe). Add a `generalized_extraction` budget block (`budget_ms`, `model_tier`, `max_cost_usd_per_page: 0.02`, `max_input_tokens: 60000`, `escalate_to_vision_below_confidence`, `cooldown_minutes`). Law #12 (no automatic *recipe replacement*) stands — only the *per-page fallback* is automatic.
 **Verify:** budgets read at runtime; a >60k-token or cost-ceiling page degrades to chunk/vision with a diagnostic, never a raw failure.
@@ -268,7 +268,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 2 — Delete selectors + recipe caching (commerce-detail)
 
 ### Slice 2.1: DELETE the selector architecture (commerce-detail, eval-gated)
-**Status:** TODO — **hard-blocked until 1.1–1.6 beat baseline**
+**Status:** TODO — **hard-blocked until 1.1–1.6 beat baseline**. Current V3 gate report (`eval/reports/v3_gate.json`) is correctly red: only 8/91 pages are human-verified, no generalized adapter/config is supplied, `--tier generalized` has no runtime model invocation yet, and selector-free candidate extraction regresses verified-label field F1 for title, description, price, currency, availability, brand, mpn, sku, and images.
 **Files:** `app/extraction/collectors/dom.py` (gut to flat-map + record-container discovery), `app/extraction/engine.py` (remove `selector_rules` path `:414`), remove/guard `app/core/records/selectors_runtime.py`, `app/crawl/domain_memory_service.py` (selector composition), `app/models/domain_memory.py`, `app/api/selectors.py`, `app/schemas/selectors.py`, `app/core/config/selectors.py`, selector-promotion in `app/crawl/review/__init__.py`.
 **What:** Remove the per-field selector banks and the persisted-selector store/replay for **commerce-detail**. For jobs/listing the shared infra is **guarded/disabled, not yet deleted** (deleted in Slice 4.2 once those corpora prove out). This is the slice that turns "patch" into "replace."
 **Precondition (hard gate):** `eval.run --engine v3` (deterministic + generalized + variants, **no recipes, no selectors**) ≥ frozen baseline on **every** commerce-detail field, and strictly better on price/variants/empty-record. If any field regresses, deletion is blocked and fixed in a tier — **never** by resurrecting a selector.

@@ -55,6 +55,10 @@ Config tunables for all buckets → `app/core/config/*`
 
 5. **Fix upstream, not downstream.** When extraction produces a bad field value, fix the extractor or config that produces it. Never add compensating normalizers in `publish/` or `pipeline/`.
 
+6. **Runtime LLM is a budgeted extraction tier.** Generalized extraction is allowed as an explicit per-page fallback when run settings and frozen config enable it. Its latency, cost, input-token, cooldown, and vision-escalation budgets live in `app/core/config/*`, and budget exits must emit diagnostics instead of raw failures.
+
+7. **No silent recipe degradation.** A missing, stale, or identity-failing recipe must route to generic/generalized fallback for that page and record a visible diagnostic. Automatic fallback does not replace recipes; recipe replacement remains an explicit repair/promotion workflow.
+
 ---
 
 ## Anti-Patterns
@@ -207,6 +211,22 @@ Writing templates, recipes, manifests, labels, or observations from extraction c
 **Violation looks like:** `app/extraction/*` imports extraction-memory models/repository, or a collector updates a recipe while resolving the current page.
 
 **Fix:** Extraction emits immutable evidence, decisions, and contract outcomes. `app/persistence/extraction_memory.py` records observations after extraction; `app/api/knowledge.py` owns explicit operator refinement.
+
+### AP-25: Treating runtime LLM as forbidden instead of budgeted
+
+Banning per-page generalized fallback because automatic recipe replacement is forbidden confuses two separate controls.
+
+**Violation looks like:** a cold-start, stale-recipe, or identity-failing page returns empty output even though run settings and frozen runtime config enable grounded generalized extraction.
+
+**Fix:** Keep recipe replacement manual, but allow automatic per-page generalized fallback within config-owned budgets. Budget, cost, token, cooldown, and vision-escalation controls live in `app/core/config/*`; runtime exits record diagnostics.
+
+### AP-26: Silent recipe miss degradation
+
+A recipe miss that quietly publishes nothing or keeps stale deterministic evidence hides drift and blocks repair.
+
+**Violation looks like:** `no_active_recipe`, `required_source_missing`, `identity_failure`, or `coverage_below_minimum` stops extraction without routing to the generalized tier or recording an operator-visible reason.
+
+**Fix:** Route the current page through generic/generalized fallback, discard stale failed-tier evidence from publication, and log the drift/health signal through the existing observation path.
 
 ### AP-27: Parallel learned-state stores
 

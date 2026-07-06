@@ -2,9 +2,14 @@
 from tests.unit.extraction_pipeline_test_support import *
 from app.extraction import adapters
 from app.extraction.contracts import field_contracts_for_surface
+from app.extraction.contracts import EntityHint
+from app.extraction.contracts import ModelEvidenceCandidate
 from app.extraction.contracts import RequestContext
 from app.extraction.contracts import SentinelObservation
+from app.extraction.contracts import UniversalModelArtifact
+from app.extraction.contracts import UniversalModelResult
 from app.extraction.engine import _has_suspended_runtime_template
+from app.extraction.model_runtime import RuntimeFlatMapPage
 from app.extraction.sentinel import _disagreement_classes, _normalized
 from pydantic import ValidationError
 
@@ -427,6 +432,222 @@ def test_suspended_runtime_template_routes_to_generic_without_css_recipe() -> No
     assert "css_recipe" not in {row.collector_id for row in result.evidence}
 
 
+def test_recipe_identity_failure_falls_back_to_grounded_model_record() -> None:
+    url = "https://shop.test/products/correct-shoe"
+    selector_rules = [
+        {"field_name": "url", "css_selector": ".recipe-url", "is_active": True},
+        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
+        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
+        {
+            "field_name": "currency",
+            "css_selector": ".recipe-currency",
+            "is_active": True,
+        },
+    ]
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="""
+        <main>
+          <a class="recipe-url" href="https://shop.test/products/wrong-shoe">
+            Wrong Shoe
+          </a>
+          <span class="recipe-title">Wrong Shoe</span>
+          <span class="recipe-price">$11.00</span>
+          <span class="recipe-currency">USD</span>
+          <p>
+            Correct Shoe /products/correct-shoe Acme durable trail runner
+            $19.00 USD /correct.jpg
+          </p>
+        </main>
+        """,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    snapshot = {
+        "surface": "ecommerce_detail",
+        "llm_enabled": True,
+        "universal_model": {
+            "schema_version": "universal_model_artifact.v1",
+            "artifact_id": "universal-extractor",
+            "artifact_version": "2026-07-02",
+            "adapter_id": "fixture-runtime-adapter",
+            "model_family": "fixture-grounded-model",
+            "deployment_mode": "local",
+            "benchmark_schema_version": "universal_model_benchmark.v2",
+            "benchmark_report_id": "benchmark-approved-1",
+            "benchmark_passed": True,
+            "approved": True,
+            "enabled": True,
+            "confidence_threshold": 0.8,
+            "timeout_ms": 1000,
+            "max_memory_mb": 128.0,
+            "max_cost_per_page_usd": 0.01,
+            "supported_surfaces": ["ecommerce_detail"],
+        },
+        "templates": [
+            {
+                "template_id": "00000000-0000-0000-0000-000000000001",
+                "fingerprint": "known-template",
+                "route_pattern": "/products/{id}",
+                "status": "active",
+                "contracts": [],
+                "compiled_recipe": {
+                    "selector_rules": selector_rules,
+                    "contracts": [],
+                    "provenance": [],
+                },
+            }
+        ],
+    }
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        selector_rules=selector_rules,
+        runtime_snapshot=snapshot,
+    )
+
+    result = extract(request, model_adapter=GroundedDetailAdapter())
+
+    assert result.records
+    assert result.records[0]["title"].casefold() == "correct shoe"
+    assert result.records[0]["url"] == url
+    assert result.records[0]["price"] == "19.00"
+    assert result.diagnostics.extractor_tier == "ml"
+    assert "model_fallback" in result.diagnostics.decision_path
+    assert any(
+        row.collector_id == "universal_model" for row in result.evidence
+    )
+
+
+class GroundedDetailAdapter:
+    adapter_id = "fixture-runtime-adapter"
+
+    def predict(
+        self,
+        page: RuntimeFlatMapPage,
+        artifact: UniversalModelArtifact,
+        *,
+        timeout_ms: int,
+    ) -> UniversalModelResult:
+        del timeout_ms
+        entry = next(row for row in page.entries if "Correct Shoe" in row.text)
+        product_hint = EntityHint(entity_type="product", url=page.source.artifact_id)
+        offer_hint = EntityHint(entity_type="offer")
+        asset_hint = EntityHint(entity_type="asset")
+        predictions = (
+            ModelEvidenceCandidate(
+                prediction_id="title",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="product.title",
+                raw_value="Correct Shoe",
+                value="Correct Shoe",
+                subject_id="model-product",
+                subject_scope="product",
+                confidence=0.95,
+                entity_hint=product_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="url",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="product.url",
+                raw_value="/products/correct-shoe",
+                value="https://shop.test/products/correct-shoe",
+                subject_id="model-product",
+                subject_scope="product",
+                confidence=0.95,
+                entity_hint=product_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="brand",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="product.brand",
+                raw_value="Acme",
+                value="Acme",
+                subject_id="model-product",
+                subject_scope="product",
+                confidence=0.9,
+                entity_hint=product_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="description",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="product.description",
+                raw_value="durable trail runner",
+                value="durable trail runner",
+                subject_id="model-product",
+                subject_scope="product",
+                confidence=0.9,
+                entity_hint=product_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="price",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="offer.price",
+                raw_value="19.00",
+                value="19.00",
+                subject_id="model-offer",
+                subject_scope="offer",
+                parent_subject_id="model-product",
+                relation_type="product_offer",
+                group_id="model-offer",
+                confidence=0.95,
+                entity_hint=offer_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="currency",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="offer.currency",
+                raw_value="USD",
+                value="USD",
+                subject_id="model-offer",
+                subject_scope="offer",
+                parent_subject_id="model-product",
+                relation_type="product_offer",
+                group_id="model-offer",
+                confidence=0.95,
+                entity_hint=offer_hint,
+            ),
+            ModelEvidenceCandidate(
+                prediction_id="image",
+                artifact_id=page.source.artifact_id,
+                source_path=entry.path,
+                fact_type="asset.image_url",
+                raw_value="/correct.jpg",
+                value="https://shop.test/correct.jpg",
+                subject_id="model-asset",
+                subject_scope="asset",
+                parent_subject_id="model-product",
+                relation_type="product_asset",
+                group_id="model-asset",
+                confidence=0.9,
+                entity_hint=asset_hint,
+            ),
+        )
+        return UniversalModelResult(
+            adapter_id=self.adapter_id,
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            predictions=predictions,
+            latency_ms=2.0,
+            memory_mb=32.0,
+            cost_usd=0.001,
+        )
+
+
 def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> None:
     url = "https://shop.test/products/challenge-shell"
     acquisition = PageAcquisitionResult(
@@ -703,6 +924,56 @@ def test_explicit_inr_minor_unit_variant_price_is_converted_to_major_units() -> 
         item.fact_type == "offer.price" and item.raw_value == 2820000 and not item.flags
         for item in result.evidence
     )
+
+
+def test_dom_direct_variant_controls_emit_full_variant_matrix_rows() -> None:
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            """
+            <main>
+              <h1>Trail Shoe</h1>
+              <button
+                data-size="M"
+                data-color="Black"
+                data-sku="TRAIL-BLK-M"
+                data-price="64.00"
+                data-currency="USD"
+                data-available="true">Black M</button>
+              <button
+                data-size="L"
+                data-color="Black"
+                data-sku="TRAIL-BLK-L"
+                data-price="66.00"
+                data-currency="USD"
+                data-available="false">Black L</button>
+            </main>
+            """,
+            "https://shop.test/products/trail-shoe",
+        )
+    )
+
+    variants = sorted(result.records[0]["variants"], key=lambda row: row["size"])
+    assert variants == [
+        {
+            "variant_id": "TRAIL-BLK-L",
+            "color": "Black",
+            "size": "L",
+            "sku": "TRAIL-BLK-L",
+            "price": "66.00",
+            "currency": "USD",
+            "availability": "out_of_stock",
+        },
+        {
+            "variant_id": "TRAIL-BLK-M",
+            "color": "Black",
+            "size": "M",
+            "sku": "TRAIL-BLK-M",
+            "price": "64.00",
+            "currency": "USD",
+            "availability": "in_stock",
+        },
+    ]
 
 
 def test_nested_variant_minor_unit_price_is_converted_to_major_units() -> None:

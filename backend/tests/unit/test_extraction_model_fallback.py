@@ -12,6 +12,7 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.connectors.llm.generalized_extraction import HostedGeneralizedExtractionAdapter
+from app.core.config.evaluation import GENERALIZED_EXTRACTION_BUDGET
 from app.extraction.engine import extract
 from app.extraction.model_runtime import (
     RuntimeCompactSource,
@@ -300,6 +301,75 @@ def test_model_budget_overrun_discards_all_predictions() -> None:
     assert all(row.collector_id != "universal_model" for row in result.evidence)
 
 
+def test_model_cost_budget_uses_generalized_config_ceiling(monkeypatch) -> None:
+    monkeypatch.setitem(
+        GENERALIZED_EXTRACTION_BUDGET,
+        "max_cost_usd_per_page",
+        0.0005,
+    )
+
+    result = extract(
+        _request(
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
+            runtime_snapshot=_approved_snapshot(),
+        ),
+        model_adapter=GroundedListingAdapter(),
+    )
+
+    assert result.records == ()
+    assert result.diagnostics.model_outcome == "budget_limited"
+    assert result.metrics.universal_model_cost_usd == 0.001
+    assert all(row.collector_id != "universal_model" for row in result.evidence)
+
+
+def test_oversized_flat_map_recommends_vision_without_invoking_model(
+    monkeypatch,
+) -> None:
+    def oversized_page(*args, **kwargs):
+        return RuntimeFlatMapPage(
+            source=RuntimeCompactSource(artifact_id="html", content_hash="hash"),
+            entries=(
+                RuntimeFlatMapEntry(
+                    path="/html[1]/body[1]/main[1]",
+                    text="Trail Shoe",
+                ),
+            ),
+            token_count=int(GENERALIZED_EXTRACTION_BUDGET["max_input_tokens"]) + 1,
+            fallback_reason="token_budget",
+            vision_recommended=True,
+        )
+
+    monkeypatch.setattr(
+        "app.extraction.model_runtime.build_runtime_flat_map_page",
+        oversized_page,
+    )
+
+    result = extract(
+        _request(
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
+            runtime_snapshot=_approved_snapshot(),
+        ),
+        model_adapter=MustNotRunAdapter(),
+    )
+
+    assert result.records == ()
+    assert result.diagnostics.model_outcome == "budget_limited"
+    assert result.metrics.universal_representation_build_count == 1
+    assert result.metrics.universal_model_invocation_count == 0
+    assert all(row.collector_id != "universal_model" for row in result.evidence)
+
+
+def test_generalized_budget_config_has_required_runtime_controls() -> None:
+    assert GENERALIZED_EXTRACTION_BUDGET == {
+        "budget_ms": 1000,
+        "model_tier": "hosted_llama",
+        "max_cost_usd_per_page": 0.02,
+        "max_input_tokens": 60000,
+        "escalate_to_vision_below_confidence": 0.8,
+        "cooldown_minutes": 5,
+    }
+
+
 def test_model_result_identity_mismatch_fails_closed() -> None:
     class WrongIdentityAdapter(GroundedListingAdapter):
         def predict(self, page, artifact, *, timeout_ms):
@@ -357,6 +427,29 @@ def test_hosted_generalized_adapter_converts_schema_payload(monkeypatch) -> None
                   "subject_id": "generalized-product-1",
                   "subject_scope": "product",
                   "confidence": 0.91
+                },
+                {
+                  "prediction_id": "variant-size",
+                  "source_path": "/html[1]/body[1]/main[2]",
+                  "fact_type": "variant.option.size",
+                  "raw_value": "L",
+                  "value": "L",
+                  "subject_id": "variant-1",
+                  "subject_scope": "variant",
+                  "confidence": 0.90
+                },
+                {
+                  "prediction_id": "variant-price",
+                  "source_path": "/html[1]/body[1]/main[2]",
+                  "fact_type": "offer.price",
+                  "raw_value": "64.00",
+                  "value": "64.00",
+                  "subject_id": "offer-variant-1",
+                  "subject_scope": "offer",
+                  "parent_subject_id": "variant-1",
+                  "relation_type": "variant_offer",
+                  "group_id": "variant-1-offer",
+                  "confidence": 0.90
                 }
               ]
             }
@@ -383,6 +476,10 @@ def test_hosted_generalized_adapter_converts_schema_payload(monkeypatch) -> None
                 path="/html[1]/body[1]/main[1]",
                 text="Trail Shoe",
             ),
+            RuntimeFlatMapEntry(
+                path="/html[1]/body[1]/main[2]",
+                text="Size L 64.00",
+            ),
         ),
     )
     artifact = UniversalModelArtifact.model_validate(
@@ -394,4 +491,6 @@ def test_hosted_generalized_adapter_converts_schema_payload(monkeypatch) -> None
     assert result.adapter_id == adapter.adapter_id
     assert result.predictions[0].fact_type == "product.title"
     assert result.predictions[0].value == "Trail Shoe"
+    assert result.predictions[1].fact_type == "variant.option.size"
+    assert result.predictions[2].relation_type == "variant_offer"
     assert result.cost_usd >= 0.0

@@ -42,6 +42,13 @@ from app.core.config.extraction_rules import (
     VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR,
     VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE,
     VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_AVAILABILITY_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_CONTROL_SELECTOR,
+    VARIANT_DOM_DIRECT_CURRENCY_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_ID_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_OPTION_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_PRICE_ATTRIBUTES,
+    VARIANT_DOM_DIRECT_SKU_ATTRIBUTES,
     VARIANT_DOM_NOISE_PHRASES,
     VARIANT_DOM_SIZE_LABEL_PATTERN,
     VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
@@ -750,6 +757,7 @@ def _variant_controls(
     bundle: CaptureBundle, doc, product_subject: str
 ) -> list[Evidence]:
     out: list[Evidence] = []
+    out.extend(_direct_variant_controls(bundle, doc, product_subject))
     out.extend(_attribute_variant_controls(bundle, doc, product_subject))
     seen_by_axis: dict[str, set[str]] = {"size": set(), "color": set()}
     # Select-based option axes: admit a <select>'s options only when the select
@@ -795,6 +803,155 @@ def _variant_controls(
                     out, bundle, axis, raw_value, seen_by_axis[axis], selector=selector
                 )
     return out
+
+
+def _direct_variant_controls(
+    bundle: CaptureBundle,
+    doc,
+    product_subject: str,
+) -> list[Evidence]:
+    rows: list[Evidence] = []
+    seen: set[tuple[tuple[str, str], ...]] = set()
+    for node in doc.css(VARIANT_DOM_DIRECT_CONTROL_SELECTOR):
+        options = _direct_variant_options(node)
+        if {"color", "size"} - set(options):
+            continue
+        key = tuple(sorted((axis, value.casefold()) for axis, value in options.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.extend(
+            _direct_variant_rows(
+                bundle,
+                node,
+                product_subject,
+                options=options,
+            )
+        )
+    return rows
+
+
+def _direct_variant_rows(
+    bundle: CaptureBundle,
+    node: HtmlNode,
+    product_subject: str,
+    *,
+    options: dict[str, str],
+) -> list[Evidence]:
+    variant_key = _first_node_attribute(node, VARIANT_DOM_DIRECT_ID_ATTRIBUTES) or "|".join(
+        f"{axis}:{value}" for axis, value in sorted(options.items())
+    )
+    variant_subject = stable_id("subject", bundle.bundle_id, "dom", "variant", variant_key)
+    variant_group = f"variant:dom:{variant_key}"
+    sku = _first_node_attribute(node, VARIANT_DOM_DIRECT_SKU_ATTRIBUTES)
+    hint = EntityHint(entity_type="variant", sku=sku, option_values=options)
+    locator = SourceLocator(
+        kind="css_selector",
+        value=node.stable_locator(),
+        preview=variant_key[:120],
+    )
+    rows = [
+        evidence(
+            bundle,
+            "dom",
+            "dom",
+            fact_type,
+            value,
+            locator,
+            group_id=variant_group,
+            hint=hint,
+            confidence=0.74,
+            subject_id=variant_subject,
+            parent_subject_id=product_subject,
+            parent_scope="product",
+        )
+        for fact_type, value in (
+            *((f"variant.option.{axis}", value) for axis, value in sorted(options.items())),
+            *(() if not sku else (("variant.sku", sku),)),
+        )
+    ]
+    rows.extend(
+        _direct_variant_offer_rows(
+            bundle,
+            node,
+            locator,
+            hint,
+            variant_key=variant_key,
+            variant_subject=variant_subject,
+        )
+    )
+    return rows
+
+
+def _direct_variant_offer_rows(
+    bundle: CaptureBundle,
+    node: HtmlNode,
+    locator: SourceLocator,
+    hint: EntityHint,
+    *,
+    variant_key: str,
+    variant_subject: str,
+) -> list[Evidence]:
+    offer_fields = (
+        ("offer.price", _first_node_attribute(node, VARIANT_DOM_DIRECT_PRICE_ATTRIBUTES)),
+        (
+            "offer.currency",
+            _first_node_attribute(node, VARIANT_DOM_DIRECT_CURRENCY_ATTRIBUTES),
+        ),
+        (
+            "offer.availability",
+            _direct_variant_availability(
+                _first_node_attribute(node, VARIANT_DOM_DIRECT_AVAILABILITY_ATTRIBUTES)
+            ),
+        ),
+    )
+    return [
+        evidence(
+            bundle,
+            "dom",
+            "dom",
+            fact_type,
+            value,
+            locator,
+            group_id=f"offer:dom:{variant_key}",
+            hint=hint,
+            confidence=0.72,
+            subject_id=stable_id("subject", bundle.bundle_id, "dom", "offer", variant_key),
+            parent_subject_id=variant_subject,
+            parent_scope="variant",
+        )
+        for fact_type, value in offer_fields
+        if value
+    ]
+
+
+def _direct_variant_options(node: HtmlNode) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for axis, attributes in VARIANT_DOM_DIRECT_OPTION_ATTRIBUTES.items():
+        value = _variant_value(_first_node_attribute(node, attributes), axis=axis)
+        if value:
+            options[axis] = value
+    return options
+
+
+def _first_node_attribute(node: HtmlNode, attributes: tuple[str, ...]) -> str:
+    return next(
+        (
+            value
+            for attribute in attributes
+            if (value := str(node.attribute(attribute) or "").strip())
+        ),
+        "",
+    )
+
+
+def _direct_variant_availability(value: str) -> str | None:
+    normalized = value.strip().casefold()
+    if normalized in {"1", "true", "yes", "available", "in_stock", "in stock", "false"}:
+        return "out_of_stock" if normalized == "false" else "in_stock"
+    if normalized in {"0", "no", "sold out", "out_of_stock", "out of stock", "disabled", "true"}:
+        return "in_stock" if normalized == "true" else "out_of_stock"
+    return None
 
 
 def _select_option_axis(select: HtmlNode, doc: HtmlNode) -> str | None:

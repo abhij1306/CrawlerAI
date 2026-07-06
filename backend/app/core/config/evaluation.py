@@ -138,6 +138,28 @@ GENERALIZED_EXTRACTION_FIELD_SENSES: Final[tuple[dict[str, str], ...]] = (
         "sense": "selected product availability",
     },
     {"field": "image", "fact_type": "asset.image_url", "sense": "same-product image"},
+    {"field": "variant_id", "fact_type": "variant.id", "sense": "variant id"},
+    {"field": "variant_sku", "fact_type": "variant.sku", "sense": "variant sku"},
+    {
+        "field": "variant_size",
+        "fact_type": "variant.option.size",
+        "sense": "variant size option",
+    },
+    {
+        "field": "variant_color",
+        "fact_type": "variant.option.color",
+        "sense": "variant color option",
+    },
+    {
+        "field": "variant_price",
+        "fact_type": "offer.price",
+        "sense": "variant-specific sell price",
+    },
+    {
+        "field": "variant_availability",
+        "fact_type": "offer.availability",
+        "sense": "variant-specific availability",
+    },
 )
 
 COMPACT_REPRESENTATION_SCHEMA_VERSION: Final[Literal["compact_page.v2"]] = (
@@ -256,6 +278,14 @@ EXTRACTION_V3_FLAT_MAP_CORE_ANCHORS: Final[tuple[str, ...]] = (
 EXTRACTION_V3_SCOPED_MIN_TOKENS: Final[int] = 300
 EXTRACTION_V3_MAX_INPUT_TOKENS: Final[int] = 60000
 EXTRACTION_V3_CHUNK_TARGET_TOKENS: Final[int] = 12000
+GENERALIZED_EXTRACTION_BUDGET: Final[dict[str, object]] = {
+    "budget_ms": 1000,
+    "model_tier": "hosted_llama",
+    "max_cost_usd_per_page": 0.02,
+    "max_input_tokens": EXTRACTION_V3_MAX_INPUT_TOKENS,
+    "escalate_to_vision_below_confidence": 0.8,
+    "cooldown_minutes": 5,
+}
 EXTRACTION_V3_GROUNDING_CURRENCY_SYMBOLS: Final[dict[str, str]] = {
     "$": "usd",
     "€": "eur",

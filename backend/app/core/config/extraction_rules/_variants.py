@@ -158,6 +158,23 @@ VARIANT_DOM_SIZE_LABEL_PATTERN = r"^size\s+(?P<value>[a-z0-9][a-z0-9 .+/-]{0,12}
 VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR = (
     "[data-attr-id][data-attr-value], [data-attr-id][data-dvalue]"
 )
+VARIANT_DOM_DIRECT_CONTROL_SELECTOR = (
+    "[data-size][data-color], [data-size][data-colour], "
+    "[data-option-size][data-option-color], [data-option-size][data-option-colour]"
+)
+VARIANT_DOM_DIRECT_OPTION_ATTRIBUTES = {
+    "size": ("data-size", "data-option-size"),
+    "color": ("data-color", "data-colour", "data-option-color", "data-option-colour"),
+}
+VARIANT_DOM_DIRECT_ID_ATTRIBUTES = ("data-variant-id", "data-id", "value")
+VARIANT_DOM_DIRECT_SKU_ATTRIBUTES = ("data-sku", "data-variant-sku")
+VARIANT_DOM_DIRECT_PRICE_ATTRIBUTES = ("data-price", "data-variant-price")
+VARIANT_DOM_DIRECT_CURRENCY_ATTRIBUTES = ("data-currency", "data-variant-currency")
+VARIANT_DOM_DIRECT_AVAILABILITY_ATTRIBUTES = (
+    "data-availability",
+    "data-available",
+    "aria-disabled",
+)
 VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES = ("value", "data-url", "data-href", "href")
 VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE = "data-json"
 VARIANT_DOM_URL_AXIS_PARAM_PATTERN = (

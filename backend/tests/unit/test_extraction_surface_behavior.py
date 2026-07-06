@@ -341,6 +341,31 @@ def test_non_positive_price_is_not_successful_public_price() -> None:
     assert any(finding.rule_id == "NON_POSITIVE_PRICE" for finding in result.findings)
 
 
+def test_wrong_product_detail_identity_is_dropped_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Related Shirt",
+          "url": "https://shop.test/products/related-shirt",
+          "offers": {"price": "29.00", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/primary-cap",
+    )
+
+    assert result.verdict in {"empty", "invalid"}
+    assert not result.records
+    assert result.target.status == "missing"
+    assert any(
+        row.reason == "identity_mismatch" for row in result.target.rejected_roots
+    )
+
+
 def test_parent_availability_does_not_override_incomplete_variant_matrix() -> None:
     result = _extract(
         "ecommerce_detail",

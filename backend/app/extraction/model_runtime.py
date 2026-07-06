@@ -24,6 +24,7 @@ from app.core.config.evaluation import (
     COMPACT_REPRESENTATION_MAX_TEXT_CHARS,
     COMPACT_REPRESENTATION_SCHEMA_VERSION,
     EXTRACTION_V3_FLAT_MAP_PAGE_SCHEMA_VERSION,
+    GENERALIZED_EXTRACTION_BUDGET,
     UNIVERSAL_MODEL_COLLECTOR_ID,
     UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
 )
@@ -160,6 +161,14 @@ def run_model_fallback(
         artifact_id=artifact_id,
         market_tags=_market_tags(request),
     )
+    if page.vision_recommended or page.token_count > _input_token_budget():
+        return ModelFallbackResult(
+            outcome="budget_limited",
+            artifact=artifact,
+            representation_built=True,
+            failure_code="unsupported_representation",
+            detail="flat map exceeded generalized input token budget; vision recommended",
+        )
     started = perf_counter()
     try:
         result = _predict_with_timeout(adapter, page, artifact)
@@ -199,9 +208,9 @@ def run_model_fallback(
             detail=identity_error,
         )
     if (
-        elapsed_ms > artifact.timeout_ms
+        elapsed_ms > _runtime_budget_ms(artifact)
         or result.memory_mb > artifact.max_memory_mb
-        or result.cost_usd > artifact.max_cost_per_page_usd
+        or result.cost_usd > _runtime_cost_cap_usd(artifact)
     ):
         return ModelFallbackResult(
             outcome="budget_limited",
@@ -309,7 +318,7 @@ def _predict_with_timeout(
 
     Thread(target=invoke, daemon=True, name="universal-model-predict").start()
     try:
-        response = responses.get(timeout=artifact.timeout_ms / 1_000)
+        response = responses.get(timeout=_runtime_budget_ms(artifact) / 1_000)
     except Empty as exc:
         raise TimeoutError from exc
     if isinstance(response, Exception):
@@ -426,6 +435,20 @@ def _candidate_grounding(request, candidate, flat_map):
         if canonical == _normalize_source_value(urljoin(base_url, str(candidate.raw_value))):
             return ground(candidate.raw_value, flat_map, (candidate.source_path,))
     return None
+
+
+def _runtime_budget_ms(artifact: UniversalModelArtifact) -> int:
+    configured = int(GENERALIZED_EXTRACTION_BUDGET["budget_ms"])
+    return min(artifact.timeout_ms, configured)
+
+
+def _runtime_cost_cap_usd(artifact: UniversalModelArtifact) -> float:
+    configured = float(GENERALIZED_EXTRACTION_BUDGET["max_cost_usd_per_page"])
+    return min(artifact.max_cost_per_page_usd, configured)
+
+
+def _input_token_budget() -> int:
+    return int(GENERALIZED_EXTRACTION_BUDGET["max_input_tokens"])
 
 
 def _candidate_evidence(
