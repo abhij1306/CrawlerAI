@@ -166,6 +166,47 @@ def test_js_state_shopify_variant_compare_at_price_materializes() -> None:
     ]
 
 
+def test_shopify_product_json_option_names_hydrate_positional_variant_axes() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head>
+          <script id="ProductJson-product-template" type="application/json">
+          {
+            "title": "Soft Rock Crewneck",
+            "options": ["Size"],
+            "variants": [
+              {
+                "id": "50688637763925",
+                "sku": "DIME2SP2542BLK-L",
+                "option1": "L",
+                "price": "64.00",
+                "compare_at_price": "160.00",
+                "currency": "EUR",
+                "available": false
+              }
+            ]
+          }
+          </script>
+        </head><body><h1>Soft Rock Crewneck</h1></body></html>
+        """,
+        "https://shop.test/products/soft-rock-crewneck",
+    )
+
+    assert result.records
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "50688637763925",
+            "sku": "DIME2SP2542BLK-L",
+            "price": "64.00",
+            "original_price": "160.00",
+            "currency": "EUR",
+            "availability": "out_of_stock",
+            "size": "L",
+        }
+    ]
+
+
 def test_js_state_nuxt_devalue_product_variants_materialize() -> None:
     payload = [
         ["ShallowReactive", 1],

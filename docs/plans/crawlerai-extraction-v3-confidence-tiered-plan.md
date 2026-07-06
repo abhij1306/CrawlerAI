@@ -242,7 +242,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** deterministic-only recovery matches the audit floor (title 93%, price 87%, image 90%) and lifts **sale_price on Shopify pages to ~100%** via `compare_at_price`.
 
 ### Slice 1.3: Variant matrix extraction (dedicated — the hardest sub-problem)
-**Status:** TODO
+**Status:** IN PROGRESS — embedded JS-state variant rows now have focused coverage for Shopify ProductJson option-name hydration (`options` + `option1/2/3`), variant price/original-price, currency, availability, SKU, and variant id. DOM/generalized variant matrix extraction and full variant-page eval target remain.
 **Files:** `app/extraction/variants.py`, `platforms/*` (variant readers), generalized-tier variant schema
 **What:** Two-path variant extraction into the canonical matrix (per-variant option values + price + availability + sku): **(a)** embedded readers for the ~7 pages with full variant JSON (Shopify variants array, JSON-LD offers, SFCC); **(b)** the **generalized tier** for the ~29 dom_only/partial pages — flat-map the option region, extract the matrix under schema, ground every per-variant value. Guard against the audit's false-positive class (feature-flag JSON like `{"name":"off","value":false}` is not a variant).
 **Verify:** on the ~36 variant pages, beat the baseline's **11 empty-variant failures** (target: ≤ 2 empty where variants exist); embedded-path pages exact-match; no feature-flag false positives.
