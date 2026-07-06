@@ -1,0 +1,143 @@
+{
+  "all_non_empty": true,
+  "all_under_token_cap": true,
+  "fallback_dirs": [
+    47,
+    7,
+    8
+  ],
+  "sample_count": 10,
+  "samples": [
+    {
+      "chunk_count": 0,
+      "dir": 1,
+      "entry_count": 29,
+      "expected_full_tokens": 23763,
+      "expected_scoped_tokens": 6059,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 662,
+      "scope_path": "/html[1]/body[1]/div[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 47,
+      "entry_count": 88,
+      "expected_full_tokens": 84419,
+      "expected_scoped_tokens": 167,
+      "fallback_reason": "scoped_region_below_min_tokens",
+      "non_empty": true,
+      "observed_tokens": 3255,
+      "scope_path": null,
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 94,
+      "entry_count": 231,
+      "expected_full_tokens": 224548,
+      "expected_scoped_tokens": 162593,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 9644,
+      "scope_path": "/html[1]/body[1]/div[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 2,
+      "entry_count": 25,
+      "expected_full_tokens": 23362,
+      "expected_scoped_tokens": 5114,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 847,
+      "scope_path": "/html[1]/body[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 3,
+      "entry_count": 32,
+      "expected_full_tokens": 38817,
+      "expected_scoped_tokens": 19285,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 991,
+      "scope_path": "/html[1]/body[1]/div[1]/div[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 4,
+      "entry_count": 32,
+      "expected_full_tokens": 64197,
+      "expected_scoped_tokens": 12183,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 1275,
+      "scope_path": "/html[1]/body[1]/div[1]/div[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 5,
+      "entry_count": 35,
+      "expected_full_tokens": 43481,
+      "expected_scoped_tokens": 10115,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 1221,
+      "scope_path": "/html[1]/body[1]/div[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 6,
+      "entry_count": 32,
+      "expected_full_tokens": 8578,
+      "expected_scoped_tokens": 6817,
+      "fallback_reason": null,
+      "non_empty": true,
+      "observed_tokens": 1289,
+      "scope_path": "/html[1]/body[1]/div[1]/div[1]/div[1]/main[1]",
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 7,
+      "entry_count": 106,
+      "expected_full_tokens": 168581,
+      "expected_scoped_tokens": 10521,
+      "fallback_reason": "scoped_region_missing_core_anchors",
+      "non_empty": true,
+      "observed_tokens": 2824,
+      "scope_path": null,
+      "under_token_cap": true,
+      "vision_recommended": false
+    },
+    {
+      "chunk_count": 0,
+      "dir": 8,
+      "entry_count": 50,
+      "expected_full_tokens": 30102,
+      "expected_scoped_tokens": 30067,
+      "fallback_reason": "scoped_region_below_min_tokens",
+      "non_empty": true,
+      "observed_tokens": 1638,
+      "scope_path": null,
+      "under_token_cap": true,
+      "vision_recommended": false
+    }
+  ],
+  "vision_dirs": []
+}

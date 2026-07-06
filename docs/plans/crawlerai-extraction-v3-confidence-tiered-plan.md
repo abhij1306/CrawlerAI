@@ -216,7 +216,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** `python -m eval.run --baseline` reproduces the audit's defect counts (**5 empty, 13 missing-price, 11 empty-variants**) within ±1. This frozen scoreboard is the number every later slice must beat.
 
 ### Slice 0.3: Flat path→text adapter + scoping fallback
-**Status:** IN PROGRESS — flat-map/scoping primitives and unit coverage landed; audit sample-dir verification still pending.
+**Status:** IN PROGRESS — flat-map/scoping primitives, unit coverage, and `eval.representation --audit-samples` landed. Report shows non-empty capped output and dir47 fallback; token counts intentionally differ from the old audit estimator because the current map emits text-bearing DOM paths only.
 **Files:** `app/extraction/representation/flat_map.py`, `representation/scope.py`, `representation/__init__.py`, tests
 **What:** DOM/JSON-tree → ordered `absolute_path → text` map (NEXT-EVAL rules: strip class/id/style, text-bearing nodes only). **Detail region-scoping with a hard, measured fallback:** (a) find the main product region; (b) if the scoped map < 300 tokens → widen to full flat map (fixes dir47→167); (c) if full map > 60k tokens → return a chunked/summarized map and flag for vision (fixes dir94→162k). Pure function over `app/extraction/documents.py`; no acquisition changes.
 **Verify:** on the 10 audit sample dirs, scoped token counts match `chatgpt_audit/summary.json` within tolerance **except** dir47/dir94, which now hit the fallback (assert fallback fired, output non-empty and ≤ 60k).

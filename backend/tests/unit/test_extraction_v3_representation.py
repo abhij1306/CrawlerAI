@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config.evaluation import EXTRACTION_V3_MAX_INPUT_TOKENS
+from eval.representation import audit_sample_report
 from app.extraction.documents import HtmlDocument
 from app.extraction.representation import build_flat_map, build_scoped_flat_map, ground
 
@@ -107,3 +108,18 @@ def test_audit_sample_scoping_is_nonempty_and_capped() -> None:
 
     assert by_dir[47].fallback_reason == "scoped_region_below_min_tokens"
     assert by_dir[94].vision_recommended is False
+
+
+def test_audit_sample_report_summarizes_representation_gate() -> None:
+    if not AUDIT_SUMMARY.exists():
+        pytest.skip("audit summary is not present")
+
+    report = audit_sample_report(
+        run_dir=RUN_DIR,
+        audit_summary_path=AUDIT_SUMMARY,
+    )
+
+    assert report["sample_count"] == 10
+    assert report["all_non_empty"] is True
+    assert report["all_under_token_cap"] is True
+    assert 47 in report["fallback_dirs"]

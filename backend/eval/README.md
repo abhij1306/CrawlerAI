@@ -9,6 +9,7 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m eval.corpus --stats
 .\.venv\Scripts\python.exe -m eval.corpus --write-proposals
 .\.venv\Scripts\python.exe -m eval.run --baseline
+.\.venv\Scripts\python.exe -m eval.representation --audit-samples
 ```
 
 `--write-proposals` bootstraps label files from frozen artifacts and audit data.
