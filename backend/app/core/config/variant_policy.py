@@ -413,9 +413,13 @@ VARIANT_OFFER_PRICE_KEYS = (
     "pricing",
 )
 VARIANT_OFFER_ORIGINAL_PRICE_KEYS = (
+    "compare_at_price",
     "originalPrice",
+    "original_price",
     "regularPrice",
+    "regular_price",
     "listPrice",
+    "list_price",
     "compareAtPrice",
 )
 VARIANT_OFFER_CURRENCY_KEYS = (
