@@ -1,0 +1,37 @@
+{
+  "fields": {
+    "availability": "limited_stock",
+    "brand": "KarenMillen",
+    "category": "home>Womens>Womens Clothing>Trousers",
+    "color": "IVORY",
+    "currency": "EUR",
+    "description": "Distinctive barrel leg silhouette for a contemporary shape that balances structure with movement Utility-inspired design with refined button detail for a sophisticated edge Front pleats create elegant draping and enhance the relaxed fit Mid-rise waistband with single button fastening for a clean, streamlined look Versatile 100cm length perfect for pairing with both flats and heels These cotton utility trousers redefine smart-casual dressing with their distinctive barrel leg shape and considered button detailing. The relaxed silhouette offers both comfort and refinement, making them an essential addition to your wardrobe. Style with a crisp white shirt tucked in to highlight the elegant waistband, or pair with a fitted knit top for a more casual approach. For daytime meetings, complement with pointed flats and a structured tote. When transitioning to evening, simply add a tailored blazer and statement jewellery for an effortlessly chic ensemble. The versatile design works beautifully across seasons - layer with ankle boots and a fine knit during cooler months or wear with minimal sandals when temperatures rise. These trousers embody the perfect balance of contemporary design and timeless appeal that Karen Millen is renowned for.",
+    "gtin": null,
+    "images": [
+      "https://mediahub.debenhams.com/bkk28382_ivory_xl",
+      "https://mediahub.debenhams.com/bkk28382_ivory_xl_1",
+      "https://mediahub.debenhams.com/bkk28382_ivory_xl_2",
+      "https://mediahub.debenhams.com/bkk28382_ivory_xl_3",
+      "https://mediahub.debenhams.com/bkk28382_ivory_xl_4"
+    ],
+    "mpn": "BKK28382-133-14",
+    "price": "105.35",
+    "sale_price": null,
+    "sku": "BKK28382-133-14",
+    "title": "Cotton Utility Button Detail Barrel Leg Trouser"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "operator_correction": "Live Zyte result drifted to a different product; label reset to captured CrawlerAI corpus product and color.",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 30,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://www.karenmillen.com/eu/product/karen-millen-cotton-utility-button-detail-barrel-leg-trouser_bkk28382?colour=ivory",
+  "variants": [],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

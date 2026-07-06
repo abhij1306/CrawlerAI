@@ -204,7 +204,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 0 — Eval harness + primitives (must land before any tier work)
 
 ### Slice 0.1: Eval corpus + human-verified labels
-**Status:** IN PROGRESS — harness and unverified label proposal writer landed; human verification still pending.
+**Status:** IN PROGRESS — harness and unverified label proposal writer landed; 8 human-verified seed labels added, full 91-page verification still pending.
 **Files:** `backend/eval/corpus.py`, `backend/eval/labels/<dir>.json`, `backend/eval/README.md`
 **What:** Register the **91 commerce-detail** captures from `backend/artifacts/runs/1/results/<N>/` (exclude dirs 6, 79, 83). For each, produce a **human-verified** gold label: core fields (title, description, price, sale_price, currency, availability, brand, gtin, mpn, sku, images, category) + the full variant matrix (per-variant option values, price, availability, sku). Bootstrap proposals from JSON-LD + `record.json`, but a human confirms/corrects each — `record.json` is **not** trusted (it carries the 13 missing-price / 11 empty-variant defects). Store the audit's variant bucket per page (embedded/dom_only/partial/single_sku) as label metadata.
 **Verify:** `python -m eval.corpus --stats` prints 91 labeled, 0 unlabeled; every label validates against the label schema; variant-bucket counts match the audit (7/17/12/55).

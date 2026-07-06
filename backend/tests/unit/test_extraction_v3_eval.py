@@ -4,12 +4,13 @@ import json
 from pathlib import Path
 
 from eval.corpus import stats, write_proposals
-from eval.run import run_baseline
+from eval.run import run_baseline, run_label_score
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR = ROOT / "artifacts" / "runs" / "1"
 AUDIT_PATH = ROOT.parent / "chatgpt_audit" / "audit_data.json"
+LABEL_DIR = ROOT / "eval" / "labels"
 
 
 def test_corpus_registers_commerce_detail_pages_without_false_verification(
@@ -37,6 +38,26 @@ def test_corpus_writes_unverified_label_proposals(tmp_path: Path) -> None:
     assert label["human_verified"] is False
     assert label["metadata"]["variant_bucket"] == "embedded_json"
     assert label["fields"]["title"]
+
+
+def test_corpus_counts_human_verified_seed_labels() -> None:
+    result = stats(run_dir=RUN_DIR, audit_path=AUDIT_PATH, label_dir=LABEL_DIR)
+
+    assert result["registered"] == 91
+    assert result["human_verified"] == 8
+    assert result["valid"] is True
+
+
+def test_label_score_runs_on_verified_seed_labels() -> None:
+    report = run_label_score(
+        run_dir=RUN_DIR,
+        audit_path=AUDIT_PATH,
+        label_dir=LABEL_DIR,
+    )
+
+    assert report["verified_pages"] == 8
+    assert 0.0 <= report["hallucination_proxy_rate"] <= 1.0
+    assert 0.0 <= report["variant_matrix_accuracy"] <= 1.0
 
 
 def test_baseline_reproduces_frozen_defect_counts(tmp_path: Path) -> None:

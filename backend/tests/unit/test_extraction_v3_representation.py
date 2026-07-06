@@ -1,7 +1,18 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
+
+from app.core.config.evaluation import EXTRACTION_V3_MAX_INPUT_TOKENS
 from app.extraction.documents import HtmlDocument
 from app.extraction.representation import build_flat_map, build_scoped_flat_map, ground
+
+
+ROOT = Path(__file__).resolve().parents[2]
+RUN_DIR = ROOT / "artifacts" / "runs" / "1"
+AUDIT_SUMMARY = ROOT.parent / "chatgpt_audit" / "summary.json"
 
 
 def test_flat_map_uses_absolute_paths_and_text_only() -> None:
@@ -70,3 +81,29 @@ def test_grounding_exact_normalized_and_miss() -> None:
     assert normalized.match_type == "normalized"
     assert miss.grounded is False
     assert miss.match_type == "none"
+
+
+def test_audit_sample_scoping_is_nonempty_and_capped() -> None:
+    if not AUDIT_SUMMARY.exists():
+        pytest.skip("audit summary is not present")
+    samples = json.loads(AUDIT_SUMMARY.read_text(encoding="utf-8"))[
+        "representation_tokens"
+    ]
+
+    by_dir = {}
+    for sample in samples:
+        result_dir = RUN_DIR / "results" / str(sample["dir"])
+        html_path = result_dir / "page.html"
+        if not html_path.exists():
+            pytest.skip("frozen run corpus is not present")
+        document = HtmlDocument(
+            "html",
+            html_path.read_text(encoding="utf-8", errors="ignore"),
+        )
+        scoped = build_scoped_flat_map(document)
+        by_dir[int(sample["dir"])] = scoped
+        assert scoped.token_count > 0
+        assert scoped.token_count <= EXTRACTION_V3_MAX_INPUT_TOKENS
+
+    assert by_dir[47].fallback_reason == "scoped_region_below_min_tokens"
+    assert by_dir[94].vision_recommended is False

@@ -1,0 +1,47 @@
+{
+  "fields": {
+    "availability": "out_of_stock",
+    "brand": "47",
+    "category": "Home>47 NY Yankees Clean Up Cap",
+    "currency": "USD",
+    "description": "Whether you're pitch-side or street-side, '47 caps always bring the spirit of the game. The brand was founded by two brothers selling caps on a pushcart outside of Fenway Park, and now the brand covers so much more than just Boston. This one\u2019s for the New York Yankees, detailed with the all-important logo on the front and a \u201947 logo on the side.\n\n100% Cotton\nAdjustable Strap\nEmbroidered Branding\nStyle Code: B-RGW17GWS-VN\nShop All 47 Caps\nShop All Caps",
+    "gtin": null,
+    "images": [
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_1600/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_m1_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_1600/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_2_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_1600/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_4_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_200/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_3_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_200/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_4_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_200/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_2_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_1600/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_3_1.jpg",
+      "https://media.endclothing.com/media/f_auto,q_auto:eco,w_200/prodmedia/media/catalog/product/1/3/13-04-26_B-RGW17GWS-VN_m1_1.jpg"
+    ],
+    "mpn": null,
+    "price": "35.00",
+    "sale_price": null,
+    "sku": "B-RGW17GWS-VN",
+    "title": "47 NY Yankees Clean Up Cap"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 8,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html",
+  "variants": [
+    {
+      "availability": "out_of_stock",
+      "color": "Vintage Navy",
+      "currency": "USD",
+      "price": "35.00",
+      "sku": "B-RGW17GWS-VN",
+      "variant_id": "4627092"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}
