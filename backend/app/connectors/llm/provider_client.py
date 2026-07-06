@@ -151,6 +151,7 @@ async def call_provider(
     api_key: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     normalized_provider = str(provider or "").strip().lower()
     if not api_key:
@@ -161,7 +162,9 @@ async def call_provider(
     if dispatch is None:
         return f"{ERROR_PREFIX} Unsupported provider: {normalized_provider}", 0, 0
     try:
-        return await dispatch(api_key, model, system_prompt, user_prompt)
+        return await dispatch(
+            api_key, model, system_prompt, user_prompt, max_tokens
+        )
     except (httpx.HTTPError, ValueError) as exc:
         return f"{ERROR_PREFIX} {type(exc).__name__}: {exc}", 0, 0
 
@@ -173,6 +176,7 @@ async def call_provider_with_retry(
     api_key: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
     max_retries: int = llm_runtime_settings.provider_retry_max_retries,
     base_delay_s: float = llm_runtime_settings.provider_retry_base_delay_seconds,
 ) -> tuple[str, int, int]:
@@ -192,6 +196,7 @@ async def call_provider_with_retry(
             api_key=api_key,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            max_tokens=max_tokens,
         )
         if not result.startswith(ERROR_PREFIX):
             await record_success(normalized_provider)
@@ -265,6 +270,7 @@ async def _call_groq(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     client = await _shared_groq_client()
     return await _call_chat_completions_endpoint(
@@ -274,7 +280,7 @@ async def _call_groq(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=llm_runtime_settings.groq_max_tokens,
+        max_tokens=max_tokens or llm_runtime_settings.groq_max_tokens,
         temperature=llm_runtime_settings.groq_temperature,
     )
 
@@ -316,6 +322,7 @@ async def _call_anthropic(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     client = await _shared_anthropic_client()
     response = await client.post(
@@ -327,7 +334,7 @@ async def _call_anthropic(
         },
         json={
             "model": model,
-            "max_tokens": llm_runtime_settings.anthropic_max_tokens,
+            "max_tokens": max_tokens or llm_runtime_settings.anthropic_max_tokens,
             "temperature": llm_runtime_settings.anthropic_temperature,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_prompt}],
@@ -358,6 +365,7 @@ async def _call_nvidia(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     client = await _shared_nvidia_client()
     return await _call_chat_completions_endpoint(
@@ -367,7 +375,7 @@ async def _call_nvidia(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=llm_runtime_settings.nvidia_max_tokens,
+        max_tokens=max_tokens or llm_runtime_settings.nvidia_max_tokens,
         temperature=llm_runtime_settings.nvidia_temperature,
     )
 
@@ -377,6 +385,7 @@ async def _call_mistral(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     client = await _shared_mistral_client()
     return await _call_chat_completions_endpoint(
@@ -386,7 +395,7 @@ async def _call_mistral(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=llm_runtime_settings.mistral_max_tokens,
+        max_tokens=max_tokens or llm_runtime_settings.mistral_max_tokens,
         temperature=llm_runtime_settings.mistral_temperature,
     )
 
@@ -396,6 +405,7 @@ async def _call_openrouter(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     client = await _shared_openrouter_client()
     return await _call_chat_completions_endpoint(
@@ -405,7 +415,7 @@ async def _call_openrouter(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=llm_runtime_settings.openrouter_max_tokens,
+        max_tokens=max_tokens or llm_runtime_settings.openrouter_max_tokens,
         temperature=llm_runtime_settings.openrouter_temperature,
     )
 

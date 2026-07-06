@@ -276,7 +276,11 @@ def _runtime_snapshot(model_adapter: Any | None) -> dict[str, Any]:
             "approved": True,
             "enabled": True,
             "confidence_threshold": 0.8,
-            "timeout_ms": 1000,
+            # Let the shared GENERALIZED_EXTRACTION_BUDGET.budget_ms govern the real
+            # ceiling (_runtime_budget_ms takes the min of the two). A 1000ms
+            # artifact timeout would re-cap every live hosted-provider call at 1s
+            # and time it out before any response lands.
+            "timeout_ms": 60000,
             "max_memory_mb": 256.0,
             "max_cost_per_page_usd": 0.02,
             "supported_surfaces": ["ecommerce_detail"],

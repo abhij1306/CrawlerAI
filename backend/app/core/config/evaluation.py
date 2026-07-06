@@ -284,10 +284,23 @@ EXTRACTION_V3_SCOPED_MIN_TOKENS: Final[int] = 300
 EXTRACTION_V3_MAX_INPUT_TOKENS: Final[int] = 60000
 EXTRACTION_V3_CHUNK_TARGET_TOKENS: Final[int] = 12000
 GENERALIZED_EXTRACTION_BUDGET: Final[dict[str, object]] = {
-    "budget_ms": 1000,
+    # Per-page ceiling for a hosted-LLM fallback call. This fires only on cache
+    # miss / recipe drift, not every page, so a multi-second ceiling is affordable
+    # at <=20k pages/day. 1000ms was a placeholder tuned to the synchronous test
+    # adapter and is impossible for any real hosted provider (Mistral p95 ~20-30s
+    # on a 6-12k-token scoped map); 30s captures the successful-call distribution
+    # while still bounding the tail so a hung provider can't stall the crawl.
+    "budget_ms": 30000,
     "model_tier": "hosted_llama",
     "max_cost_usd_per_page": 0.02,
     "max_input_tokens": EXTRACTION_V3_MAX_INPUT_TOKENS,
+    # Output ceiling for the grounded prediction array. The per-provider defaults
+    # (e.g. mistral_max_tokens=1200) are tuned to short single-record tasks and
+    # truncate a full generalized-extraction array mid-JSON -> unparseable ->
+    # ValueError -> nothing published. A scoped map yields one prediction row per
+    # field-sense with an XPath + evidence text; 8000 tokens covers the observed
+    # array size with headroom while staying well under provider hard limits.
+    "max_output_tokens": 8000,
     "escalate_to_vision_below_confidence": 0.8,
     "cooldown_minutes": 5,
 }

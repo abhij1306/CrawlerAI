@@ -18,6 +18,7 @@ from app.connectors.llm.provider_client import (
     estimate_cost_usd,
 )
 from app.core.config.evaluation import (
+    GENERALIZED_EXTRACTION_BUDGET,
     GENERALIZED_EXTRACTION_FIELD_SENSES,
     GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
     GENERALIZED_EXTRACTION_LLM_TASK,
@@ -114,6 +115,7 @@ class HostedGeneralizedExtractionAdapter:
                 ),
                 system_prompt=system_prompt,
                 user_prompt=enforce_token_limit(user_prompt),
+                max_tokens=int(GENERALIZED_EXTRACTION_BUDGET["max_output_tokens"]),
             ),
             timeout=max(0.001, timeout_ms / 1_000),
         )

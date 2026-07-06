@@ -361,10 +361,11 @@ def test_oversized_flat_map_recommends_vision_without_invoking_model(
 
 def test_generalized_budget_config_has_required_runtime_controls() -> None:
     assert GENERALIZED_EXTRACTION_BUDGET == {
-        "budget_ms": 1000,
+        "budget_ms": 30000,
         "model_tier": "hosted_llama",
         "max_cost_usd_per_page": 0.02,
         "max_input_tokens": 60000,
+        "max_output_tokens": 8000,
         "escalate_to_vision_below_confidence": 0.8,
         "cooldown_minutes": 5,
     }
