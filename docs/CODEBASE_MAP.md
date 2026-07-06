@@ -161,7 +161,9 @@ Canonical config owner:
 |---|---|
 | `evaluation/baseline.py` | deterministic offline baseline reduction and stable artifact generation |
 | `evaluation/schema.py` | grounded-label truth plus evaluation partition, surface, scenario, and metric contracts |
+| `eval/*` | Extraction V3 offline eval CLI, commerce-detail corpus registry, label proposals, scoring, and frozen baseline reports |
 | `extraction/model_runtime.py` | Lazy evaluation-gated universal-model fallback, shared bounded runtime representation, source-grounding enforcement, and Evidence conversion |
+| `extraction/representation/*` | Extraction V3 flat path-to-text representation, detail scoping fallback, chunking, and grounding validator |
 | `extraction/sentinel.py` | Known-template challenger comparison, drift-state classification, and business-readable Sentinel diagnostics |
 | `evaluation/compact_representation.py` | Offline truth-label decoration over the shared runtime `compact_page.v2` representation |
 | `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |

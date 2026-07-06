@@ -1,0 +1,20 @@
+{
+  "artifact_observed_defect_counts": {
+    "empty_records": 3,
+    "empty_variants_where_expected": 11,
+    "missing_price_on_commerce_detail": 13
+  },
+  "defect_counts": {
+    "empty_records": 5,
+    "empty_variants_where_expected": 11,
+    "missing_price_on_commerce_detail": 13
+  },
+  "engine": "baseline",
+  "expected_defect_counts": {
+    "empty_records": 5,
+    "empty_variants_where_expected": 11,
+    "missing_price_on_commerce_detail": 13
+  },
+  "matches_expected": true,
+  "schema_version": "extraction_v3_baseline.v1"
+}

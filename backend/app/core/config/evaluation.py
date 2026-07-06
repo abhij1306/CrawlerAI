@@ -149,3 +149,60 @@ UNIVERSAL_MODEL_BENCHMARK_SCHEMA_VERSION: Final[
 
 UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY: Final[str] = "universal_model"
 UNIVERSAL_MODEL_COLLECTOR_ID: Final[str] = "universal_model"
+
+EXTRACTION_V3_EVAL_SCHEMA_VERSION: Final[Literal["extraction_v3_eval.v1"]] = (
+    "extraction_v3_eval.v1"
+)
+EXTRACTION_V3_LABEL_SCHEMA_VERSION: Final[Literal["extraction_v3_label.v1"]] = (
+    "extraction_v3_label.v1"
+)
+EXTRACTION_V3_BASELINE_SCHEMA_VERSION: Final[Literal["extraction_v3_baseline.v1"]] = (
+    "extraction_v3_baseline.v1"
+)
+EXTRACTION_V3_COMMERCE_DETAIL_SURFACE: Final[str] = "commerce_detail"
+EXTRACTION_V3_EXCLUDED_RESULT_DIRS: Final[frozenset[int]] = frozenset({6, 79, 83})
+EXTRACTION_V3_VARIANT_BUCKETS: Final[tuple[str, ...]] = (
+    "embedded_json",
+    "dom_only",
+    "partial",
+    "single_sku",
+    "unknown",
+)
+EXTRACTION_V3_LABEL_CORE_FIELDS: Final[tuple[str, ...]] = (
+    "title",
+    "description",
+    "price",
+    "sale_price",
+    "currency",
+    "availability",
+    "brand",
+    "gtin",
+    "mpn",
+    "sku",
+    "images",
+    "category",
+)
+EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS: Final[dict[str, int]] = {
+    "empty_records": 5,
+    "missing_price_on_commerce_detail": 13,
+    "empty_variants_where_expected": 11,
+}
+EXTRACTION_V3_FLAT_MAP_EXCLUDED_TAGS: Final[frozenset[str]] = frozenset(
+    {"script", "style", "noscript", "svg", "template"}
+)
+EXTRACTION_V3_FLAT_MAP_CORE_ANCHORS: Final[tuple[str, ...]] = (
+    "price",
+    "add to cart",
+    "availability",
+    "sku",
+    "description",
+)
+EXTRACTION_V3_SCOPED_MIN_TOKENS: Final[int] = 300
+EXTRACTION_V3_MAX_INPUT_TOKENS: Final[int] = 60000
+EXTRACTION_V3_CHUNK_TARGET_TOKENS: Final[int] = 12000
+EXTRACTION_V3_GROUNDING_CURRENCY_SYMBOLS: Final[dict[str, str]] = {
+    "$": "usd",
+    "€": "eur",
+    "£": "gbp",
+    "₹": "inr",
+}

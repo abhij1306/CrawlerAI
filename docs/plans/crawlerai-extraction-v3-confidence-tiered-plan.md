@@ -204,25 +204,25 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 0 — Eval harness + primitives (must land before any tier work)
 
 ### Slice 0.1: Eval corpus + human-verified labels
-**Status:** TODO
+**Status:** IN PROGRESS — harness and unverified label proposal writer landed; human verification still pending.
 **Files:** `backend/eval/corpus.py`, `backend/eval/labels/<dir>.json`, `backend/eval/README.md`
 **What:** Register the **91 commerce-detail** captures from `backend/artifacts/runs/1/results/<N>/` (exclude dirs 6, 79, 83). For each, produce a **human-verified** gold label: core fields (title, description, price, sale_price, currency, availability, brand, gtin, mpn, sku, images, category) + the full variant matrix (per-variant option values, price, availability, sku). Bootstrap proposals from JSON-LD + `record.json`, but a human confirms/corrects each — `record.json` is **not** trusted (it carries the 13 missing-price / 11 empty-variant defects). Store the audit's variant bucket per page (embedded/dom_only/partial/single_sku) as label metadata.
 **Verify:** `python -m eval.corpus --stats` prints 91 labeled, 0 unlabeled; every label validates against the label schema; variant-bucket counts match the audit (7/17/12/55).
 
 ### Slice 0.2: Scorer + frozen baseline
-**Status:** TODO
+**Status:** IN PROGRESS — baseline defect gate landed and reproduces audit counts; full field scorer waits for human-verified labels.
 **Files:** `backend/eval/score.py`, `backend/eval/run.py`, `backend/eval/reports/baseline.json`
 **What:** Per-field precision/recall/F1, variant-matrix accuracy (option-set + per-variant field match), and a hallucination proxy (value absent from source). `run.py --baseline` scores today's `app.extraction.extract` and freezes the report.
 **Verify:** `python -m eval.run --baseline` reproduces the audit's defect counts (**5 empty, 13 missing-price, 11 empty-variants**) within ±1. This frozen scoreboard is the number every later slice must beat.
 
 ### Slice 0.3: Flat path→text adapter + scoping fallback
-**Status:** TODO
+**Status:** IN PROGRESS — flat-map/scoping primitives and unit coverage landed; audit sample-dir verification still pending.
 **Files:** `app/extraction/representation/flat_map.py`, `representation/scope.py`, `representation/__init__.py`, tests
 **What:** DOM/JSON-tree → ordered `absolute_path → text` map (NEXT-EVAL rules: strip class/id/style, text-bearing nodes only). **Detail region-scoping with a hard, measured fallback:** (a) find the main product region; (b) if the scoped map < 300 tokens → widen to full flat map (fixes dir47→167); (c) if full map > 60k tokens → return a chunked/summarized map and flag for vision (fixes dir94→162k). Pure function over `app/extraction/documents.py`; no acquisition changes.
 **Verify:** on the 10 audit sample dirs, scoped token counts match `chatgpt_audit/summary.json` within tolerance **except** dir47/dir94, which now hit the fallback (assert fallback fired, output non-empty and ≤ 60k).
 
 ### Slice 0.4: Grounding validator
-**Status:** TODO
+**Status:** DONE — exact/normalized/miss unit tests pass.
 **Files:** `app/extraction/representation/grounding.py`, tests
 **What:** `ground(value, flat_map, sources) -> GroundingResult{grounded, match_type ∈ {exact,normalized,none}, source_path}`. Exact + normalized (price/whitespace/unicode/currency) matching. No LLM.
 **Verify:** unit tests: exact hit, normalized price hit (`$19.98`↔`1998`), hallucinated miss → `none`.
