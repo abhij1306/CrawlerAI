@@ -86,6 +86,59 @@ GROUNDED_REPAIR_PROMPT_REGISTRY: Final[dict[str, dict[str, str]]] = {
         "user_file": "grounded_extraction_repair.user.txt",
     },
 }
+GENERALIZED_EXTRACTION_LLM_TASK: Final[str] = "generalized_extraction"
+GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID: Final[str] = (
+    "hosted_llm_generalized_extraction"
+)
+GENERALIZED_EXTRACTION_RESPONSE_SCHEMA_VERSION: Final[
+    Literal["generalized_extraction_response.v1"]
+] = "generalized_extraction_response.v1"
+GENERALIZED_EXTRACTION_PROMPT_REGISTRY: Final[dict[str, dict[str, str]]] = {
+    GENERALIZED_EXTRACTION_LLM_TASK: {
+        "response_type": "object",
+        "system_file": "generalized_extraction.system.txt",
+        "user_file": "generalized_extraction.user.txt",
+    },
+}
+GENERALIZED_EXTRACTION_FIELD_SENSES: Final[tuple[dict[str, str], ...]] = (
+    {"field": "title", "fact_type": "product.title", "sense": "product display title"},
+    {
+        "field": "description",
+        "fact_type": "product.description",
+        "sense": "product description, not navigation or reviews",
+    },
+    {"field": "brand", "fact_type": "product.brand", "sense": "manufacturer brand"},
+    {"field": "sku", "fact_type": "product.sku", "sense": "selected product sku"},
+    {"field": "mpn", "fact_type": "product.mpn", "sense": "manufacturer part number"},
+    {"field": "gtin", "fact_type": "product.gtin", "sense": "UPC/EAN/GTIN barcode"},
+    {
+        "field": "category",
+        "fact_type": "product.category",
+        "sense": "breadcrumb category path",
+    },
+    {
+        "field": "price",
+        "fact_type": "offer.price",
+        "sense": "current sell price after discount",
+    },
+    {
+        "field": "sale_price",
+        "fact_type": "offer.price",
+        "sense": "discounted sale price only when distinct from list price",
+    },
+    {
+        "field": "original_price",
+        "fact_type": "offer.original_price",
+        "sense": "struck-through or compare-at list price",
+    },
+    {"field": "currency", "fact_type": "offer.currency", "sense": "ISO currency"},
+    {
+        "field": "availability",
+        "fact_type": "offer.availability",
+        "sense": "selected product availability",
+    },
+    {"field": "image", "fact_type": "asset.image_url", "sense": "same-product image"},
+)
 
 COMPACT_REPRESENTATION_SCHEMA_VERSION: Final[Literal["compact_page.v2"]] = (
     "compact_page.v2"

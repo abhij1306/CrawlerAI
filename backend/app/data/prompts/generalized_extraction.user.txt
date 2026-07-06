@@ -1,0 +1,30 @@
+Extract grounded evidence candidates from this flat path_to_text page.
+
+URL:
+$url
+
+Surface:
+$surface
+
+Field senses:
+$field_senses
+
+Page representation:
+$page
+
+Return this exact JSON shape:
+{
+  "schema_version": "generalized_extraction_response.v1",
+  "predictions": [
+    {
+      "prediction_id": "stable-id",
+      "source_path": "/html[1]/body[1]/main[1]/...",
+      "fact_type": "product.title",
+      "raw_value": "visible source value",
+      "value": "published candidate value",
+      "subject_id": "generalized-product-1",
+      "subject_scope": "product",
+      "confidence": 0.0
+    }
+  ]
+}

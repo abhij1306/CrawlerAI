@@ -5,6 +5,12 @@ import logging
 
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
+from app.connectors.llm.generalized_extraction import hosted_generalized_adapter
+from app.core.config.evaluation import (
+    GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
+    GENERALIZED_EXTRACTION_LLM_TASK,
+    UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
+)
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty
 from app.crawl.domain_memory_service import (
@@ -51,6 +57,7 @@ def extract_records_for_acquisition_result(
     requested_fields: list[str] | None = None,
     selector_rules: list[dict[str, object]] | None = None,
     runtime_snapshot: dict[str, object] | None = None,
+    model_adapter=None,
 ) -> ExtractionResult:
     request = request_from_acquisition_result(
         parse_surface(surface),
@@ -61,7 +68,7 @@ def extract_records_for_acquisition_result(
         selector_rules=selector_rules,
         runtime_snapshot=runtime_snapshot or {},
     )
-    return extract(request)
+    return extract(request, model_adapter=model_adapter)
 
 
 async def _extract_records_for_acquisition(
@@ -118,6 +125,7 @@ async def _load_runtime_snapshot(context: _URLProcessingContext) -> dict[str, ob
     snapshot = await load_release_payload(
         context.session, context.run.extraction_release_snapshot_id
     )
+    snapshot["llm_enabled"] = context.run.settings_view.llm_enabled()
     snapshot["_release_snapshot_id"] = (
         str(context.run.extraction_release_snapshot_id)
         if context.run.extraction_release_snapshot_id is not None
@@ -136,6 +144,7 @@ async def _run_record_extraction(
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
     runtime_snapshot = await _load_runtime_snapshot(context)
+    model_adapter = _model_adapter(context, runtime_snapshot)
     await context.session.commit()
     extract_records_impl = getattr(
         extraction_loop,
@@ -166,6 +175,7 @@ async def _run_record_extraction(
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
             runtime_snapshot=runtime_snapshot,
+            model_adapter=model_adapter,
         )
         set_logfire_attributes(
             span,
@@ -251,6 +261,7 @@ async def _extract_records_from_preserved_browser_html(
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
     runtime_snapshot = await _load_runtime_snapshot(context)
+    model_adapter = _model_adapter(context, runtime_snapshot)
     try:
         fallback_result = await asyncio.to_thread(
             extract_impl,
@@ -261,6 +272,7 @@ async def _extract_records_from_preserved_browser_html(
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
             runtime_snapshot=runtime_snapshot,
+            model_adapter=model_adapter,
         )
     finally:
         acquisition_result.html = original_html
@@ -304,6 +316,25 @@ async def _extract_records_from_preserved_browser_html(
         requested_fields=list(context.requested_fields),
     )
     return fallback_result
+
+
+def _model_adapter(
+    context: _URLProcessingContext,
+    runtime_snapshot: dict[str, object],
+):
+    if not context.run.settings_view.llm_enabled():
+        return None
+    artifact = runtime_snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY)
+    if not isinstance(artifact, dict):
+        return None
+    if artifact.get("adapter_id") != GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID:
+        return None
+    config = context.run.settings_view.llm_config_snapshot().get(
+        GENERALIZED_EXTRACTION_LLM_TASK
+    ) or context.run.settings_view.llm_config_snapshot().get("general")
+    if not isinstance(config, dict):
+        return None
+    return hosted_generalized_adapter(config_snapshot=config)
 
 
 async def _load_selector_rules(

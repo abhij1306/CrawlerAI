@@ -322,6 +322,8 @@ def _approved_artifact(
 ) -> tuple[UniversalModelArtifact | None, str]:
     if request.runtime_snapshot is None:
         return None, "no universal model artifact in frozen runtime snapshot"
+    if not bool(request.runtime_snapshot.get("llm_enabled")):
+        return None, "LLM fallback is disabled by run settings"
     raw = request.runtime_snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY)
     if not isinstance(raw, Mapping):
         return None, "no universal model artifact in frozen runtime snapshot"

@@ -12,7 +12,12 @@ from pydantic import (
     field_validator,
 )
 
-from app.core.config.evaluation import GROUNDED_REPAIR_LLM_TASK
+from app.core.config.evaluation import (
+    GENERALIZED_EXTRACTION_LLM_TASK,
+    GENERALIZED_EXTRACTION_RESPONSE_SCHEMA_VERSION,
+    GROUNDED_REPAIR_LLM_TASK,
+)
+from app.extraction.contracts import FACT_TYPES
 
 
 class _ProductIntelligenceEnrichmentPayload(BaseModel):
@@ -76,6 +81,70 @@ class _DataEnrichmentSemanticPayload(BaseModel):
     suggested_bundles: list[str] | None = None
 
 
+class _GeneralizedExtractionPredictionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prediction_id: str = Field(min_length=1)
+    source_path: str = Field(min_length=1)
+    fact_type: str = Field(min_length=1)
+    raw_value: str | int | float | bool | None
+    value: str | int | float | bool | None
+    subject_id: str = Field(default="generalized-product-1", min_length=1)
+    subject_scope: str = "product"
+    confidence: float = Field(ge=0.0, le=1.0)
+    group_id: str | None = None
+    parent_subject_id: str | None = None
+    relation_type: str | None = None
+
+    @field_validator("fact_type")
+    @classmethod
+    def _validate_fact_type(cls, value: str) -> str:
+        if value not in FACT_TYPES:
+            raise ValueError(f"unsupported fact_type: {value}")
+        return value
+
+    @field_validator("subject_scope")
+    @classmethod
+    def _validate_subject_scope(cls, value: str) -> str:
+        allowed = {"document", "product", "variant", "offer", "asset", "job", "unknown"}
+        if value not in allowed:
+            raise ValueError(f"unsupported subject_scope: {value}")
+        return value
+
+    @field_validator("relation_type")
+    @classmethod
+    def _validate_relation_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        allowed = {
+            "product_variant",
+            "product_offer",
+            "variant_offer",
+            "product_asset",
+            "variant_asset",
+            "job_asset",
+        }
+        if value not in allowed:
+            raise ValueError(f"unsupported relation_type: {value}")
+        return value
+
+
+class _GeneralizedExtractionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = GENERALIZED_EXTRACTION_RESPONSE_SCHEMA_VERSION
+    predictions: list[_GeneralizedExtractionPredictionPayload] = Field(
+        default_factory=list
+    )
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version(cls, value: str) -> str:
+        if value != GENERALIZED_EXTRACTION_RESPONSE_SCHEMA_VERSION:
+            raise ValueError("unsupported generalized extraction schema version")
+        return value
+
+
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "product_intelligence_enrichment": TypeAdapter(
         _ProductIntelligenceEnrichmentPayload
@@ -84,6 +153,7 @@ _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
         _ProductIntelligenceBrandInferencePayload
     ),
     "data_enrichment_semantic": TypeAdapter(_DataEnrichmentSemanticPayload),
+    GENERALIZED_EXTRACTION_LLM_TASK: TypeAdapter(_GeneralizedExtractionPayload),
 }
 SUPPORTED_TASK_TYPES = (*_PAYLOAD_ADAPTERS.keys(), GROUNDED_REPAIR_LLM_TASK)
 

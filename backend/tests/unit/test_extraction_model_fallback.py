@@ -11,8 +11,14 @@ from app.extraction.contracts import (
     UniversalModelArtifact,
     UniversalModelResult,
 )
+from app.connectors.llm.generalized_extraction import HostedGeneralizedExtractionAdapter
 from app.extraction.engine import extract
-from app.extraction.model_runtime import RuntimeFlatMapPage, _normalize_source_value
+from app.extraction.model_runtime import (
+    RuntimeCompactSource,
+    RuntimeFlatMapEntry,
+    RuntimeFlatMapPage,
+    _normalize_source_value,
+)
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
@@ -21,6 +27,7 @@ pytestmark = pytest.mark.unit
 
 def _approved_snapshot() -> dict[str, object]:
     return {
+        "llm_enabled": True,
         "universal_model": {
             "schema_version": "universal_model_artifact.v1",
             "artifact_id": "universal-extractor",
@@ -166,6 +173,23 @@ def test_missing_or_unapproved_artifact_disables_fallback_cleanly() -> None:
     assert result.diagnostics.model_outcome == "disabled"
     assert result.metrics.universal_model_invocation_count == 0
     assert result.failure_classifications[0].code != "model_service_failure"
+
+
+def test_run_setting_disables_approved_model_without_invocation() -> None:
+    snapshot = _approved_snapshot()
+    snapshot["llm_enabled"] = False
+
+    result = extract(
+        _request(
+            "<main><span>Trail Shoe /p/trail-shoe</span></main>",
+            runtime_snapshot=snapshot,
+        ),
+        model_adapter=MustNotRunAdapter(),
+    )
+
+    assert result.records == ()
+    assert result.diagnostics.model_outcome == "disabled"
+    assert result.metrics.universal_model_invocation_count == 0
 
 
 def test_grounded_model_evidence_reenters_normal_resolve_and_publish() -> None:
@@ -315,3 +339,59 @@ def test_attribute_spelling_mutation_stays_deterministic_and_model_free() -> Non
 
         assert [row["title"] for row in result.records] == ["Trail Shoe"]
         assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_hosted_generalized_adapter_converts_schema_payload(monkeypatch) -> None:
+    async def fake_provider_call(**kwargs):
+        return (
+            """
+            {
+              "schema_version": "generalized_extraction_response.v1",
+              "predictions": [
+                {
+                  "prediction_id": "title",
+                  "source_path": "/html[1]/body[1]/main[1]",
+                  "fact_type": "product.title",
+                  "raw_value": "Trail Shoe",
+                  "value": "Trail Shoe",
+                  "subject_id": "generalized-product-1",
+                  "subject_scope": "product",
+                  "confidence": 0.91
+                }
+              ]
+            }
+            """,
+            100,
+            20,
+        )
+
+    monkeypatch.setattr(
+        "app.connectors.llm.generalized_extraction.call_provider_with_retry",
+        fake_provider_call,
+    )
+    adapter = HostedGeneralizedExtractionAdapter(
+        config_snapshot={
+            "provider": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "api_key_encrypted": "",
+        }
+    )
+    page = RuntimeFlatMapPage(
+        source=RuntimeCompactSource(artifact_id="html", content_hash="hash"),
+        entries=(
+            RuntimeFlatMapEntry(
+                path="/html[1]/body[1]/main[1]",
+                text="Trail Shoe",
+            ),
+        ),
+    )
+    artifact = UniversalModelArtifact.model_validate(
+        _approved_snapshot()["universal_model"]
+    )
+
+    result = adapter.predict(page, artifact, timeout_ms=1000)
+
+    assert result.adapter_id == adapter.adapter_id
+    assert result.predictions[0].fact_type == "product.title"
+    assert result.predictions[0].value == "Trail Shoe"
+    assert result.cost_usd >= 0.0
