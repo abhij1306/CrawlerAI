@@ -236,7 +236,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** `eval.run --engine v3 --tier generalized --no-recipes --no-selectors` beats baseline on commerce-detail: **price on ≥ 90/91, 0 empty, sale_price recovered where present**; grounding-failure rate < 5%.
 
 ### Slice 1.2: Deterministic tier + platform parsers (HTML `<script>` only)
-**Status:** TODO
+**Status:** IN PROGRESS — embedded JS-state mapping now treats Shopify-style `compare_at_price` / `compareAtPrice` and list/original price aliases as `offer.original_price`, so deterministic structured extraction can recover sale/list price pairs from script state. Dedicated platform modules and full deterministic-only recovery report remain.
 **Files:** `app/extraction/collectors/jsonld.py`, `collectors/js_state.py`, new `app/extraction/platforms/{shopify,next_data,sfcc}.py` (magento/woo later)
 **What:** Strengthen JSON-LD/microdata/OG parsing and add platform parsers that read embedded state **from `page.html` `<script>` tags** (audit confirmed no separate network payloads): Shopify inline product JSON (`compare_at_price` → sale_price goldmine), Next.js `__NEXT_DATA__`, SFCC/Redux state. Prefer embedded state over DOM. No selectors, no LLM. Covers ~52 platform pages + the JSON-LD floor; the ~37 "unknown" lean on JSON-LD + the generalized tier.
 **Verify:** deterministic-only recovery matches the audit floor (title 93%, price 87%, image 90%) and lifts **sale_price on Shopify pages to ~100%** via `compare_at_price`.

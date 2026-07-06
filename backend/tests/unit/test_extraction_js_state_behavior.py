@@ -24,6 +24,32 @@ def test_js_state_dict_values_do_not_crash_dedupe() -> None:
     assert result.evidence
 
 
+def test_js_state_shopify_compare_at_price_maps_to_original_price() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "product": {
+                "title": "Soft Rock Crewneck",
+                "price": "64.00",
+                "compare_at_price": "160.00",
+                "currency": "EUR",
+                "available": False,
+            }
+        }
+    }
+
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Soft Rock Crewneck</h1></body></html>",
+        "https://shop.test/products/soft-rock-crewneck",
+        artifacts=artifacts,
+    )
+
+    assert result.records
+    assert result.records[0]["price"] == "64.00"
+    assert result.records[0]["original_price"] == "160.00"
+    assert result.records[0]["currency"] == "EUR"
+
+
 def test_js_state_explicit_variant_rows_are_materialized() -> None:
     artifacts = {
         "js_state_objects": {
