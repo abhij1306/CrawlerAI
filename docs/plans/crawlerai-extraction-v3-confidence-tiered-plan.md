@@ -281,7 +281,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** compiled recipe replays LLM-free and matches generalized within threshold on held-out pages; a deliberately-broken path hint falls back to generalized (no stale data); `eval.run --tier recipe` matches generalized at ~0 marginal cost.
 
 ### Slice 2.3: Drift → per-page fallback → repair queue
-**Status:** TODO
+**Status:** DONE — sentinel drift observations now enqueue bounded repair items in extraction memory. Critical/suspected/needs-review recipe drift records the fallback verdict, whether a record was published, disagreement classes, and an observed model-fallback cost-savings estimate so repair work can be prioritized. Confirmed critical drift still suspends the template and future commerce-detail traffic routes away from selectors/generic stale recipe data.
 **Files:** `app/extraction/sentinel.py`, extraction-memory persistence, repair-queue surface
 **What:** On active-recipe identity/coverage failure: immediate per-page generalized fallback (correct record published), health event logged, existing evidence-requiring aggregation unchanged; repair candidate compiled via the multi-sample pipeline; repair item annotated with a **cost-savings-at-stake** estimate to self-prioritize.
 **Verify:** simulated drift publishes correct data immediately and enqueues a repair with a $ estimate.

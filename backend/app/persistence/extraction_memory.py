@@ -26,6 +26,9 @@ from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
     EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
+    RECIPE_REPAIR_QUEUE_KIND,
+    RECIPE_REPAIR_QUEUE_VERDICT,
+    RECIPE_REPAIR_REVIEW_STATES,
     SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
     SENTINEL_OBSERVATION_KIND,
     SENTINEL_SUSPENSION_KIND,
@@ -773,6 +776,58 @@ async def _record_sentinel_observations(
                 run_id=run_id,
                 url_result_id=url_result_id,
             )
+        if observation.state in RECIPE_REPAIR_REVIEW_STATES:
+            _enqueue_recipe_repair(
+                session,
+                template_id=template_id,
+                run_id=run_id,
+                url_result_id=url_result_id,
+                current_surface=current_surface,
+                current_route_pattern=current_route_pattern,
+                result=result,
+                observation=observation.model_dump(mode="json"),
+            )
+
+
+def _enqueue_recipe_repair(
+    session: AsyncSession,
+    *,
+    template_id: uuid.UUID | None,
+    run_id: int,
+    url_result_id: int,
+    current_surface: str,
+    current_route_pattern: str,
+    result: ExtractionResult,
+    observation: dict[str, object],
+) -> None:
+    cost_per_page = float(result.metrics.universal_model_cost_usd or 0.0)
+    cost_per_1000 = float(
+        result.metrics.universal_model_cost_per_1000_pages or cost_per_page * 1000
+    )
+    session.add(
+        ExtractionObservation(
+            template_id=template_id,
+            run_id=run_id,
+            url_result_id=url_result_id,
+            verdict=RECIPE_REPAIR_QUEUE_VERDICT,
+            payload={
+                "kind": RECIPE_REPAIR_QUEUE_KIND,
+                "surface": current_surface,
+                "route_pattern": current_route_pattern,
+                "sentinel_state": observation.get("state"),
+                "disagreement_classes": observation.get("disagreement_classes", []),
+                "fallback_published": bool(result.records),
+                "fallback_verdict": result.verdict,
+                "estimated_cost_savings_at_stake": {
+                    "currency": "USD",
+                    "per_page": cost_per_page,
+                    "per_1000_pages": cost_per_1000,
+                    "basis": "observed_model_fallback_cost",
+                },
+                "next_action": "compile_multi_sample_repair_candidate",
+            },
+        )
+    )
 
 
 async def _sentinel_template_in_scope(

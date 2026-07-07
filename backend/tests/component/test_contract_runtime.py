@@ -23,6 +23,7 @@ from app.extraction.contracts import (
     Decision,
     Evidence,
     ExtractionResult,
+    ExtractionMetrics,
     FieldEvidenceState,
     RejectedEvidence,
     ResolutionResult,
@@ -36,9 +37,15 @@ from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
+    RECIPE_REPAIR_QUEUE_KIND,
+    RECIPE_REPAIR_QUEUE_VERDICT,
 )
 from app.models.crawl_run import CrawlRun, CrawlUrlResult
-from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRecipe
+from app.models.extraction_memory import (
+    CompiledExtractionRecipe,
+    ExtractionObservation,
+    ExtractionRecipe,
+)
 from app.persistence.extraction_memory import (
     RecipeCompileError,
     _merge_observed_sources,
@@ -944,6 +951,10 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
                 ),
             ),
             verdict="success",
+            metrics=ExtractionMetrics(
+                universal_model_cost_usd=0.004,
+                universal_model_cost_per_1000_pages=4.0,
+            ),
             sentinel_observations=(
                 SentinelObservation(
                     challenger="deterministic",
@@ -980,6 +991,28 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
     assert frozen["templates"][0]["sentinel_suspended"] is True
     assert not release.payload["templates"][0].get("sentinel_suspended", False)
     assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
+    repair_rows = (
+        await db_session.execute(
+            select(ExtractionObservation)
+            .where(
+                ExtractionObservation.verdict == RECIPE_REPAIR_QUEUE_VERDICT,
+                ExtractionObservation.payload["kind"].as_string()
+                == RECIPE_REPAIR_QUEUE_KIND,
+            )
+            .order_by(ExtractionObservation.created_at)
+        )
+    ).scalars().all()
+    assert len(repair_rows) == 2
+    assert repair_rows[-1].payload["next_action"] == (
+        "compile_multi_sample_repair_candidate"
+    )
+    assert repair_rows[-1].payload["fallback_published"] is True
+    assert repair_rows[-1].payload["estimated_cost_savings_at_stake"] == {
+        "currency": "USD",
+        "per_page": 0.004,
+        "per_1000_pages": 4.0,
+        "basis": "observed_model_fallback_cost",
+    }
 
 
 @pytest.mark.asyncio

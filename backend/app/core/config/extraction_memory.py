@@ -39,3 +39,6 @@ SENTINEL_DEFAULT_SAMPLE_RATE = 0.05
 SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD = 2
 SENTINEL_OBSERVATION_KIND = "sentinel_challenger"
 SENTINEL_SUSPENSION_KIND = "sentinel_suspension"
+RECIPE_REPAIR_QUEUE_KIND = "recipe_repair_queue"
+RECIPE_REPAIR_QUEUE_VERDICT = "repair_queued"
+RECIPE_REPAIR_REVIEW_STATES = ("critical_drift", "suspected_drift", "needs_review")
