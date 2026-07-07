@@ -748,6 +748,29 @@ export type KnowledgeContract = {
   status: string;
 };
 
+export type ExtractionProfilePin = {
+  id?: string;
+  canonical_field: string;
+  selected_source: string;
+  required: boolean;
+  value_sense: string;
+  aliases: string[];
+  status?: string;
+};
+
+export type ExtractionProfile = {
+  domain: string;
+  surface: string;
+  template_id: string | null;
+  pins: ExtractionProfilePin[];
+};
+
+export type ExtractionProfilePayload = {
+  domain: string;
+  surface: string;
+  pins: ExtractionProfilePin[];
+};
+
 export type KnowledgeSelectorContractPayload = {
   domain: string;
   url: string;

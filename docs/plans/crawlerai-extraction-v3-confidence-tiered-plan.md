@@ -295,8 +295,8 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** a profile pinning "Shopify JSON price" flips a DOM-mis-priced page to correct; persisted and reloaded.
 
 ### Slice 3.2: Extraction Profile — frontend panel
-**Status:** TODO
-**Files:** `frontend/components/crawl/*` (mirror the acquisition-profile / Domain Recipe panel)
+**Status:** DONE — the Domain Memory extraction tab now loads/saves backend extraction profiles, lets operators pin observed field sources with required flags, value senses, and aliases, and exports the compiled binding JSON for developers. The panel reuses the existing extraction preference surface and saves future-run domain/surface profile pins instead of CSS selector contracts.
+**Files:** `frontend/components/selectors/domain-memory/*`, `frontend/lib/api/knowledge.ts`, `frontend/lib/api/types.ts`
 **What:** Operator UI to view winning source per field, pin/override bindings, set senses/required flags, export the compiled binding as a dev-readable snippet.
 **Verify:** Vitest/Playwright — edit → save → re-run reflects the pin; export produces a valid snippet.
 

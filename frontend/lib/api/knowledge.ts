@@ -2,6 +2,8 @@ import { apiClient } from '@/api/client';
 
 import { withQuery } from './shared';
 import type {
+  ExtractionProfile,
+  ExtractionProfilePayload,
   KnowledgeContract,
   KnowledgeContractSelectionPayload,
   KnowledgeGraphResponse,
@@ -35,6 +37,12 @@ export const knowledgeApi = {
     apiClient.get<{ contracts: KnowledgeContract[] }>(
       `/api/knowledge/contracts/${encodeURIComponent(templateId)}`,
     ),
+  getExtractionProfile: (domain: string, surface: string) => {
+    const query = new URLSearchParams({ domain, surface });
+    return apiClient.get<ExtractionProfile>(withQuery('/api/knowledge/profile', query));
+  },
+  saveExtractionProfile: (payload: ExtractionProfilePayload) =>
+    apiClient.put<ExtractionProfile>('/api/knowledge/profile', payload),
   selectKnowledgeContractSource: (contractId: string, payload: KnowledgeContractSelectionPayload) =>
     apiClient.put<{ contract: KnowledgeContract }>(
       `/api/knowledge/contracts/${encodeURIComponent(contractId)}/selection`,

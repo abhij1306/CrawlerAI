@@ -16,6 +16,8 @@ const apiMock = vi.hoisted(() => ({
   getKnowledgeGraph: vi.fn(),
   listKnowledgeContractsByDomain: vi.fn(),
   listKnowledgeContracts: vi.fn(),
+  getExtractionProfile: vi.fn(),
+  saveExtractionProfile: vi.fn(),
   selectKnowledgeContractSource: vi.fn(),
   getRunReport: vi.fn(),
   getResultDiagnosis: vi.fn(),
@@ -248,6 +250,20 @@ describe('DomainMemoryPage', () => {
         },
       ],
     });
+    apiMock.getExtractionProfile.mockImplementation((domain: string, surface: string) =>
+      Promise.resolve({
+        domain,
+        surface,
+        template_id: null,
+        pins: [],
+      }),
+    );
+    apiMock.saveExtractionProfile.mockImplementation((payload: Record<string, unknown>) =>
+      Promise.resolve({
+        ...payload,
+        template_id: 'profile-template',
+      }),
+    );
     apiMock.selectKnowledgeContractSource.mockImplementation(
       (_contractId: string, payload: Record<string, unknown>) =>
         Promise.resolve({
@@ -462,6 +478,59 @@ describe('DomainMemoryPage', () => {
       });
     });
     expect(screen.getByText('Saved for this surface')).toBeInTheDocument();
+  }, 10_000);
+
+  it('edits and saves an extraction profile pin', async () => {
+    apiMock.getExtractionProfile.mockResolvedValue({
+      domain: 'example.com',
+      surface: 'ecommerce_detail',
+      template_id: 'profile-template',
+      pins: [
+        {
+          id: 'pin-price',
+          canonical_field: 'offer.price',
+          selected_source: 'dom:[data-price]',
+          required: false,
+          value_sense: '',
+          aliases: [],
+          status: 'active',
+        },
+      ],
+    });
+    renderDomainMemoryPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Extraction' }));
+    const priceSwitch = await screen.findByRole('switch', { name: 'Required offer.price' });
+    const priceControls = priceSwitch.closest('.grid');
+    expect(priceControls).not.toBeNull();
+    fireEvent.click(priceSwitch);
+    fireEvent.change(within(priceControls as HTMLElement).getByLabelText('Value sense'), {
+      target: { value: 'current_price' },
+    });
+    fireEvent.change(within(priceControls as HTMLElement).getByLabelText('Aliases'), {
+      target: { value: 'sale price, member price' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
+
+    await waitFor(() => {
+      expect(apiMock.saveExtractionProfile).toHaveBeenCalledWith({
+        domain: 'example.com',
+        surface: 'ecommerce_detail',
+        pins: expect.arrayContaining([
+          expect.objectContaining({
+            canonical_field: 'offer.price',
+            selected_source: 'dom:[data-price]',
+            required: true,
+            value_sense: 'current_price',
+            aliases: ['sale price', 'member price'],
+          }),
+        ]),
+      });
+    });
+    const snippet = screen.getByLabelText(
+      'Extraction profile snippet for ecommerce_detail',
+    ) as HTMLTextAreaElement;
+    expect(snippet.value).toContain('"value_sense": "current_price"');
   }, 10_000);
 
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {

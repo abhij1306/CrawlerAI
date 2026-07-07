@@ -48,6 +48,8 @@ export const queryKeys = {
   knowledgeGraph: {
     all: ['knowledge-graph'] as const,
     domain: (domain: string) => ['knowledge-graph', 'domain', domain] as const,
+    profile: (domain: string, surface: string) =>
+      ['knowledge-graph', 'profile', domain, surface] as const,
   },
   diagnostics: {
     all: ['diagnostics'] as const,

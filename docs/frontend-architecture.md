@@ -251,7 +251,7 @@ The frontend currently uses live backend routes for:
 - logs + websocket: `/api/crawls/{id}/logs`, `/api/crawls/{id}/logs/ws`
 - review: `/api/review/{id}`, `/api/review/{id}/artifact-html`, `/api/review/{id}/save`
 - selectors: `/api/selectors`, `/api/selectors/suggest`, `/api/selectors/test`, `/api/selectors/preview-html`
-- Knowledge Graph: `/api/knowledge/sites`, `/api/knowledge/graph`, `/api/knowledge/contracts/{template_id}`, `/api/knowledge/contracts/{contract_id}/selection`, `/api/knowledge/contracts/selector`
+- Knowledge Graph: `/api/knowledge/sites`, `/api/knowledge/graph`, `/api/knowledge/profile`, `/api/knowledge/contracts/{template_id}`, `/api/knowledge/contracts/{contract_id}/selection`, `/api/knowledge/contracts/selector`
 - users: `/api/users`
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
 - jobs: `/api/jobs/active`

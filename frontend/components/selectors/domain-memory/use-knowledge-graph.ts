@@ -2,12 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { api } from '../../../lib/api';
-import type { KnowledgeContract, KnowledgeSiteRecord } from '../../../lib/api/types';
+import type {
+  ExtractionProfile,
+  ExtractionProfilePayload,
+  KnowledgeContract,
+  KnowledgeSiteRecord,
+} from '../../../lib/api/types';
 import type { DomainWorkspace } from './types';
 
 type KnowledgeGraphData = {
   site: KnowledgeSiteRecord | null;
   contracts: KnowledgeContract[];
+  profiles: Record<string, ExtractionProfile>;
 };
 
 type SelectSourceVariables = {
@@ -33,7 +39,21 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
         siteResponse?.sites.find((entry) => entry.domain === domain) ??
         workspace.knowledgeSite ??
         null;
-      return { site, contracts: contractsResponse.contracts };
+      const surfaces = Array.from(
+        new Set([
+          ...workspace.surfaces.map((surface) => surface.surface),
+          ...contractsResponse.contracts.map((contract) => contract.surface),
+        ]),
+      ).filter(Boolean);
+      const profileRows = await Promise.all(
+        surfaces.map((surface) => api.getExtractionProfile(domain, surface).catch(() => null)),
+      );
+      const profiles = Object.fromEntries(
+        profileRows
+          .filter((profile): profile is ExtractionProfile => Boolean(profile))
+          .map((profile) => [profile.surface, profile]),
+      );
+      return { site, contracts: contractsResponse.contracts, profiles };
     },
     enabled: Boolean(domain),
     staleTime: 30_000,
@@ -75,5 +95,21 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
     },
   });
 
-  return { query, selectSource };
+  const saveProfile = useMutation({
+    mutationFn: (payload: ExtractionProfilePayload) => api.saveExtractionProfile(payload),
+    onSuccess: (profile) => {
+      queryClient.setQueryData<KnowledgeGraphData>(
+        queryKeys.knowledgeGraph.domain(domain),
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                profiles: { ...previous.profiles, [profile.surface]: profile },
+              }
+            : previous,
+      );
+    },
+  });
+
+  return { query, selectSource, saveProfile };
 }
