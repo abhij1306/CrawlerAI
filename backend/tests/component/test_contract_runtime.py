@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import field_mappings
 from app.core.extraction_memory.contract_runtime import (
     contract_preferences,
     match_template,
@@ -30,6 +31,8 @@ from app.extraction.contracts import (
     SentinelObservation,
     SourceLocator,
 )
+from app.extraction.entities import OfferEntity
+from app.extraction.resolution import _resolve_offer
 from app.extraction.surfaces import Surface
 from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
@@ -57,6 +60,7 @@ from app.persistence.extraction_memory import (
     create_candidate_release_snapshot,
     ensure_template,
     load_release_payload,
+    save_extraction_profile,
     record_extraction_result,
     rollback_release_snapshot_for_run,
     selector_rules_from_release,
@@ -1126,6 +1130,105 @@ def test_observed_source_merge_uses_canonical_source_keys() -> None:
     ]
     assert contract["selected_source"] == "jsonld:/products/{index}/name"
     assert contract["rejection_count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_extraction_profile_pin_flips_price_source_and_reload(
+    db_session: AsyncSession,
+) -> None:
+    microdata = _evidence(
+        "micro-price",
+        "microdata",
+        "/offers/price",
+        field_mappings.OFFER_PRICE_FACT_TYPE,
+        "999.00",
+    )
+    js_state = _evidence(
+        "shopify-price",
+        "js_state",
+        "/product/variants/0/price",
+        field_mappings.OFFER_PRICE_FACT_TYPE,
+        "19.00",
+    )
+    currency = _evidence(
+        "currency",
+        "microdata",
+        "/offers/priceCurrency",
+        field_mappings.OFFER_CURRENCY_FACT_TYPE,
+        "USD",
+    )
+    offer = OfferEntity(
+        entity_id="offer:1",
+        product_entity_id="product:1",
+        variant_entity_id=None,
+        group_id="offer:group",
+        request_context_id="ctx:1",
+        fact_evidence={
+            field_mappings.OFFER_PRICE_FACT_TYPE: (
+                microdata.evidence_id,
+                js_state.evidence_id,
+            ),
+            field_mappings.OFFER_CURRENCY_FACT_TYPE: (currency.evidence_id,),
+        },
+    )
+    evidence_by_id = {
+        row.evidence_id: row for row in (microdata, js_state, currency)
+    }
+    baseline = {
+        row.fact_type: row
+        for row in _resolve_offer(offer, evidence_by_id, ())
+        if row.status == "resolved"
+    }
+    assert baseline[field_mappings.OFFER_PRICE_FACT_TYPE].accepted_evidence_ids == (
+        "micro-price",
+    )
+
+    profile = await save_extraction_profile(
+        db_session,
+        domain="Shop.test",
+        surface="ecommerce_detail",
+        pins=[
+            {
+                "canonical_field": "price",
+                "selected_source": "js_state:/product/variants/0/price",
+                "required": True,
+                "value_sense": "current_price",
+            }
+        ],
+    )
+    release = await build_release_payload(
+        db_session, domain="shop.test", surface="ecommerce_detail"
+    )
+    preferences = contract_preferences(
+        release,
+        "unmatched-runtime-fingerprint",
+        "ecommerce_detail",
+        (microdata, js_state, currency),
+        frozenset({"price"}),
+        frozenset(),
+        url="https://shop.test/products/widget",
+    )
+    resolved = {
+        row.fact_type: row
+        for row in _resolve_offer(
+            offer,
+            evidence_by_id,
+            (),
+            preferred_evidence_ids=preferences,
+        )
+        if row.status == "resolved"
+    }
+
+    assert profile["pins"][0]["selected_source"] == (
+        "js_state:/product/variants/{index}/price"
+    )
+    assert resolved[field_mappings.OFFER_PRICE_FACT_TYPE].accepted_evidence_ids == (
+        "shopify-price",
+    )
+    assert release["templates"][0]["compiled_recipe"]["source_pins"][0][
+        "selected_source"
+    ] == "js_state:/product/variants/{index}/price"
 
 
 @pytest.mark.asyncio

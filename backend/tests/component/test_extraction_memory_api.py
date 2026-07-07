@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
+    EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
 )
@@ -77,7 +78,7 @@ async def test_domain_memory_api_requires_admin(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_selector_contract_compiles_into_single_recipe_store(
+async def test_commerce_detail_selector_contract_is_retired(
     db_session: AsyncSession, memory_api_client: AsyncClient
 ) -> None:
     selector = "[data-field='brand']"
@@ -93,9 +94,31 @@ async def test_selector_contract_compiles_into_single_recipe_store(
         },
     )
 
+    assert response.status_code == 410
+    assert not (await db_session.execute(select(ExtractionTemplate))).scalars().all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_unproven_surface_selector_contract_still_compiles(
+    db_session: AsyncSession, memory_api_client: AsyncClient
+) -> None:
+    selector = "[data-field='company']"
+    response = await memory_api_client.post(
+        "/api/knowledge/contracts/selector",
+        json={
+            "domain": "Example.COM",
+            "url": "https://example.com/jobs/1",
+            "surface": "job_detail",
+            "field_name": "company",
+            "css_selector": selector,
+            "sample_value": "ACME",
+        },
+    )
+
     assert response.status_code == 200
     contract = response.json()["contract"]
-    assert contract["canonical_field"] == "product.brand"
+    assert contract["canonical_field"] == "company"
     assert contract["selected_source"] == f"css_recipe:{selector}"
     assert (
         len((await db_session.execute(select(ExtractionTemplate))).scalars().all()) == 1
@@ -112,6 +135,58 @@ async def test_selector_contract_compiles_into_single_recipe_store(
 
     sites = await memory_api_client.get("/api/knowledge/sites")
     assert sites.json()["sites"][0]["domain"] == "example.com"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_extraction_profile_api_persists_and_reloads_source_pins(
+    db_session: AsyncSession, memory_api_client: AsyncClient
+) -> None:
+    response = await memory_api_client.put(
+        "/api/knowledge/profile",
+        json={
+            "domain": "Example.COM",
+            "surface": "ecommerce_detail",
+            "pins": [
+                {
+                    "canonical_field": "price",
+                    "selected_source": "js_state:/product/variants/0/price",
+                    "required": True,
+                    "value_sense": "current_price",
+                    "aliases": ["sale price"],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    profile = response.json()
+    assert profile["domain"] == "example.com"
+    assert profile["pins"] == [
+        {
+            "id": profile["pins"][0]["id"],
+            "canonical_field": "offer.price",
+            "selected_source": "js_state:/product/variants/{index}/price",
+            "required": True,
+            "value_sense": "current_price",
+            "aliases": ["sale price"],
+            "status": "active",
+        }
+    ]
+    loaded = await memory_api_client.get(
+        "/api/knowledge/profile",
+        params={"domain": "example.com", "surface": "ecommerce_detail"},
+    )
+    assert loaded.status_code == 200
+    assert loaded.json() == profile
+    recipe = (
+        await db_session.execute(
+            select(ExtractionRecipe).where(
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
+            )
+        )
+    ).scalar_one()
+    assert recipe.payload["contracts"][0]["selection_origin"] == "operator"
 
 
 @pytest.mark.asyncio

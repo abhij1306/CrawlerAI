@@ -15,14 +15,19 @@ from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
     EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS,
     EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
+    EXTRACTION_CONTRACT_SELECTION_ORIGIN_OPERATOR,
     EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
     EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
+    EXTRACTION_PROFILE_ROUTE_PATTERN,
+    EXTRACTION_PROFILE_TECH_SIGNAL,
+    EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
     EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
@@ -34,6 +39,7 @@ from app.core.config.extraction_memory import (
     SENTINEL_SUSPENSION_KIND,
 )
 from app.core.domain_utils import normalize_domain
+from app.core.config import field_mappings
 from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.extraction_memory.templates import (
     extract_tech_signals,
@@ -66,6 +72,12 @@ def _checksum(payload: dict) -> str:
 
 class RecipeCompileError(ValueError):
     """Recipe layers cannot be merged into one bounded runtime recipe."""
+
+
+def _canonical_field(field: object) -> str:
+    key = str(field or "").strip()
+    normalized = key.casefold()
+    return field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(normalized, key)
 
 
 def compile_recipe_layers(
@@ -343,6 +355,135 @@ async def upsert_recipe(
                 )
             ).scalar_one()
     return recipe, compiled
+
+
+async def save_extraction_profile(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    pins: list[dict[str, object]],
+) -> dict[str, object]:
+    """Persist operator-owned source pins for future release snapshots."""
+
+    normalized_domain = normalize_domain(domain)
+    normalized_surface = str(surface or "").strip().lower()
+    template = await ensure_template(
+        session,
+        domain=normalized_domain,
+        surface=normalized_surface,
+        fingerprint=EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
+        route_pattern=EXTRACTION_PROFILE_ROUTE_PATTERN,
+        tech_signals=[EXTRACTION_PROFILE_TECH_SIGNAL],
+    )
+    contracts = [
+        _profile_contract(template, normalized_surface, row)
+        for row in pins
+        if _profile_contract_source(row)
+    ]
+    await upsert_recipe(
+        session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_DOMAIN,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": contracts},
+    )
+    return await load_extraction_profile(
+        session, domain=normalized_domain, surface=normalized_surface
+    )
+
+
+async def load_extraction_profile(
+    session: AsyncSession, *, domain: str, surface: str
+) -> dict[str, object]:
+    normalized_domain = normalize_domain(domain)
+    normalized_surface = str(surface or "").strip().lower()
+    template = (
+        await session.execute(
+            select(ExtractionTemplate).where(
+                ExtractionTemplate.domain == normalized_domain,
+                ExtractionTemplate.surface == normalized_surface,
+                ExtractionTemplate.fingerprint == EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
+            )
+        )
+    ).scalar_one_or_none()
+    contracts: list[dict[str, object]] = []
+    if template is not None:
+        recipe = (
+            await session.execute(
+                select(ExtractionRecipe).where(
+                    ExtractionRecipe.template_id == template.id,
+                    ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
+                )
+            )
+        ).scalar_one_or_none()
+        contracts = [
+            dict(row)
+            for row in list((recipe.payload or {}).get("contracts") or [])
+            if isinstance(row, dict)
+        ] if recipe is not None else []
+    return {
+        "domain": normalized_domain,
+        "surface": normalized_surface,
+        "template_id": str(template.id) if template is not None else None,
+        "pins": [_profile_pin_from_contract(row) for row in contracts],
+    }
+
+
+def _profile_contract(
+    template: ExtractionTemplate, surface: str, row: dict[str, object]
+) -> dict[str, object]:
+    canonical_field = _canonical_field(
+        row.get("canonical_field") or row.get("field_name") or row.get("field")
+    )
+    selected_source = _profile_contract_source(row)
+    return {
+        "id": str(row.get("id") or uuid.uuid4()),
+        "template_id": str(template.id),
+        "surface": surface,
+        "canonical_field": canonical_field,
+        "candidates": [{"source": selected_source}],
+        "latest_values": [],
+        "success_count": 0,
+        "rejection_count": 0,
+        "resolver_rule": str(row.get("resolver_rule") or "operator_profile"),
+        "selected_source": selected_source,
+        "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_OPERATOR,
+        "selection_history": [
+            {
+                "selected_source": selected_source,
+                "source": "extraction_profile",
+            }
+        ],
+        "status": str(row.get("status") or EXTRACTION_MEMORY_STATUS_ACTIVE),
+        "required": bool(row.get("required", False)),
+        "value_sense": str(row.get("value_sense") or "").strip(),
+        "aliases": [
+            str(alias).strip()
+            for alias in list(row.get("aliases") or [])
+            if str(alias).strip()
+        ],
+    }
+
+
+def _profile_contract_source(row: dict[str, object]) -> str:
+    return normalize_source_pattern(str(row.get("selected_source") or ""))
+
+
+def _profile_pin_from_contract(contract: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": str(contract.get("id") or ""),
+        "canonical_field": str(contract.get("canonical_field") or ""),
+        "selected_source": str(contract.get("selected_source") or ""),
+        "required": bool(contract.get("required", False)),
+        "value_sense": str(contract.get("value_sense") or ""),
+        "aliases": [
+            str(alias).strip()
+            for alias in list(contract.get("aliases") or [])
+            if str(alias).strip()
+        ],
+        "status": str(contract.get("status") or EXTRACTION_MEMORY_STATUS_ACTIVE),
+    }
 
 
 async def build_release_payload(

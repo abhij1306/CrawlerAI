@@ -1304,7 +1304,8 @@ def _resolve_offer(
             )
             for fact, ids in sorted(offer.fact_evidence.items())
         )
-    preferences.update(atomic)
+    for fact, ids in atomic.items():
+        preferences.setdefault(fact, ids)
     return tuple(
         _resolve_scalar(
             offer.entity_id,

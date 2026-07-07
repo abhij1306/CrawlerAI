@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import field_mappings
 from app.core.config.extraction_memory import (
+    EXTRACTION_CONTRACT_SELECTION_ORIGIN_OPERATOR,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
@@ -32,7 +33,9 @@ from app.models.extraction_memory import (
 from app.models.user import User
 from app.persistence.extraction_memory import (
     ensure_template,
+    load_extraction_profile,
     purge_extraction_memory,
+    save_extraction_profile,
     upsert_recipe,
 )
 
@@ -55,6 +58,20 @@ class SelectorContractRequest(BaseModel):
     css_selector: str = Field(min_length=1)
     sample_value: str | None = None
     source: str | None = None
+
+
+class ExtractionProfilePin(BaseModel):
+    canonical_field: str = Field(min_length=1)
+    selected_source: str = Field(min_length=1)
+    required: bool = False
+    value_sense: str = ""
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ExtractionProfileRequest(BaseModel):
+    domain: str = Field(min_length=1)
+    surface: str = Field(min_length=1)
+    pins: list[ExtractionProfilePin] = Field(default_factory=list)
 
 
 @router.get("/sites")
@@ -350,6 +367,32 @@ async def knowledge_contracts(
     return {"contracts": await _template_contracts(session, template)}
 
 
+@router.get("/profile")
+async def knowledge_extraction_profile(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    domain: str,
+    surface: str,
+) -> dict[str, Any]:
+    return await load_extraction_profile(session, domain=domain, surface=surface)
+
+
+@router.put("/profile")
+async def knowledge_save_extraction_profile(
+    payload: ExtractionProfileRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+) -> dict[str, Any]:
+    profile = await save_extraction_profile(
+        session,
+        domain=payload.domain,
+        surface=payload.surface,
+        pins=[row.model_dump() for row in payload.pins],
+    )
+    await session.commit()
+    return profile
+
+
 @router.post("/contracts/selector")
 async def knowledge_selector_contract(
     payload: SelectorContractRequest,
@@ -357,6 +400,11 @@ async def knowledge_selector_contract(
     _: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
     domain = normalize_domain(payload.domain)
+    if payload.surface == "ecommerce_detail":
+        raise HTTPException(
+            status_code=410,
+            detail="Commerce-detail CSS selector contracts are retired; use extraction profile source pins.",
+        )
     if normalize_domain(payload.url) != domain:
         raise HTTPException(status_code=422, detail="URL must belong to domain")
     template = await ensure_template(
@@ -383,7 +431,7 @@ async def knowledge_selector_contract(
         "rejection_count": 0,
         "resolver_rule": "operator_selector",
         "selected_source": selected_source,
-        "selection_origin": "operator",
+        "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_OPERATOR,
         "selection_history": [
             {"selected_source": selected_source, "source": payload.source or "selector"}
         ],
@@ -516,7 +564,11 @@ async def _contract_recipe(
 
 
 async def _store_contract(
-    session: AsyncSession, template: ExtractionTemplate, contract: dict
+    session: AsyncSession,
+    template: ExtractionTemplate,
+    contract: dict,
+    *,
+    layer: str = EXTRACTION_RECIPE_LAYER_TEMPLATE,
 ) -> None:
     contracts = await _template_contracts(session, template)
     contracts = [
@@ -526,7 +578,7 @@ async def _store_contract(
     await upsert_recipe(
         session,
         template=template,
-        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        layer=layer,
         kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
         payload={"contracts": contracts},
     )

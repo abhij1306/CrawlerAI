@@ -289,7 +289,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 3 — Human-in-the-loop + cutover
 
 ### Slice 3.1: Extraction Profile (HITL) — backend
-**Status:** TODO
+**Status:** DONE — extraction profiles now persist per `(domain, surface)` as domain-layer operator contracts with source pins, required flags, value senses, and aliases. The knowledge API exposes profile load/save, commerce-detail CSS selector contracts now return `410`, and release snapshots consume profile source pins before generic offer resolution while preserving generalized fallback. A Shopify JSON price pin flips a mis-priced DOM/microdata page to the pinned source and reloads from extraction memory.
 **Files:** `app/models/extraction_memory.py`, `app/persistence/extraction_memory.py`, `app/api/knowledge.py`
 **What:** `ExtractionProfile(domain, surface)` — pinned source, field bindings, senses/aliases, required fields, overrides. Router consumes it before compile/fallback. Immutable-per-run like existing releases (future runs only).
 **Verify:** a profile pinning "Shopify JSON price" flips a DOM-mis-priced page to correct; persisted and reloaded.
