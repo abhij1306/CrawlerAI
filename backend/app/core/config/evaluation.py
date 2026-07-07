@@ -270,6 +270,10 @@ EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS: Final[dict[str, int]] = {
     "missing_price_on_commerce_detail": 13,
     "empty_variants_where_expected": 11,
 }
+EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS: Final[tuple[str, ...]] = (
+    "empty_records",
+    "empty_variants_where_expected",
+)
 EXTRACTION_V3_FLAT_MAP_EXCLUDED_TAGS: Final[frozenset[str]] = frozenset(
     {"script", "style", "noscript", "svg", "template"}
 )

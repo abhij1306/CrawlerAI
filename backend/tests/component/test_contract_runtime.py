@@ -338,6 +338,35 @@ def test_contract_preferences_return_source_matching_ids_only() -> None:
 
 
 @pytest.mark.unit
+def test_contract_preferences_ignore_broken_source_pin() -> None:
+    evidence = (
+        _evidence("current", "jsonld", "/name", "product.title", "Widget"),
+    )
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": "jsonld:/missing/name",
+                "selection_origin": "operator",
+            }
+        ],
+    )
+
+    preferences = contract_preferences(
+        snapshot,
+        "fp-1",
+        "ecommerce_detail",
+        evidence,
+        frozenset({"product.title"}),
+        frozenset(),
+    )
+
+    assert preferences == {}
+
+
+@pytest.mark.unit
 def test_contract_preferences_skip_user_controlled_fields() -> None:
     ev = _evidence("ev-1", "jsonld", "/name", "product.title")
     snapshot = _snapshot(
@@ -674,12 +703,27 @@ async def test_release_payload_contains_compiled_contract_recipe(
     assert (
         snapshot["templates"][0]["contracts"][0]["selected_source"] == "jsonld:/brand"
     )
+    assert snapshot["templates"][0]["compiled_recipe"]["source_pins"] == [
+        {
+            "canonical_field": "product.brand",
+            "selected_source": "jsonld:/brand",
+            "selection_origin": "operator",
+            "resolver_rule": "",
+        }
+    ]
+    assert snapshot["templates"][0]["compiled_recipe"]["field_schema"] == [
+        {
+            "canonical_field": "product.brand",
+            "required": False,
+            "value_sense": "",
+        }
+    ]
     assert await db_session.get(CompiledExtractionRecipe, compiled.id) is not None
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_release_payload_freezes_selector_recipes(
+async def test_release_payload_strips_commerce_detail_selector_recipes(
     db_session: AsyncSession,
 ) -> None:
     template = await ensure_template(
@@ -706,12 +750,42 @@ async def test_release_payload_freezes_selector_recipes(
         payload={"rules": [{"field_name": "title", "css_selector": "h2"}]},
     )
 
-    assert (
-        selector_rules_from_release(frozen, surface="ecommerce_detail")[0][
-            "css_selector"
-        ]
-        == "h1"
+    assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
+    assert frozen["templates"][0]["compiled_recipe"]["selector_rules"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_release_payload_still_freezes_selector_recipes_for_unproven_surfaces(
+    db_session: AsyncSession,
+) -> None:
+    template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="job_detail",
+        fingerprint="domain-default",
     )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer="domain",
+        kind="selectors",
+        payload={"rules": [{"field_name": "title", "css_selector": "h1"}]},
+    )
+    frozen = await build_release_payload(
+        db_session, domain="example.com", surface="job_detail"
+    )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer="domain",
+        kind="selectors",
+        payload={"rules": [{"field_name": "title", "css_selector": "h2"}]},
+    )
+
+    assert selector_rules_from_release(frozen, surface="job_detail")[0][
+        "css_selector"
+    ] == "h1"
     assert frozen["templates"][0]["compiled_recipe"]["selector_rules"] == [
         {"field_name": "title", "css_selector": "h1"}
     ]

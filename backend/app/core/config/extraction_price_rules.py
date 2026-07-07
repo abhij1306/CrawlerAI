@@ -74,40 +74,6 @@ DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS = frozenset(
 DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG = "explicit_minor_unit_price"
 DETAIL_CORROBORATED_PRICE_SCALE_FLAG = "corroborated_price_scale"
 
-DETAIL_ORIGINAL_PRICE_SELECTORS = (
-    *_static_export_tuple("DETAIL_ORIGINAL_PRICE_SELECTORS"),
-    "s",
-    "del",
-    "[class*='compare' i][class*='price' i]",
-    "[class*='regular' i][class*='price' i]",
-    "[class*='original' i][class*='price' i]",
-    "[class*='was' i][class*='price' i]",
-    "[class*='old' i][class*='price' i]",
-    "[class*='strike' i][class*='price' i]",
-    "[data-testid*='regular-price' i]",
-    "[data-testid*='original-price' i]",
-    "[aria-label*='original price' i]",
-    "[aria-label*='regular price' i]",
-    "[aria-label*='was price' i]",
-)
-DETAIL_CURRENT_PRICE_SELECTORS = (
-    *_static_export_tuple("DETAIL_CURRENT_PRICE_SELECTORS"),
-    "button[aria-label*='$']",
-    "button[aria-label*='₹']",
-    "button[aria-label*='Rs' i]",
-    "button[class*='add' i][class*='bag' i]",
-    "button[class*='add' i][class*='cart' i]",
-    "button[name*='add' i]",
-    "[role='button'][aria-label*='$']",
-    "[role='button'][aria-label*='₹']",
-    "[role='button'][aria-label*='Rs' i]",
-    "[aria-label*='$'][class*='buy' i]",
-    "[aria-label*='₹'][class*='buy' i]",
-    "[aria-label*='Rs' i][class*='buy' i]",
-    "[aria-label*='$'][data-testid*='buy' i]",
-    "[aria-label*='₹'][data-testid*='buy' i]",
-    "[aria-label*='Rs' i][data-testid*='buy' i]",
-)
 DETAIL_JSONLD_GRAPH_FIELDS = tuple(
     str(field).strip()
     for field in _static_export_tuple("DETAIL_JSONLD_GRAPH_FIELDS", ("@graph",))
@@ -219,7 +185,6 @@ __all__ = [
     "DETAIL_CENT_BASED_PRICE_CURRENCY_SET",
     "DETAIL_CORROBORATED_PRICE_SCALE_FLAG",
     "DETAIL_CURRENCY_JSONLD_RE",
-    "DETAIL_CURRENT_PRICE_SELECTORS",
     "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS",
     "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG",
     "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS",
@@ -234,7 +199,6 @@ __all__ = [
     "DETAIL_LOW_SIGNAL_PARENT_MIN",
     "DETAIL_LOW_SIGNAL_PRICE_MAX",
     "DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET",
-    "DETAIL_ORIGINAL_PRICE_SELECTORS",
     "DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL",
     "DETAIL_PRICE_CENT_MAGNITUDE_RATIO_DECIMAL",
     "DETAIL_PRICE_COMPARISON_TOLERANCE",

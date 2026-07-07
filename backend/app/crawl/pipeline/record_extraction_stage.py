@@ -341,6 +341,8 @@ async def _load_selector_rules(
     context: _URLProcessingContext,
     page_url: str,
 ) -> list[dict[str, object]]:
+    if str(context.surface or "").strip().lower() == "ecommerce_detail":
+        return []
     if context.run.extraction_release_snapshot_id is not None:
         release = await load_release_payload(
             context.session, context.run.extraction_release_snapshot_id

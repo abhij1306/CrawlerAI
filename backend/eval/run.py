@@ -11,15 +11,21 @@ from app.connectors.llm.generalized_extraction import hosted_generalized_adapter
 from app.core.config.evaluation import (
     EXTRACTION_V3_BASELINE_SCHEMA_VERSION,
     EXTRACTION_V3_EVAL_SCHEMA_VERSION,
+    EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS,
     GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
     GENERALIZED_EXTRACTION_LLM_TASK,
 )
+from app.core.extraction_memory.templates import normalize_route, source_pattern
 from app.extraction.engine import extract
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
 from eval.corpus import DEFAULT_AUDIT_PATH, DEFAULT_LABEL_DIR, DEFAULT_RUN_DIR, load_pages
-from eval.score import baseline_report, score_records_against_labels
+from eval.score import (
+    baseline_defects as score_defects,
+    baseline_report,
+    score_records_against_labels,
+)
 
 
 DEFAULT_REPORT = Path(__file__).resolve().parent / "reports" / "baseline.json"
@@ -71,16 +77,16 @@ def run_v3_engine(
 ) -> dict[str, Any]:
     pages = load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
     verified_pages = tuple(page for page in pages if page.is_verified)
-    adapter = (
+    adapter = None if tier == "recipe" else (
         model_adapter
         or _hosted_adapter_from_config(llm_config_path)
         or _default_hosted_adapter(provider=provider, model=model)
     )
     if tier == "generalized" and adapter is None:
-        payloads, candidate_runtime = _missing_generalized_candidate(verified_pages)
+        payloads, candidate_runtime = _missing_generalized_candidate(pages)
     else:
         payloads, candidate_runtime = _candidate_payloads(
-            verified_pages,
+            pages,
             tier=tier,
             no_selectors=no_selectors,
             model_adapter=adapter,
@@ -90,9 +96,15 @@ def run_v3_engine(
         record_payloads=payloads,
     ).to_dict()
     baseline = score_records_against_labels(verified_pages).to_dict()
-    baseline_defects = baseline_report(run_dir=run_dir, audit_path=audit_path)[
+    frozen_baseline_defects = baseline_report(run_dir=run_dir, audit_path=audit_path)[
         "defect_counts"
     ]
+    candidate_full_defects = score_defects(pages, record_payloads=payloads)
+    cascade_progress = _cascade_progress(
+        pages=pages,
+        candidate_payloads=payloads,
+        page_runtime=candidate_runtime["pages"],
+    )
     collector_ids = set(candidate_runtime["collector_ids"])
     selector_collectors = sorted(
         collector_id
@@ -102,15 +114,21 @@ def run_v3_engine(
     gate_reasons = _v3_gate_reasons(
         candidate=candidate,
         baseline=baseline,
-        baseline_defects=baseline_defects,
-        corpus_pages=len(pages),
+        frozen_baseline_defects=frozen_baseline_defects,
+        candidate_full_defects=candidate_full_defects,
         verified_pages=len(verified_pages),
-        no_recipes=no_recipes,
-        no_selectors=no_selectors,
-        selector_collectors=selector_collectors,
         tier=tier,
         model_invocations=int(candidate_runtime["model_invocations"]),
         llm_config_supplied=adapter is not None,
+        cascade_progress=cascade_progress,
+    )
+    selector_deletion_reasons = _selector_deletion_reasons(
+        gate_reasons=gate_reasons,
+        no_recipes=no_recipes,
+        no_selectors=no_selectors,
+        selector_collectors=selector_collectors,
+        frozen_baseline_defects=frozen_baseline_defects,
+        candidate_full_defects=candidate_full_defects,
     )
     report = {
         "schema_version": EXTRACTION_V3_EVAL_SCHEMA_VERSION,
@@ -122,12 +140,17 @@ def run_v3_engine(
         "verified_pages": len(verified_pages),
         "candidate": candidate,
         "baseline_on_verified_labels": baseline,
-        "frozen_baseline_defect_counts": baseline_defects,
+        "frozen_baseline_defect_counts": frozen_baseline_defects,
+        "candidate_full_corpus_defect_counts": candidate_full_defects,
+        "full_corpus_gate_defects": list(EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS),
+        "cascade_progress": cascade_progress,
         "selector_collectors_seen": selector_collectors,
         "candidate_runtime": candidate_runtime,
         "llm_config_supplied": adapter is not None,
         "gate_passed": not gate_reasons,
         "gate_reasons": gate_reasons,
+        "selector_deletion_unlocked": not selector_deletion_reasons,
+        "selector_deletion_reasons": selector_deletion_reasons,
     }
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +163,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--score-labels", action="store_true")
     parser.add_argument("--engine", choices=("v3",))
-    parser.add_argument("--tier", choices=("cascade", "deterministic", "generalized"), default="cascade")
+    parser.add_argument(
+        "--tier",
+        choices=("cascade", "deterministic", "generalized", "recipe"),
+        default="cascade",
+    )
     parser.add_argument("--no-recipes", action="store_true")
     parser.add_argument("--no-selectors", action="store_true")
     parser.add_argument("--require-pass", action="store_true")
@@ -203,6 +230,7 @@ def _candidate_payloads(
         collector_ids: set[str] = set()
         extractor_tiers: set[str] = set()
         model_invocations = 0
+        page_runtime: list[dict[str, Any]] = []
         for page in pages:
             request = fixture_request_from_inputs(
                 Surface.ECOMMERCE_DETAIL,
@@ -214,11 +242,18 @@ def _candidate_payloads(
                 requested_url=page.url,
                 max_records=1,
             ).model_copy(
-                update={"runtime_snapshot": _runtime_snapshot(model_adapter)}
+                update={
+                    "runtime_snapshot": _candidate_runtime_snapshot(
+                        page=page,
+                        tier=tier,
+                        model_adapter=model_adapter,
+                        no_selectors=no_selectors,
+                    )
+                }
             )
             result = extract(
                 request,
-                model_adapter=model_adapter,
+                model_adapter=None if tier == "recipe" else model_adapter,
             )
             payloads[page.result_id] = {
                 "record_count": len(result.records),
@@ -226,13 +261,25 @@ def _candidate_payloads(
             }
             collector_ids.update(row.collector_id for row in result.collector_outcomes)
             extractor_tiers.add(result.diagnostics.extractor_tier)
-            model_invocations += result.metrics.universal_model_invocation_count
+            page_model_invocations = result.metrics.universal_model_invocation_count
+            model_invocations += page_model_invocations
+            page_runtime.append(
+                {
+                    "result_id": page.result_id,
+                    "collector_ids": sorted(
+                        {row.collector_id for row in result.collector_outcomes}
+                    ),
+                    "extractor_tier": result.diagnostics.extractor_tier,
+                    "model_invocations": page_model_invocations,
+                }
+            )
             if tier == "deterministic":
                 continue
         return payloads, {
             "collector_ids": sorted(collector_ids),
             "extractor_tiers": sorted(extractor_tiers),
             "model_invocations": model_invocations,
+            "pages": page_runtime,
         }
     finally:
         extraction_pipeline.default_collectors = original_collectors
@@ -248,6 +295,15 @@ def _missing_generalized_candidate(pages) -> tuple[dict[int, dict[str, Any]], di
             "collector_ids": [],
             "extractor_tiers": [],
             "model_invocations": 0,
+            "pages": [
+                {
+                    "result_id": page.result_id,
+                    "collector_ids": [],
+                    "extractor_tier": "blocked",
+                    "model_invocations": 0,
+                }
+                for page in pages
+            ],
         },
     )
 
@@ -256,6 +312,91 @@ def _collector_allowed(collector_id: str, *, tier: str) -> bool:
     if tier == "generalized":
         return collector_id == "url"
     return collector_id != "dom"
+
+
+def _candidate_runtime_snapshot(
+    *,
+    page,
+    tier: str,
+    model_adapter: Any | None,
+    no_selectors: bool,
+) -> dict[str, Any]:
+    if tier == "recipe":
+        return _recipe_runtime_snapshot(page, no_selectors=no_selectors)
+    return _runtime_snapshot(model_adapter)
+
+
+def _recipe_runtime_snapshot(page, *, no_selectors: bool) -> dict[str, Any]:
+    """Compile source-pin recipe hints, then replay without model invocation."""
+
+    html = (page.result_dir / "page.html").read_text(encoding="utf-8", errors="ignore")
+    primer = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        html,
+        page.url,
+        requested_url=page.url,
+        max_records=1,
+    )
+    primer_result = extract(primer)
+    evidence_by_id = {row.evidence_id: row for row in primer_result.evidence}
+    contracts: list[dict[str, object]] = []
+    for decision in primer_result.decisions:
+        if decision.status != "resolved" or not decision.accepted_evidence_ids:
+            continue
+        evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
+        if evidence is None or evidence.locator is None:
+            continue
+        contracts.append(
+            {
+                "canonical_field": decision.fact_type,
+                "selected_source": source_pattern(
+                    evidence.collector_id,
+                    evidence.locator.value,
+                ),
+                "selection_origin": "generic",
+                "resolver_rule": decision.rule_id,
+            }
+        )
+    source_pins = [
+        {
+            "canonical_field": row["canonical_field"],
+            "selected_source": row["selected_source"],
+            "selection_origin": row["selection_origin"],
+            "resolver_rule": row["resolver_rule"],
+        }
+        for row in contracts
+    ]
+    return {
+        "surface": "ecommerce_detail",
+        "templates": [
+            {
+                "template_id": f"eval-recipe-{page.result_id}",
+                "fingerprint": f"eval-recipe-{page.result_id}",
+                "route_pattern": normalize_route(page.url, "ecommerce_detail"),
+                "contracts": contracts,
+                "compiled_recipe": {
+                    "compiler_version": "recipe.v1",
+                    "selector_rules": [] if no_selectors else [],
+                    "contracts": contracts,
+                    "source_pins": source_pins,
+                    "field_schema": [
+                        {
+                            "canonical_field": row["canonical_field"],
+                            "required": False,
+                            "value_sense": "",
+                        }
+                        for row in contracts
+                    ],
+                    "provenance": [
+                        {
+                            "source": "eval_primer",
+                            "result_id": page.result_id,
+                        }
+                    ],
+                },
+            }
+        ],
+    }
 
 
 def _runtime_snapshot(model_adapter: Any | None) -> dict[str, Any]:
@@ -330,38 +471,27 @@ def _v3_gate_reasons(
     *,
     candidate: dict[str, Any],
     baseline: dict[str, Any],
-    baseline_defects: dict[str, int],
-    corpus_pages: int,
+    frozen_baseline_defects: dict[str, int],
+    candidate_full_defects: dict[str, int],
     verified_pages: int,
-    no_recipes: bool,
-    no_selectors: bool,
-    selector_collectors: list[str],
     tier: str,
     model_invocations: int,
     llm_config_supplied: bool,
+    cascade_progress: dict[str, Any],
 ) -> list[str]:
     reasons: list[str] = []
     defects = candidate["defect_counts"]
     baseline_verified_defects = baseline["defect_counts"]
     if verified_pages == 0:
         reasons.append("no_verified_labels")
-    if not no_recipes:
-        reasons.append("recipes_not_disabled")
-    if not no_selectors:
-        reasons.append("selectors_not_disabled")
-    if selector_collectors:
-        reasons.append("selector_collectors_seen")
     if tier == "generalized" and not llm_config_supplied:
         reasons.append("generalized_adapter_missing")
     if tier == "generalized" and model_invocations == 0:
         reasons.append("generalized_tier_not_invoked")
-    # While the human-verified label set is small (8 of 91), gate against the
-    # current engine measured on the SAME verified pages -- the only fair
-    # comparison. Candidate must not regress any defect count or per-field F1.
-    # The frozen 91-page defect counts stay in the report as `frozen_baseline_*`
-    # for reference; the strict-improvement bar returns once the verified corpus
-    # is large enough to surface the 5/13/11 defect classes it was built for.
-    del baseline_defects, corpus_pages
+    for key in EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS:
+        baseline_value = frozen_baseline_defects[key]
+        if candidate_full_defects[key] > baseline_value:
+            reasons.append(f"regressed_full_corpus:{key}")
     for key in baseline_verified_defects:
         if defects[key] > baseline_verified_defects[key]:
             reasons.append(f"regressed_verified:{key}")
@@ -369,7 +499,73 @@ def _v3_gate_reasons(
         baseline_f1 = baseline["field_metrics"][field]["f1"]
         if metrics["f1"] < baseline_f1:
             reasons.append(f"field_f1_regressed:{field}")
+    if (
+        tier == "cascade"
+        and cascade_progress["baseline_failing_pages"] > 0
+        and not cascade_progress["generalized_helped_failing_pages"]
+    ):
+        reasons.append("generalized_did_not_help_failing_pages")
     return reasons
+
+
+def _selector_deletion_reasons(
+    *,
+    gate_reasons: list[str],
+    no_recipes: bool,
+    no_selectors: bool,
+    selector_collectors: list[str],
+    frozen_baseline_defects: dict[str, int],
+    candidate_full_defects: dict[str, int],
+) -> list[str]:
+    reasons: list[str] = []
+    if gate_reasons:
+        reasons.append("cascade_gate_not_passed")
+    if not no_recipes:
+        reasons.append("recipes_not_disabled")
+    if not no_selectors:
+        reasons.append("selectors_not_disabled")
+    if selector_collectors:
+        reasons.append("selector_collectors_seen")
+    for key in EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS:
+        baseline_value = frozen_baseline_defects[key]
+        if candidate_full_defects[key] > baseline_value:
+            reasons.append(f"regressed_full_corpus:{key}")
+    return reasons
+
+
+def _cascade_progress(
+    *,
+    pages,
+    candidate_payloads: dict[int, dict[str, Any]],
+    page_runtime: list[dict[str, Any]],
+) -> dict[str, Any]:
+    runtime_by_page = {int(row["result_id"]): row for row in page_runtime}
+    baseline_failing_pages: list[int] = []
+    improved_pages: list[int] = []
+    generalized_helped_pages: list[int] = []
+    regressed_pages: list[int] = []
+    for page in pages:
+        baseline_total = _defect_total(page, record_payloads=None)
+        candidate_total = _defect_total(page, record_payloads=candidate_payloads)
+        if baseline_total > 0:
+            baseline_failing_pages.append(page.result_id)
+        if baseline_total > candidate_total:
+            improved_pages.append(page.result_id)
+            runtime = runtime_by_page.get(page.result_id, {})
+            if int(runtime.get("model_invocations") or 0) > 0:
+                generalized_helped_pages.append(page.result_id)
+        if candidate_total > baseline_total:
+            regressed_pages.append(page.result_id)
+    return {
+        "baseline_failing_pages": len(baseline_failing_pages),
+        "candidate_improved_failing_pages": improved_pages,
+        "generalized_helped_failing_pages": generalized_helped_pages,
+        "candidate_regressed_pages": regressed_pages,
+    }
+
+
+def _defect_total(page, *, record_payloads: dict[int, dict[str, Any]] | None) -> int:
+    return sum(score_defects((page,), record_payloads=record_payloads).values())
 
 
 if __name__ == "__main__":

@@ -19,13 +19,14 @@ from app.core.config.extraction_rules import (
     DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS,
     DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
 )
+from app.core.config.field_mappings import SURFACE_FIELD_REPAIR_TARGETS
 from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.contract_runtime import match_template
-from app.core.extraction_memory.templates import normalize_route
+from app.core.extraction_memory.templates import fingerprint_from_parts, normalize_route
 from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.ids import stable_id
-from app.extraction.adapters import SurfaceAdapter, adapter_for, harvest_compiled_recipe
+from app.extraction.adapters import SurfaceAdapter, adapter_for
 from app.extraction.contracts import (
     CollectorOutcome,
     DiagnosticSummary,
@@ -91,21 +92,17 @@ def extract(
     if request.capture.blocked:
         return _blocked_result(request, (), ())
     adapter = adapter_for(request.surface)
-    compiled_template = _compiled_recipe_template(request)
+    compiled_template = None
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic"
-    if compiled_template is not None:
-        harvest = harvest_compiled_recipe(request)
-        if any(row.collector_id == "css_recipe" for row in harvest.evidence):
-            extractor_tier = "recipe"
-        else:
-            harvest = adapter.harvest(request)
-    else:
-        harvest = (
-            _generic_harvest(request, adapter)
-            if _has_suspended_runtime_template(request)
-            else adapter.harvest(request)
-        )
+    harvest = (
+        _generic_harvest(request, adapter)
+        if _has_suspended_runtime_template(request)
+        else adapter.harvest(request)
+    )
+    compiled_template = _compiled_source_pin_template(request, harvest)
     attempt = _execute_attempt(request, adapter, harvest)
+    if _source_pin_recipe_applied(compiled_template, attempt):
+        extractor_tier = "recipe"
     stage_outcomes = list(attempt.stage_outcomes)
     sentinel_observations: tuple[SentinelObservation, ...] = ()
 
@@ -151,7 +148,7 @@ def extract(
                     detail=observation.state,
                 )
             )
-    if _needs_contract_fallback(attempt.verdict):
+    if _needs_contract_fallback(request, attempt):
         model_fallback = run_model_fallback(request, model_adapter)
         model_outcome = _model_collector_outcome(model_fallback)
         stage_outcomes.append(
@@ -379,9 +376,26 @@ def _execute_attempt(
     )
 
 
-def _needs_contract_fallback(verdict: Verdict) -> bool:
-    # Review is usable output and does not require model fallback.
-    return verdict in {"empty", "partial"}
+def _needs_contract_fallback(
+    request: ExtractionRequest, attempt: _ExtractionAttempt
+) -> bool:
+    if attempt.verdict in {"empty", "partial"}:
+        return True
+    if attempt.verdict != "review" or request.surface != Surface.ECOMMERCE_DETAIL:
+        return False
+    if not attempt.records:
+        return False
+    return _missing_repair_target(request, attempt.records[0])
+
+
+def _missing_repair_target(
+    request: ExtractionRequest, record: PublicRecord
+) -> bool:
+    targets = set(SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ()))
+    targets.update(
+        "image_url" if field == "image" else field for field in request.requested_fields
+    )
+    return any(record.get(field) in (None, "", [], {}, ()) for field in targets)
 
 
 def _identity_failure(attempt: _ExtractionAttempt) -> bool:
@@ -395,35 +409,6 @@ def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
         evidence_count=len(result.evidence),
         detail=result.detail,
     )
-
-
-def _compiled_recipe_template(request: ExtractionRequest) -> dict[str, object] | None:
-    if request.surface != Surface.ECOMMERCE_DETAIL or request.runtime_snapshot is None:
-        return None
-    if not request.artifact_reader.exists("css_field_rules"):
-        return None
-    template = match_template(
-        dict(request.runtime_snapshot),
-        "",
-        request.surface.value,
-        url=request.capture.final_url or request.capture.requested_url,
-    )
-    if not template:
-        return None
-    if (
-        str(template.get("status") or "").strip().lower()
-        == EXTRACTION_MEMORY_STATUS_SUSPENDED
-    ):
-        return None
-    if bool(template.get("sentinel_suspended")):
-        return None
-    compiled_recipe = template.get("compiled_recipe")
-    if not isinstance(compiled_recipe, dict):
-        return None
-    selector_rules = compiled_recipe.get("selector_rules")
-    if not isinstance(selector_rules, list) or not selector_rules:
-        return None
-    return template
 
 
 def _has_suspended_runtime_template(request: ExtractionRequest) -> bool:
@@ -548,6 +533,50 @@ def _generic_harvest(
                 if row.collector_id != "css_recipe"
             ),
         }
+    )
+
+
+def _compiled_source_pin_template(
+    request: ExtractionRequest, harvest: HarvestResult
+) -> dict[str, object] | None:
+    if not request.runtime_snapshot:
+        return None
+    fingerprint = fingerprint_from_parts(
+        request.capture.final_url or request.capture.requested_url,
+        request.surface.value,
+        harvest.evidence,
+        harvest.collector_outcomes,
+    )
+    template = match_template(
+        dict(request.runtime_snapshot),
+        fingerprint,
+        request.surface.value,
+        url=request.capture.final_url or request.capture.requested_url,
+    )
+    if not template or not _template_has_source_pins(template):
+        return None
+    return template
+
+
+def _template_has_source_pins(template: dict[str, object]) -> bool:
+    compiled = template.get("compiled_recipe")
+    if isinstance(compiled, dict) and compiled.get("source_pins"):
+        return True
+    return bool(template.get("contracts"))
+
+
+def _source_pin_recipe_applied(
+    template: dict[str, object] | None, attempt: _ExtractionAttempt
+) -> bool:
+    return bool(
+        template is not None
+        and (
+            any(row.applied for row in attempt.resolution.contract_outcomes)
+            or any(
+                row.rule_id == "CONTRACT_PREFERRED_SOURCE"
+                for row in attempt.resolution.decisions
+            )
+        )
     )
 
 

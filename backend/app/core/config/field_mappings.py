@@ -578,14 +578,6 @@ ECOMMERCE_JSONLD_VARIANT_FACT_TYPES = {
     "color": "variant.option.color",
     "size": "variant.option.size",
 }
-REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES = (
-    '[itemprop="{field}"]',
-    '[data-field="{field}"]',
-    '[data-field-name="{field}"]',
-    ".{field}",
-    ".{dash_field}",
-)
-
 TITLE_STRUCTURED_VALUE_KEYS = ("values", "title", "name", "label", "text", "value")
 PRICE_DICT_PREFERRED_KEYS = (
     "formattedPrice",

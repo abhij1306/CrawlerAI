@@ -147,6 +147,67 @@ def test_url_only_title_overlap_does_not_merge_sibling_brand_product() -> None:
     assert len(products) == 2
 
 
+def test_url_shell_merges_unique_structured_offer_despite_weak_extra_group() -> None:
+    bundle = _bundle().model_copy(
+        update={
+            "requested_url": "https://shop.test/products/arizona-birko-flor",
+            "final_url": "https://shop.test/products/arizona-birko-flor",
+        }
+    )
+    rows = (
+        _row(
+            bundle,
+            "url",
+            "product.url",
+            "https://shop.test/products/arizona-birko-flor",
+            collector_id="url",
+        ),
+        _row(
+            bundle,
+            "url",
+            "product.title",
+            "Arizona Core Birko Flor",
+            collector_id="url",
+        ),
+        _row(bundle, "jsonld-product", "product.title", "Arizona Birko-Flor"),
+        evidence(
+            bundle,
+            "artifact-1",
+            "jsonld",
+            "offer.price",
+            "117.95",
+            SourceLocator(kind="json_pointer", value="/offers/price"),
+            hint=EntityHint(entity_type="offer"),
+            subject_id="offer-1",
+            parent_subject_id="jsonld-product",
+            group_id="offer:1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "jsonld",
+            "offer.currency",
+            "USD",
+            SourceLocator(kind="json_pointer", value="/offers/priceCurrency"),
+            hint=EntityHint(entity_type="offer"),
+            subject_id="offer-1",
+            parent_subject_id="jsonld-product",
+            group_id="offer:1",
+        ),
+        _row(bundle, "og-product", "product.title", "Buy Arizona Birko-Flor"),
+    )
+
+    entities = build_entities(bundle, rows)
+    offer_product_ids = {offer.product_entity_id for offer in entities.offers}
+    url_product = next(
+        product
+        for product in entities.products
+        if product.attribute_evidence.get("product.url")
+    )
+
+    assert url_product.entity_id in offer_product_ids
+
+
 def test_jsonld_node_path_difference_does_not_block_url_title_merge() -> None:
     bundle = _bundle()
     rows = (

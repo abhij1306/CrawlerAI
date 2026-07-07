@@ -72,33 +72,6 @@ DETAIL_BRAND_WEAK_SINGLE_TOKEN_PATTERN = (
 DETAIL_BRAND_FRAGMENT_PATTERN = (
     r"^(?:and|at|by|for|from|in|more|of|on|the|to|with|&\s*more)$"
 )
-DETAIL_BRAND_DOM_SELECTORS = (
-    "main [data-brand]",
-    "main [data-brand-name]",
-    "main [data-manufacturer]",
-    "main [data-manufacturer-name]",
-    "main [data-designer]",
-    "main [data-designer-name]",
-    "main [itemprop='brand']",
-    "main [itemprop='manufacturer']",
-    "main [class*='product-brand']",
-    "main [class*='product_brand']",
-    "main [data-testid*='brand']",
-    "main [data-testid*='manufacturer']",
-)
-DETAIL_BRAND_DOM_VALUE_ATTRIBUTES = (
-    "data-brand",
-    "data-brand-name",
-    "data-manufacturer",
-    "data-manufacturer-name",
-    "data-designer",
-    "data-designer-name",
-    "content",
-)
-DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
-    r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
-    r"(?P<brand>[^|\n]{1,80})\s*$"
-)
 DETAIL_BRAND_CATEGORY_PATTERN = (
     r"^(?:men(?:'s|s)?|women(?:'s|s)?|boys?|girls?|kids?)\s+"
     r"(?:[a-z0-9&'\-]+\s+){0,5}"
@@ -691,88 +664,6 @@ NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
         "stock_status",
     }
 )
-DETAIL_TEXT_SCOPE_SELECTORS = tuple(
-    dict.fromkeys(
-        (
-            _STATIC_EXPORTS.get("DETAIL_PRIMARY_DOM_CONTEXT_SELECTOR", "main"),
-            "main",
-            "article",
-            "[role='main']",
-            "[class*='product-main' i]",
-            "[class*='product-content' i]",
-        )
-    )
-)
-DETAIL_DOM_PRODUCT_ROOT_SELECTORS = tuple(
-    dict.fromkeys(
-        (
-            "main",
-            "article",
-            "[role='main']",
-            "[class*='product-main' i]",
-            "[class*='product-detail' i]",
-            "[class*='product-content' i]",
-            "[data-testid*='product' i]",
-        )
-    )
-)
-DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS = (
-    "h1",
-    "[data-price]",
-    "[itemprop='price']",
-    "[class*='current-price' i]",
-    "[class*='product-price' i]",
-    "[class*='sale-price' i]",
-    "[data-testid*='price' i]",
-    "[class*='gallery' i]",
-    "[data-product-image]",
-    "form[action*='cart' i]",
-    "button[name*='add' i]",
-    "button[class*='cart' i]",
-    "button[class*='bag' i]",
-)
-DETAIL_DOM_DESCRIPTION_SELECTORS = (
-    "[data-description]",
-    "[data-field='description']",
-    "[itemprop='description']",
-    "[class*='product-description' i]",
-    "[class*='product__description' i]",
-    "[data-testid*='description' i]",
-    "[class*='description' i]",
-)
-DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
-DETAIL_DOM_OFFER_SELECTORS = (
-    "[data-price]",
-    "[itemprop='price']",
-    "[class*='current-price' i]",
-    "[class*='product-price' i]",
-    "[class*='sale-price' i]",
-    "[data-testid*='price' i]",
-    "[aria-label*='$']",
-    "[aria-label*='£']",
-    "[aria-label*='€']",
-    "[aria-label*='₹']",
-)
-DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT = 4
-DETAIL_DOM_OFFER_MAX_CANDIDATES = 8
-DETAIL_DOM_PRICE_TEXT_PATTERN = (
-    r"(?P<symbol>[$€£¥₹])?\s*(?P<amount>\d{1,3}(?:[,.]\d{2,3})+(?:[,.]\d{1,2})?|\d{1,7}(?:[,.]\d{1,2})?)"
-    r"(?:\s*(?P<code>USD|EUR|GBP|INR|CAD|AUD|JPY|CNY))?"
-)
-DETAIL_DOM_CURRENCY_CODE_PATTERN = r"[A-Z]{3}"
-DETAIL_DOM_CURRENCY_CONTEXT_PATTERN = r"\b(USD|EUR|GBP|INR|CAD|AUD|JPY|CNY)\b"
-DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS = {
-    AVAILABILITY_IN_STOCK: (
-        r"\bin\s+stock\b",
-        r"\bavailable\b",
-        r"\bonline\s+only\b",
-    ),
-    AVAILABILITY_OUT_OF_STOCK: (
-        r"\bout\s+of\s+stock\b",
-        r"\bsold\s+out\b",
-        r"\bunavailable\b",
-    ),
-}
 DETAIL_TEXT_SCOPE_PRIORITY_TOKENS = (
     "description",
     "detail",
@@ -971,16 +862,6 @@ DETAIL_BREADCRUMB_ROOT_LABELS = frozenset(
         "homepage home",
     }
 )
-DETAIL_BREADCRUMB_SELECTORS = (
-    "[aria-label*='breadcrumb' i] li",
-    "[class*='breadcrumb' i] li",
-    "[aria-label*='breadcrumb' i] a",
-    "[class*='breadcrumb' i] a",
-)
-DETAIL_BREADCRUMB_CONTAINER_SELECTORS = (
-    "[aria-label*='breadcrumb' i]",
-    "[class*='breadcrumb' i]",
-)
 DETAIL_BREADCRUMB_SEPARATOR_LABELS = frozenset({">", "/", "\\", "|", "›", "»", "→"})
 DETAIL_BREADCRUMB_LABEL_PREFIXES = ("shop all ",)
 DETAIL_BREADCRUMB_NOISE_ICON_PATTERNS = (r"\barrow-right(?:-[a-z]+)?\b",)
@@ -989,16 +870,6 @@ DETAIL_BREADCRUMB_MIN_LABEL_LENGTH = 8
 DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO = 0.92
 STRUCTURED_CANDIDATE_TRAVERSAL_LIMIT = 8
 STRUCTURED_CANDIDATE_LIST_SLICE = 20
-DETAIL_CATEGORY_SOURCE_RANKS = {
-    "json_ld_breadcrumb": 1,
-    "dom_breadcrumb": 2,
-    "json_ld": 3,
-    "microdata": 3,
-    "adapter": 3,
-    "network_payload": 4,
-    "js_state": 5,
-    "dom_selector": 6,
-}
 DETAIL_GENDER_TERMS = {
     "women": ("women", "womens", "women's", "woman", "ladies", "female"),
     "men": ("men", "mens", "men's", "man", "male"),

@@ -65,7 +65,9 @@ class RecipeCompileError(ValueError):
     """Recipe layers cannot be merged into one bounded runtime recipe."""
 
 
-def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
+def compile_recipe_layers(
+    recipes: list[ExtractionRecipe], *, surface: str = ""
+) -> dict[str, object]:
     """Flatten scoped recipe layers into one bounded payload.
 
     Higher layers may override lower layers. Two recipes at the same layer/kind
@@ -97,6 +99,8 @@ def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
             }
         )
         if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS:
+            if _selectors_disabled_for_surface(surface):
+                continue
             for row in list(payload.get("rules") or []):
                 if not isinstance(row, dict):
                     continue
@@ -124,12 +128,53 @@ def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
                     value=selected,
                     payload=dict(row),
                 )
+    source_pins = [_source_pin_from_contract(row) for row in contracts.values()]
+    field_schema = _field_schema_from_contracts(contracts.values())
     return {
         "compiler_version": EXTRACTION_COMPILER_VERSION,
         "selector_rules": list(selectors.values()),
         "contracts": list(contracts.values()),
+        "source_pins": source_pins,
+        "field_schema": field_schema,
         "provenance": provenance,
     }
+
+
+def _selectors_disabled_for_surface(surface: str) -> bool:
+    return str(surface or "").strip().lower() == "ecommerce_detail"
+
+
+def _source_pin_from_contract(contract: dict[str, object]) -> dict[str, object]:
+    return {
+        "canonical_field": str(
+            contract.get("canonical_field") or contract.get("field_name") or ""
+        ),
+        "selected_source": normalize_source_pattern(
+            str(contract.get("selected_source") or "")
+        ),
+        "selection_origin": str(contract.get("selection_origin") or "generic"),
+        "resolver_rule": str(contract.get("resolver_rule") or ""),
+    }
+
+
+def _field_schema_from_contracts(
+    contracts: object,
+) -> list[dict[str, object]]:
+    fields: list[dict[str, object]] = []
+    for row in contracts:
+        if not isinstance(row, dict):
+            continue
+        field = str(row.get("canonical_field") or row.get("field_name") or "").strip()
+        if not field:
+            continue
+        fields.append(
+            {
+                "canonical_field": field,
+                "required": bool(row.get("required", False)),
+                "value_sense": str(row.get("value_sense") or "").strip(),
+            }
+        )
+    return fields
 
 
 def _merge_layer_rule(
@@ -332,7 +377,7 @@ async def build_release_payload(
             .scalars()
             .all()
         )
-        compiled_recipe = compile_recipe_layers(recipes)
+        compiled_recipe = compile_recipe_layers(recipes, surface=template.surface)
         contracts = list(cast(list[dict], compiled_recipe["contracts"]))
         selector_rules = list(cast(list[dict], compiled_recipe["selector_rules"]))
         template_rows.append(
@@ -353,6 +398,8 @@ async def build_release_payload(
 def selector_rules_from_release(
     payload: dict[str, object], *, surface: str
 ) -> list[dict[str, object]]:
+    if _selectors_disabled_for_surface(surface):
+        return []
     raw_templates = payload.get("templates")
     templates = list(raw_templates) if isinstance(raw_templates, list) else []
     ordered_surfaces = (surface, DEFAULT_FALLBACK_SURFACE)

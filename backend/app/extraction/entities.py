@@ -253,7 +253,7 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
         group_identities[matched].update(identities)
     _merge_url_only_groups(groups, group_identities)
     _merge_exact_title_groups(groups, group_identities)
-    _merge_single_structured_url_shell(groups, group_identities)
+    _merge_structured_url_shells(groups, group_identities, evidence)
     products: list[ProductEntity] = []
     for identities, rows in sorted(
         zip(group_identities, groups), key=lambda item: tuple(sorted(item[0]))
@@ -381,34 +381,45 @@ _STRUCTURED_SHELL_IDENTITY_KINDS: frozenset[str] = frozenset(
 )
 
 
-def _merge_single_structured_url_shell(
+def _merge_structured_url_shells(
     groups: list[list[Evidence]],
     group_identities: list[set[tuple[str, str]]],
+    evidence: tuple[Evidence, ...],
 ) -> None:
-    url_only = [
-        index
-        for index, rows in enumerate(groups)
-        if rows and all(row.collector_id == "url" for row in rows)
-    ]
-    structured = [
-        index
-        for index, rows in enumerate(groups)
-        if any(row.collector_id != "url" for row in rows)
-    ]
-    if len(url_only) != 1 or len(structured) != 1:
-        return
-    source, target = url_only[0], structured[0]
-    if not any(
-        kind in _STRUCTURED_SHELL_IDENTITY_KINDS
-        for kind, _value in group_identities[target]
-    ):
-        return
-    if not (
-        _title_identity_tokens(groups[source]) & _title_identity_tokens(groups[target])
-    ):
-        return
-    groups[target].extend(groups.pop(source))
-    group_identities[target].update(group_identities.pop(source))
+    for source in reversed(range(len(groups))):
+        if not _group_is_url_shell(groups[source], evidence):
+            continue
+        matches = [
+            target
+            for target, rows in enumerate(groups)
+            if target != source
+            and any(row.collector_id != "url" for row in rows)
+            and _product_identity_sets_compatible(
+                group_identities[source],
+                group_identities[target],
+            )
+            and _structured_shell_can_merge(
+                groups[source],
+                rows,
+                group_identities[target],
+                evidence,
+            )
+        ]
+        if len(matches) != 1:
+            continue
+        target = matches[0]
+        groups[target].extend(groups.pop(source))
+        group_identities[target].update(group_identities.pop(source))
+
+
+def _group_is_url_shell(rows: list[Evidence], evidence: tuple[Evidence, ...]) -> bool:
+    if not rows:
+        return False
+    if not any(row.fact_type == "product.url" for row in rows):
+        return False
+    if _group_has_complete_offer(rows, evidence):
+        return False
+    return all(row.collector_id in {"url", "opengraph"} for row in rows)
 
 
 def _title_identity_tokens(rows: list[Evidence]) -> set[str]:
@@ -418,6 +429,34 @@ def _title_identity_tokens(rows: list[Evidence]) -> set[str]:
         if row.fact_type == "product.title"
         for token in semantic_identity_tokens(str(row.value))
     }
+
+
+def _structured_shell_can_merge(
+    url_rows: list[Evidence],
+    structured_rows: list[Evidence],
+    structured_identities: set[tuple[str, str]],
+    evidence: tuple[Evidence, ...],
+) -> bool:
+    if not (_title_identity_tokens(url_rows) & _title_identity_tokens(structured_rows)):
+        return False
+    if any(kind in _STRUCTURED_SHELL_IDENTITY_KINDS for kind, _ in structured_identities):
+        return True
+    return _group_has_complete_offer(structured_rows, evidence)
+
+
+def _group_has_complete_offer(
+    rows: list[Evidence], evidence: tuple[Evidence, ...]
+) -> bool:
+    subjects = {row.subject_id for row in rows if row.subject_id}
+    subjects.update(alias for row in rows for alias in _source_subject_aliases(row))
+    offer_facts_by_group: dict[str, set[str]] = defaultdict(set)
+    for row in evidence:
+        if not row.fact_type.startswith("offer."):
+            continue
+        if not (set(_parent_subject_aliases(row)) & subjects):
+            continue
+        offer_facts_by_group[row.group_id or row.evidence_id].add(row.fact_type)
+    return any({"offer.price", "offer.currency"} <= facts for facts in offer_facts_by_group.values())
 
 
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:

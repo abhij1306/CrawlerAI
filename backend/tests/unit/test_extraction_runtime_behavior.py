@@ -9,9 +9,11 @@ from app.extraction.contracts import SentinelObservation
 from app.extraction.contracts import UniversalModelArtifact
 from app.extraction.contracts import UniversalModelResult
 from app.extraction.engine import _has_suspended_runtime_template
+from app.extraction.engine import _needs_contract_fallback
 from app.extraction.model_runtime import RuntimeFlatMapPage
 from app.extraction.sentinel import _disagreement_classes, _normalized
 from pydantic import ValidationError
+from types import SimpleNamespace
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
@@ -32,6 +34,45 @@ def test_currency_hint_is_not_used_as_locale_hint() -> None:
     )
 
     assert adapters._request_locale_hint(request) is None
+
+
+def test_review_detail_with_missing_repair_target_can_use_model_fallback() -> None:
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        HTML,
+        "https://shop.test/products/trail-shoe",
+    )
+    attempt = SimpleNamespace(
+        verdict="review",
+        records=({"url": "https://shop.test/products/trail-shoe", "title": "Trail Shoe"},),
+    )
+
+    assert _needs_contract_fallback(request, attempt)
+
+
+def test_review_detail_with_coverage_does_not_use_model_fallback() -> None:
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        HTML,
+        "https://shop.test/products/trail-shoe",
+    )
+    attempt = SimpleNamespace(
+        verdict="review",
+        records=(
+            {
+                "url": "https://shop.test/products/trail-shoe",
+                "title": "Trail Shoe",
+                "brand": "Acme",
+                "description": "Trail Shoe",
+                "image_url": "https://shop.test/trail.jpg",
+                "price": "19.00",
+                "currency": "USD",
+                "availability": "in_stock",
+            },
+        ),
+    )
+
+    assert not _needs_contract_fallback(request, attempt)
 
 
 def test_sentinel_matches_reordered_records_by_identity() -> None:
@@ -229,18 +270,8 @@ def test_runtime_request_marks_active_selector_fields_as_user_controlled() -> No
     assert request.user_controlled_fields == ("product.title",)
 
 
-def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
+def test_known_template_source_pin_marks_recipe_without_css_collectors() -> None:
     url = "https://shop.test/products/recipe-shoe"
-    selector_rules = [
-        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
-        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
-        {
-            "field_name": "currency",
-            "css_selector": ".recipe-currency",
-            "is_active": True,
-        },
-        {"field_name": "image", "css_selector": ".recipe-image", "is_active": True},
-    ]
     acquisition = PageAcquisitionResult(
         request=AcquisitionRequest(
             run_id=42,
@@ -249,11 +280,16 @@ def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
         ),
         final_url=url,
         html="""
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Generic Shoe",
+          "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
+        }
+        </script>
         <main>
           <h1 class="recipe-title">Recipe Shoe</h1>
-          <span class="recipe-price">$10.00</span>
-          <span class="recipe-currency">USD</span>
-          <img class="recipe-image" src="/shoe.jpg">
         </main>
         """,
         method="browser",
@@ -265,7 +301,6 @@ def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
         acquisition,
         requested_url=url,
         max_records=1,
-        selector_rules=selector_rules,
         runtime_snapshot={
             "surface": "ecommerce_detail",
             "templates": [
@@ -273,10 +308,33 @@ def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
                     "template_id": "00000000-0000-0000-0000-000000000001",
                     "fingerprint": "known-template",
                     "route_pattern": "/products/{id}",
-                    "contracts": [],
+                    "contracts": [
+                        {
+                            "canonical_field": "offer.currency",
+                            "selected_source": "jsonld:/offers/0/priceCurrency",
+                            "selection_origin": "operator",
+                        }
+                    ],
                     "compiled_recipe": {
-                        "selector_rules": selector_rules,
-                        "contracts": [],
+                        "selector_rules": [],
+                        "source_pins": [
+                            {
+                                "canonical_field": "offer.currency",
+                                "selected_source": (
+                                    "jsonld:/offers/0/priceCurrency"
+                                ),
+                                "selection_origin": "operator",
+                            }
+                        ],
+                        "contracts": [
+                            {
+                                "canonical_field": "offer.currency",
+                                "selected_source": (
+                                    "jsonld:/offers/0/priceCurrency"
+                                ),
+                                "selection_origin": "operator",
+                            }
+                        ],
                         "provenance": [],
                     },
                 }
@@ -286,23 +344,14 @@ def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
 
     result = extract(request)
 
-    assert result.records[0]["title"] == "Recipe Shoe"
-    assert {row.collector_id for row in result.evidence} == {"css_recipe", "url"}
+    assert result.records[0]["currency"] == "USD"
+    assert "css_recipe" not in {row.collector_id for row in result.evidence}
     assert result.diagnostics.extractor_tier == "recipe"
     assert result.manifest_context.template_id == "00000000-0000-0000-0000-000000000001"
 
 
 def test_sampled_recipe_success_records_sentinel_without_override() -> None:
     url = "https://shop.test/products/recipe-shoe"
-    selector_rules = [
-        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
-        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
-        {
-            "field_name": "currency",
-            "css_selector": ".recipe-currency",
-            "is_active": True,
-        },
-    ]
     acquisition = PageAcquisitionResult(
         request=AcquisitionRequest(
             run_id=42,
@@ -320,11 +369,7 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
           "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
         }
         </script>
-        <main>
-          <span class="recipe-title">Recipe Shoe</span>
-          <span class="recipe-price">$10.00</span>
-          <span class="recipe-currency">USD</span>
-        </main>
+        <main><h1>Recipe Shoe</h1></main>
         """,
         method="browser",
         status_code=200,
@@ -335,7 +380,6 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
         acquisition,
         requested_url=url,
         max_records=1,
-        selector_rules=selector_rules,
         runtime_snapshot={
             "surface": "ecommerce_detail",
             "sentinel": {"sample_rate": 1.0},
@@ -346,10 +390,33 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
                     "fingerprint": "known-template",
                     "route_pattern": "/products/{id}",
                     "status": "active",
-                    "contracts": [],
+                    "contracts": [
+                        {
+                            "canonical_field": "offer.currency",
+                            "selected_source": "jsonld:/offers/0/priceCurrency",
+                            "selection_origin": "operator",
+                        }
+                    ],
                     "compiled_recipe": {
-                        "selector_rules": selector_rules,
-                        "contracts": [],
+                        "selector_rules": [],
+                        "source_pins": [
+                            {
+                                "canonical_field": "offer.currency",
+                                "selected_source": (
+                                    "jsonld:/offers/0/priceCurrency"
+                                ),
+                                "selection_origin": "operator",
+                            }
+                        ],
+                        "contracts": [
+                            {
+                                "canonical_field": "offer.currency",
+                                "selected_source": (
+                                    "jsonld:/offers/0/priceCurrency"
+                                ),
+                                "selection_origin": "operator",
+                            }
+                        ],
                         "provenance": [],
                     },
                 }
@@ -359,11 +426,11 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
 
     result = extract(request)
 
-    assert result.records[0]["title"] == "Recipe Shoe"
+    assert result.records[0]["currency"] == "USD"
     assert result.sentinel_observations
     observation = result.sentinel_observations[0]
     assert observation.challenger == "deterministic"
-    assert observation.state in {"suspected_drift", "critical_drift"}
+    assert observation.state == "concordant"
     assert "sentinel_deterministic_challenger" in result.diagnostics.decision_path
     assert result.diagnostics.sentinel_state == observation.state
 

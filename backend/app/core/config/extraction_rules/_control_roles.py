@@ -1,7 +1,7 @@
 """Generic semantic roles for form controls that are *not* product options.
 
-The DOM variant collector previously admitted every ``<select><option>`` on a
-page as a size axis (``collectors/dom.py`` catch-all). Real pages carry many
+The old DOM selector collector admitted every ``<select><option>`` on a
+page as a size axis. Real pages carry many
 selects that have nothing to do with product variants — review sorters, country
 / currency / language pickers, quantity steppers, pagination, address fields —
 and each one became a bogus size axis (crawl-run-95 audit: results 10, 17, 21,
