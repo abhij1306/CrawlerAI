@@ -23,10 +23,21 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.extraction_memory import ExtractionOperatorLabel, ExtractionTemplate
+from app.models.extraction_memory import (
+    ExtractionObservation,
+    ExtractionOperatorLabel,
+    ExtractionTemplate,
+)
 from app.core.config.extraction_memory import (
+    EXTRACTION_LABEL_KIND_V3_CUTOVER,
     EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
     EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+    EXTRACTION_MEMORY_STATUS_SUSPENDED,
+    EXTRACTION_RUNTIME_OBSERVATION_KIND,
+    EXTRACTION_TIER_GENERALIZED,
+    EXTRACTION_TIER_ML,
+    EXTRACTION_TIER_UNKNOWN,
+    RECIPE_REPAIR_QUEUE_KIND,
 )
 from app.models.llm import LLMCostLog
 from app.persistence.extraction_memory import purge_extraction_memory
@@ -523,6 +534,7 @@ async def build_operational_metrics(session: AsyncSession) -> dict:
         if durations_seconds
         else 0.0
     )
+    extraction_v3 = await _build_extraction_v3_metrics(session)
     return {
         "runtime_counters": {
             "db_lock_errors_total": int(runtime.get("db_lock_errors_total", 0)),
@@ -542,4 +554,155 @@ async def build_operational_metrics(session: AsyncSession) -> dict:
             "active_without_stage_count": active_without_stage_count,
             "active_stalled_no_progress_count": active_stalled_no_progress_count,
         },
+        "extraction_v3": extraction_v3,
     }
+
+
+async def _build_extraction_v3_metrics(session: AsyncSession) -> dict:
+    rows = (
+        await session.execute(
+            select(ExtractionObservation, ExtractionTemplate)
+            .join(
+                ExtractionTemplate,
+                ExtractionObservation.template_id == ExtractionTemplate.id,
+                isouter=True,
+            )
+            .order_by(ExtractionObservation.created_at.desc())
+            .limit(crawler_runtime_settings.extraction_metrics_sample_size)
+        )
+    ).all()
+    domains: dict[tuple[str, str], dict[str, object]] = {}
+    repair_cost_at_stake_per_1000_usd = 0.0
+    runtime_observation_count = 0
+    total_cost_usd = 0.0
+    for observation, template in rows:
+        payload = observation.payload if isinstance(observation.payload, dict) else {}
+        if payload.get("kind") == RECIPE_REPAIR_QUEUE_KIND:
+            repair_cost_at_stake_per_1000_usd += _repair_cost_per_1000(payload)
+            continue
+        if payload.get("kind") != EXTRACTION_RUNTIME_OBSERVATION_KIND:
+            continue
+        runtime_observation_count += 1
+        domain = template.domain if template is not None else "unknown"
+        surface = template.surface if template is not None else "unknown"
+        stats = _domain_extraction_metrics(domains, domain=domain, surface=surface)
+        stats["page_count"] = int(stats["page_count"]) + 1
+        tier = _metric_tier(str(payload.get("extractor_tier") or EXTRACTION_TIER_UNKNOWN))
+        tier_split = dict(stats["tier_split"])
+        tier_split[tier] = int(tier_split.get(tier, 0)) + 1
+        stats["tier_split"] = tier_split
+        cost_usd = _safe_float(payload.get("universal_model_cost_usd"))
+        total_cost_usd += cost_usd
+        stats["model_cost_usd"] = round(float(stats["model_cost_usd"]) + cost_usd, 6)
+        invocations = _safe_int(payload.get("universal_model_invocation_count"))
+        stats["model_invocations"] = int(stats["model_invocations"]) + invocations
+        if invocations:
+            stats["grounding_rate_sample_count"] = (
+                int(stats["grounding_rate_sample_count"]) + invocations
+            )
+            stats["grounding_failure_rate_sum"] = float(
+                stats["grounding_failure_rate_sum"]
+            ) + _safe_float(payload.get("universal_model_ungrounded_rejection_rate"))
+
+    domain_rows = []
+    for (domain, surface), stats in sorted(domains.items()):
+        page_count = max(1, int(stats["page_count"]))
+        sample_count = int(stats["grounding_rate_sample_count"])
+        grounding_rate = (
+            round(float(stats["grounding_failure_rate_sum"]) / sample_count, 4)
+            if sample_count
+            else 0.0
+        )
+        cost_usd = float(stats["model_cost_usd"])
+        domain_rows.append(
+            {
+                "domain": domain,
+                "surface": surface,
+                "page_count": int(stats["page_count"]),
+                "tier_split": stats["tier_split"],
+                "grounding_failure_rate": grounding_rate,
+                "blended_cost_usd_per_page": round(cost_usd / page_count, 6),
+                "model_invocations": int(stats["model_invocations"]),
+            }
+        )
+
+    promotions_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ExtractionOperatorLabel)
+            .where(
+                ExtractionOperatorLabel.label_kind.in_(
+                    (
+                        EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+                        EXTRACTION_LABEL_KIND_V3_CUTOVER,
+                    )
+                )
+            )
+        )
+        or 0
+    )
+    demotions_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ExtractionTemplate)
+            .where(ExtractionTemplate.status == EXTRACTION_MEMORY_STATUS_SUSPENDED)
+        )
+        or 0
+    )
+    return {
+        "runtime_observation_count": runtime_observation_count,
+        "domains": domain_rows,
+        "promotion_count": promotions_count,
+        "demotion_count": demotions_count,
+        "repair_cost_at_stake_per_1000_usd": round(
+            repair_cost_at_stake_per_1000_usd, 6
+        ),
+        "blended_cost_usd_per_page": round(
+            total_cost_usd / runtime_observation_count, 6
+        )
+        if runtime_observation_count
+        else 0.0,
+    }
+
+
+def _domain_extraction_metrics(
+    domains: dict[tuple[str, str], dict[str, object]], *, domain: str, surface: str
+) -> dict[str, object]:
+    return domains.setdefault(
+        (domain, surface),
+        {
+            "page_count": 0,
+            "tier_split": {},
+            "model_cost_usd": 0.0,
+            "model_invocations": 0,
+            "grounding_rate_sample_count": 0,
+            "grounding_failure_rate_sum": 0.0,
+        },
+    )
+
+
+def _metric_tier(tier: str) -> str:
+    if tier == EXTRACTION_TIER_ML:
+        return EXTRACTION_TIER_GENERALIZED
+    return tier or EXTRACTION_TIER_UNKNOWN
+
+
+def _repair_cost_per_1000(payload: dict[str, object]) -> float:
+    estimate = payload.get("estimated_cost_savings_at_stake")
+    if not isinstance(estimate, dict):
+        return 0.0
+    return _safe_float(estimate.get("per_1000_pages"))
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value: object) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0

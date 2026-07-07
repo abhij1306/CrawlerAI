@@ -301,8 +301,8 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **Verify:** Vitest/Playwright — edit → save → re-run reflects the pin; export produces a valid snippet.
 
 ### Slice 3.3: Metrics + per-domain cutover
-**Status:** TODO
-**Files:** metrics wiring, `docs/plans/ACTIVE.md`, cutover flag
+**Status:** DONE — runtime extraction observations now persist bounded tier/cost/grounding metrics, and `/api/dashboard/metrics` exposes per-domain tier split, grounding-failure rate, blended model cost/page, promotion/demotion counts, and queued repair cost-at-stake. Production commerce-detail release snapshots now stay on the legacy/no-template path until an operator records a passing V3 commerce-detail eval gate for that `(domain, surface)`; candidate/eval snapshots can still build full V3 payloads.
+**Files:** `app/persistence/extraction_memory.py`, `app/crawl/dashboard_service.py`, `app/core/config/extraction_memory.py`, `docs/plans/ACTIVE.md`
 **What:** Emit generalized-vs-recipe tier split per domain, grounding-failure rate, blended $/page, promotion/demotion counts, repair cost-at-stake. Per-domain flag routes production commerce-detail traffic to V3 once its eval cell beats baseline; old path stays until green.
 **Verify:** dashboards populate on a live run; V3 enabled per-domain only after commerce-detail passes.
 

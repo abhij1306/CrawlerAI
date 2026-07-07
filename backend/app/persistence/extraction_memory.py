@@ -21,6 +21,8 @@ from app.core.config.extraction_memory import (
     EXTRACTION_PROFILE_ROUTE_PATTERN,
     EXTRACTION_PROFILE_TECH_SIGNAL,
     EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
+    EXTRACTION_LABEL_KIND_V3_CUTOVER,
+    EXTRACTION_LEGACY_ENGINE,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
@@ -31,6 +33,10 @@ from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
     EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
+    EXTRACTION_RUNTIME_OBSERVATION_KIND,
+    EXTRACTION_V3_CUTOVER_ACTION_ENABLE,
+    EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS,
+    EXTRACTION_V3_ENGINE,
     RECIPE_REPAIR_QUEUE_KIND,
     RECIPE_REPAIR_QUEUE_VERDICT,
     RECIPE_REPAIR_REVIEW_STATES,
@@ -53,6 +59,7 @@ from app.models.extraction_memory import (
     CompiledExtractionRecipe,
     ExtractionManifest,
     ExtractionObservation,
+    ExtractionOperatorLabel,
     ExtractionRecipe,
     ExtractionReleaseSnapshot,
     ExtractionTemplate,
@@ -486,6 +493,70 @@ def _profile_pin_from_contract(contract: dict[str, object]) -> dict[str, object]
     }
 
 
+async def enable_extraction_v3_cutover(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    eval_report: dict[str, object],
+) -> ExtractionOperatorLabel:
+    """Persist the operator cutover flag after the eval gate proves the domain."""
+
+    normalized_domain = normalize_domain(domain)
+    normalized_surface = str(surface or "").strip().lower()
+    if not _v3_cutover_report_passed(eval_report, surface=normalized_surface):
+        raise ValueError("extraction v3 cutover requires a passing commerce-detail gate")
+    row = ExtractionOperatorLabel(
+        label_kind=EXTRACTION_LABEL_KIND_V3_CUTOVER,
+        domain=normalized_domain,
+        surface=normalized_surface,
+        action=EXTRACTION_V3_CUTOVER_ACTION_ENABLE,
+        payload={"eval_report": dict(eval_report)},
+        approved_schema={},
+        field_mapping={},
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def extraction_v3_cutover_enabled(
+    session: AsyncSession, *, domain: str, surface: str
+) -> bool:
+    normalized_domain = normalize_domain(domain)
+    normalized_surface = str(surface or "").strip().lower()
+    row = (
+        await session.execute(
+            select(ExtractionOperatorLabel)
+            .where(
+                ExtractionOperatorLabel.label_kind == EXTRACTION_LABEL_KIND_V3_CUTOVER,
+                ExtractionOperatorLabel.domain == normalized_domain,
+                ExtractionOperatorLabel.surface == normalized_surface,
+            )
+            .order_by(ExtractionOperatorLabel.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None or row.action != EXTRACTION_V3_CUTOVER_ACTION_ENABLE:
+        return False
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    report = payload.get("eval_report")
+    return isinstance(report, dict) and _v3_cutover_report_passed(
+        report, surface=normalized_surface
+    )
+
+
+def _v3_cutover_report_passed(
+    report: dict[str, object], *, surface: str
+) -> bool:
+    if surface != EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS["surface"]:
+        return False
+    return all(
+        report.get(key) == expected
+        for key, expected in EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS.items()
+    )
+
+
 async def build_release_payload(
     session: AsyncSession, *, domain: str, surface: str
 ) -> dict[str, object]:
@@ -536,7 +607,27 @@ async def build_release_payload(
                 "compiled_recipe": compiled_recipe,
             }
         )
-    return {"domain": domain, "surface": surface, "templates": template_rows}
+    return {
+        "domain": domain,
+        "surface": surface,
+        "templates": template_rows,
+        "cutover": {
+            "engine": EXTRACTION_V3_ENGINE,
+            "enabled": True,
+        },
+    }
+
+
+def _legacy_release_payload(domain: str, surface: str) -> dict[str, object]:
+    return {
+        "domain": domain,
+        "surface": surface,
+        "templates": [],
+        "cutover": {
+            "engine": EXTRACTION_LEGACY_ENGINE,
+            "enabled": False,
+        },
+    }
 
 
 def selector_rules_from_release(
@@ -578,12 +669,19 @@ def selector_rules_from_release(
 async def create_release_snapshot(
     session: AsyncSession, *, run_id: int, domain: str, surface: str
 ) -> ExtractionReleaseSnapshot:
+    payload = await build_release_payload(session, domain=domain, surface=surface)
+    if surface == EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS[
+        "surface"
+    ] and not await extraction_v3_cutover_enabled(
+        session, domain=domain, surface=surface
+    ):
+        payload = _legacy_release_payload(domain, surface)
     row = ExtractionReleaseSnapshot(
         run_id=run_id,
         domain=domain,
         surface=surface,
         release_version=EXTRACTION_RELEASE_VERSION,
-        payload=await build_release_payload(session, domain=domain, surface=surface),
+        payload=payload,
     )
     session.add(row)
     await session.flush()
@@ -742,7 +840,23 @@ async def record_extraction_result(
         url_result_id=url_result_id,
         verdict=result.verdict,
         payload={
+            "kind": EXTRACTION_RUNTIME_OBSERVATION_KIND,
             "record_count": len(result.records),
+            "extractor_tier": result.diagnostics.extractor_tier,
+            "model_invoked": result.diagnostics.model_invoked,
+            "universal_model_invocation_count": (
+                result.metrics.universal_model_invocation_count
+            ),
+            "universal_model_ungrounded_rejection_count": (
+                result.metrics.universal_model_ungrounded_rejection_count
+            ),
+            "universal_model_ungrounded_rejection_rate": (
+                result.metrics.universal_model_ungrounded_rejection_rate
+            ),
+            "universal_model_cost_usd": result.metrics.universal_model_cost_usd,
+            "universal_model_cost_per_1000_pages": (
+                result.metrics.universal_model_cost_per_1000_pages
+            ),
             "finding_rule_ids": sorted({row.rule_id for row in result.findings}),
             "contract_outcomes": [
                 row.model_dump(mode="json") for row in result.contract_outcomes

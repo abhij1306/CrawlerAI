@@ -22,6 +22,7 @@ from app.extraction.contracts import (
     CommerceDetailRecord,
     CollectorOutcome,
     Decision,
+    DiagnosticSummary,
     Evidence,
     ExtractionResult,
     ExtractionMetrics,
@@ -40,6 +41,10 @@ from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
+    EXTRACTION_LEGACY_ENGINE,
+    EXTRACTION_RUNTIME_OBSERVATION_KIND,
+    EXTRACTION_TIER_ML,
+    EXTRACTION_V3_ENGINE,
     RECIPE_REPAIR_QUEUE_KIND,
     RECIPE_REPAIR_QUEUE_VERDICT,
 )
@@ -58,6 +63,8 @@ from app.persistence.extraction_memory import (
     build_release_payload,
     compile_recipe_layers,
     create_candidate_release_snapshot,
+    create_release_snapshot,
+    enable_extraction_v3_cutover,
     ensure_template,
     load_release_payload,
     save_extraction_profile,
@@ -898,6 +905,167 @@ async def test_release_snapshot_activation_and_rollback_are_atomic(
     assert rolled_back is not None
     assert rolled_back.id == baseline.id
     assert candidate.run_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_production_release_snapshot_requires_v3_cutover_gate(
+    db_session: AsyncSession, test_user
+) -> None:
+    template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="product-template",
+        route_pattern="/products/{id}",
+    )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={
+            "contracts": [
+                {
+                    "canonical_field": "product.title",
+                    "selected_source": "jsonld:/name",
+                    "candidates": [{"source": "jsonld:/name"}],
+                }
+            ]
+        },
+    )
+    first_run = CrawlRun(
+        user_id=test_user.id,
+        run_type="crawl",
+        url="https://example.com/products/widget",
+        status="pending",
+        surface="ecommerce_detail",
+    )
+    second_run = CrawlRun(
+        user_id=test_user.id,
+        run_type="crawl",
+        url="https://example.com/products/widget-2",
+        status="pending",
+        surface="ecommerce_detail",
+    )
+    db_session.add_all([first_run, second_run])
+    await db_session.flush()
+
+    disabled = await create_release_snapshot(
+        db_session,
+        run_id=first_run.id,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+    assert disabled.payload["cutover"] == {
+        "engine": EXTRACTION_LEGACY_ENGINE,
+        "enabled": False,
+    }
+    assert disabled.payload["templates"] == []
+
+    with pytest.raises(ValueError, match="passing commerce-detail gate"):
+        await enable_extraction_v3_cutover(
+            db_session,
+            domain="example.com",
+            surface="ecommerce_detail",
+            eval_report={
+                "engine": EXTRACTION_V3_ENGINE,
+                "surface": "ecommerce_detail",
+                "gate_passed": False,
+            },
+        )
+    await enable_extraction_v3_cutover(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        eval_report={
+            "engine": EXTRACTION_V3_ENGINE,
+            "surface": "ecommerce_detail",
+            "gate_passed": True,
+        },
+    )
+    enabled = await create_release_snapshot(
+        db_session,
+        run_id=second_run.id,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+    assert enabled.payload["cutover"] == {
+        "engine": EXTRACTION_V3_ENGINE,
+        "enabled": True,
+    }
+    assert enabled.payload["templates"][0]["compiled_recipe"]["source_pins"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_record_extraction_result_persists_runtime_metrics(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    run = CrawlRun(
+        user_id=test_user.id,
+        run_type="crawl",
+        url="https://metrics.example/products/widget",
+        status="running",
+        surface="ecommerce_detail",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        final_url=run.url,
+        surface="ecommerce_detail",
+        generation=1,
+    )
+    db_session.add(url_result)
+    await db_session.flush()
+
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        records=(CommerceDetailRecord(title="Widget", url=run.url),),
+        verdict="partial",
+        diagnostics=DiagnosticSummary(
+            extractor_tier=EXTRACTION_TIER_ML,
+            model_invoked=True,
+        ),
+        metrics=ExtractionMetrics(
+            universal_model_invocation_count=1,
+            universal_model_ungrounded_rejection_count=2,
+            universal_model_ungrounded_rejection_rate=0.5,
+            universal_model_cost_usd=0.006,
+            universal_model_cost_per_1000_pages=6.0,
+        ),
+    )
+
+    await record_extraction_result(
+        db_session,
+        run_id=run.id,
+        url_result_id=url_result.id,
+        release_snapshot_id=None,
+        url=url_result.final_url,
+        surface="ecommerce_detail",
+        result=result,
+    )
+    observation = (
+        await db_session.execute(
+            select(ExtractionObservation).where(
+                ExtractionObservation.run_id == run.id,
+                ExtractionObservation.verdict == "partial",
+            )
+        )
+    ).scalar_one()
+
+    assert observation.payload["kind"] == EXTRACTION_RUNTIME_OBSERVATION_KIND
+    assert observation.payload["extractor_tier"] == EXTRACTION_TIER_ML
+    assert observation.payload["model_invoked"] is True
+    assert observation.payload["universal_model_invocation_count"] == 1
+    assert observation.payload["universal_model_ungrounded_rejection_count"] == 2
+    assert observation.payload["universal_model_ungrounded_rejection_rate"] == 0.5
+    assert observation.payload["universal_model_cost_usd"] == 0.006
+    assert observation.payload["universal_model_cost_per_1000_pages"] == 6.0
 
 
 @pytest.mark.asyncio

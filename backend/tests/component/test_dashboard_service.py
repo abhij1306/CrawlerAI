@@ -15,7 +15,20 @@ from app.models.domain_memory import (
     DomainRunProfile,
     HostProtectionMemory,
 )
-from app.models.extraction_memory import ExtractionOperatorLabel, ExtractionTemplate
+from app.core.config.extraction_memory import (
+    EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+    EXTRACTION_MEMORY_STATUS_SUSPENDED,
+    EXTRACTION_RUNTIME_OBSERVATION_KIND,
+    EXTRACTION_TIER_ML,
+    EXTRACTION_TIER_RECIPE,
+    RECIPE_REPAIR_QUEUE_KIND,
+    RECIPE_REPAIR_QUEUE_VERDICT,
+)
+from app.models.extraction_memory import (
+    ExtractionObservation,
+    ExtractionOperatorLabel,
+    ExtractionTemplate,
+)
 from app.crawl.domain_memory_service import save_domain_memory
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
@@ -38,6 +51,7 @@ from app.crawl.dashboard_service import (
     reset_crawl_data,
     reset_domain_memory,
     reset_product_intelligence,
+    build_operational_metrics,
     session_transaction,
 )
 from sqlalchemy import select
@@ -324,6 +338,104 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     ):
         assert (await db_session.execute(select(model))).scalars().all() == []
     assert list(cookies_dir.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_operational_metrics_include_extraction_v3_rollup(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://metrics.example/products/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    template = ExtractionTemplate(
+        domain="metrics.example",
+        surface="ecommerce_detail",
+        fingerprint="metrics-template",
+        route_pattern="/products/{id}",
+    )
+    db_session.add(template)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ExtractionObservation(
+                template_id=template.id,
+                run_id=run.id,
+                url_result_id=None,
+                verdict="success",
+                payload={
+                    "kind": EXTRACTION_RUNTIME_OBSERVATION_KIND,
+                    "extractor_tier": EXTRACTION_TIER_RECIPE,
+                    "universal_model_invocation_count": 0,
+                    "universal_model_cost_usd": 0,
+                    "universal_model_ungrounded_rejection_rate": 0,
+                },
+            ),
+            ExtractionObservation(
+                template_id=template.id,
+                run_id=run.id,
+                url_result_id=None,
+                verdict="partial",
+                payload={
+                    "kind": EXTRACTION_RUNTIME_OBSERVATION_KIND,
+                    "extractor_tier": EXTRACTION_TIER_ML,
+                    "universal_model_invocation_count": 1,
+                    "universal_model_cost_usd": 0.004,
+                    "universal_model_ungrounded_rejection_rate": 0.25,
+                },
+            ),
+            ExtractionObservation(
+                template_id=template.id,
+                run_id=run.id,
+                url_result_id=None,
+                verdict=RECIPE_REPAIR_QUEUE_VERDICT,
+                payload={
+                    "kind": RECIPE_REPAIR_QUEUE_KIND,
+                    "estimated_cost_savings_at_stake": {"per_1000_pages": 4.0},
+                },
+            ),
+            ExtractionOperatorLabel(
+                label_kind=EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+                domain="metrics.example",
+                surface="ecommerce_detail",
+                action="promote",
+                approved_schema={},
+                field_mapping={},
+                payload={},
+            ),
+        ]
+    )
+    db_session.add(
+        ExtractionTemplate(
+            domain="metrics.example",
+            surface="ecommerce_detail",
+            fingerprint="suspended-template",
+            route_pattern="/stale/{id}",
+            status=EXTRACTION_MEMORY_STATUS_SUSPENDED,
+        )
+    )
+    await db_session.flush()
+
+    metrics = await build_operational_metrics(db_session)
+
+    extraction = metrics["extraction_v3"]
+    assert extraction["runtime_observation_count"] == 2
+    assert extraction["blended_cost_usd_per_page"] == 0.002
+    assert extraction["promotion_count"] == 1
+    assert extraction["demotion_count"] == 1
+    assert extraction["repair_cost_at_stake_per_1000_usd"] == 4.0
+    domain_metrics = extraction["domains"][0]
+    assert domain_metrics["domain"] == "metrics.example"
+    assert domain_metrics["tier_split"] == {"generalized": 1, "recipe": 1}
+    assert domain_metrics["grounding_failure_rate"] == 0.25
+    assert domain_metrics["blended_cost_usd_per_page"] == 0.002
 
 
 @pytest.mark.component
