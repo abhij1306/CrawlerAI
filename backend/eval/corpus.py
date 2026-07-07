@@ -11,6 +11,8 @@ from app.core.config.evaluation import (
     EXTRACTION_V3_EXCLUDED_RESULT_DIRS,
     EXTRACTION_V3_LABEL_CORE_FIELDS,
     EXTRACTION_V3_LABEL_SCHEMA_VERSION,
+    EXTRACTION_V3_MIN_HUMAN_LABELS_PER_NEW_SURFACE,
+    EXTRACTION_V3_SURFACE_LABEL_FIELDS,
     EXTRACTION_V3_VARIANT_BUCKETS,
 )
 
@@ -25,6 +27,7 @@ DEFAULT_LABEL_DIR = Path(__file__).resolve().parent / "labels"
 class CorpusPage:
     result_id: int
     result_dir: Path
+    surface: str
     url: str
     variant_bucket: str
     platform: str
@@ -41,7 +44,11 @@ def load_pages(
     run_dir: Path = DEFAULT_RUN_DIR,
     audit_path: Path = DEFAULT_AUDIT_PATH,
     label_dir: Path = DEFAULT_LABEL_DIR,
+    surface: str = EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
 ) -> tuple[CorpusPage, ...]:
+    surface = _normalize_surface(surface)
+    if surface != EXTRACTION_V3_COMMERCE_DETAIL_SURFACE:
+        return _load_surface_label_pages(run_dir=run_dir, label_dir=label_dir, surface=surface)
     audit_pages = {
         int(page["dir"]): page
         for page in _load_json(audit_path).get("pages", [])
@@ -56,6 +63,7 @@ def load_pages(
             CorpusPage(
                 result_id=result_id,
                 result_dir=run_dir / "results" / str(result_id),
+                surface=surface,
                 url=str(audit_page.get("url") or ""),
                 variant_bucket=str(audit_page.get("variant_bucket") or "unknown"),
                 platform=str(audit_page.get("platform") or "unknown"),
@@ -70,10 +78,13 @@ def build_label_proposal(page: CorpusPage, audit_page: dict[str, Any]) -> dict[s
     record = _load_record(page.result_dir)
     first_record = record["records"][0] if record["records"] else {}
     structured = audit_page.get("structured") if isinstance(audit_page, dict) else {}
+    fields = EXTRACTION_V3_SURFACE_LABEL_FIELDS.get(
+        page.surface, EXTRACTION_V3_LABEL_CORE_FIELDS
+    )
     return {
         "schema_version": EXTRACTION_V3_LABEL_SCHEMA_VERSION,
         "result_id": page.result_id,
-        "surface": EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
+        "surface": page.surface,
         "url": page.url,
         "human_verified": False,
         "verification_notes": "Bootstrap proposal. Human must confirm before scoring as gold.",
@@ -83,7 +94,7 @@ def build_label_proposal(page: CorpusPage, audit_page: dict[str, Any]) -> dict[s
         },
         "fields": {
             field: _proposal_value(field, first_record, structured)
-            for field in EXTRACTION_V3_LABEL_CORE_FIELDS
+            for field in fields
         },
         "variants": list(first_record.get("variants") or []),
     }
@@ -94,18 +105,29 @@ def stats(
     run_dir: Path = DEFAULT_RUN_DIR,
     audit_path: Path = DEFAULT_AUDIT_PATH,
     label_dir: Path = DEFAULT_LABEL_DIR,
+    surface: str = EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
 ) -> dict[str, Any]:
-    pages = load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
+    surface = _normalize_surface(surface)
+    pages = load_pages(
+        run_dir=run_dir, audit_path=audit_path, label_dir=label_dir, surface=surface
+    )
     bucket_counts = {bucket: 0 for bucket in EXTRACTION_V3_VARIANT_BUCKETS}
     for page in pages:
         bucket_counts[page.variant_bucket] = bucket_counts.get(page.variant_bucket, 0) + 1
     verified = sum(1 for page in pages if page.is_verified)
+    target = (
+        0
+        if surface == EXTRACTION_V3_COMMERCE_DETAIL_SURFACE
+        else EXTRACTION_V3_MIN_HUMAN_LABELS_PER_NEW_SURFACE
+    )
     return {
-        "surface": EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
+        "surface": surface,
         "registered": len(pages),
         "human_verified": verified,
         "unverified": len(pages) - verified,
         "missing_label_files": sum(1 for page in pages if page.label is None),
+        "target_human_verified": target,
+        "ready_for_gate": target == 0 or verified >= target,
         "variant_buckets": bucket_counts,
         "valid": _validate_pages(pages),
     }
@@ -116,11 +138,17 @@ def write_proposals(
     run_dir: Path = DEFAULT_RUN_DIR,
     audit_path: Path = DEFAULT_AUDIT_PATH,
     label_dir: Path = DEFAULT_LABEL_DIR,
+    surface: str = EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
 ) -> int:
+    surface = _normalize_surface(surface)
+    if surface != EXTRACTION_V3_COMMERCE_DETAIL_SURFACE:
+        return 0
     label_dir.mkdir(parents=True, exist_ok=True)
     audit_pages = {int(page["dir"]): page for page in _load_json(audit_path).get("pages", [])}
     written = 0
-    for page in load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir):
+    for page in load_pages(
+        run_dir=run_dir, audit_path=audit_path, label_dir=label_dir, surface=surface
+    ):
         if page.label_path.exists():
             continue
         proposal = build_label_proposal(page, audit_pages[page.result_id])
@@ -139,14 +167,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
     parser.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
     parser.add_argument("--label-dir", default=str(DEFAULT_LABEL_DIR))
+    parser.add_argument("--surface", default=EXTRACTION_V3_COMMERCE_DETAIL_SURFACE)
     parsed = parser.parse_args(argv)
     run_dir = Path(parsed.run_dir)
     audit_path = Path(parsed.audit_path)
     label_dir = Path(parsed.label_dir)
     if parsed.write_proposals:
-        print(f"wrote {write_proposals(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)} proposals")
+        print(
+            "wrote "
+            f"{write_proposals(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir, surface=parsed.surface)} proposals"
+        )
     if parsed.stats or not parsed.write_proposals:
-        print(json.dumps(stats(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                stats(
+                    run_dir=run_dir,
+                    audit_path=audit_path,
+                    label_dir=label_dir,
+                    surface=parsed.surface,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
     return 0
 
 
@@ -157,13 +200,50 @@ def _validate_pages(pages: tuple[CorpusPage, ...]) -> bool:
             continue
         if label.get("schema_version") != EXTRACTION_V3_LABEL_SCHEMA_VERSION:
             return False
-        if label.get("surface") != EXTRACTION_V3_COMMERCE_DETAIL_SURFACE:
+        if label.get("surface") != page.surface:
             return False
         if not isinstance(label.get("fields"), dict):
             return False
         if not isinstance(label.get("variants"), list):
             return False
     return True
+
+
+def _load_surface_label_pages(
+    *, run_dir: Path, label_dir: Path, surface: str
+) -> tuple[CorpusPage, ...]:
+    surface_dir = label_dir / surface
+    label_paths = sorted(surface_dir.glob("*.json")) if surface_dir.exists() else []
+    pages: list[CorpusPage] = []
+    for label_path in label_paths:
+        label = _load_json(label_path)
+        if not isinstance(label, dict) or label.get("surface") != surface:
+            continue
+        result_id = int(label.get("result_id") or label_path.stem)
+        pages.append(
+            CorpusPage(
+                result_id=result_id,
+                result_dir=run_dir / "results" / str(result_id),
+                surface=surface,
+                url=str(label.get("url") or ""),
+                variant_bucket=str(label.get("metadata", {}).get("variant_bucket") or "unknown")
+                if isinstance(label.get("metadata"), dict)
+                else "unknown",
+                platform=str(label.get("metadata", {}).get("platform") or "unknown")
+                if isinstance(label.get("metadata"), dict)
+                else "unknown",
+                label_path=label_path,
+                label=label,
+            )
+        )
+    return tuple(pages)
+
+
+def _normalize_surface(surface: str) -> str:
+    normalized = str(surface or EXTRACTION_V3_COMMERCE_DETAIL_SURFACE).strip().lower()
+    if normalized == "ecommerce_detail":
+        return EXTRACTION_V3_COMMERCE_DETAIL_SURFACE
+    return normalized
 
 
 def _load_record(result_dir: Path) -> dict[str, Any]:

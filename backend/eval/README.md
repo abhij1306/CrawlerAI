@@ -7,6 +7,8 @@ Commands from `backend/`:
 ```powershell
 $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m eval.corpus --stats
+.\.venv\Scripts\python.exe -m eval.corpus --stats --surface job_detail
+.\.venv\Scripts\python.exe -m eval.corpus --stats --surface ecommerce_listing
 .\.venv\Scripts\python.exe -m eval.corpus --write-proposals
 .\.venv\Scripts\python.exe -m eval.run --baseline
 .\.venv\Scripts\python.exe -m eval.run --engine v3 --tier cascade --out eval\reports\v3_gate.json
@@ -18,6 +20,12 @@ $env:PYTHONPATH='.'
 `--write-proposals` bootstraps label files from frozen artifacts and audit data.
 Those files are review inputs only. A page counts as gold only after a human sets
 `human_verified: true`.
+
+Commerce-detail uses the original audit-backed corpus. New surfaces use
+surface-scoped labels under `eval/labels/<surface>/`. Their stats stay
+`ready_for_gate: false` until at least 20 human-verified labels exist for that
+surface. Proposal writing is intentionally disabled for those surfaces unless a
+real captured corpus is present, so the harness cannot fake jobs/listing gold.
 
 The V3 gate report is allowed to be red while slices are still in progress.
 Use `--require-pass` only for a hard gate: it exits nonzero when `gate_passed`

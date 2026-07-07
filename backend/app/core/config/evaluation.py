@@ -265,6 +265,22 @@ EXTRACTION_V3_LABEL_CORE_FIELDS: Final[tuple[str, ...]] = (
     "images",
     "category",
 )
+EXTRACTION_V3_MIN_HUMAN_LABELS_PER_NEW_SURFACE: Final[int] = 20
+EXTRACTION_V3_SURFACE_LABEL_FIELDS: Final[dict[str, tuple[str, ...]]] = {
+    EXTRACTION_V3_COMMERCE_DETAIL_SURFACE: EXTRACTION_V3_LABEL_CORE_FIELDS,
+    "ecommerce_listing": ("title", "price", "currency", "url", "image_url"),
+    "job_detail": (
+        "title",
+        "company",
+        "location",
+        "description",
+        "employment_type",
+        "salary",
+        "posted_at",
+        "url",
+    ),
+    "job_listing": ("title", "company", "location", "url"),
+}
 EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS: Final[dict[str, int]] = {
     "empty_records": 5,
     "missing_price_on_commerce_detail": 13,

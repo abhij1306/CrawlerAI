@@ -309,7 +309,7 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 ## Phase 4 — Jobs + listing (corpus-gated; do not start without a corpus)
 
 ### Slice 4.1: Build jobs + listing corpora
-**Status:** TODO — **blocked: no ground truth exists today**
+**Status:** IN PROGRESS — corpus tooling is now surface-aware and counts `eval/labels/<surface>/` labels for `job_detail`, `job_listing`, and `ecommerce_listing` without pretending proposals are gold. `eval.corpus --stats --surface job_detail` currently reports `registered: 0`, `human_verified: 0`, `target_human_verified: 20`, `ready_for_gate: false`; this slice still needs real captured runs plus human labels before it can be marked done.
 **Files:** `backend/eval/labels/*` (jobs + listing cells)
 **What:** Capture and human-label a jobs-detail, jobs-listing, and commerce-listing corpus (target ≥ 20 pages/cell) using the acquisition pipeline. Jobs needs `JobPosting` JSON-LD coverage measured (corpus showed 0%). Listing needs the exemplar-record representation (§Representation) exercised for the first time.
 **Verify:** `eval.corpus --stats` shows ≥ 20 labeled per new cell; a listing baseline is frozen.

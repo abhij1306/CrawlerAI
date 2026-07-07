@@ -285,6 +285,53 @@ def test_corpus_writes_unverified_label_proposals(tmp_path: Path) -> None:
     assert label["fields"]["title"]
 
 
+def test_surface_corpus_counts_nested_human_labels_without_proposals(
+    tmp_path: Path,
+) -> None:
+    run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
+    surface_dir = label_dir / "job_detail"
+    surface_dir.mkdir(parents=True)
+    (surface_dir / "1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "extraction_v3_label.v1",
+                "result_id": 1,
+                "surface": "job_detail",
+                "url": "https://jobs.example/role",
+                "human_verified": True,
+                "fields": {"title": "Crawler Engineer", "company": "Example"},
+                "variants": [],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = stats(
+        run_dir=run_dir,
+        audit_path=audit_path,
+        label_dir=label_dir,
+        surface="job_detail",
+    )
+
+    assert result["surface"] == "job_detail"
+    assert result["registered"] == 1
+    assert result["human_verified"] == 1
+    assert result["target_human_verified"] == 20
+    assert result["ready_for_gate"] is False
+    assert result["valid"] is True
+    assert (
+        write_proposals(
+            run_dir=run_dir,
+            audit_path=audit_path,
+            label_dir=label_dir,
+            surface="job_detail",
+        )
+        == 0
+    )
+
+
 def test_corpus_counts_human_verified_seed_labels() -> None:
     _require_private_audit()
     result = stats(run_dir=RUN_DIR, audit_path=AUDIT_PATH, label_dir=LABEL_DIR)
