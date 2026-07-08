@@ -72,14 +72,15 @@ def _best_product_scope_path(document: HtmlDocument) -> str | None:
     candidates = [
         node
         for node in document.nodes()
-        if node.tag() in {"main", "article", "section", "div"}
-        and not node.is_hidden()
+        if node.tag() in {"main", "article", "section", "div"} and not node.is_hidden()
     ]
     scored: list[tuple[int, int, str]] = []
     for node in candidates:
         text = " ".join(node.text().split())
         lowered = text.casefold()
-        score = sum(1 for anchor in EXTRACTION_V3_FLAT_MAP_CORE_ANCHORS if anchor in lowered)
+        score = sum(
+            1 for anchor in EXTRACTION_V3_FLAT_MAP_CORE_ANCHORS if anchor in lowered
+        )
         if node.tag() in {"main", "article"}:
             score += 2
         if score:

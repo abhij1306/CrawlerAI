@@ -46,7 +46,7 @@ def _approved_snapshot() -> dict[str, object]:
             "max_memory_mb": 128.0,
             "max_cost_per_page_usd": 0.01,
             "supported_surfaces": ["ecommerce_listing"],
-        }
+        },
     }
 
 

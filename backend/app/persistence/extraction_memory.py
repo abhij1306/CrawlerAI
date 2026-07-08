@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 import hashlib
 import json
@@ -180,7 +180,7 @@ def _source_pin_from_contract(contract: dict[str, object]) -> dict[str, object]:
 
 
 def _field_schema_from_contracts(
-    contracts: object,
+    contracts: Iterable[object],
 ) -> list[dict[str, object]]:
     fields: list[dict[str, object]] = []
     for row in contracts:
@@ -410,7 +410,8 @@ async def load_extraction_profile(
             select(ExtractionTemplate).where(
                 ExtractionTemplate.domain == normalized_domain,
                 ExtractionTemplate.surface == normalized_surface,
-                ExtractionTemplate.fingerprint == EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
+                ExtractionTemplate.fingerprint
+                == EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
             )
         )
     ).scalar_one_or_none()
@@ -424,17 +425,27 @@ async def load_extraction_profile(
                 )
             )
         ).scalar_one_or_none()
-        contracts = [
-            dict(row)
-            for row in list((recipe.payload or {}).get("contracts") or [])
-            if isinstance(row, dict)
-        ] if recipe is not None else []
+        contracts = (
+            [
+                dict(row)
+                for row in list((recipe.payload or {}).get("contracts") or [])
+                if isinstance(row, dict)
+            ]
+            if recipe is not None
+            else []
+        )
     return {
         "domain": normalized_domain,
         "surface": normalized_surface,
         "template_id": str(template.id) if template is not None else None,
         "pins": [_profile_pin_from_contract(row) for row in contracts],
     }
+
+
+def _coerce_aliases(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(alias).strip() for alias in value if str(alias).strip()]
 
 
 def _profile_contract(
@@ -465,11 +476,7 @@ def _profile_contract(
         "status": str(row.get("status") or EXTRACTION_MEMORY_STATUS_ACTIVE),
         "required": bool(row.get("required", False)),
         "value_sense": str(row.get("value_sense") or "").strip(),
-        "aliases": [
-            str(alias).strip()
-            for alias in list(row.get("aliases") or [])
-            if str(alias).strip()
-        ],
+        "aliases": _coerce_aliases(row.get("aliases")),
     }
 
 
@@ -484,11 +491,7 @@ def _profile_pin_from_contract(contract: dict[str, object]) -> dict[str, object]
         "selected_source": str(contract.get("selected_source") or ""),
         "required": bool(contract.get("required", False)),
         "value_sense": str(contract.get("value_sense") or ""),
-        "aliases": [
-            str(alias).strip()
-            for alias in list(contract.get("aliases") or [])
-            if str(alias).strip()
-        ],
+        "aliases": _coerce_aliases(contract.get("aliases")),
         "status": str(contract.get("status") or EXTRACTION_MEMORY_STATUS_ACTIVE),
     }
 
@@ -505,7 +508,9 @@ async def enable_extraction_v3_cutover(
     normalized_domain = normalize_domain(domain)
     normalized_surface = str(surface or "").strip().lower()
     if not _v3_cutover_report_passed(eval_report, surface=normalized_surface):
-        raise ValueError("extraction v3 cutover requires a passing commerce-detail gate")
+        raise ValueError(
+            "extraction v3 cutover requires a passing commerce-detail gate"
+        )
     row = ExtractionOperatorLabel(
         label_kind=EXTRACTION_LABEL_KIND_V3_CUTOVER,
         domain=normalized_domain,
@@ -546,9 +551,7 @@ async def extraction_v3_cutover_enabled(
     )
 
 
-def _v3_cutover_report_passed(
-    report: dict[str, object], *, surface: str
-) -> bool:
+def _v3_cutover_report_passed(report: dict[str, object], *, surface: str) -> bool:
     if surface != EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS["surface"]:
         return False
     return all(

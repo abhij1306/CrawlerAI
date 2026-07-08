@@ -55,6 +55,9 @@ test_*.json
 tmp_*.html
 tmp_*.json
 
+# Eval scratch/probe output (not deliverables)
+backend/eval/reports/tmp/
+
 # Old knowledge dir
 knowledge/
 

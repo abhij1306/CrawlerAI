@@ -12,6 +12,11 @@ from app.extraction.collectors.metadata import (
     OpenGraphCollector,
 )
 from app.extraction.collectors.url import UrlCollector
+from app.extraction.collectors.dom import (
+    DomCollector,
+    collect_requested_fields,
+    css_recipe_evidence,
+)
 from app.core.config import field_mappings
 from app.core.config.extraction_price_rules import (
     DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD,
@@ -146,6 +151,32 @@ def harvest_ecommerce_detail(
                 evidence_count=produced,
             )
         )
+    recipe_rows = tuple(css_recipe_evidence(bundle, reader))
+    requested_rows = collect_requested_fields(bundle, reader, requested_fields)
+    rows.extend(recipe_rows)
+    rows.extend(requested_rows)
+    admitted_source_objects += len(
+        {
+            (row.collector_id, row.artifact_id, row.subject_id)
+            for row in (*recipe_rows, *requested_rows)
+        }
+    )
+    if recipe_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="css_recipe",
+                outcome="produced_evidence",
+                evidence_count=len(recipe_rows),
+            )
+        )
+    if requested_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="requested_fields",
+                outcome="produced_evidence",
+                evidence_count=len(requested_rows),
+            )
+        )
     return HarvestResult(
         surface=Surface.ECOMMERCE_DETAIL,
         evidence=tuple(rows),
@@ -161,6 +192,7 @@ def default_collectors():
         MicrodataCollector(),
         JsStateCollector(),
         NetworkCollector(),
+        DomCollector(),
         UrlCollector(),
     )
 

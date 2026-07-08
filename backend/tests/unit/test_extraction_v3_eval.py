@@ -276,7 +276,9 @@ def test_corpus_registers_commerce_detail_pages_without_false_verification(
 
 def test_corpus_writes_unverified_label_proposals(tmp_path: Path) -> None:
     run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
-    written = write_proposals(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
+    written = write_proposals(
+        run_dir=run_dir, audit_path=audit_path, label_dir=label_dir
+    )
 
     assert written == 1
     label = json.loads((label_dir / "1.json").read_text(encoding="utf-8"))
@@ -330,6 +332,67 @@ def test_surface_corpus_counts_nested_human_labels_without_proposals(
         )
         == 0
     )
+
+
+def test_surface_corpus_writes_unverified_proposals_from_captured_run(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "jobs"
+    audit_path = tmp_path / "audit_data.json"
+    label_dir = tmp_path / "labels"
+    _write_json(audit_path, {"pages": []})
+    result_dir = run_dir / "results" / "7"
+    _write_json(
+        result_dir / "record.json",
+        {
+            "record_count": 1,
+            "records": [
+                {
+                    "title": "Crawler Engineer",
+                    "company": "Example",
+                    "location": "Remote",
+                    "description": "Build extraction systems.",
+                    "url": "https://jobs.example/role",
+                }
+            ],
+        },
+    )
+    _write_json(
+        result_dir / "diagnose.json",
+        {
+            "acquisition": {
+                "final_url": "https://jobs.example/role",
+                "platform_family": "greenhouse",
+            }
+        },
+    )
+
+    written = write_proposals(
+        run_dir=run_dir,
+        audit_path=audit_path,
+        label_dir=label_dir,
+        surface="job_detail",
+    )
+    result = stats(
+        run_dir=run_dir,
+        audit_path=audit_path,
+        label_dir=label_dir,
+        surface="job_detail",
+    )
+    label = json.loads(
+        (label_dir / "job_detail" / "7.json").read_text(encoding="utf-8")
+    )
+
+    assert written == 1
+    assert label["surface"] == "job_detail"
+    assert label["human_verified"] is False
+    assert label["url"] == "https://jobs.example/role"
+    assert label["metadata"]["platform"] == "greenhouse"
+    assert label["fields"]["title"] == "Crawler Engineer"
+    assert label["fields"]["company"] == "Example"
+    assert result["registered"] == 1
+    assert result["human_verified"] == 0
+    assert result["ready_for_gate"] is False
 
 
 def test_corpus_counts_human_verified_seed_labels() -> None:
@@ -408,8 +471,7 @@ def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
     assert "generalized_adapter_missing" in report["gate_reasons"]
     assert "generalized_tier_not_invoked" in report["gate_reasons"]
     assert any(
-        reason.startswith("regressed_verified:")
-        for reason in report["gate_reasons"]
+        reason.startswith("regressed_verified:") for reason in report["gate_reasons"]
     )
 
 
@@ -478,7 +540,9 @@ def test_default_config_snapshot_auto_selects_configured_provider(monkeypatch) -
         "anthropic_api_key",
     ):
         monkeypatch.setattr(config_module.settings, attr, "", raising=False)
-    monkeypatch.setattr(config_module.settings, "groq_api_key", "sk-test", raising=False)
+    monkeypatch.setattr(
+        config_module.settings, "groq_api_key", "sk-test", raising=False
+    )
 
     snapshot = default_generalized_config_snapshot()
 
@@ -597,7 +661,9 @@ def test_cascade_gate_passes_quality_while_selector_deletion_stays_locked() -> N
     assert "recipes_not_disabled" in deletion_reasons
     assert "selectors_not_disabled" in deletion_reasons
     assert "selector_collectors_seen" in deletion_reasons
-    assert "regressed_full_corpus:missing_price_on_commerce_detail" not in deletion_reasons
+    assert (
+        "regressed_full_corpus:missing_price_on_commerce_detail" not in deletion_reasons
+    )
     assert "regressed_full_corpus:empty_variants_where_expected" not in deletion_reasons
 
 

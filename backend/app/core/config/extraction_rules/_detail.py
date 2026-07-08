@@ -639,6 +639,108 @@ DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS = frozenset(
 AVAILABILITY_IN_STOCK = "in_stock"
 AVAILABILITY_OUT_OF_STOCK = "out_of_stock"
 AVAILABILITY_UNKNOWN = "unknown"
+# Deterministic DOM extraction floor: provider-agnostic selectors/patterns that
+# recover product title/brand/description/offer/root evidence directly from the
+# rendered page. This is a fixed structural floor (no per-site learned selector
+# bank); it survives beside the structured-data collectors so pages without
+# JSON-LD/microdata still yield a grounded record.
+DETAIL_BRAND_DOM_SELECTORS = (
+    "main [data-brand]",
+    "main [data-brand-name]",
+    "main [data-manufacturer]",
+    "main [data-manufacturer-name]",
+    "main [data-designer]",
+    "main [data-designer-name]",
+    "main [itemprop='brand']",
+    "main [itemprop='manufacturer']",
+    "main [class*='product-brand']",
+    "main [class*='product_brand']",
+    "main [data-testid*='brand']",
+    "main [data-testid*='manufacturer']",
+)
+DETAIL_BRAND_DOM_VALUE_ATTRIBUTES = (
+    "data-brand",
+    "data-brand-name",
+    "data-manufacturer",
+    "data-manufacturer-name",
+    "data-designer",
+    "data-designer-name",
+    "content",
+)
+DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
+    r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
+    r"(?P<brand>[^|\n]{1,80})\s*$"
+)
+DETAIL_DOM_PRODUCT_ROOT_SELECTORS = tuple(
+    dict.fromkeys(
+        (
+            "main",
+            "article",
+            "[role='main']",
+            "[class*='product-main' i]",
+            "[class*='product-detail' i]",
+            "[class*='product-content' i]",
+            "[data-testid*='product' i]",
+        )
+    )
+)
+DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS = (
+    "h1",
+    "[data-price]",
+    "[itemprop='price']",
+    "[class*='current-price' i]",
+    "[class*='product-price' i]",
+    "[class*='sale-price' i]",
+    "[data-testid*='price' i]",
+    "[class*='gallery' i]",
+    "[data-product-image]",
+    "form[action*='cart' i]",
+    "button[name*='add' i]",
+    "button[class*='cart' i]",
+    "button[class*='bag' i]",
+)
+DETAIL_DOM_DESCRIPTION_SELECTORS = (
+    "[data-description]",
+    "[data-field='description']",
+    "[itemprop='description']",
+    "[class*='product-description' i]",
+    "[class*='product__description' i]",
+    "[data-testid*='description' i]",
+    "[class*='description' i]",
+)
+DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
+DETAIL_DOM_OFFER_SELECTORS = (
+    "[data-price]",
+    "[itemprop='price']",
+    "[class*='current-price' i]",
+    "[class*='product-price' i]",
+    "[class*='sale-price' i]",
+    "[data-testid*='price' i]",
+    "[aria-label*='$']",
+    "[aria-label*='£']",
+    "[aria-label*='€']",
+    "[aria-label*='₹']",
+)
+DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT = 4
+DETAIL_DOM_OFFER_MAX_CANDIDATES = 8
+DETAIL_DOM_PRICE_TEXT_PATTERN = (
+    r"(?P<symbol>[$€£¥₹])?\s*(?P<amount>\d{1,3}(?:[,.]\d{2,3})+(?:[,.]\d{1,2})?|\d{1,7}(?:[,.]\d{1,2})?)"
+    r"(?:\s*(?P<code>USD|EUR|GBP|INR|CAD|AUD|JPY|CNY))?"
+)
+DETAIL_DOM_CURRENCY_CODE_PATTERN = r"[A-Z]{3}"
+DETAIL_DOM_CURRENCY_CONTEXT_PATTERN = r"\b(USD|EUR|GBP|INR|CAD|AUD|JPY|CNY)\b"
+DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS = {
+    AVAILABILITY_IN_STOCK: (
+        r"\bin\s+stock\b",
+        r"\bavailable\b",
+        r"\bonline\s+only\b",
+    ),
+    AVAILABILITY_OUT_OF_STOCK: (
+        r"\bout\s+of\s+stock\b",
+        r"\bsold\s+out\b",
+        r"\bunavailable\b",
+    ),
+}
 MATERIAL_KEYWORDS = frozenset(
     {
         "cotton",
@@ -881,6 +983,107 @@ DETAIL_GENDER_TERMS = {
         "all-gender",
         "gender neutral",
         "gender-neutral",
+    ),
+}
+
+# --- Deterministic DOM floor (generic, selector-free) -----------------------
+# Restored generic collector selectors: these describe *shapes* of product
+# markup (roles, itemprops, common class tokens), not per-site learned rules.
+DETAIL_BRAND_DOM_SELECTORS = (
+    "main [data-brand]",
+    "main [data-brand-name]",
+    "main [data-manufacturer]",
+    "main [data-manufacturer-name]",
+    "main [data-designer]",
+    "main [data-designer-name]",
+    "main [itemprop='brand']",
+    "main [itemprop='manufacturer']",
+    "main [class*='product-brand']",
+    "main [class*='product_brand']",
+    "main [data-testid*='brand']",
+    "main [data-testid*='manufacturer']",
+)
+DETAIL_BRAND_DOM_VALUE_ATTRIBUTES = (
+    "data-brand",
+    "data-brand-name",
+    "data-manufacturer",
+    "data-manufacturer-name",
+    "data-designer",
+    "data-designer-name",
+    "content",
+)
+DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
+    r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
+    r"(?P<brand>[^|\n]{1,80})\s*$"
+)
+DETAIL_DOM_PRODUCT_ROOT_SELECTORS = tuple(
+    dict.fromkeys(
+        (
+            "main",
+            "article",
+            "[role='main']",
+            "[class*='product-main' i]",
+            "[class*='product-detail' i]",
+            "[class*='product-content' i]",
+            "[data-testid*='product' i]",
+        )
+    )
+)
+DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS = (
+    "h1",
+    "[data-price]",
+    "[itemprop='price']",
+    "[class*='current-price' i]",
+    "[class*='product-price' i]",
+    "[class*='sale-price' i]",
+    "[data-testid*='price' i]",
+    "[class*='gallery' i]",
+    "[data-product-image]",
+    "form[action*='cart' i]",
+    "button[name*='add' i]",
+    "button[class*='cart' i]",
+    "button[class*='bag' i]",
+)
+DETAIL_DOM_DESCRIPTION_SELECTORS = (
+    "[data-description]",
+    "[data-field='description']",
+    "[itemprop='description']",
+    "[class*='product-description' i]",
+    "[class*='product__description' i]",
+    "[data-testid*='description' i]",
+    "[class*='description' i]",
+)
+DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
+DETAIL_DOM_OFFER_SELECTORS = (
+    "[data-price]",
+    "[itemprop='price']",
+    "[class*='current-price' i]",
+    "[class*='product-price' i]",
+    "[class*='sale-price' i]",
+    "[data-testid*='price' i]",
+    "[aria-label*='$']",
+    "[aria-label*='£']",
+    "[aria-label*='€']",
+    "[aria-label*='₹']",
+)
+DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT = 4
+DETAIL_DOM_OFFER_MAX_CANDIDATES = 8
+DETAIL_DOM_PRICE_TEXT_PATTERN = (
+    r"(?P<symbol>[$€£¥₹])?\s*(?P<amount>\d{1,3}(?:[,.]\d{2,3})+(?:[,.]\d{1,2})?|\d{1,7}(?:[,.]\d{1,2})?)"
+    r"(?:\s*(?P<code>USD|EUR|GBP|INR|CAD|AUD|JPY|CNY))?"
+)
+DETAIL_DOM_CURRENCY_CODE_PATTERN = r"[A-Z]{3}"
+DETAIL_DOM_CURRENCY_CONTEXT_PATTERN = r"\b(USD|EUR|GBP|INR|CAD|AUD|JPY|CNY)\b"
+DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS = {
+    AVAILABILITY_IN_STOCK: (
+        r"\bin\s+stock\b",
+        r"\bavailable\b",
+        r"\bonline\s+only\b",
+    ),
+    AVAILABILITY_OUT_OF_STOCK: (
+        r"\bout\s+of\s+stock\b",
+        r"\bsold\s+out\b",
+        r"\bunavailable\b",
     ),
 }
 

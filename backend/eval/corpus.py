@@ -48,7 +48,9 @@ def load_pages(
 ) -> tuple[CorpusPage, ...]:
     surface = _normalize_surface(surface)
     if surface != EXTRACTION_V3_COMMERCE_DETAIL_SURFACE:
-        return _load_surface_label_pages(run_dir=run_dir, label_dir=label_dir, surface=surface)
+        return _load_surface_label_pages(
+            run_dir=run_dir, label_dir=label_dir, surface=surface
+        )
     audit_pages = {
         int(page["dir"]): page
         for page in _load_json(audit_path).get("pages", [])
@@ -74,7 +76,9 @@ def load_pages(
     return tuple(pages)
 
 
-def build_label_proposal(page: CorpusPage, audit_page: dict[str, Any]) -> dict[str, Any]:
+def build_label_proposal(
+    page: CorpusPage, audit_page: dict[str, Any]
+) -> dict[str, Any]:
     record = _load_record(page.result_dir)
     first_record = record["records"][0] if record["records"] else {}
     structured = audit_page.get("structured") if isinstance(audit_page, dict) else {}
@@ -93,8 +97,7 @@ def build_label_proposal(page: CorpusPage, audit_page: dict[str, Any]) -> dict[s
             "variant_bucket": page.variant_bucket,
         },
         "fields": {
-            field: _proposal_value(field, first_record, structured)
-            for field in fields
+            field: _proposal_value(field, first_record, structured) for field in fields
         },
         "variants": list(first_record.get("variants") or []),
     }
@@ -113,7 +116,9 @@ def stats(
     )
     bucket_counts = {bucket: 0 for bucket in EXTRACTION_V3_VARIANT_BUCKETS}
     for page in pages:
-        bucket_counts[page.variant_bucket] = bucket_counts.get(page.variant_bucket, 0) + 1
+        bucket_counts[page.variant_bucket] = (
+            bucket_counts.get(page.variant_bucket, 0) + 1
+        )
     verified = sum(1 for page in pages if page.is_verified)
     target = (
         0
@@ -142,9 +147,13 @@ def write_proposals(
 ) -> int:
     surface = _normalize_surface(surface)
     if surface != EXTRACTION_V3_COMMERCE_DETAIL_SURFACE:
-        return 0
+        return _write_surface_proposals(
+            run_dir=run_dir, label_dir=label_dir, surface=surface
+        )
     label_dir.mkdir(parents=True, exist_ok=True)
-    audit_pages = {int(page["dir"]): page for page in _load_json(audit_path).get("pages", [])}
+    audit_pages = {
+        int(page["dir"]): page for page in _load_json(audit_path).get("pages", [])
+    }
     written = 0
     for page in load_pages(
         run_dir=run_dir, audit_path=audit_path, label_dir=label_dir, surface=surface
@@ -158,6 +167,84 @@ def write_proposals(
         )
         written += 1
     return written
+
+
+def _write_surface_proposals(*, run_dir: Path, label_dir: Path, surface: str) -> int:
+    surface_dir = label_dir / surface
+    surface_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for result_dir in _result_dirs(run_dir):
+        label_path = surface_dir / f"{result_dir.name}.json"
+        if label_path.exists():
+            continue
+        page = _captured_surface_page(
+            result_dir=result_dir,
+            surface=surface,
+            label_path=label_path,
+        )
+        if page is None:
+            continue
+        proposal = build_label_proposal(page, {})
+        records = _load_record(result_dir)["records"]
+        if "listing" in surface:
+            proposal["records"] = records
+        label_path.write_text(
+            json.dumps(proposal, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        written += 1
+    return written
+
+
+def _captured_surface_page(
+    *, result_dir: Path, surface: str, label_path: Path
+) -> CorpusPage | None:
+    record = _load_record(result_dir)
+    if not record["records"]:
+        return None
+    return CorpusPage(
+        result_id=int(result_dir.name),
+        result_dir=result_dir,
+        surface=surface,
+        url=_captured_url(result_dir, record),
+        variant_bucket="unknown",
+        platform=_captured_platform(result_dir),
+        label_path=label_path,
+        label=None,
+    )
+
+
+def _result_dirs(run_dir: Path) -> tuple[Path, ...]:
+    results_dir = run_dir / "results"
+    if not results_dir.exists():
+        return ()
+    return tuple(
+        sorted(
+            (
+                path
+                for path in results_dir.iterdir()
+                if path.is_dir() and path.name.isdigit()
+            ),
+            key=lambda path: int(path.name),
+        )
+    )
+
+
+def _captured_url(result_dir: Path, record: dict[str, Any]) -> str:
+    first_record = record["records"][0] if record["records"] else {}
+    diagnose = _load_optional_json(result_dir / "diagnose.json")
+    acquisition = diagnose.get("acquisition") if isinstance(diagnose, dict) else {}
+    if isinstance(acquisition, dict) and acquisition.get("final_url"):
+        return str(acquisition["final_url"])
+    return str(first_record.get("url") or "")
+
+
+def _captured_platform(result_dir: Path) -> str:
+    diagnose = _load_optional_json(result_dir / "diagnose.json")
+    acquisition = diagnose.get("acquisition") if isinstance(diagnose, dict) else {}
+    if isinstance(acquisition, dict) and acquisition.get("platform_family"):
+        return str(acquisition["platform_family"])
+    return "unknown"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -226,7 +313,9 @@ def _load_surface_label_pages(
                 result_dir=run_dir / "results" / str(result_id),
                 surface=surface,
                 url=str(label.get("url") or ""),
-                variant_bucket=str(label.get("metadata", {}).get("variant_bucket") or "unknown")
+                variant_bucket=str(
+                    label.get("metadata", {}).get("variant_bucket") or "unknown"
+                )
                 if isinstance(label.get("metadata"), dict)
                 else "unknown",
                 platform=str(label.get("metadata", {}).get("platform") or "unknown")
@@ -251,10 +340,11 @@ def _load_record(result_dir: Path) -> dict[str, Any]:
     if not path.exists():
         return {"record_count": 0, "records": []}
     payload = _load_json(path)
-    records = payload.get("records") if isinstance(payload, dict) else []
+    raw_records = payload.get("records") if isinstance(payload, dict) else []
+    records = raw_records if isinstance(raw_records, list) else []
     return {
         "record_count": int(payload.get("record_count", len(records)) or 0),
-        "records": records if isinstance(records, list) else [],
+        "records": records,
     }
 
 
@@ -264,13 +354,23 @@ def _proposal_value(field: str, record: dict[str, Any], structured: object) -> A
         return [image] if image else []
     if field == "category":
         return record.get("category") or (
-            structured.get("category_breadcrumb") if isinstance(structured, dict) else None
+            structured.get("category_breadcrumb")
+            if isinstance(structured, dict)
+            else None
         )
-    return record.get(field) or (structured.get(field) if isinstance(structured, dict) else None)
+    return record.get(field) or (
+        structured.get(field) if isinstance(structured, dict) else None
+    )
 
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_optional_json(path: Path) -> Any:
+    if not path.exists():
+        return {}
+    return _load_json(path)
 
 
 if __name__ == "__main__":

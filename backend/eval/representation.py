@@ -73,14 +73,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     out = Path(parsed.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 
 def _load_samples(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    samples = payload.get("representation_tokens") if isinstance(payload, dict) else None
+    samples = (
+        payload.get("representation_tokens") if isinstance(payload, dict) else None
+    )
     if not isinstance(samples, list):
         return []
     return [sample for sample in samples if isinstance(sample, dict)]

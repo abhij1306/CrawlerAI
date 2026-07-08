@@ -154,7 +154,9 @@ def _select_primary_product_roots(
         return products
     selected_rows = _product_selection_rows(ranked[0][2], by_id, product_by_subject)
     if _rows_are_url_only(selected_rows) and any(
-        not _rows_are_url_only(_product_selection_rows(product, by_id, product_by_subject))
+        not _rows_are_url_only(
+            _product_selection_rows(product, by_id, product_by_subject)
+        )
         for _score, _entity_id, product in ranked[1:]
     ):
         return products
@@ -439,7 +441,9 @@ def _structured_shell_can_merge(
 ) -> bool:
     if not (_title_identity_tokens(url_rows) & _title_identity_tokens(structured_rows)):
         return False
-    if any(kind in _STRUCTURED_SHELL_IDENTITY_KINDS for kind, _ in structured_identities):
+    if any(
+        kind in _STRUCTURED_SHELL_IDENTITY_KINDS for kind, _ in structured_identities
+    ):
         return True
     return _group_has_complete_offer(structured_rows, evidence)
 
@@ -456,7 +460,10 @@ def _group_has_complete_offer(
         if not (set(_parent_subject_aliases(row)) & subjects):
             continue
         offer_facts_by_group[row.group_id or row.evidence_id].add(row.fact_type)
-    return any({"offer.price", "offer.currency"} <= facts for facts in offer_facts_by_group.values())
+    return any(
+        {"offer.price", "offer.currency"} <= facts
+        for facts in offer_facts_by_group.values()
+    )
 
 
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:

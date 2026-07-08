@@ -128,9 +128,7 @@ def resolved_contract_outcomes(
         return ()
     evidence_by_id = {row.evidence_id: row for row in evidence}
     decisions = {
-        row.fact_type: row
-        for row in resolution.decisions
-        if row.status == "resolved"
+        row.fact_type: row for row in resolution.decisions if row.status == "resolved"
     }
     outcomes: list[ContractOutcome] = []
     for contract in template.get("contracts", []):

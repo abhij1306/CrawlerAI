@@ -366,6 +366,13 @@ ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
+REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES = (
+    '[itemprop="{field}"]',
+    '[data-field="{field}"]',
+    '[data-field-name="{field}"]',
+    ".{field}",
+    ".{dash_field}",
+)
 ECOMMERCE_PUBLIC_FIELD_FACT_TYPES = {
     "title": PRODUCT_TITLE_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,

@@ -52,7 +52,18 @@ from app.observability.runtime_metrics import snapshot as runtime_metrics_snapsh
 from sqlalchemy import bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from typing import TypedDict
+
 logger = logging.getLogger(__name__)
+
+
+class _DomainExtractionMetric(TypedDict):
+    page_count: int
+    tier_split: dict[str, int]
+    model_cost_usd: float
+    model_invocations: int
+    grounding_rate_sample_count: int
+    grounding_failure_rate_sum: float
 
 
 async def build_dashboard(session: AsyncSession, *, user_id: int | None = None) -> dict:
@@ -571,7 +582,7 @@ async def _build_extraction_v3_metrics(session: AsyncSession) -> dict:
             .limit(crawler_runtime_settings.extraction_metrics_sample_size)
         )
     ).all()
-    domains: dict[tuple[str, str], dict[str, object]] = {}
+    domains: dict[tuple[str, str], _DomainExtractionMetric] = {}
     repair_cost_at_stake_per_1000_usd = 0.0
     runtime_observation_count = 0
     total_cost_usd = 0.0
@@ -587,7 +598,9 @@ async def _build_extraction_v3_metrics(session: AsyncSession) -> dict:
         surface = template.surface if template is not None else "unknown"
         stats = _domain_extraction_metrics(domains, domain=domain, surface=surface)
         stats["page_count"] = int(stats["page_count"]) + 1
-        tier = _metric_tier(str(payload.get("extractor_tier") or EXTRACTION_TIER_UNKNOWN))
+        tier = _metric_tier(
+            str(payload.get("extractor_tier") or EXTRACTION_TIER_UNKNOWN)
+        )
         tier_split = dict(stats["tier_split"])
         tier_split[tier] = int(tier_split.get(tier, 0)) + 1
         stats["tier_split"] = tier_split
@@ -666,8 +679,11 @@ async def _build_extraction_v3_metrics(session: AsyncSession) -> dict:
 
 
 def _domain_extraction_metrics(
-    domains: dict[tuple[str, str], dict[str, object]], *, domain: str, surface: str
-) -> dict[str, object]:
+    domains: dict[tuple[str, str], _DomainExtractionMetric],
+    *,
+    domain: str,
+    surface: str,
+) -> _DomainExtractionMetric:
     return domains.setdefault(
         (domain, surface),
         {
@@ -695,6 +711,8 @@ def _repair_cost_per_1000(payload: dict[str, object]) -> float:
 
 
 def _safe_int(value: object) -> int:
+    if not isinstance(value, (int, float, str)):
+        return 0
     try:
         return int(value or 0)
     except (TypeError, ValueError):
@@ -702,6 +720,8 @@ def _safe_int(value: object) -> int:
 
 
 def _safe_float(value: object) -> float:
+    if not isinstance(value, (int, float, str)):
+        return 0.0
     try:
         return float(value or 0.0)
     except (TypeError, ValueError):

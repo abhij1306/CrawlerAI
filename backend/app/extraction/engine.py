@@ -381,16 +381,17 @@ def _needs_contract_fallback(
 ) -> bool:
     if attempt.verdict in {"empty", "partial"}:
         return True
-    if attempt.verdict != "review" or request.surface != Surface.ECOMMERCE_DETAIL:
+    detail = request.surface == Surface.ECOMMERCE_DETAIL
+    if detail and not attempt.records and _identity_failure(attempt):
+        return True
+    if attempt.verdict != "review" or not detail:
         return False
     if not attempt.records:
         return False
     return _missing_repair_target(request, attempt.records[0])
 
 
-def _missing_repair_target(
-    request: ExtractionRequest, record: PublicRecord
-) -> bool:
+def _missing_repair_target(request: ExtractionRequest, record: PublicRecord) -> bool:
     targets = set(SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ()))
     targets.update(
         "image_url" if field == "image" else field for field in request.requested_fields
@@ -399,7 +400,10 @@ def _missing_repair_target(
 
 
 def _identity_failure(attempt: _ExtractionAttempt) -> bool:
-    return any(row.reason == "identity_mismatch" for row in attempt.resolution.target.rejected_roots)
+    return any(
+        row.reason == "identity_mismatch"
+        for row in attempt.resolution.target.rejected_roots
+    )
 
 
 def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:

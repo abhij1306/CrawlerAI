@@ -7,6 +7,7 @@ from app.extraction.contracts import (
     ExtractionRequest,
     RejectedEntity,
     TargetSelection,
+    TargetStatus,
 )
 from app.core.records.url_identity import (
     detail_identity_codes_from_url,
@@ -36,8 +37,10 @@ def select_commerce_target(
         if root_ids
         else None
     )
-    if selected and rejected_identity_roots and _root_is_url_only(
-        graph, evidence, selected
+    if (
+        selected
+        and rejected_identity_roots
+        and _root_is_url_only(graph, evidence, selected)
     ):
         selected = None
     if selected is None and len(root_ids) == 1 and not rejected_identity_roots:
@@ -67,7 +70,7 @@ def _commerce_target_status(
     root_ids: tuple[str, ...],
     selected: str | None,
     rejected_identity_roots: set[str],
-) -> str:
+) -> TargetStatus:
     if selected:
         return "resolved"
     if not root_ids or set(root_ids) <= rejected_identity_roots:

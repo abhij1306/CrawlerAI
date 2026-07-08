@@ -10,6 +10,7 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m eval.corpus --stats --surface job_detail
 .\.venv\Scripts\python.exe -m eval.corpus --stats --surface ecommerce_listing
 .\.venv\Scripts\python.exe -m eval.corpus --write-proposals
+.\.venv\Scripts\python.exe -m eval.corpus --write-proposals --surface job_detail --run-dir artifacts\runs\<jobs-run-id>
 .\.venv\Scripts\python.exe -m eval.run --baseline
 .\.venv\Scripts\python.exe -m eval.run --engine v3 --tier cascade --out eval\reports\v3_gate.json
 .\.venv\Scripts\python.exe -m eval.run --engine v3 --tier cascade --require-pass
@@ -22,10 +23,12 @@ Those files are review inputs only. A page counts as gold only after a human set
 `human_verified: true`.
 
 Commerce-detail uses the original audit-backed corpus. New surfaces use
-surface-scoped labels under `eval/labels/<surface>/`. Their stats stay
+surface-scoped labels under `eval/labels/<surface>/`. For jobs/listing, run a
+surface-specific capture first, then write proposals from that run directory.
+Those proposal files remain `human_verified: false`; stats stay
 `ready_for_gate: false` until at least 20 human-verified labels exist for that
-surface. Proposal writing is intentionally disabled for those surfaces unless a
-real captured corpus is present, so the harness cannot fake jobs/listing gold.
+surface. The harness can create review inputs from captured artifacts, but it
+cannot fake jobs/listing gold.
 
 The V3 gate report is allowed to be red while slices are still in progress.
 Use `--require-pass` only for a hard gate: it exits nonzero when `gate_passed`

@@ -43,7 +43,9 @@ def score_records_against_labels(
     *,
     record_payloads: dict[int, dict[str, Any]] | None = None,
 ) -> ScoreReport:
-    counts = {field: Counter() for field in EXTRACTION_V3_LABEL_CORE_FIELDS}
+    counts: dict[str, Counter[str]] = {
+        field: Counter() for field in EXTRACTION_V3_LABEL_CORE_FIELDS
+    }
     variant_scores: list[float] = []
     variant_exact = 0
     hallucination_values = 0
@@ -100,7 +102,7 @@ def baseline_defects(
     *,
     record_payloads: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, int]:
-    defects = Counter()
+    defects: Counter[str] = Counter()
     for page in pages:
         record_payload = _record_payload_for_page(page, record_payloads)
         records = record_payload.get("records") or []
@@ -119,8 +121,7 @@ def baseline_defects(
         ):
             defects["empty_variants_where_expected"] += 1
     return {
-        key: int(defects.get(key, 0))
-        for key in EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS
+        key: int(defects.get(key, 0)) for key in EXTRACTION_V3_BASELINE_EXPECTED_DEFECTS
     }
 
 
@@ -238,7 +239,9 @@ def _matches(expected: Any, actual: Any) -> bool:
 
 
 def _list_match(expected: list[Any], actual: list[Any]) -> bool:
-    expected_values = {_normalize_scalar(value) for value in expected if _present(value)}
+    expected_values = {
+        _normalize_scalar(value) for value in expected if _present(value)
+    }
     actual_values = {_normalize_scalar(value) for value in actual if _present(value)}
     if not expected_values:
         return not actual_values
@@ -332,10 +335,8 @@ def _audit_baseline_defects(audit_path: Path) -> dict[str, int] | None:
         "missing_price_on_commerce_detail": quality.get(
             "missing_price_on_commerce_detail"
         ),
-        "empty_variants_where_expected": quality.get(
-            "empty_variants_where_expected"
-        ),
+        "empty_variants_where_expected": quality.get("empty_variants_where_expected"),
     }
     if any(value is None for value in values.values()):
         return None
-    return {key: int(value) for key, value in values.items()}
+    return {key: int(value) for key, value in values.items() if value is not None}

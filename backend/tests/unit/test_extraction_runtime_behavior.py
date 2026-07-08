@@ -44,7 +44,9 @@ def test_review_detail_with_missing_repair_target_can_use_model_fallback() -> No
     )
     attempt = SimpleNamespace(
         verdict="review",
-        records=({"url": "https://shop.test/products/trail-shoe", "title": "Trail Shoe"},),
+        records=(
+            {"url": "https://shop.test/products/trail-shoe", "title": "Trail Shoe"},
+        ),
     )
 
     assert _needs_contract_fallback(request, attempt)
@@ -285,6 +287,7 @@ def test_known_template_source_pin_marks_recipe_without_css_collectors() -> None
           "@context": "https://schema.org",
           "@type": "Product",
           "name": "Generic Shoe",
+          "url": "https://shop.test/products/recipe-shoe",
           "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
         }
         </script>
@@ -320,18 +323,14 @@ def test_known_template_source_pin_marks_recipe_without_css_collectors() -> None
                         "source_pins": [
                             {
                                 "canonical_field": "offer.currency",
-                                "selected_source": (
-                                    "jsonld:/offers/0/priceCurrency"
-                                ),
+                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
                                 "selection_origin": "operator",
                             }
                         ],
                         "contracts": [
                             {
                                 "canonical_field": "offer.currency",
-                                "selected_source": (
-                                    "jsonld:/offers/0/priceCurrency"
-                                ),
+                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
                                 "selection_origin": "operator",
                             }
                         ],
@@ -366,6 +365,7 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
           "@type": "Product",
           "name": "Generic Shoe",
           "sku": "GENERIC-1",
+          "url": "https://shop.test/products/recipe-shoe",
           "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
         }
         </script>
@@ -402,18 +402,14 @@ def test_sampled_recipe_success_records_sentinel_without_override() -> None:
                         "source_pins": [
                             {
                                 "canonical_field": "offer.currency",
-                                "selected_source": (
-                                    "jsonld:/offers/0/priceCurrency"
-                                ),
+                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
                                 "selection_origin": "operator",
                             }
                         ],
                         "contracts": [
                             {
                                 "canonical_field": "offer.currency",
-                                "selected_source": (
-                                    "jsonld:/offers/0/priceCurrency"
-                                ),
+                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
                                 "selection_origin": "operator",
                             }
                         ],
@@ -589,9 +585,7 @@ def test_recipe_identity_failure_falls_back_to_grounded_model_record() -> None:
     assert result.records[0]["price"] == "19.00"
     assert result.diagnostics.extractor_tier == "ml"
     assert "model_fallback" in result.diagnostics.decision_path
-    assert any(
-        row.collector_id == "universal_model" for row in result.evidence
-    )
+    assert any(row.collector_id == "universal_model" for row in result.evidence)
 
 
 class GroundedDetailAdapter:

@@ -1,6 +1,6 @@
 """Stable vocabulary for extraction evaluation and grounded labels."""
 
-from typing import Final, Literal
+from typing import Final, Literal, TypedDict
 
 EVALUATION_CASE_SCHEMA_VERSION: Final[Literal["evaluation_case.v1"]] = (
     "evaluation_case.v1"
@@ -303,7 +303,19 @@ EXTRACTION_V3_FLAT_MAP_CORE_ANCHORS: Final[tuple[str, ...]] = (
 EXTRACTION_V3_SCOPED_MIN_TOKENS: Final[int] = 300
 EXTRACTION_V3_MAX_INPUT_TOKENS: Final[int] = 60000
 EXTRACTION_V3_CHUNK_TARGET_TOKENS: Final[int] = 12000
-GENERALIZED_EXTRACTION_BUDGET: Final[dict[str, object]] = {
+
+
+class _GeneralizedExtractionBudget(TypedDict):
+    budget_ms: int
+    model_tier: str
+    max_cost_usd_per_page: float
+    max_input_tokens: int
+    max_output_tokens: int
+    escalate_to_vision_below_confidence: float
+    cooldown_minutes: int
+
+
+GENERALIZED_EXTRACTION_BUDGET: Final[_GeneralizedExtractionBudget] = {
     # Per-page ceiling for a hosted-LLM fallback call. This fires only on cache
     # miss / recipe drift, not every page, so a multi-second ceiling is affordable
     # at <=20k pages/day. 1000ms was a placeholder tuned to the synchronous test

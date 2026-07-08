@@ -357,9 +357,7 @@ def test_contract_preferences_return_source_matching_ids_only() -> None:
 
 @pytest.mark.unit
 def test_contract_preferences_ignore_broken_source_pin() -> None:
-    evidence = (
-        _evidence("current", "jsonld", "/name", "product.title", "Widget"),
-    )
+    evidence = (_evidence("current", "jsonld", "/name", "product.title", "Widget"),)
     snapshot = _snapshot(
         "fp-1",
         "ecommerce_detail",
@@ -681,6 +679,10 @@ async def test_release_payload_returns_empty_templates_for_unknown_domain(
         "domain": "unknown.example",
         "surface": "ecommerce_detail",
         "templates": [],
+        "cutover": {
+            "engine": "v3",
+            "enabled": True,
+        },
     }
 
 
@@ -801,9 +803,10 @@ async def test_release_payload_still_freezes_selector_recipes_for_unproven_surfa
         payload={"rules": [{"field_name": "title", "css_selector": "h2"}]},
     )
 
-    assert selector_rules_from_release(frozen, surface="job_detail")[0][
-        "css_selector"
-    ] == "h1"
+    assert (
+        selector_rules_from_release(frozen, surface="job_detail")[0]["css_selector"]
+        == "h1"
+    )
     assert frozen["templates"][0]["compiled_recipe"]["selector_rules"] == [
         {"field_name": "title", "css_selector": "h1"}
     ]
@@ -1164,16 +1167,20 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
     assert not release.payload["templates"][0].get("sentinel_suspended", False)
     assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
     repair_rows = (
-        await db_session.execute(
-            select(ExtractionObservation)
-            .where(
-                ExtractionObservation.verdict == RECIPE_REPAIR_QUEUE_VERDICT,
-                ExtractionObservation.payload["kind"].as_string()
-                == RECIPE_REPAIR_QUEUE_KIND,
+        (
+            await db_session.execute(
+                select(ExtractionObservation)
+                .where(
+                    ExtractionObservation.verdict == RECIPE_REPAIR_QUEUE_VERDICT,
+                    ExtractionObservation.payload["kind"].as_string()
+                    == RECIPE_REPAIR_QUEUE_KIND,
+                )
+                .order_by(ExtractionObservation.created_at)
             )
-            .order_by(ExtractionObservation.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(repair_rows) == 2
     assert repair_rows[-1].payload["next_action"] == (
         "compile_multi_sample_repair_candidate"
@@ -1340,9 +1347,7 @@ async def test_extraction_profile_pin_flips_price_source_and_reload(
             field_mappings.OFFER_CURRENCY_FACT_TYPE: (currency.evidence_id,),
         },
     )
-    evidence_by_id = {
-        row.evidence_id: row for row in (microdata, js_state, currency)
-    }
+    evidence_by_id = {row.evidence_id: row for row in (microdata, js_state, currency)}
     baseline = {
         row.fact_type: row
         for row in _resolve_offer(offer, evidence_by_id, ())
@@ -1394,9 +1399,10 @@ async def test_extraction_profile_pin_flips_price_source_and_reload(
     assert resolved[field_mappings.OFFER_PRICE_FACT_TYPE].accepted_evidence_ids == (
         "shopify-price",
     )
-    assert release["templates"][0]["compiled_recipe"]["source_pins"][0][
-        "selected_source"
-    ] == "js_state:/product/variants/{index}/price"
+    assert (
+        release["templates"][0]["compiled_recipe"]["source_pins"][0]["selected_source"]
+        == "js_state:/product/variants/{index}/price"
+    )
 
 
 @pytest.mark.asyncio

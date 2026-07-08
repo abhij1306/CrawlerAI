@@ -474,8 +474,11 @@ class RejectedEntity(FrozenModel):
     reason: str
 
 
+TargetStatus = Literal["resolved", "ambiguous", "missing", "wrong_surface"]
+
+
 class TargetSelection(FrozenModel):
-    status: Literal["resolved", "ambiguous", "missing", "wrong_surface"] = "missing"
+    status: TargetStatus = "missing"
     root_entity_ids: tuple[str, ...] = ()
     selected_root_entity_id: str | None = None
     rejected_roots: tuple[RejectedEntity, ...] = ()

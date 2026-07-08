@@ -20,7 +20,12 @@ from app.extraction.engine import extract
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
-from eval.corpus import DEFAULT_AUDIT_PATH, DEFAULT_LABEL_DIR, DEFAULT_RUN_DIR, load_pages
+from eval.corpus import (
+    DEFAULT_AUDIT_PATH,
+    DEFAULT_LABEL_DIR,
+    DEFAULT_RUN_DIR,
+    load_pages,
+)
 from eval.score import (
     baseline_defects as score_defects,
     baseline_report,
@@ -44,7 +49,9 @@ def run_baseline(
     }
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        out.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     return report
 
 
@@ -77,10 +84,14 @@ def run_v3_engine(
 ) -> dict[str, Any]:
     pages = load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
     verified_pages = tuple(page for page in pages if page.is_verified)
-    adapter = None if tier == "recipe" else (
-        model_adapter
-        or _hosted_adapter_from_config(llm_config_path)
-        or _default_hosted_adapter(provider=provider, model=model)
+    adapter = (
+        None
+        if tier == "recipe"
+        else (
+            model_adapter
+            or _hosted_adapter_from_config(llm_config_path)
+            or _default_hosted_adapter(provider=provider, model=model)
+        )
     )
     if tier == "generalized" and adapter is None:
         payloads, candidate_runtime = _missing_generalized_candidate(pages)
@@ -154,7 +165,9 @@ def run_v3_engine(
     }
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        out.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     return report
 
 
@@ -182,7 +195,9 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = Path(parsed.run_dir)
     audit_path = Path(parsed.audit_path)
     if parsed.baseline:
-        report = run_baseline(run_dir=run_dir, audit_path=audit_path, out=Path(parsed.out))
+        report = run_baseline(
+            run_dir=run_dir, audit_path=audit_path, out=Path(parsed.out)
+        )
     elif parsed.score_labels:
         report = run_label_score(
             run_dir=run_dir,
@@ -285,12 +300,11 @@ def _candidate_payloads(
         extraction_pipeline.default_collectors = original_collectors
 
 
-def _missing_generalized_candidate(pages) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+def _missing_generalized_candidate(
+    pages,
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
     return (
-        {
-            page.result_id: {"record_count": 0, "records": []}
-            for page in pages
-        },
+        {page.result_id: {"record_count": 0, "records": []} for page in pages},
         {
             "collector_ids": [],
             "extractor_tiers": [],

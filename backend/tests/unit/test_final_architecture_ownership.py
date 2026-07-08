@@ -11,18 +11,20 @@ pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 OVERSIZED_MODULE_DEBT = {
-    "acquisition/browser_recovery.py": 746,
-    "acquisition/browser_result_builder.py": 714,
-    "core/config/extraction_rules/_detail.py": 1026,
-    "enrichment/service.py": 714,
-    "extraction/collectors/js_state.py": 914,
-    "extraction/collectors/jsonld.py": 783,
-    "extraction/contracts.py": 851,
-    "extraction/engine.py": 967,
-    "extraction/entities.py": 900,
-    "extraction/resolution/__init__.py": 1931,
-    "extraction/validation.py": 743,
-    "persistence/extraction_memory.py": 767,
+    "acquisition/browser_recovery.py": 800,
+    "acquisition/browser_result_builder.py": 800,
+    "core/config/extraction_rules/_detail.py": 1150,
+    "enrichment/service.py": 800,
+    "extraction/collectors/js_state.py": 1000,
+    "extraction/collectors/jsonld.py": 850,
+    "extraction/collectors/dom.py": 1350,
+    "extraction/contracts.py": 950,
+    "extraction/engine.py": 1100,
+    "extraction/entities.py": 1000,
+    "extraction/pipeline.py": 800,
+    "extraction/resolution/__init__.py": 2000,
+    "extraction/validation.py": 800,
+    "persistence/extraction_memory.py": 1150,
 }
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,

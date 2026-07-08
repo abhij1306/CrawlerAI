@@ -432,7 +432,9 @@ def _candidate_grounding(request, candidate, flat_map):
     if candidate.fact_type in {"product.url", "asset.image_url"}:
         base_url = request.capture.final_url or request.capture.requested_url
         canonical = _normalize_source_value(candidate.value)
-        if canonical == _normalize_source_value(urljoin(base_url, str(candidate.raw_value))):
+        if canonical == _normalize_source_value(
+            urljoin(base_url, str(candidate.raw_value))
+        ):
             return ground(candidate.raw_value, flat_map, (candidate.source_path,))
     return None
 

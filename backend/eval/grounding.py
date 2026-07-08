@@ -9,7 +9,12 @@ from typing import Any
 from app.extraction.documents import HtmlDocument
 from app.extraction.representation import build_scoped_flat_map, ground
 
-from eval.corpus import DEFAULT_AUDIT_PATH, DEFAULT_LABEL_DIR, DEFAULT_RUN_DIR, load_pages
+from eval.corpus import (
+    DEFAULT_AUDIT_PATH,
+    DEFAULT_LABEL_DIR,
+    DEFAULT_RUN_DIR,
+    load_pages,
+)
 
 
 DEFAULT_REPORT = Path(__file__).resolve().parent / "reports" / "grounding.json"
@@ -32,7 +37,7 @@ def grounding_report(
         if page.is_verified
     )
     field_counts: dict[str, Counter[str]] = {}
-    examples = []
+    examples: list[dict[str, object]] = []
     for page in pages:
         html_path = page.result_dir / "page.html"
         html = html_path.read_text(encoding="utf-8", errors="ignore")
@@ -54,7 +59,7 @@ def grounding_report(
     by_field = {
         field: _field_summary(counts) for field, counts in sorted(field_counts.items())
     }
-    total = Counter()
+    total: Counter[str] = Counter()
     for counts in field_counts.values():
         total.update(counts)
     return {
@@ -86,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     out = Path(parsed.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

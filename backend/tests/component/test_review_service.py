@@ -532,7 +532,13 @@ async def test_grounded_correction_replays_and_activates_immutable_release(
     assert recipe.payload["rules"][0]["field_name"] == "price"
     assert recipe.payload["rules"][0]["css_selector"] == ".price"
     assert run.extraction_release_snapshot_id == release.id
-    assert release.payload["templates"][0]["selector_rules"][0]["field_name"] == "price"
+    # ecommerce_detail is a "proven" surface: extraction is deterministic via
+    # source-pins, so css selector recipes are intentionally compiled away at
+    # release time (see test_release_payload_strips_commerce_detail_selector_recipes
+    # and the runtime short-circuit in record_extraction_stage._load_selector_rules,
+    # which returns [] for this surface). The human correction is durably stored as
+    # a recipe (asserted above) but is absent from the frozen release for detail.
+    assert release.payload["templates"][0]["selector_rules"] == []
 
 
 @pytest.mark.asyncio

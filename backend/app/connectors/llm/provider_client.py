@@ -162,9 +162,7 @@ async def call_provider(
     if dispatch is None:
         return f"{ERROR_PREFIX} Unsupported provider: {normalized_provider}", 0, 0
     try:
-        return await dispatch(
-            api_key, model, system_prompt, user_prompt, max_tokens
-        )
+        return await dispatch(api_key, model, system_prompt, user_prompt, max_tokens)
     except (httpx.HTTPError, ValueError) as exc:
         return f"{ERROR_PREFIX} {type(exc).__name__}: {exc}", 0, 0
 
