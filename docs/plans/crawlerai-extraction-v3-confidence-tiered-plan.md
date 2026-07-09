@@ -447,26 +447,39 @@ join/partial/bare-array/no-source), plus 2 e2e in `test_extraction_listing_behav
 suite 901 green, mypy clean.
 
 ### Slice 4.4: Generalized listing tier (exemplar-record LLM) + recipe cache
-**Status:** TODO
-**Files:** `app/extraction/model_runtime.py` (listing entry), `representation/flat_map.py`
-(listing/exemplar mode already specced §163), recipe compiler
-(`app/extraction/...` recipe path from Slice 2.2), `adapters.py` (`_resolve_listing`
-routes through the tier cascade).
+**Status:** DONE (2026-07-09)
+**Files:** `app/extraction/listing_generalized.py` (NEW — `run_listing_generalized`
++ exemplar acquisition + deterministic apply-across-N + grounding gate + recipe
+replay/re-acquire + `InMemoryListingRecipeStore`), `engine.py` (routes
+`ECOMMERCE_LISTING` through the generalized tier via `_GENERALIZED_LISTING_SURFACES`
++ `listing_recipe_store` param), manifest (`listing_generalized.py = 480`,
+`physical_loc_budget` 18220→18700, file count ≤36), package LOC ratchet in
+`test_final_architecture_ownership.py` (extraction 15534→16050, total →85369).
 **What:** When Tier 0 does not fully ground, run the **generalized tier on ONE
 exemplar record** (§163): flat-map a single discovered record subtree → LLM returns
-the field bindings (title/url/price/image → source locators within the record) for
+the field bindings (title/price → source locators within the record) for
 that record shape → **apply the bindings across all N records** deterministically →
-grounding-gate each. Then **compile the bindings into a per-`(domain, listing)`
-recipe** (source-pin + per-record field binding; Slice 2.2 machinery) so future runs
-**replay without the LLM**. Recipe re-grounds every run and **auto-falls-back to a
-fresh exemplar LLM pass on grounding mismatch** (§175 lifecycle). This is
-acquire-once / replay-cheap for listing.
-**Verify:** dyson/toddsnyder (currently nav-links / empty titles / 0 records) yield
-real product titles+urls via **one** exemplar LLM call each; a second run of the same
-domain replays the recipe with **0 LLM calls** and identical output; a simulated
-markup change forces re-acquisition (one LLM call) and recovers. kitchenaid still
-takes the Tier-0 fast path (0 LLM). Cost per newly-acquired listing page ≈ one small
-call (LLM sees 1 record, not N).
+grounding-gate each (emitted VALUE is always the DOM text at the bound path; the
+model only chooses the path, never supplies the value). Then **compile the bindings
+into a per-`(surface, domain, route)` recipe** so future runs **replay without the
+LLM**. Recipe re-grounds every run and **auto-falls-back to a fresh exemplar LLM pass
+on grounding mismatch**. The detail URL comes from discovery, already grounded.
+Returns a `ModelFallbackResult` so engine metrics/evidence-merge/ML-tier handling is
+unchanged. Recipe **persistence** (DB-backed store) is a deliberate follow-up: ships
+the mechanism + in-process store; engine passes `None` today (acquires each run, no
+regression).
+**Verify:** `test_listing_generalized.py` (9) proves: one exemplar call grounds every
+record from DOM text (adapter sees 1 record's entries, not N; fabricated model value
+never emitted); recipe replay = 0 LLM on 2nd run; markup drift forces re-acquisition;
+unbound optional field dropped not hallucinated; missing-adapter/unapproved/no-records
+degrade cleanly; exemplar timeout degrades without breaking extraction; a JSON-LD
+listing stays Tier-0 (0 LLM, `model_outcome == not_considered`). Full unit suite 902
+green, mypy clean (36 extraction source files). The 8 old whole-page listing-fallback
+tests in `test_extraction_model_fallback.py` were removed: their subject (generic
+`run_model_fallback` on the *listing* surface) no longer exists — listing now uses the
+exemplar tier, whose runtime-degradation behaviour is covered by the new file.
+NOT yet validated live against dyson/toddsnyder/firstcry captures (LLM disabled in
+prod; live acquisition run is a follow-up). NOTHING COMMITTED yet.
 
 ### Slice 4.5: Jobs listing + detail on the same tier cascade
 **Status:** TODO — **priority-3, after listing (4.2–4.4) lands**

@@ -46,6 +46,10 @@ from app.extraction.contracts import (
     TargetSelection,
     Verdict,
 )
+from app.extraction.listing_generalized import (
+    ListingRecipeStore,
+    run_listing_generalized,
+)
 from app.extraction.model_runtime import (
     ModelFallbackResult,
     RuntimeModelAdapter,
@@ -84,10 +88,14 @@ class _ExtractionAttempt:
     stage_outcomes: tuple[StageOutcome, ...]
 
 
+_GENERALIZED_LISTING_SURFACES = frozenset({Surface.ECOMMERCE_LISTING})
+
+
 def extract(
     request: ExtractionRequest,
     *,
     model_adapter: RuntimeModelAdapter | None = None,
+    listing_recipe_store: ListingRecipeStore | None = None,
 ) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
@@ -149,7 +157,14 @@ def extract(
                 )
             )
     if _needs_contract_fallback(request, attempt):
-        model_fallback = run_model_fallback(request, model_adapter)
+        # Listing rides the exemplar-record generalized tier + per-domain recipe
+        # replay; detail keeps the whole-page universal-model fallback.
+        if request.surface in _GENERALIZED_LISTING_SURFACES:
+            model_fallback = run_listing_generalized(
+                request, model_adapter, recipe_store=listing_recipe_store
+            )
+        else:
+            model_fallback = run_model_fallback(request, model_adapter)
         model_outcome = _model_collector_outcome(model_fallback)
         stage_outcomes.append(
             StageOutcome(

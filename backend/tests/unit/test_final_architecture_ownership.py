@@ -149,14 +149,14 @@ PACKAGE_LOC_BUDGETS = {
     "enrichment": 2_245,
     "connectors": 2_767,
     "intelligence": 3_659,
-    "extraction": 15_534,
+    "extraction": 16_050,
     # Phase 7 documented feature exception: the grounded LLM repair adapter
     # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
     # runs in the hot path and cannot publish or activate values; the budget is
     # bumped once to seat it beside the existing offline evaluation harness.
     "evaluation": 2_295,
 }
-TOTAL_APP_LOC_BUDGET = 84_853
+TOTAL_APP_LOC_BUDGET = 85_369
 
 
 def test_production_package_loc_budgets() -> None:

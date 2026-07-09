@@ -116,13 +116,14 @@ class HtmlNode:
             parent = current.parent
             index = 1
             if parent is not None:
+                # Selectolax returns a fresh wrapper per access, so nodes must be
+                # compared by mem_id (address), never `is`. parent.iter() yields
+                # the direct children in document order.
+                current_id = int(current.mem_id)
                 for sibling in parent.iter():
-                    if sibling is current:
+                    if int(sibling.mem_id) == current_id:
                         break
-                    if (
-                        sibling.parent is parent
-                        and str(sibling.tag or "").lower() == tag
-                    ):
+                    if str(sibling.tag or "").lower() == tag:
                         index += 1
             parts.append(f"{tag}[{index}]")
             current = parent
