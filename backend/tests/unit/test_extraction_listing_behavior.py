@@ -395,6 +395,35 @@ def test_ecommerce_listing_uses_title_from_product_link_scope() -> None:
     assert [row["title"] for row in result.records] == ["Linen Pant"]
 
 
+def test_ecommerce_listing_excludes_inline_style_source_from_title() -> None:
+    # A product card carrying an inline <style> block must not leak the CSS
+    # source (e.g. a selector string) into the scraped title. Reproduces the
+    # phase-eight capture where `.product-tile__sticker--image:has(...)` surfaced
+    # as a product title.
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-tile">
+            <a href="/product/aida-black-shift-dress-10024280250.html" class="product-tile__title">
+              <style>
+                .product-tile__sticker--image:has(img.lockup-sticker) { top: 10px; }
+                .lockup-sticker { max-width: 100px; height: auto; }
+              </style>
+              Aida Black Shift Dress
+            </a>
+            <span class="price">$119.00</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/clothing/dresses/",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == ["Aida Black Shift Dress"]
+    assert all(":has(" not in row["title"] for row in result.records)
+
+
 @pytest.mark.parametrize("badge", ("New colour", "Best seller"))
 def test_ecommerce_listing_skips_merchandising_badge_for_product_title(
     badge: str,
@@ -457,3 +486,72 @@ def test_ecommerce_listing_rejects_utility_label_as_title() -> None:
     )
 
     assert not result.records
+
+
+_ITEMLIST_LISTING = """
+<html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+ {"@type":"ListItem","url":"https://shop.test/p/aida-1001.html",
+  "item":{"@type":"Product","name":"Aida Dress",
+    "offers":{"@type":"Offer","price":"119.00"},"image":"https://img.test/a.jpg"}},
+ {"@type":"ListItem","url":"https://shop.test/p/mira-1002.html",
+  "item":{"@type":"Product","name":"Mira Dress",
+    "offers":{"@type":"Offer","price":"99.00"},"image":"https://img.test/m.jpg"}}
+]}
+</script></head>
+<body><div class="grid">
+ <div class="card"><a href="/p/aida-1001.html"><img src=x></a><span>$119</span></div>
+ <div class="card"><a href="/p/mira-1002.html"><img src=x></a><span>$99</span></div>
+</div></body></html>
+"""
+
+
+def test_ecommerce_listing_tier0_structured_floor_resolves_without_llm() -> None:
+    # When every discovered record grounds to a structured source, the listing
+    # resolves through the Tier 0 floor: structured-floor lineage, no LLM.
+    result = _extract(
+        "ecommerce_listing",
+        _ITEMLIST_LISTING,
+        "https://shop.test/c/dresses/",
+        max_records=10,
+    )
+    assert result.verdict == "success"
+    assert {row["title"] for row in result.records} == {"Aida Dress", "Mira Dress"}
+    assert {row["url"] for row in result.records} == {
+        "https://shop.test/p/aida-1001.html",
+        "https://shop.test/p/mira-1002.html",
+    }
+    # Every published fact is sourced from the structured floor collector...
+    assert {row.collector_id for row in result.evidence} == {"listing_structured_floor"}
+    # ...and the floor spends zero LLM invocations (acquire-cheap fast path).
+    assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_ecommerce_listing_without_structured_data_falls_through_to_css() -> None:
+    # No JSON-LD: Tier 0 must not hold, so the CSS card collector still resolves
+    # the listing (the generalized/recipe tiers replace it in a later slice).
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-card">
+            <a href="/products/trail-shoe"><h2>Trail Shoe</h2></a>
+            <span class="price">$129.00</span>
+            <img src="/images/trail.jpg">
+          </article>
+          <article class="product-card">
+            <a href="/products/day-pack"><h2>Day Pack</h2></a>
+            <span class="price">$89.00</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/collections/all",
+        max_records=5,
+    )
+    assert result.verdict == "success"
+    assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
+    # Fell through — structured floor did not claim this page.
+    assert "listing_structured_floor" not in {
+        row.collector_id for row in result.evidence
+    }

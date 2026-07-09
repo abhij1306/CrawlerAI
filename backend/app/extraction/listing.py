@@ -358,7 +358,7 @@ def _listing_product_title(card: HtmlNode, product_link: HtmlNode | None) -> str
         nested = _first_admissible_text(product_link, ECOMMERCE_LISTING_TITLE_SELECTORS)
         if nested:
             return nested
-        link_text = _clean_text(product_link.text(separator=" ", strip=True))
+        link_text = _clean_text(product_link.content_text())
         if _admissible_listing_title(link_text, product_link):
             return link_text
     card_title = _first_admissible_attribute(card)
@@ -380,9 +380,7 @@ def _first_admissible_text(scope: HtmlNode, selectors: tuple[str, ...]) -> str |
         for node in scope.css(selector):
             if node.is_hidden():
                 continue
-            text = _clean_text(
-                node.attribute("title") or node.text(separator=" ", strip=True)
-            )
+            text = _clean_text(node.attribute("title") or node.content_text())
             if _admissible_listing_title(text, node):
                 return text
     return None
@@ -445,7 +443,7 @@ def _link_has_title_signal(link: HtmlNode) -> bool:
         _first_admissible_attribute(link)
         or _first_admissible_text(link, ECOMMERCE_LISTING_TITLE_SELECTORS)
         or _admissible_listing_title(
-            _clean_text(link.text(separator=" ", strip=True)),
+            _clean_text(link.content_text()),
             link,
         )
     )

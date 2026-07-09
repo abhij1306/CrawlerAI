@@ -439,12 +439,20 @@ def _structured_shell_can_merge(
     structured_identities: set[tuple[str, str]],
     evidence: tuple[Evidence, ...],
 ) -> bool:
-    if not (_title_identity_tokens(url_rows) & _title_identity_tokens(structured_rows)):
-        return False
+    # A strong structured identity (jsonld node / product.id / sku / gtin / mpn)
+    # is sufficient grounding on its own. The generalized (grounded-LLM) tier
+    # produces such an identity but cannot ground a product.url, so its title
+    # routinely diverges from the url-derived shell title; requiring title-token
+    # overlap here strands its brand/sku/description on a discarded entity.
     if any(
         kind in _STRUCTURED_SHELL_IDENTITY_KINDS for kind, _ in structured_identities
     ):
         return True
+    # Without a strong identity, fall back to a complete offer, but only when the
+    # titles agree — this guards against over-merging distinct products that a
+    # multi-product page would otherwise collapse into the single url shell.
+    if not (_title_identity_tokens(url_rows) & _title_identity_tokens(structured_rows)):
+        return False
     return _group_has_complete_offer(structured_rows, evidence)
 
 

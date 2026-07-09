@@ -50,6 +50,37 @@ class HtmlNode:
             child = child.next
         return " ".join(" ".join(pieces).split())
 
+    def content_text(self) -> str:
+        # Like text(), but excludes text inside script/style/noscript. Inline
+        # <style>/<script> blocks otherwise leak CSS/JS source (e.g. a selector
+        # string) into scraped titles. Mirrors HtmlDocument.visible_text().
+        pieces: list[str] = []
+        for node in self.node.traverse(include_text=True):
+            if not node.is_text_node:
+                continue
+            parent = node.parent
+            excluded = False
+            while parent is not None:
+                if str(parent.tag or "").lower() in {"script", "style", "noscript"}:
+                    excluded = True
+                    break
+                parent = parent.parent
+            if not excluded:
+                text = str(node.text() or "").strip()
+                if text:
+                    pieces.append(text)
+        return " ".join(" ".join(pieces).split())
+
+    def child_elements(self) -> tuple[HtmlNode, ...]:
+        # Direct element children (no text/comment nodes), in document order.
+        return tuple(
+            HtmlNode(self.artifact_id, child)
+            for child in self.node.iter()
+            if not child.is_text_node
+            and str(child.tag or "")
+            and not str(child.tag).startswith("-")
+        )
+
     def tag(self) -> str:
         return str(self.node.tag or "").lower()
 

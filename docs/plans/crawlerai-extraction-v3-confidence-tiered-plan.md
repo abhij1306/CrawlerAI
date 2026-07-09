@@ -306,19 +306,189 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 **What:** Emit generalized-vs-recipe tier split per domain, grounding-failure rate, blended $/page, promotion/demotion counts, repair cost-at-stake. Per-domain flag routes production commerce-detail traffic to V3 once its eval cell beats baseline; old path stays until green.
 **Verify:** dashboards populate on a live run; V3 enabled per-domain only after commerce-detail passes.
 
-## Phase 4 — Jobs + listing (corpus-gated; do not start without a corpus)
+## Phase 4 — Listing + jobs + commerce pipeline architecture (grounded fusion)
 
-### Slice 4.1: Build jobs + listing corpora
-**Status:** IN PROGRESS — corpus tooling is now surface-aware and counts `eval/labels/<surface>/` labels for `job_detail`, `job_listing`, and `ecommerce_listing` without pretending proposals are gold. `eval.corpus --write-proposals --surface <surface> --run-dir artifacts/runs/<run-id>` now converts a surface-specific captured run into unverified review inputs, while `eval.corpus --stats --surface job_detail` currently reports `registered: 0`, `human_verified: 0`, `target_human_verified: 20`, `ready_for_gate: false`; this slice still needs real captured runs plus human labels before it can be marked done.
-**Files:** `backend/eval/labels/*` (jobs + listing cells)
-**What:** Capture and human-label a jobs-detail, jobs-listing, and commerce-listing corpus (target ≥ 20 pages/cell) using the acquisition pipeline. Jobs needs `JobPosting` JSON-LD coverage measured (corpus showed 0%). Listing needs the exemplar-record representation (§Representation) exercised for the first time.
-**Verify:** `eval.corpus --stats` shows ≥ 20 labeled per new cell; a listing baseline is frozen.
+**Reframe (2026-07-09, supersedes the corpus-gated framing).** There is no
+listing/jobs eval corpus and none is being built — we have no labeled ground
+truth and eval is deferred ("eval can be used later to improve results"). Phase 4
+is therefore a **pipeline-architecture** phase, not a corpus phase: rebuild
+listing (and then jobs) on the **same grounded-fusion architecture that made
+commerce-detail robust**, verified against real captured runs
+(`artifacts/runs/9–14` commerce-listing; `runs/3–7` job-listing) rather than an
+eval gate. The Slice 4.1 eval-corpus build is **dropped**.
 
-### Slice 4.2: Extend tiers to jobs/listing + delete shared selector infra
-**Status:** TODO — **blocked until 4.1 + each cell beats its baseline**
-**Files:** `app/extraction/jobs.py`, `app/extraction/listing.py`, remove the guarded selector infra from Slice 2.1
-**What:** Point the same cascade at jobs/listing (jobs field schema; listing exemplar-record + apply-across-list). Once each cell beats baseline, **delete** the selector infrastructure left guarded in 2.1.
-**Verify:** jobs + listing eval cells ≥ baseline with zero selectors; `grep -rn "selectors_runtime\|domain_memory" app` returns nothing live.
+**LOC note:** the extraction package LOC ratchet
+(`test_final_architecture_ownership.py`) does **not** gate this phase — listing/
+jobs grounded extraction is effectively a greenfield build. Bump the budget as
+needed rather than contort the design to fit it. The hard constraint is instead
+**generalization**: the architecture must not be brittle/site-specific — no
+per-site selector patches. Listing has **fewer fields than detail** (title, url,
+price, image) so it should reach **higher coverage and accuracy** than detail, not
+lower.
+
+### Diagnosis (verified against real captures, runs 9–14)
+Listing records get the **url right but title/fields wrong**: `img-shelf-principal`
+(img class leaked as title), a literal CSS selector string from an inline `<style>`
+block, `Sandals`/`Trainers` (category labels), `Go to detail page` (CTA),
+`Black Matte` (swatch color). **Root cause is the detail-vs-listing architectural
+asymmetry**, not selectors: detail fuses 7 grounded collectors
+(`default_collectors()`) into a `build_entities` graph resolved by confidence
+tiers; listing runs **one** CSS collector (`collect_ecommerce_listing`), no graph,
+no confidence resolution — nothing outranks a bad DOM string. Proof the fix is
+wiring not new scraping: the existing grounded collectors, run on the same listing
+HTML, already recover the correct titles (phase-eight nested microdata →
+`Delphine Red Floral Dress`; kitchenaid page jsonld → `13-Cup Food Processor…`;
+hm card `a@title` → `Leather mules`, currently beaten by a coarser card selector
+because there is no confidence arbitration).
+
+### Design (REWRITTEN 2026-07-09): listing rides the SAME tier model as detail — no selector spine
+
+**Why the previous Phase-4 design was wrong.** The earlier version of this section
+("keep CSS enumeration as the record spine; add grounded field candidates; let
+confidence tiers pick") contradicted this plan's own architecture section
+(§140–163). It kept **selectors as the primary intelligence** and bolted grounded
+candidates on top — which is exactly the per-shape/per-site whack-a-mole the rebuild
+exists to kill. Every new markup shape (firstcry/dyson/toddsnyder `ItemList`) needed
+a new hand-written parser to win arbitration. That is brittle by construction. It is
+**deleted**.
+
+**The correct design is already written in §140–163 and §175 — it was just never
+wired for listing.** Listing rides the identical rails detail rides:
+
+- **Tier 0 — deterministic structured floor (no LLM, site-independent).** Parse the
+  universal structured sources: JSON-LD (`ItemList`/`Product`/`ProductGroup`),
+  microdata, OpenGraph, and **network JSON via a shape-generic mapper** (mine
+  Invoro's `network_listing_mapper` — traversal-generic, not per-site). If a
+  structured source yields N records that **fully ground** (title+url present and
+  traceable), extraction is **done with zero LLM cost**. This is the "HTTP-simple
+  sites never call the LLM — the data is right there" case.
+- **Tier 2 — generalized LLM (the acquisition step, for complex/rendered sites).**
+  When Tier 0 does not fully ground, do **record-boundary discovery first**
+  (structural repetition/homogeneity finds the N repeated containers — generic, not
+  selectors; mine Invoro's repeated-container logic), then flat-map **ONE exemplar
+  record** (§163) and let the LLM identify the field bindings for that record shape.
+  Apply the bindings across all N records. **The LLM sees one record, not 900** — so
+  a 900-product page costs one small call, and the LLM *identifies where the data is*
+  rather than us enumerating shapes.
+- **Tier 1 — recipe (per-domain replay cache; §175 lifecycle).** The LLM's
+  identified bindings compile into a **source-pin + per-record field-binding recipe
+  cached per `(domain, surface=listing)`**. Future runs of that domain **replay the
+  recipe deterministically and cheaply** — no LLM. The recipe **re-grounds every run**
+  and **auto-falls-back to re-acquisition (a fresh LLM pass) on any grounding
+  mismatch** (drift/redesign). This is the user's "LLM as one-time setup cost;
+  future runs benefit for that domain by reusing intelligence."
+- **Grounding gate (§167, already exists, unchanged).** Every LLM-emitted field must
+  resolve to an entry in the flat map (or another materialized source) or it is
+  dropped. The LLM chooses; it cannot invent. This is the anti-hallucination floor
+  and it is purely mechanical.
+
+**Selectors are demoted from "the intelligence" to "one Tier-0 harvest source among
+several, that never decides what a product is."** Deciding product-vs-noise is no
+longer pattern-matched per shape — it is (a) grounded structured data at Tier 0, or
+(b) reasoned by the LLM once at acquisition and cached. A brand-new site triggers one
+acquisition; it never needs a new hand-written parser.
+
+### Slice 4.1: Non-content nodes excluded from CSS title text (bug floor)
+**Status:** DONE — added `HtmlNode.content_text()` (excludes `script/style/noscript` descendant text, mirroring `HtmlDocument.visible_text()`); routed the three listing title-text reads (`_listing_product_title` link-text fallback, `_first_admissible_text`, `_link_has_title_signal`) through it. phase-eight (run 11) code-title leaks 5→0 with all 58 records preserved; no record-count change on runs 10/12/13/14. Regression test `test_ecommerce_listing_excludes_inline_style_source_from_title` (fails without fix). Full listing suite (20) + ownership (33) green.
+**Files:** `app/extraction/listing.py`, `app/extraction/documents.py`
+**What:** `documents.py` already excludes `script/style/noscript` in
+`visible_text()`, but the listing title path uses raw `.text()`/selector text which
+does not. Route listing title text through the style/script-excluding traversal.
+Kills the CSS-selector-string-as-title class outright. Isolated, ship first.
+**Verify:** phase-eight (run 11) no longer emits a `.product-tile__sticker…` title;
+existing `test_extraction_listing_behavior.py` (19) stays green.
+
+> **Superseded slices (pre-2026-07-09).** The former 4.2 "Grounded fusion on card
+> subjects", 4.3 "Confidence-tiered listing resolution + card-selector arbitration",
+> and the selector-first framing of 4.4 are **dropped**. They kept CSS enumeration as
+> the record spine, which is the brittleness the rewrite removes. The
+> `listing_structured.py` per-shape route code (Routes 1/2/3) written under that
+> framing is **reverted** in Slice 4.2 below. New slices follow.
+
+### Slice 4.2: Revert the selector-fusion spike; land record-boundary discovery
+**Status:** TODO
+**Files:** delete `app/extraction/listing_structured.py`; revert `listing.py`,
+`adapters.py`, `extraction_semantic_surface.toml`, `test_extraction_architecture.py`
+to pre-spike state; new `app/extraction/listing_records.py` (record-boundary
+discovery).
+**What:** (1) Revert the rejected per-shape route wiring (Routes 1/2/3 microdata/
+JSON-LD/ItemList recognizers) — it is the anti-pattern. (2) Build **deterministic,
+site-independent record-boundary discovery**: given the listing DOM, find the N
+repeated record containers by **structural repetition / homogeneity** (sibling
+subtrees with near-identical tag-path shape, each containing exactly one candidate
+detail url), not by any hardcoded selector. Mine Invoro's repeated-container logic as
+a reference algorithm (structural, not per-site). Output: an ordered list of N record
+subtrees, each with its detail url. This is the only "where are the products" step,
+and it is generic across markup shapes.
+**Verify:** on runs 10/11/12/14 and firstcry/dyson/toddsnyder captures, discovery
+returns the correct **record count** (± a small tolerance) with one url per record,
+regardless of whether the page uses cards, `ItemList`, or bare anchors. No titles yet
+— this slice only finds boundaries.
+
+### Slice 4.3: Tier 0 structured floor for listing (no LLM)
+**Status:** DONE (2026-07-09)
+**Files:** `app/extraction/listing_tier0.py` (NEW, 306 loc), `app/extraction/adapters.py`
+(`_harvest_listing` runs Tier 0 first, falls back to CSS collector on empty).
+**What:** For each discovered record boundary (Slice 4.2), resolve fields from
+**structured sources only**, joined to the record by **url-identity** (the same
+casefolded host+path `_link_identity` discovery assigns). Implemented JSON-LD
+`ItemList`/`ListItem`/`Product` today (microdata/OpenGraph/network-JSON are additive
+later — the `_scan` traversal is shape-generic and url-keyed, so adding a source is
+adding another producer of `_Product` records). All-or-nothing floor: `ground_boundaries`
+returns `None` unless **every** discovered record grounds, so a partial join falls
+through rather than publishing a truncated listing. Every emitted field carries a
+`json_pointer` locator (grounding gate is mechanical). Zero LLM on the fast path.
+**Verify (done):** kitchenaid (run 23) → 12 records, all title+url+price+image,
+**0 LLM calls**, lineage `collector_id=listing_structured_floor`; H&M (run 12) → 33/33
+grounded, 0 LLM. firstcry/toddsnyder/dyson have no JSON-LD products → clean fall-through
+(correct; they are Slice 4.4's job). Tests: `test_listing_tier0_structured.py` (4,
+join/partial/bare-array/no-source), plus 2 e2e in `test_extraction_listing_behavior.py`
+(structured floor resolves without LLM; no-structured falls through to CSS). Full unit
+suite 901 green, mypy clean.
+
+### Slice 4.4: Generalized listing tier (exemplar-record LLM) + recipe cache
+**Status:** TODO
+**Files:** `app/extraction/model_runtime.py` (listing entry), `representation/flat_map.py`
+(listing/exemplar mode already specced §163), recipe compiler
+(`app/extraction/...` recipe path from Slice 2.2), `adapters.py` (`_resolve_listing`
+routes through the tier cascade).
+**What:** When Tier 0 does not fully ground, run the **generalized tier on ONE
+exemplar record** (§163): flat-map a single discovered record subtree → LLM returns
+the field bindings (title/url/price/image → source locators within the record) for
+that record shape → **apply the bindings across all N records** deterministically →
+grounding-gate each. Then **compile the bindings into a per-`(domain, listing)`
+recipe** (source-pin + per-record field binding; Slice 2.2 machinery) so future runs
+**replay without the LLM**. Recipe re-grounds every run and **auto-falls-back to a
+fresh exemplar LLM pass on grounding mismatch** (§175 lifecycle). This is
+acquire-once / replay-cheap for listing.
+**Verify:** dyson/toddsnyder (currently nav-links / empty titles / 0 records) yield
+real product titles+urls via **one** exemplar LLM call each; a second run of the same
+domain replays the recipe with **0 LLM calls** and identical output; a simulated
+markup change forces re-acquisition (one LLM call) and recovers. kitchenaid still
+takes the Tier-0 fast path (0 LLM). Cost per newly-acquired listing page ≈ one small
+call (LLM sees 1 record, not N).
+
+### Slice 4.5: Jobs listing + detail on the same tier cascade
+**Status:** TODO — **priority-3, after listing (4.2–4.4) lands**
+**Files:** `app/extraction/jobs.py`, reuses the entire 4.2–4.4 cascade unchanged.
+**What:** Point the identical Tier 0 → generalized (exemplar) → recipe cascade at
+`job_listing`/`job_detail` with the jobs field schema (title, url, location,
+company). `JobPosting` JSON-LD grounds at Tier 0 where present; DOM-only rendered
+sites go through the exemplar LLM once and cache a recipe. No jobs-specific parsers.
+**Verify:** run 6 (adp, rendered) yields all rendered openings via one exemplar pass,
+not 1; run 4 (ultipro, 30) grounds at Tier 0 and holds; second runs replay recipes
+with 0 LLM calls.
+
+### Out of scope (acquisition, not extraction)
+Runs 3/5/7/9 (paycom, ultipro-curl, oracle SPA, arcteryx challenge) return 0
+because the DOM was never rendered (SPA shells, challenge pages, non-rendered
+`curl_cffi`). Extraction cannot fix these; they are acquisition concerns. Note
+them, don't chase them in this phase.
+
+### Selector infra deletion (formerly Slice 4.2)
+Once listing + jobs run on grounded fusion, **delete** the shared selector
+infrastructure left guarded in Slice 2.1.
+**Verify:** `grep -rn "selectors_runtime\|domain_memory" app` returns nothing live.
 
 ## Phase 5 — Network/API/GraphQL + interaction sources (corpus-gated; the V2 §15–19 machinery)
 
@@ -349,7 +519,9 @@ Phases are strictly ordered. A slice may not start until every slice before it i
 
 - **Generalized-tier model (RESOLVED):** **Llama via the existing hosted API — no self-hosting.** Matches the user's testing that Llama beat frontier models for this task. The client is provider-agnostic so a different model/endpoint is a config change; self-hosting (e.g. NuExtract-3 4B for batch economics) is explicitly deferred and revisited later only if cost metrics demand it. **Remove NuExtract/self-host from Phase 1–2 scope** — do not build serving infra now.
 - **DOM-only steady state:** **generalized-LLM-every-page** (no persisted path cache) is the default — affordable at ≤20k/day (~$0.004/page). The grounding-gated path-hint cache (Slice 2.2) is an *optional* cost optimization enabled per-domain only if the Slice 3.3 blended-$/page metric shows a specific high-volume DOM-only domain needs it. This keeps the default architecture selector-free and simple.
-- **Corpus scope:** commerce-detail is the only proven cell (91 pages). Jobs and listing are real but **corpus-gated** (Phase 4) — building their ground truth is a prerequisite task, not an afterthought. Do not delete shared selector infra until Phase 4 proves those surfaces.
+- **Corpus scope:** commerce-detail is the only cell with a labeled eval corpus (91 pages). Jobs and listing have **no corpus and none is being built** (eval deferred — "eval can be used later"). Phase 4 was **re-scoped (2026-07-09)** from a corpus-build to a **pipeline-architecture** phase: rebuild listing/jobs on the same architecture as commerce-detail, verified against real captured runs (`artifacts/runs/9–14`, `3–7`) not an eval gate. Do not delete shared selector infra until listing/jobs run on the new path.
+- **Listing/jobs architecture (RESOLVED 2026-07-09, supersedes earlier "grounded fusion on card subjects"):** listing and jobs ride the **same Tier 0 → generalized(exemplar) → recipe cascade** as detail (§140–163, §175), **not** a CSS-enumeration spine with grounded candidates layered on. Rationale (user, verbatim intent): "anyone can find selectors and write a script; the intelligence is in identifying and normalizing data without dependencies on selectors" and "use LLM as a setup cost for rendered complex sites … LLM identifies and stores data sources, future runs benefit for that domain by reusing intelligence … runs cheaply once a site is acquired." So: selectors are demoted to one Tier-0 harvest source that never *decides* product-vs-noise; product identification is grounded structured data (Tier 0, no LLM) or LLM-reasoned once at acquisition and cached as a per-domain recipe (Tier 1 replay). The per-shape recognizer approach (`listing_structured.py` Routes 1/2/3) is **reverted** — it was the brittleness being removed.
+- **LOC ratchet waiver for Phase 4 (2026-07-09):** listing/jobs grounded extraction is effectively greenfield; the extraction-package LOC budget in `test_final_architecture_ownership.py` is **bumped as needed**, not treated as a design constraint. The real constraint is generalization — no per-site selector patches; the architecture must hold on unseen sites. Listing has fewer fields than detail, so it should reach **higher** coverage/accuracy.
 
 ## Notes
 

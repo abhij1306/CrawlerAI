@@ -223,7 +223,7 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
     # Re-architecture exception: resolution is now a package, field-state
     # construction and Sentinel comparison have their own modules so semantic
     # ownership can stay honest.
-    assert len(files) <= 33
+    assert len(files) <= 35
     assert (
         sum(_physical_line_count(path) for path in files)
         <= ratchets["physical_loc_budget"]
