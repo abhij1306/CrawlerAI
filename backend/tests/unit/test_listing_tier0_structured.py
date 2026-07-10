@@ -12,6 +12,7 @@ from __future__ import annotations
 from app.extraction.documents import HtmlDocument
 from app.extraction.listing_records import discover_listing_records
 from app.extraction.listing_tier0 import ground_boundaries
+from app.extraction.surfaces import Surface
 
 PAGE = "https://shop.test/c/dresses/"
 
@@ -19,7 +20,12 @@ PAGE = "https://shop.test/c/dresses/"
 def _ground(html: str):
     doc = HtmlDocument("t", html)
     boundaries = discover_listing_records(doc, page_url=PAGE)
-    return boundaries, ground_boundaries(doc, boundaries, page_url=PAGE)
+    return boundaries, ground_boundaries(
+        doc,
+        boundaries,
+        page_url=PAGE,
+        surface=Surface.ECOMMERCE_LISTING,
+    )
 
 
 _ITEMLIST = """
@@ -108,3 +114,30 @@ def test_no_structured_source_falls_through() -> None:
     boundaries, grounded = _ground(html)
     assert len(boundaries) == 2  # discovery still finds boundaries...
     assert grounded is None  # ...but Tier 0 does not hold without structured data.
+
+
+def test_jobposting_itemlist_grounds_without_surface_specific_scanner() -> None:
+    html = """
+    <script type="application/ld+json">{"@type":"ItemList","itemListElement":[
+      {"@type":"ListItem","url":"/jobs/backend","item":{"@type":"JobPosting","title":"Backend Engineer","hiringOrganization":{"name":"Invoro"},"jobLocation":{"address":{"addressLocality":"Remote"}}}},
+      {"@type":"ListItem","url":"/jobs/data","item":{"@type":"JobPosting","title":"Data Engineer","hiringOrganization":{"name":"Invoro"},"jobLocation":{"address":{"addressLocality":"New Delhi"}}}}
+    ]}</script>
+    <ul><li><a href="/jobs/backend">Backend Engineer</a><span>Invoro Remote</span></li>
+    <li><a href="/jobs/data">Data Engineer</a><span>Invoro New Delhi</span></li></ul>
+    """
+    doc = HtmlDocument("t", html)
+    boundaries = discover_listing_records(doc, page_url="https://jobs.test/careers")
+    grounded = ground_boundaries(
+        doc,
+        boundaries,
+        page_url="https://jobs.test/careers",
+        surface=Surface.JOB_LISTING,
+    )
+    assert grounded is not None
+    assert len(grounded) == 2
+    assert {field.fact_type for _, record in grounded for field in record.fields} == {
+        "job.title",
+        "job.url",
+        "job.company",
+        "job.location",
+    }

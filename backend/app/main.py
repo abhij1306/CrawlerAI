@@ -73,8 +73,10 @@ from app.core.config.auth_security import (
     SECURITY_HEADER_HSTS,
     SECURITY_HEADER_PERMISSIONS_POLICY,
     SECURITY_HEADER_REFERRER_POLICY,
+    SECURITY_HEADER_UNTRUSTED_HTML_CONTENT_SECURITY_POLICY,
     cors_allowed_headers,
     path_requires_no_store,
+    path_requires_untrusted_html_sandbox,
     secure_transport_required,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
@@ -269,6 +271,10 @@ async def security_headers_middleware(request: Request, call_next) -> Response:
     response.headers["X-Frame-Options"] = SECURITY_HEADER_FRAME_OPTIONS
     response.headers["Referrer-Policy"] = SECURITY_HEADER_REFERRER_POLICY
     response.headers["Permissions-Policy"] = SECURITY_HEADER_PERMISSIONS_POLICY
+    if path_requires_untrusted_html_sandbox(request.url.path):
+        response.headers["Content-Security-Policy"] = (
+            SECURITY_HEADER_UNTRUSTED_HTML_CONTENT_SECURITY_POLICY
+        )
     if path_requires_no_store(request.url.path):
         response.headers["Cache-Control"] = "no-store"
     if _should_emit_hsts(request):

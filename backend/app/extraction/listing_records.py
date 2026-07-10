@@ -58,14 +58,17 @@ def _is_visually_hidden(node: HtmlNode) -> bool:
 
 
 def _is_content_rich(node: HtmlNode) -> bool:
-    """A product record contains an image or a price; nav/utility links do not.
+    """A record has media/price, or a text-bearing detail link.
 
     Site-independent: checks for the *presence* of an ``<img>`` (or lazy-image
     ``<source>``) or a currency signal in the subtree text — never class names.
     """
     if node.css_first("img") is not None or node.css_first("source") is not None:
         return True
-    return bool(_PRICE_SIGNAL.search(node.content_text()))
+    text = node.content_text()
+    if _PRICE_SIGNAL.search(text):
+        return True
+    return bool(len(node.css("a[href]")) == 1 and len(re.findall(r"\w+", text)) >= 3)
 
 
 def _link_identity(url: str) -> str:
@@ -121,7 +124,7 @@ class RecordBoundary:
 
 
 def discover_listing_records(
-    doc: HtmlDocument, *, page_url: str
+    doc: HtmlDocument, *, page_url: str, allow_singleton: bool = True
 ) -> tuple[RecordBoundary, ...]:
     """Return the page's product records by structural repetition.
 
@@ -154,7 +157,11 @@ def discover_listing_records(
                 grids[parent_key] = grid
             grid.add_child(child, url=url, identity=identity, order=order)
 
-    kept = _best_grid_children(grids)
+    kept = _best_grid_children(
+        grids,
+        page_url=page_url,
+        allow_singleton=allow_singleton,
+    )
     if not kept:
         return ()
 
@@ -166,6 +173,48 @@ def discover_listing_records(
             )
         )
     return tuple(boundaries)
+
+
+def listing_discovery_diagnostics(
+    doc: HtmlDocument, *, page_url: str
+) -> dict[str, int]:
+    """Return bounded, source-agnostic reasons why DOM boundary discovery failed."""
+    counts = {
+        "candidate_anchor_count": 0,
+        "accepted_anchor_count": 0,
+        "rejected_hidden_count": 0,
+        "rejected_shell_count": 0,
+        "rejected_non_http_count": 0,
+        "rejected_cross_host_count": 0,
+        "rejected_structural_url_count": 0,
+    }
+    grid_candidates: set[int] = set()
+    for anchor in doc.css("a[href]"):
+        counts["candidate_anchor_count"] += 1
+        if _is_visually_hidden(anchor):
+            counts["rejected_hidden_count"] += 1
+            continue
+        if any(
+            node.tag() in {"header", "footer", "nav"} for node in anchor.ancestors()
+        ):
+            counts["rejected_shell_count"] += 1
+            continue
+        href = (anchor.attribute("href") or "").strip()
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            counts["rejected_non_http_count"] += 1
+            continue
+        url = urljoin(page_url, href)
+        if not same_site(page_url, url):
+            counts["rejected_cross_host_count"] += 1
+            continue
+        if listing_url_is_structural(url) or not _link_identity(url):
+            counts["rejected_structural_url_count"] += 1
+            continue
+        counts["accepted_anchor_count"] += 1
+        grid_candidates.update(node.identity() for node in anchor.ancestors())
+    counts["grid_candidates_considered"] = len(grid_candidates)
+    counts["boundary_count"] = len(discover_listing_records(doc, page_url=page_url))
+    return counts
 
 
 def _product_anchors(
@@ -187,12 +236,14 @@ def _product_anchors(
         # aria-hidden as hidden, so we use a narrower visual check here.
         if _is_visually_hidden(anchor):
             continue
+        if any(
+            node.tag() in {"header", "footer", "nav"} for node in anchor.ancestors()
+        ):
+            continue
         href = (anchor.attribute("href") or "").strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
         url = urljoin(page_url, href)
-        if not same_site(page_url, url):
-            continue
         # Reject only clearly-structural URLs (category/nav/utility). We do NOT
         # require a positive product marker — that would be per-site URL
         # enumeration. Structural repetition below is the real discriminator.
@@ -236,7 +287,9 @@ class _GridParent:
         return sorted(self._children.values(), key=lambda item: item.order)
 
 
-def _best_grid_children(grids: dict[int, _GridParent]) -> list[_Container]:
+def _best_grid_children(
+    grids: dict[int, _GridParent], *, page_url: str, allow_singleton: bool = False
+) -> list[_Container]:
     """Pick the grid whose direct children are the product record set.
 
     Selection is by (a) number of distinct content-rich record children, then
@@ -249,25 +302,45 @@ def _best_grid_children(grids: dict[int, _GridParent]) -> list[_Container]:
     for grid in grids.values():
         rich = [c for c in grid.children() if _is_content_rich(c.node)]
         if len(rich) < _MIN_REPEATED_RECORDS:
+            text_cards = [
+                child
+                for child in grid.children()
+                if len(re.findall(r"\w+", child.node.content_text())) >= 3
+            ]
+            if _homogeneity_score(text_cards) >= _MIN_REPEATED_RECORDS:
+                rich = text_cards
+        if len(rich) < _MIN_REPEATED_RECORDS:
+            continue
+        if not _consistent_record_host(rich, page_url=page_url):
             continue
         homogeneity = _homogeneity_score(rich)
         scored.append((len(rich), homogeneity, rich))
 
-    if not scored:
-        # No repeated content-rich grid. Fall back to any single content-rich
-        # record child so a genuine 1-item result still extracts.
+    if not scored and allow_singleton:
         singletons = [
-            c
+            child
             for grid in grids.values()
-            for c in grid.children()
-            if _is_content_rich(c.node)
+            for child in grid.children()
+            if _is_content_rich(child.node) and same_site(page_url, child.url)
         ]
         singletons.sort(key=lambda item: item.order)
         return singletons[:1]
+    if not scored:
+        # A lone content-rich link is more often navigation, a promotion, or a
+        # footer card than a listing record.  A one-item listing can still be
+        # admitted by a structured source, but DOM-only discovery needs the
+        # structural repetition proof.
+        return []
 
     # Prefer most record-children; break ties toward the more homogeneous grid.
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return scored[0][2]
+
+
+def _consistent_record_host(children: list[_Container], *, page_url: str) -> bool:
+    page_host = (urlparse(page_url).hostname or "").casefold()
+    hosts = {(urlparse(child.url).hostname or "").casefold() for child in children}
+    return bool(hosts) and (hosts == {page_host} or len(hosts) == 1)
 
 
 def _homogeneity_score(children: list[_Container]) -> int:

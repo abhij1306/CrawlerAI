@@ -10,11 +10,6 @@ from app.core.config.extraction_recipes import (
     JOB_DETAIL_DESCRIPTION_SELECTORS,
     JOB_DETAIL_LOCATION_SELECTORS,
     JOB_DETAIL_TITLE_SELECTORS,
-    JOB_LISTING_CARD_SELECTORS,
-    JOB_LISTING_COMPANY_SELECTORS,
-    JOB_LISTING_LOCATION_SELECTORS,
-    JOB_LISTING_TITLE_SELECTORS,
-    JOB_LISTING_URL_SELECTORS,
 )
 from app.extraction.collectors._helpers import (
     evidence,
@@ -33,7 +28,7 @@ from app.extraction.contracts import (
     RejectedEvidence,
     SourceLocator,
 )
-from app.extraction.documents import HtmlDocument, HtmlNode
+from app.extraction.documents import HtmlDocument
 from app.core.shared.ids import stable_id
 from app.extraction.surfaces import Surface
 
@@ -71,86 +66,6 @@ def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Ev
             for row in dom
         ]
     return [*structured, *dom]
-
-
-def collect_job_listing(
-    bundle: CaptureBundle, reader: ArtifactReader
-) -> list[Evidence]:
-    doc = reader.document_store.html("html")
-    return _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
-
-
-def _collect_job_listing_evidence(
-    bundle: CaptureBundle,
-    doc: HtmlDocument,
-    *,
-    page_url: str,
-) -> list[Evidence]:
-    rows: list[Evidence] = []
-    seen_cards: set[str] = set()
-    for selector in JOB_LISTING_CARD_SELECTORS:
-        for index, card in enumerate(doc.css(selector)):
-            if card.is_hidden():
-                continue
-            card_key = card.html()
-            if card_key in seen_cards:
-                continue
-            seen_cards.add(card_key)
-            subject_id = stable_id("subject", bundle.bundle_id, "job", len(seen_cards))
-            card_rows = _job_listing_card_evidence(
-                bundle,
-                card,
-                page_url=page_url,
-                subject_id=subject_id,
-                card_selector=selector,
-                card_index=index,
-            )
-            rows.extend(card_rows)
-    return rows
-
-
-def _job_listing_card_evidence(
-    bundle: CaptureBundle,
-    card: HtmlNode,
-    *,
-    page_url: str,
-    subject_id: str,
-    card_selector: str,
-    card_index: int,
-) -> list[Evidence]:
-    title = _first_node_text(card, JOB_LISTING_TITLE_SELECTORS)
-    url = _first_node_attr(card, JOB_LISTING_URL_SELECTORS, "href")
-    company = _first_node_text(card, JOB_LISTING_COMPANY_SELECTORS)
-    location = _first_node_text(card, JOB_LISTING_LOCATION_SELECTORS)
-    values = (
-        ("job.title", title, "title", 0.72),
-        ("job.url", urljoin(page_url, url) if url else None, "url", 0.74),
-        ("job.company", company, "company", 0.62),
-        ("job.location", location, "location", 0.62),
-    )
-    rows: list[Evidence] = []
-    for fact_type, value, field, confidence in values:
-        if not value:
-            continue
-        rows.append(
-            _job_evidence(
-                bundle,
-                artifact_id="html",
-                collector_id="job_listing_css",
-                fact_type=fact_type,
-                value=value,
-                subject_id=subject_id,
-                locator=SourceLocator(
-                    kind="css_selector",
-                    value=f"{card_selector}:nth-match({card_index + 1}) {field}",
-                    preview=str(value)[:120],
-                ),
-                confidence=confidence,
-                directness="direct",
-                surface=Surface.JOB_LISTING,
-            )
-        )
-    return rows
 
 
 def _collect_jsonld_job_evidence(
@@ -398,32 +313,6 @@ def _first_text(doc: HtmlDocument, selectors: tuple[str, ...]) -> str | None:
         )
         if text:
             return text
-    return None
-
-
-def _first_node_text(node: HtmlNode, selectors: tuple[str, ...]) -> str | None:
-    for selector in selectors:
-        child = node.css_first(selector)
-        if child is None or child.is_hidden():
-            continue
-        text = _clean_text(
-            child.attribute("title") or child.text(separator=" ", strip=True)
-        )
-        if text:
-            return text
-    return None
-
-
-def _first_node_attr(
-    node: HtmlNode, selectors: tuple[str, ...], attr: str
-) -> str | None:
-    for selector in selectors:
-        child = node.css_first(selector)
-        if child is None or child.is_hidden():
-            continue
-        value = str(child.attribute(attr) or "").strip()
-        if value:
-            return value
     return None
 
 

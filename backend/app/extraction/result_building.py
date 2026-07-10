@@ -34,7 +34,7 @@ from app.extraction.contracts import (
 from app.extraction.entities import EntitySet
 from app.extraction.field_states import FieldStateName, field_state
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import SurfaceSpec
+from app.extraction.surfaces import SurfaceSpec, listing_schema
 
 
 def decisions(resolution: Any) -> tuple[Decision, ...]:
@@ -549,18 +549,27 @@ def retry_request(
             required_artifacts=("rendered_html",),
         )
     ecommerce_detail = request.surface.value == "ecommerce_detail"
-    ecommerce_listing = request.surface.value == "ecommerce_listing"
     if (
-        ecommerce_listing
+        listing_schema(request.surface) is not None
         and verdict == "empty"
         and not records
-        and not request.capture.browser_attempted
     ):
-        return RetryRequest(
-            required=True,
-            reason="empty_extraction",
-            required_artifacts=("rendered_html",),
+        if not request.capture.browser_attempted:
+            return RetryRequest(
+                required=True,
+                reason="empty_extraction",
+                required_artifacts=("rendered_html",),
+            )
+        has_network_json = any(
+            artifact.artifact_type == "network_json"
+            for artifact in request.capture.artifacts
         )
+        if not has_network_json:
+            return RetryRequest(
+                required=True,
+                reason="listing_network_missing",
+                required_artifacts=("rendered_html", "network_payloads"),
+            )
     explicit_variants = "variants" in request.requested_fields
     if (
         ecommerce_detail

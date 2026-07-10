@@ -120,7 +120,7 @@ Flow:
 | `acquisition/browser_pool.py` | Shared Playwright pool, context lifecycle, browser binary/proxy launch |
 | `acquisition/browser_background_tasks.py` | Observed popup, eviction, and bounded browser-close task lifecycle |
 | `acquisition/browser_fetch_support.py` | Browser fetch result, diagnostics, and page event assembly helpers |
-| `acquisition/browser_capture.py` | Screenshots and network payload capture |
+| `acquisition/browser_capture.py` | Screenshots, bounded network response capture, and sanitized read-only GraphQL request metadata |
 | `acquisition/browser_diagnostics.py` | Browser engine labels, profile diagnostics, and failed-fetch diagnostic contracts |
 | `acquisition/browser_identity.py` | Browser fingerprint generation |
 | `acquisition/browser_interstitial.py` | Location-interstitial detection and safe dismissal |
@@ -173,6 +173,7 @@ Canonical config owner:
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
 | `extraction/jobs.py` | Job collection, wrong-surface checks, and deterministic job detail/listing resolution |
+| `extraction/surfaces.py`, `listing_records.py`, `listing_tier0.py`, `network_listing.py`, `listing_generalized.py` | Typed many-record schema, structural boundaries, deterministic DOM/network floors, and grounded recipe replay for commerce/job listings |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
 | `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
 | `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |

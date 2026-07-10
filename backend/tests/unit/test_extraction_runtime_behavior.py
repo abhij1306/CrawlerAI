@@ -818,6 +818,7 @@ def test_zero_record_result_has_failure_taxonomy_and_diagnostics() -> None:
     assert result.failure_classifications[0].code in {
         "discovery",
         "insufficient_input_bundle",
+        "listing_detection_failed",
         "validation",
         "semantic_resolution",
     }

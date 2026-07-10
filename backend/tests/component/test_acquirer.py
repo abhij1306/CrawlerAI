@@ -330,6 +330,7 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
                 "endpoint_type": "product_api",
                 "endpoint_family": "generic",
                 "source_run_id": 92,
+                "source_route": "https://example.com/products/replay-widget",
             }
         ]
         return {
@@ -372,6 +373,7 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
                         "endpoint_type": "product_api",
                         "endpoint_family": "generic",
                         "source_run_id": 92,
+                        "source_route": "https://example.com/products/replay-widget",
                     }
                 ]
             },
@@ -477,6 +479,29 @@ def test_internal_api_replay_rejects_title_only_settings_payload() -> None:
         surface="ecommerce_detail",
         page_url="https://www.chewy.com/wellness-core-rawrev-grain-free-wild/dp/141791",
         requested_fields=[],
+    )
+
+
+@pytest.mark.component
+def test_internal_api_replay_rejects_a_valid_but_wrong_detail_response() -> None:
+    payload = {
+        "url": "https://shop.test/api/products/other",
+        "method": "GET",
+        "body": {
+            "product": {
+                "title": "Other Product",
+                "price": "19.99",
+                "sku": "OTHER-1",
+                "url": "https://shop.test/products/other",
+            }
+        },
+    }
+
+    assert not payload_extracts_surface(
+        payload,
+        surface="ecommerce_detail",
+        page_url="https://shop.test/products/requested",
+        requested_fields=["title", "price"],
     )
 
 

@@ -115,6 +115,55 @@ def test_no_records_when_no_same_site_product_anchors() -> None:
     assert _urls(html) == []
 
 
+def test_mid_path_category_tiles_are_not_products() -> None:
+    # Arcteryx-style category landing tiles nest the ``/c/`` marker mid-path with
+    # an opaque terminal segment (``wid-...``). Each tile is content-rich (image)
+    # and the tiles repeat homogeneously, so structural repetition alone would
+    # promote them to "products". They must be rejected as category/landing URLs.
+    html = """
+    <html><body>
+      <div class="grid">
+        <div class="card">
+          <a href="/ca/en/c/mens/footwear-climb/wid-abc"><img src=x></a>
+          <span>Climb Footwear</span>
+        </div>
+        <div class="card">
+          <a href="/ca/en/c/mens/footwear-hike/wid-abc"><img src=x></a>
+          <span>Hike Footwear</span>
+        </div>
+        <div class="card">
+          <a href="/ca/en/c/mens/footwear-run/wid-abc"><img src=x></a>
+          <span>Run Footwear</span>
+        </div>
+      </div>
+    </body></html>
+    """
+    assert _urls(html, page_url="https://arcteryx.com/ca/en/c/mens/footwear") == []
+
+
+def test_product_nested_under_category_prefix_still_extracts() -> None:
+    # A genuine product whose path nests under a category prefix must survive: the
+    # terminal segment is a real product slug, so it is detail-like despite the
+    # ``/c/`` prefix and must NOT be rejected as a category URL.
+    html = """
+    <html><body>
+      <div class="grid">
+        <div class="card">
+          <a href="/ca/en/c/mens/norvan-ld-4-gtx-shoe-0397.html"><img src=x></a>
+          <span>$260</span>
+        </div>
+        <div class="card">
+          <a href="/ca/en/c/mens/kragg-approach-shoe-0078.html"><img src=x></a>
+          <span>$180</span>
+        </div>
+      </div>
+    </body></html>
+    """
+    urls = _urls(html, page_url="https://arcteryx.com/ca/en/c/mens/footwear")
+    assert len(urls) == 2
+    assert urls[0].endswith("/norvan-ld-4-gtx-shoe-0397.html")
+
+
 def test_single_content_rich_result_still_extracts() -> None:
     # A genuine 1-item result page: no repetition, but the lone product card is
     # content-rich and must still be returned.

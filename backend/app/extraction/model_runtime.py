@@ -94,6 +94,7 @@ class RuntimeFlatMapPage(RuntimeRepresentationModel):
     fallback_reason: str | None = None
     vision_recommended: bool = False
     chunk_count: int = 0
+    surface: str = ""
 
 
 class RuntimeModelAdapter(Protocol):
@@ -124,6 +125,7 @@ class ModelFallbackResult:
         Literal["model_service_failure", "unsupported_representation"] | None
     ) = None
     detail: str | None = None
+    recipe_candidate: dict[str, object] | None = None
 
 
 def run_model_fallback(
@@ -160,6 +162,7 @@ def run_model_fallback(
         html=html,
         artifact_id=artifact_id,
         market_tags=_market_tags(request),
+        surface=request.surface.value,
     )
     if page.vision_recommended or page.token_count > _input_token_budget():
         return ModelFallbackResult(
@@ -278,6 +281,7 @@ def build_runtime_flat_map_page(
     html: str,
     artifact_id: str,
     market_tags: tuple[str, ...] = (),
+    surface: str = "",
 ) -> RuntimeFlatMapPage:
     scoped = build_scoped_flat_map(HtmlDocument(artifact_id, html))
     return RuntimeFlatMapPage(
@@ -295,6 +299,7 @@ def build_runtime_flat_map_page(
         fallback_reason=scoped.fallback_reason,
         vision_recommended=scoped.vision_recommended,
         chunk_count=len(scoped.chunks),
+        surface=surface,
     )
 
 
@@ -342,7 +347,9 @@ def _approved_artifact(
         return None, "universal model artifact metadata is invalid"
     if not artifact.enabled:
         return None, "universal model fallback is disabled"
-    if not artifact.approved or not artifact.benchmark_passed:
+    if not artifact.approved:
+        return None, "universal model artifact is not approved"
+    if artifact.approval_source == "benchmark" and not artifact.benchmark_passed:
         return None, "universal model artifact is not benchmark-approved"
     if request.surface not in artifact.supported_surfaces:
         return None, "universal model artifact does not support requested surface"

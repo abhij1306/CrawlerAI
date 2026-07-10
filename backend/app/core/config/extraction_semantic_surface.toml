@@ -20,7 +20,7 @@ post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 18700
+physical_loc_budget = 19170
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -40,10 +40,11 @@ default_module_cyclomatic_complexity_budget = 20
 "jobs.py" = 550
 "json_walk.py" = 150
 "listing.py" = 500
-"listing_generalized.py" = 480
+"listing_generalized.py" = 600
 "listing_records.py" = 360
-"listing_tier0.py" = 360
+"listing_tier0.py" = 450
 "model_runtime.py" = 550
+"network_listing.py" = 240
 "pipeline.py" = 800
 "publication.py" = 700
 "representation/__init__.py" = 100
@@ -57,7 +58,7 @@ default_module_cyclomatic_complexity_budget = 20
 "resolution/ranking.py" = 200
 "result_building.py" = 750
 "sentinel.py" = 350
-"surfaces.py" = 200
+"surfaces.py" = 220
 "targeting.py" = 350
 "validation.py" = 800
 

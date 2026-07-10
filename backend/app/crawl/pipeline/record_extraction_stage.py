@@ -5,10 +5,12 @@ import logging
 
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
+from app.connectors.llm.config_service import validate_config_snapshot
 from app.connectors.llm.generalized_extraction import hosted_generalized_adapter
 from app.core.config.evaluation import (
     GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
     GENERALIZED_EXTRACTION_LLM_TASK,
+    GENERALIZED_EXTRACTION_OPERATOR_RUNTIME_ARTIFACT,
     UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
 )
 from app.crawl.profile import record_acquisition_contract_outcome
@@ -131,6 +133,16 @@ async def _load_runtime_snapshot(context: _URLProcessingContext) -> dict[str, ob
         if context.run.extraction_release_snapshot_id is not None
         else None
     )
+    if (
+        context.run.settings_view.llm_enabled()
+        and _generalized_model_config(context) is not None
+        and not isinstance(
+            snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY), dict
+        )
+    ):
+        snapshot[UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY] = dict(
+            GENERALIZED_EXTRACTION_OPERATOR_RUNTIME_ARTIFACT
+        )
     return snapshot
 
 
@@ -329,12 +341,19 @@ def _model_adapter(
         return None
     if artifact.get("adapter_id") != GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID:
         return None
-    config = context.run.settings_view.llm_config_snapshot().get(
-        GENERALIZED_EXTRACTION_LLM_TASK
-    ) or context.run.settings_view.llm_config_snapshot().get("general")
-    if not isinstance(config, dict):
+    config = _generalized_model_config(context)
+    if config is None:
         return None
     return hosted_generalized_adapter(config_snapshot=config)
+
+
+def _generalized_model_config(context: _URLProcessingContext) -> dict[str, object] | None:
+    snapshot = context.run.settings_view.llm_config_snapshot()
+    for task_type in (GENERALIZED_EXTRACTION_LLM_TASK, "general"):
+        config = snapshot.get(task_type)
+        if isinstance(config, dict) and validate_config_snapshot(config):
+            return config
+    return None
 
 
 async def _load_selector_rules(

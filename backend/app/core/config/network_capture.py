@@ -84,7 +84,13 @@ ENDPOINT_TYPE_PATH_TOKENS: Final[dict[str, dict[str, tuple[str, ...]]]] = {
     },
     "job_listing": {
         "graphql": ("/graphql", "graphql?"),
-        "job_api": ("/jobs", "/search", "/postings", "/requisitions"),
+        "job_api": (
+            "/jobs",
+            "/search",
+            "/postings",
+            "/requisitions",
+            "/jobboardview/",
+        ),
     },
 }
 
@@ -112,6 +118,16 @@ HIGH_VALUE_NETWORK_ENDPOINT_TYPES: Final[frozenset[str]] = frozenset(
 )
 
 HIGH_VALUE_NETWORK_PAYLOAD_BUDGET_MULTIPLIER: Final[int] = 4
+NETWORK_ARTIFACT_INDEX_MAX_DEPTH: Final[int] = 3
+NETWORK_ARTIFACT_INDEX_MAX_KEYS: Final[int] = 12
+NETWORK_ARTIFACT_INDEX_ROW_KEYS: Final[tuple[str, ...]] = (
+    "products",
+    "items",
+    "jobs",
+    "results",
+    "nodes",
+    "edges",
+)
 
 NETWORK_EVIDENCE_SAFE_REQUEST_HEADERS: Final[tuple[str, ...]] = (
     "accept-language",
@@ -133,6 +149,20 @@ NETWORK_EVIDENCE_SAFE_RESPONSE_HEADERS: Final[tuple[str, ...]] = (
     "x-currency",
 )
 
+NETWORK_REPLAY_REQUEST_MAX_BYTES: Final[int] = 65_536
+NETWORK_REPLAY_REQUEST_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
+    {"operationName", "variables", "extensions", "query"}
+)
+NETWORK_REPLAY_REQUEST_SENSITIVE_KEY_TOKENS: Final[tuple[str, ...]] = (
+    "address",
+    "auth",
+    "cookie",
+    "email",
+    "password",
+    "phone",
+    "token",
+)
+
 
 __all__ = [
     "BLOCKED_BROWSER_RESOURCE_TYPES",
@@ -141,6 +171,9 @@ __all__ = [
     "GRAPHQL_PATH_TOKENS",
     "HIGH_VALUE_NETWORK_ENDPOINT_TYPES",
     "HIGH_VALUE_NETWORK_PAYLOAD_BUDGET_MULTIPLIER",
+    "NETWORK_ARTIFACT_INDEX_MAX_DEPTH",
+    "NETWORK_ARTIFACT_INDEX_MAX_KEYS",
+    "NETWORK_ARTIFACT_INDEX_ROW_KEYS",
     "NETWORK_PAYLOAD_NOISE_DOMAINS",
     "NETWORK_PAYLOAD_NOISE_KEYWORDS",
     "NETWORK_PAYLOAD_NOISE_URL_RE",
@@ -149,5 +182,8 @@ __all__ = [
     "NETWORK_PAYLOAD_JSON_CONTENT_TYPE_HINTS",
     "NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES",
     "NETWORK_PAYLOAD_URL_HINTS",
+    "NETWORK_REPLAY_REQUEST_ALLOWED_KEYS",
+    "NETWORK_REPLAY_REQUEST_MAX_BYTES",
+    "NETWORK_REPLAY_REQUEST_SENSITIVE_KEY_TOKENS",
     "PROTECTED_CHALLENGE_ROUTE_TOKENS",
 ]

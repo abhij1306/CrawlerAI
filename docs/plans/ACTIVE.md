@@ -1,5 +1,6 @@
 # Active Plan
 
-**Current:** Extraction Confidence Tiered → `docs/plans/crawlerai-extraction-v3-confidence-tiered-plan.md`
+**Current:** Listing Architecture Review & Completion → `docs/plans/listing-architecture-review-2026-07-10.md`
 **Status:** IN PROGRESS
-**Started:** 2026-07-06
+**Started:** 2026-07-10
+**Last slice completed:** L1 — Honest failure taxonomy + discovery diagnostics

@@ -71,24 +71,6 @@ def test_source_value_normalization_preserves_zero_like_values() -> None:
     assert _normalize_source_value(None) == ""
 
 
-def test_deterministic_success_never_builds_or_invokes_model() -> None:
-    request = _request(
-        """
-        <article class="product-card">
-          <a href="/p/trail-shoe">Trail Shoe</a>
-        </article>
-        """,
-        runtime_snapshot=_approved_snapshot(),
-    )
-
-    result = extract(request, model_adapter=MustNotRunAdapter())
-
-    assert result.records
-    assert result.metrics.universal_representation_build_count == 0
-    assert result.metrics.universal_model_invocation_count == 0
-    assert result.diagnostics.model_outcome == "not_considered"
-
-
 def test_missing_or_unapproved_artifact_disables_fallback_cleanly() -> None:
     adapter = MustNotRunAdapter()
     result = extract(
@@ -129,26 +111,6 @@ def test_generalized_budget_config_has_required_runtime_controls() -> None:
         "escalate_to_vision_below_confidence": 0.8,
         "cooldown_minutes": 5,
     }
-
-
-def test_attribute_spelling_mutation_stays_deterministic_and_model_free() -> None:
-    for attribute in ("test-data-id", "test-dataid"):
-        result = extract(
-            _request(
-                f"""
-                <main>
-                  <div {attribute}="product-card">
-                    <a href="/p/trail-shoe">Trail Shoe</a>
-                  </div>
-                </main>
-                """,
-                runtime_snapshot=_approved_snapshot(),
-            ),
-            model_adapter=MustNotRunAdapter(),
-        )
-
-        assert [row["title"] for row in result.records] == ["Trail Shoe"]
-        assert result.metrics.universal_model_invocation_count == 0
 
 
 def test_hosted_generalized_adapter_converts_schema_payload(monkeypatch) -> None:

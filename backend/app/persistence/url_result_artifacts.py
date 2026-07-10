@@ -1,12 +1,16 @@
 """The single per-URL artifact writer.
 
-One writer, exactly three files per URL result under
+One writer persists the canonical three files per URL result under
 ``runs/{run_id}/results/{url_result_id}/``:
 
 - ``page.html`` — the acquired HTML, written once.
 - ``record.json`` — the public record(s) (shape unchanged from the records API).
 - ``diagnose.json`` — self-contained, bounded root-cause artifact (see
   :mod:`app.observability.diagnose`).
+
+When browser capture has admitted payloads, ``network_exchanges.json`` is a
+bounded response artifact with optional sanitized GraphQL request metadata. It
+is omitted for HTTP-only pages.
 
 The result-root relative path *is* the contract: the reader opens these three
 files by fixed name. No ``manifest.json`` indirection, no second copy of the
@@ -20,10 +24,16 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.core.config.extraction_rules import MAX_DIAGNOSE_ARTIFACT_BYTES
 from app.core.config import settings
+from app.core.config.runtime_settings import browser_capture_total_network_payload_bytes
+from app.core.config.network_capture import (
+    NETWORK_ARTIFACT_INDEX_MAX_DEPTH,
+    NETWORK_ARTIFACT_INDEX_MAX_KEYS,
+    NETWORK_ARTIFACT_INDEX_ROW_KEYS,
+)
 from app.observability.diagnose import build_diagnosis
 from app.persistence.artifacts import ArtifactRepository
 
@@ -63,6 +73,28 @@ def publish_url_result_artifacts(
         name="record.json",
         payload={"records": records, "record_count": int(record_count or 0)},
     )
+
+    exchanges = _network_exchanges_for_artifact(
+        getattr(acquisition_result, "network_payloads", ())
+    )
+    if exchanges:
+        _persist_json(
+            repository,
+            run_id=run_id,
+            url_result_id=url_result_id,
+            name="network_exchanges.json",
+            payload={"schema_version": "network_exchanges.v1", "exchanges": exchanges},
+        )
+        _persist_json(
+            repository,
+            run_id=run_id,
+            url_result_id=url_result_id,
+            name="network_exchanges.index.json",
+            payload={
+                "schema_version": "network_exchange_index.v1",
+                "exchanges": _network_exchange_index(exchanges),
+            },
+        )
 
     rejected_public_fields = _merged_rejected_public_fields(record_provenance)
     variant_drops = _collected_variant_drops(record_provenance)
@@ -133,6 +165,89 @@ def _records_for_record_json(
         for row in (extraction_result.model_dump(mode="json").get("records") or [])
         if isinstance(row, Mapping)
     ]
+
+
+def _network_exchanges_for_artifact(value: object) -> list[dict[str, object]]:
+    """Persist bounded evidence without request headers or frame URLs."""
+    rows = value if isinstance(value, (list, tuple)) else ()
+    exchanges: list[dict[str, object]] = []
+    limit = max(1, browser_capture_total_network_payload_bytes())
+    used = 0
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        exchange = {
+            key: row[key]
+            for key in (
+                "url",
+                "method",
+                "status",
+                "content_type",
+                "endpoint_type",
+                "endpoint_family",
+                "body_sha256",
+                "request_json",
+                "body",
+            )
+            if key in row
+        }
+        encoded = _json_bytes(_json_safe(exchange))
+        if used + len(encoded) > limit:
+            break
+        exchanges.append(cast(dict[str, object], _json_safe(exchange)))
+        used += len(encoded)
+    return exchanges
+
+
+def _network_exchange_index(
+    exchanges: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "ordinal": ordinal,
+            **{
+                key: exchange[key]
+                for key in (
+                    "url",
+                    "method",
+                    "status",
+                    "content_type",
+                    "endpoint_type",
+                    "endpoint_family",
+                    "body_sha256",
+                )
+                if key in exchange
+            },
+            "body_shape": _network_body_shape(exchange.get("body")),
+        }
+        for ordinal, exchange in enumerate(exchanges)
+    ]
+
+
+def _network_body_shape(value: object, *, depth: int = 0) -> dict[str, object]:
+    if isinstance(value, Mapping):
+        keys = sorted(str(key) for key in value)[:NETWORK_ARTIFACT_INDEX_MAX_KEYS]
+        summary: dict[str, object] = {"kind": "object", "keys": keys}
+        rows = {
+            str(key): len(item)
+            for key, item in value.items()
+            if str(key).casefold() in NETWORK_ARTIFACT_INDEX_ROW_KEYS
+            and isinstance(item, (list, tuple))
+        }
+        if rows:
+            summary["candidate_row_counts"] = rows
+        if depth < NETWORK_ARTIFACT_INDEX_MAX_DEPTH:
+            children = {
+                str(key): _network_body_shape(item, depth=depth + 1)
+                for key, item in value.items()
+                if isinstance(item, Mapping)
+            }
+            if children:
+                summary["objects"] = children
+        return summary
+    if isinstance(value, (list, tuple)):
+        return {"kind": "array", "count": len(value)}
+    return {"kind": type(value).__name__}
 
 
 def _collected_variant_drops(

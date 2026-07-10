@@ -22,6 +22,32 @@ class SurfaceSpec:
     allowed_facts: frozenset[str]
     supports_variants: bool
     supports_traversal: bool
+    structured_types: frozenset[str] = frozenset()
+    listing_optional_text_facts: tuple[str, ...] = ()
+    listing_structured_fact_kinds: tuple[tuple[str, str], ...] = ()
+    listing_network_fact_keys: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+@dataclass(frozen=True)
+class ListingSchema:
+    """Typed listing lens derived from one canonical ``SurfaceSpec``."""
+
+    surface: Surface
+    root_entity: str
+    title_fact: str
+    url_fact: str
+    optional_text_facts: tuple[str, ...]
+    structured_types: frozenset[str]
+    structured_fact_kinds: tuple[tuple[str, str], ...]
+    network_fact_keys: tuple[tuple[str, tuple[str, ...]], ...]
+    network_identity_keys: tuple[str, ...]
+
+    @property
+    def bindable_facts(self) -> tuple[str, ...]:
+        return (self.title_fact, *self.optional_text_facts)
+
+    def entity_type_for(self, fact_type: str) -> str:
+        return fact_type.split(".", 1)[0]
 
 
 COMMERCE_FACTS = frozenset(
@@ -85,6 +111,7 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         allowed_facts=COMMERCE_FACTS,
         supports_variants=True,
         supports_traversal=False,
+        structured_types=frozenset({"Product"}),
     ),
     Surface.ECOMMERCE_LISTING: SurfaceSpec(
         surface=Surface.ECOMMERCE_LISTING,
@@ -95,6 +122,19 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         allowed_facts=COMMERCE_FACTS,
         supports_variants=False,
         supports_traversal=True,
+        structured_types=frozenset({"Product", "ItemList"}),
+        listing_optional_text_facts=("offer.price",),
+        listing_structured_fact_kinds=(
+            ("product.title", "name_or_title"),
+            ("product.url", "url"),
+            ("offer.price", "offer_price"),
+            ("asset.image_url", "image"),
+        ),
+        listing_network_fact_keys=(
+            ("product.title", ("name", "title", "productName")),
+            ("product.url", ("url", "href", "link", "productUrl", "pdpUrl")),
+            ("offer.price", ("price", "salePrice", "currentPrice", "amount")),
+        ),
     ),
     Surface.JOB_DETAIL: SurfaceSpec(
         surface=Surface.JOB_DETAIL,
@@ -105,6 +145,7 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         allowed_facts=JOB_FACTS,
         supports_variants=False,
         supports_traversal=False,
+        structured_types=frozenset({"JobPosting"}),
     ),
     Surface.JOB_LISTING: SurfaceSpec(
         surface=Surface.JOB_LISTING,
@@ -115,6 +156,21 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         allowed_facts=JOB_FACTS,
         supports_variants=False,
         supports_traversal=True,
+        structured_types=frozenset({"JobPosting", "ItemList"}),
+        listing_optional_text_facts=("job.company", "job.location"),
+        listing_structured_fact_kinds=(
+            ("job.title", "name_or_title"),
+            ("job.url", "url"),
+            ("job.company", "organization"),
+            ("job.location", "location"),
+        ),
+        listing_network_fact_keys=(
+            ("job.title", ("title", "name", "jobTitle")),
+            ("job.url", ("url", "href", "link", "jobUrl", "applyUrl")),
+            ("job.id", ("id", "jobId", "opportunityId", "requisitionId")),
+            ("job.company", ("company", "companyName", "organization")),
+            ("job.location", ("location", "locationName", "city")),
+        ),
     ),
 }
 
@@ -131,6 +187,50 @@ def parse_surface(value: object) -> Surface:
 def surface_spec(value: Surface | str) -> SurfaceSpec:
     surface = value if isinstance(value, Surface) else parse_surface(value)
     return SURFACE_SPECS[surface]
+
+
+def listing_schema(value: Surface | str) -> ListingSchema | None:
+    """Return the listing contract, or ``None`` for one-record surfaces."""
+    spec = surface_spec(value)
+    if spec.cardinality != "many":
+        return None
+    title_fact = next(
+        (fact for fact in spec.required_facts if fact.endswith(".title")), ""
+    )
+    url_fact = next((fact for fact in spec.required_facts if fact.endswith(".url")), "")
+    if not title_fact or not url_fact:
+        return None
+    return ListingSchema(
+        surface=spec.surface,
+        root_entity=spec.root_entity,
+        title_fact=title_fact,
+        url_fact=url_fact,
+        optional_text_facts=tuple(
+            fact
+            for fact in spec.listing_optional_text_facts
+            if fact in spec.allowed_facts
+        ),
+        structured_types=spec.structured_types,
+        structured_fact_kinds=spec.listing_structured_fact_kinds,
+        network_fact_keys=spec.listing_network_fact_keys,
+        network_identity_keys=(
+            "id",
+            "jobId",
+            "opportunityId",
+            "requisitionId",
+        )
+        if spec.surface is Surface.JOB_LISTING
+        else (),
+    )
+
+
+def structured_type_selectors(value: Surface | str) -> tuple[str, ...]:
+    """DOM structured-type probes derived from the canonical surface schema."""
+    return tuple(
+        f'[itemtype*="{schema_type}" i]'
+        for schema_type in sorted(surface_spec(value).structured_types)
+        if schema_type != "ItemList"
+    )
 
 
 def public_surface_for_internal(value: Surface | str) -> str:

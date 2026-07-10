@@ -25,6 +25,7 @@ from app.extraction.contracts import (
 from app.extraction.engine import extract
 from app.extraction.listing_generalized import (
     InMemoryListingRecipeStore,
+    recipe_store_from_snapshot,
     run_listing_generalized,
 )
 from app.extraction.model_runtime import RuntimeFlatMapPage
@@ -52,6 +53,13 @@ _GRID_HTML = """
     <a href="/p/track-spike"><span class="name">Track Spike</span></a>
     <span class="price">$99.00</span>
   </li>
+</ul></body></html>
+"""
+
+_JOB_GRID_HTML = """
+<html><body><ul class="jobs">
+  <li><a href="/jobs/backend"><span>Backend Engineer</span></a><span>Invoro</span><span>Remote</span></li>
+  <li><a href="/jobs/data"><span>Data Engineer</span></a><span>Invoro</span><span>New Delhi</span></li>
 </ul></body></html>
 """
 
@@ -92,6 +100,18 @@ def _request(html: str, *, snapshot: object = _DEFAULT):
     )
     resolved = _approved_snapshot() if snapshot is _DEFAULT else snapshot
     return request.model_copy(update={"runtime_snapshot": resolved})
+
+
+def _job_request(html: str):
+    request = fixture_request_from_inputs(
+        Surface.JOB_LISTING, html, "https://jobs.test/careers", max_records=10
+    )
+    snapshot = _approved_snapshot()
+    snapshot["universal_model"] = {
+        **snapshot["universal_model"],
+        "supported_surfaces": ["job_listing"],
+    }
+    return request.model_copy(update={"runtime_snapshot": snapshot})
 
 
 class ExemplarBindingAdapter:
@@ -182,6 +202,45 @@ class TimeoutAdapter:
         raise TimeoutError("fixture timeout")
 
 
+class JobExemplarBindingAdapter:
+    adapter_id = "fixture-runtime-adapter"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def predict(self, page, artifact, *, timeout_ms):
+        self.calls += 1
+        rows = {entry.text: entry.path for entry in page.entries}
+        hint = EntityHint(entity_type="job", url="https://jobs.test/jobs/backend")
+        return UniversalModelResult(
+            adapter_id=self.adapter_id,
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            predictions=tuple(
+                ModelEvidenceCandidate(
+                    prediction_id=fact_type,
+                    artifact_id=page.source.artifact_id,
+                    source_path=rows[text],
+                    fact_type=fact_type,
+                    raw_value="MODEL VALUE",
+                    value="MODEL VALUE",
+                    subject_id="model-job",
+                    subject_scope="job",
+                    confidence=0.95,
+                    entity_hint=hint,
+                )
+                for fact_type, text in (
+                    ("job.title", "Backend Engineer"),
+                    ("job.company", "Invoro"),
+                    ("job.location", "Remote"),
+                )
+            ),
+            latency_ms=2.0,
+            memory_mb=16.0,
+            cost_usd=0.001,
+        )
+
+
 def _by_fact(evidence, fact_type: str) -> list[str]:
     return [row.value for row in evidence if row.fact_type == fact_type]
 
@@ -225,6 +284,45 @@ def test_recipe_replay_grounds_second_run_with_zero_llm() -> None:
     assert _by_fact(second.evidence, "product.title") == _by_fact(
         first.evidence, "product.title"
     )
+
+
+def test_frozen_release_record_bindings_replay_on_an_independent_run() -> None:
+    adapter = ExemplarBindingAdapter()
+    acquired = run_listing_generalized(
+        _request(_GRID_HTML), adapter, recipe_store=InMemoryListingRecipeStore()
+    )
+    assert acquired.recipe_candidate is not None
+
+    request = _request(_GRID_HTML)
+    replay_request = request.model_copy(
+        update={
+            "runtime_snapshot": {
+                **request.runtime_snapshot,
+                "templates": [
+                    {
+                        "surface": "ecommerce_listing",
+                        "route_pattern": "/category/shoes",
+                        "compiled_recipe": {
+                            "record_bindings": acquired.recipe_candidate
+                        },
+                    }
+                ],
+            }
+        }
+    )
+    replayed = run_listing_generalized(
+        replay_request,
+        adapter,
+        recipe_store=recipe_store_from_snapshot(replay_request),
+    )
+
+    assert adapter.calls == 1
+    assert replayed.invoked is False
+    assert _by_fact(replayed.evidence, "product.title") == [
+        "Trail Shoe",
+        "Road Shoe",
+        "Track Spike",
+    ]
 
 
 def test_markup_drift_under_recipe_forces_reacquisition() -> None:
@@ -284,12 +382,93 @@ def test_unapproved_snapshot_disables_tier_and_never_invokes() -> None:
     assert result.evidence == ()
 
 
-def test_no_discoverable_records_is_a_clean_no_match() -> None:
+class WholePageAdapter:
+    """Grounds a product from the whole-page flat map (no exemplar boundary).
+
+    Used to prove the decoupled path: when structural discovery finds no record
+    spine, the generalized tier falls through to a whole-page model pass rather
+    than short-circuiting. The bound value is still read from the page DOM text.
+    """
+
+    adapter_id = "fixture-runtime-adapter"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def predict(self, page, artifact, *, timeout_ms):
+        self.calls += 1
+        title = next(row for row in page.entries if "Hidden Shoe" in row.text)
+        hint = EntityHint(entity_type="product", url="https://shop.test/p/hidden-shoe")
+        return UniversalModelResult(
+            adapter_id=self.adapter_id,
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            predictions=(
+                ModelEvidenceCandidate(
+                    prediction_id="title",
+                    artifact_id=page.source.artifact_id,
+                    source_path=title.path,
+                    fact_type="product.title",
+                    raw_value="MODEL SAYS",
+                    value="Hidden Shoe",
+                    subject_id="model-product-1",
+                    subject_scope="product",
+                    confidence=0.96,
+                    entity_hint=hint,
+                ),
+            ),
+            latency_ms=2.0,
+            memory_mb=16.0,
+            cost_usd=0.001,
+        )
+
+
+def test_no_discoverable_boundaries_falls_through_to_whole_page_model() -> None:
+    # Discovery finds no record spine (no repeated content-rich product grid),
+    # but the page DOES contain a groundable product. The tier must NOT give up:
+    # it fires the whole-page generalized pass so the LLM can find the record.
+    html = (
+        "<html><body><main>"
+        "<div><span>Hidden Shoe</span></div>"
+        "</main></body></html>"
+    )
+    adapter = WholePageAdapter()
+    result = run_listing_generalized(_request(html), adapter)
+
+    assert adapter.calls == 1
+    assert result.invoked is True
+    assert result.outcome == "produced_evidence"
+    assert any(row.fact_type == "product.title" for row in result.evidence)
+
+
+def test_truly_empty_page_still_reports_no_match_without_hallucinating() -> None:
+    # A page with nothing to ground: the whole-page pass runs but the model finds
+    # no product, so the tier reports no_match and emits zero evidence — the
+    # decoupling never invents records where there are none.
     html = "<html><body><main><p>No products here.</p></main></body></html>"
-    result = run_listing_generalized(_request(html), MustNotRunAdapter())
+
+    class EmptyAdapter:
+        adapter_id = "fixture-runtime-adapter"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def predict(self, page, artifact, *, timeout_ms):
+            self.calls += 1
+            return UniversalModelResult(
+                adapter_id=self.adapter_id,
+                artifact_id=artifact.artifact_id,
+                artifact_version=artifact.artifact_version,
+                predictions=(),
+                latency_ms=1.0,
+                memory_mb=8.0,
+                cost_usd=0.0,
+            )
+
+    adapter = EmptyAdapter()
+    result = run_listing_generalized(_request(html), adapter)
 
     assert result.outcome == "no_match"
-    assert result.invoked is False
     assert result.evidence == ()
 
 
@@ -327,3 +506,103 @@ def test_structured_listing_stays_deterministic_and_model_free() -> None:
     assert result.metrics.universal_model_invocation_count == 0
     assert result.metrics.universal_representation_build_count == 0
     assert result.diagnostics.model_outcome == "not_considered"
+
+
+class WholePageListingRecordAdapter:
+    """Grounds a full listing record (title + url) from whole-page text.
+
+    A published listing record requires both ``product.title`` and
+    ``product.url`` (publication.py enforces ``required_fields={"title","url"}``).
+    The URL is grounded from DOM text just like the detail fallback: the record's
+    text block carries the URL path verbatim, so grounding binds the value to the
+    page and never trusts the model's string.
+    """
+
+    adapter_id = "fixture-runtime-adapter"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def predict(self, page, artifact, *, timeout_ms):
+        del timeout_ms
+        self.calls += 1
+        entry = next(row for row in page.entries if "Hidden Shoe" in row.text)
+        hint = EntityHint(
+            entity_type="product", url="https://shop.test/p/hidden-shoe"
+        )
+        return UniversalModelResult(
+            adapter_id=self.adapter_id,
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            predictions=(
+                ModelEvidenceCandidate(
+                    prediction_id="title",
+                    artifact_id=page.source.artifact_id,
+                    source_path=entry.path,
+                    fact_type="product.title",
+                    raw_value="MODEL SAYS",
+                    value="Hidden Shoe",
+                    subject_id="model-product-1",
+                    subject_scope="product",
+                    confidence=0.96,
+                    entity_hint=hint,
+                ),
+                ModelEvidenceCandidate(
+                    prediction_id="url",
+                    artifact_id=page.source.artifact_id,
+                    source_path=entry.path,
+                    fact_type="product.url",
+                    raw_value="/p/hidden-shoe",
+                    value="https://shop.test/p/hidden-shoe",
+                    subject_id="model-product-1",
+                    subject_scope="product",
+                    confidence=0.96,
+                    entity_hint=hint,
+                ),
+            ),
+            latency_ms=2.0,
+            memory_mb=16.0,
+            cost_usd=0.001,
+        )
+
+
+def test_empty_discovery_listing_fires_llm_and_publishes_end_to_end() -> None:
+    # The regression that mattered: a listing page whose records structural
+    # discovery cannot see (no repeated content-rich grid, no JSON-LD) must still
+    # publish records by firing the whole-page generalized pass through the full
+    # engine — not return zero. Proves the decoupling end to end.
+    html = (
+        "<html><body><main>"
+        "<p>Hidden Shoe /p/hidden-shoe durable trail runner</p>"
+        "</main></body></html>"
+    )
+    adapter = WholePageListingRecordAdapter()
+    result = extract(_request(html), model_adapter=adapter)
+
+    assert adapter.calls == 1
+    assert result.metrics.universal_model_invocation_count == 1
+    assert [row["title"] for row in result.records] == ["Hidden Shoe"]
+    assert result.records[0]["url"] == "https://shop.test/p/hidden-shoe"
+    assert result.diagnostics.extractor_tier == "ml"
+
+
+def test_job_grid_acquires_once_then_replays_grounded_recipe() -> None:
+    store = InMemoryListingRecipeStore()
+    adapter = JobExemplarBindingAdapter()
+
+    first = run_listing_generalized(
+        _job_request(_JOB_GRID_HTML), adapter, recipe_store=store
+    )
+    second = run_listing_generalized(
+        _job_request(_JOB_GRID_HTML), adapter, recipe_store=store
+    )
+
+    assert adapter.calls == 1
+    assert first.invoked is True and second.invoked is False
+    assert _by_fact(first.evidence, "job.title") == [
+        "Backend Engineer",
+        "Data Engineer",
+    ]
+    assert _by_fact(first.evidence, "job.company") == ["Invoro", "Invoro"]
+    assert _by_fact(first.evidence, "job.location") == ["Remote", "New Delhi"]
+    assert "MODEL VALUE" not in {row.value for row in first.evidence}

@@ -55,6 +55,21 @@ PRODUCT_URL_FACT_TYPE = "product.url"
 VARIANT_GTIN_FACT_TYPE = "variant.gtin"
 VARIANT_SKU_FACT_TYPE = "variant.sku"
 
+# Fact types whose value is a hyperlink that may appear in the DOM as a relative
+# href (``/positions/staff-eng``) while the model/canonicalizer reports the
+# absolute form. Grounding must reconcile the two by resolving the relative raw
+# value against the page base URL before rejecting the candidate. Covers every
+# surface's URL-bearing fact — product, image, and both job link kinds — so the
+# whole-page model fallback can publish job records, not just product records.
+RESOLVABLE_URL_FACT_TYPES = frozenset(
+    {
+        PRODUCT_URL_FACT_TYPE,
+        ASSET_IMAGE_URL_FACT_TYPE,
+        "job.url",
+        "job.apply_url",
+    }
+)
+
 FIELD_ALIASES: dict[str, list[str]] = {
     "title": ["title", "name", "job_title", "position", "headline", "productName"],
     "url": [

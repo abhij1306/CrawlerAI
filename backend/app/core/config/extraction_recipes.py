@@ -98,37 +98,3 @@ JOB_DETAIL_APPLY_SELECTORS: tuple[str, ...] = (
     "a[href*='apply' i]",
     "a[href*='application' i]",
 )
-
-JOB_LISTING_CARD_SELECTORS: tuple[str, ...] = (
-    "[data-job-id]",
-    "[data-testid*='job' i]",
-    "[class*='job-card' i]",
-    "[class*='job-item' i]",
-    "[class*='job-post' i]",
-    "[class*='posting' i]",
-    "article",
-    "li",
-)
-
-JOB_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
-    "[data-testid*='title' i]",
-    "[class*='title' i]",
-    ".body--medium",
-    "h2",
-    "h3",
-    "a[title]",
-    "a",
-)
-
-JOB_LISTING_URL_SELECTORS: tuple[str, ...] = ("a[href]",)
-
-JOB_LISTING_COMPANY_SELECTORS: tuple[str, ...] = (
-    "[data-testid*='company' i]",
-    "[class*='company' i]",
-)
-
-JOB_LISTING_LOCATION_SELECTORS: tuple[str, ...] = (
-    "[data-testid*='location' i]",
-    "[class*='location' i]",
-    ".body__secondary",
-)

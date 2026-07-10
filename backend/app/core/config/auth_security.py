@@ -10,6 +10,10 @@ SECURITY_HEADER_FRAME_OPTIONS = "DENY"
 SECURITY_HEADER_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURITY_HEADER_PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=()"
 SECURITY_HEADER_HSTS = "max-age=31536000; includeSubDomains"
+SECURITY_HEADER_UNTRUSTED_HTML_CONTENT_SECURITY_POLICY = (
+    "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; "
+    "img-src data: http: https:; style-src 'unsafe-inline'"
+)
 
 API_ALLOWED_CORS_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 API_ALLOWED_CORS_HEADER_BASE = ("Content-Type", "Authorization")
@@ -37,6 +41,10 @@ def auth_rate_limit_key(client_identifier: str, route_group: str) -> str:
 
 def path_requires_no_store(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in AUTH_NO_STORE_PATH_PREFIXES)
+
+
+def path_requires_untrusted_html_sandbox(path: str) -> bool:
+    return path.startswith("/api/review/") and path.endswith("/artifact-html")
 
 
 def secure_transport_required(app_env: str) -> bool:

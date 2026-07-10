@@ -662,6 +662,7 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
             "endpoint_type": "product_api",
             "endpoint_family": "generic",
             "source_run_id": 92,
+            "source_route": "https://example.com/products/replay-widget",
         }
     ]
 

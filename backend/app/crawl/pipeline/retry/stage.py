@@ -127,14 +127,19 @@ async def _acquire_browser_retry_result(
     forced_browser_engine: str | None = None,
 ):
     acquisition_result = fetched.acquisition_result
-    if PageEvidence.from_acquisition_result(acquisition_result).browser_attempted:
+    network_retry = retry_reason == "listing_network_missing"
+    if (
+        PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+        and not network_retry
+    ):
         await _log_pipeline_event(
             context,
             "info",
             f"Skipping browser retry for {context.url}: browser already attempted",
         )
         return None
-    if context.browser_escalation_count >= 1:
+    retry_limit = 2 if network_retry else 1
+    if context.browser_escalation_count >= retry_limit:
         await _log_pipeline_event(
             context,
             "info",

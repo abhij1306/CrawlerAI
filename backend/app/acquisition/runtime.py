@@ -210,6 +210,7 @@ def should_escalate_to_browser(
         analysis=analysis,
         url=result.final_url or result.url,
         status_code=result.status_code,
+        surface=surface or "",
     )
     has_detail_signals = content_signals.detail
     has_listing_signals = content_signals.listing

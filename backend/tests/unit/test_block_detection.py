@@ -5,12 +5,49 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.acquisition.runtime import classify_blocked_page
+from app.acquisition.runtime import (
+    PageFetchResult,
+    classify_blocked_page,
+    should_escalate_to_browser,
+)
 from app.acquisition.browser_readiness import (
+    analyze_extractable_content,
     classify_browser_outcome,
     classify_low_content_reason,
 )
 from app.acquisition.fetch.fetch_context import is_blocked_html
+
+
+@pytest.mark.unit
+def test_script_heavy_empty_job_listing_escalates_to_browser() -> None:
+    html = """
+    <html id="PageHtml"><body><h1>Careers</h1><p>Loading openings...</p>
+    <script src="one.js"></script><script src="two.js"></script>
+    <script src="three.js"></script><script src="four.js"></script>
+    </body></html>
+    """
+    signals = analyze_extractable_content(
+        html,
+        url="https://jobs.test/careers",
+        surface="job_listing",
+    )
+
+    assert signals.listing is False
+    assert signals.js_shell is True
+    assert signals.listing_shell is True
+    assert (
+        should_escalate_to_browser(
+            PageFetchResult(
+                url="https://jobs.test/careers",
+                final_url="https://jobs.test/careers",
+                html=html,
+                status_code=200,
+                method="curl_cffi",
+            ),
+            surface="job_listing",
+        )
+        is True
+    )
 
 
 @pytest.mark.unit

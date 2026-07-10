@@ -59,6 +59,15 @@ _COLLECTION_TOKENS = frozenset(
         "careers",
     }
 )
+# Category tokens that mark a listing/landing page when they appear ANYWHERE in
+# the path, not only as the terminal segment. Arcteryx-style category URLs nest
+# the marker mid-path (``/ca/en/c/mens/footwear-run/wid-...``): the last segment
+# is opaque, so a terminal-only check misses them and the nav tile is mistaken
+# for a product. Compared as whole path segments so a real product slug that
+# merely contains the substring (``/category-5-lamp``) is never rejected.
+# Mirrors the CSS collector's ``LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS`` so
+# both discovery paths agree on what a category URL is.
+_PATH_CATEGORY_TOKENS = frozenset({"c", "category", "categories", "collections"})
 _DETAIL_MARKERS = (
     "/dp/",
     "/p/",
@@ -358,6 +367,18 @@ def detail_url_is_utility(url: str) -> bool:
     return any(f"/{token}" in path for token in _UTILITY_TOKENS)
 
 
+def detail_url_has_category_path_segment(url: str) -> bool:
+    """True when a structural category token appears as a whole path segment.
+
+    Catches category/landing URLs that nest the marker mid-path (e.g.
+    ``/ca/en/c/mens/footwear-run/wid-...``) which a terminal-only collection
+    check misses. Whole-segment comparison avoids rejecting product slugs that
+    merely contain the substring.
+    """
+    parts = [part for part in urlparse(str(url or "").lower()).path.split("/") if part]
+    return any(part in _PATH_CATEGORY_TOKENS for part in parts)
+
+
 def semantic_identity_tokens(value: str) -> tuple[str, ...]:
     return tuple(
         token
@@ -610,4 +631,11 @@ def listing_detail_like_path(url: str) -> bool:
 
 
 def listing_url_is_structural(url: str) -> bool:
-    return detail_url_is_collection_like(url) or detail_url_is_utility(url)
+    if detail_url_is_collection_like(url) or detail_url_is_utility(url):
+        return True
+    # A mid-path category token marks a landing page — but only reject it when the
+    # URL does not otherwise look like a product detail page, so a genuine product
+    # nested under a category prefix (``/c/mens/norvan-ld-4-shoe-0397``) survives.
+    return detail_url_has_category_path_segment(url) and not detail_url_looks_like_product(
+        url
+    )

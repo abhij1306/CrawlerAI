@@ -11,6 +11,7 @@ from app.core.config.browser_fingerprint_profiles import (
 from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
+    INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY,
     INTERNAL_API_ENDPOINT_URL_KEY,
     INTERNAL_API_ENDPOINTS_PROFILE_KEY,
 )
@@ -213,6 +214,8 @@ def _endpoint_list(value: object) -> list[dict[str, object]]:
             str(item.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
         )
         if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
+            continue
+        if not str(item.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY) or "").strip():
             continue
         key = (method, url)
         if key in seen:

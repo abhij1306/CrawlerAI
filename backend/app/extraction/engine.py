@@ -48,6 +48,7 @@ from app.extraction.contracts import (
 )
 from app.extraction.listing_generalized import (
     ListingRecipeStore,
+    recipe_store_from_snapshot,
     run_listing_generalized,
 )
 from app.extraction.model_runtime import (
@@ -71,7 +72,8 @@ from app.extraction.result_building import (
     metrics,
     retry_request,
 )
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
+from app.extraction.listing_records import listing_discovery_diagnostics
 from app.extraction.validation import validate_selected_contract_fields
 
 
@@ -86,9 +88,6 @@ class _ExtractionAttempt:
     resolve_duration_ms: float
     publish_duration_ms: float
     stage_outcomes: tuple[StageOutcome, ...]
-
-
-_GENERALIZED_LISTING_SURFACES = frozenset({Surface.ECOMMERCE_LISTING})
 
 
 def extract(
@@ -159,9 +158,12 @@ def extract(
     if _needs_contract_fallback(request, attempt):
         # Listing rides the exemplar-record generalized tier + per-domain recipe
         # replay; detail keeps the whole-page universal-model fallback.
-        if request.surface in _GENERALIZED_LISTING_SURFACES:
+        if listing_schema(request.surface) is not None:
             model_fallback = run_listing_generalized(
-                request, model_adapter, recipe_store=listing_recipe_store
+                request,
+                model_adapter,
+                recipe_store=listing_recipe_store
+                or recipe_store_from_snapshot(request),
             )
         else:
             model_fallback = run_model_fallback(request, model_adapter)
@@ -307,6 +309,12 @@ def extract(
             extractor_tier=extractor_tier,
             model_fallback=model_fallback,
             sentinel_observations=sentinel_observations,
+            listing_discovery=(
+                _listing_discovery(request) if listing_schema(request.surface) else {}
+            ),
+        ),
+        recipe_candidate=(
+            model_fallback.recipe_candidate if model_fallback is not None else None
         ),
     )
 
@@ -766,6 +774,20 @@ def _failure_classifications(
 ) -> tuple[FailureClassification, ...]:
     if records:
         return ()
+    if (
+        listing_schema(request.surface) is not None
+        and not evidence
+        and request.capture.acquisition_outcome == "ok"
+        and not request.capture.blocked
+    ):
+        return (
+            _failure(
+                "listing_detection_failed",
+                "Listing capture was usable but no publishable record boundary was found.",
+                findings,
+                evidence,
+            ),
+        )
     if model_fallback is not None and model_fallback.failure_code is not None:
         deterministic = _failure_classifications(
             request,
@@ -1018,6 +1040,7 @@ def _diagnostic_summary(
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
     model_fallback: ModelFallbackResult | None = None,
     sentinel_observations=(),
+    listing_discovery: dict[str, int] | None = None,
 ) -> DiagnosticSummary:
     # Prefer contract gaps; some surfaces only expose raw field-state gaps.
     completeness = next(
@@ -1059,7 +1082,18 @@ def _diagnostic_summary(
         sentinel_diagnostic=sentinel_observations[0].diagnostic
         if sentinel_observations
         else None,
+        listing_discovery=dict(listing_discovery or {}),
     )
+
+
+def _listing_discovery(request: ExtractionRequest) -> dict[str, int]:
+    for artifact in request.capture.artifacts:
+        if artifact.artifact_type == "rendered_html":
+            return listing_discovery_diagnostics(
+                request.artifact_reader.document_store.html(artifact.artifact_id),
+                page_url=request.capture.final_url,
+            )
+    return {}
 
 
 def _trust_state(

@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from app.core.domain_utils import normalize_domain
 from app.core.extraction_memory.templates import normalize_route
@@ -56,18 +56,15 @@ from app.extraction.model_runtime import (
     _result_identity_error,
     _runtime_budget_ms,
     _runtime_cost_cap_usd,
+    run_model_fallback,
 )
 from app.extraction.representation.flat_map import (
     FlatMap,
     build_flat_map,
     flat_map_token_count,
 )
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import ListingSchema, listing_schema
 
-# Only text-bearing fields are bound by the exemplar model: the flat map is
-# text-only, so a title and a price live in it but an image src (an attribute)
-# does not. The detail URL is supplied by discovery, never the model.
-_BOUND_FACT_TYPES = ("product.title", "offer.price")
 _GENERALIZED_CONFIDENCE = 0.85
 _PREVIEW_CHARS = 120
 
@@ -109,6 +106,45 @@ class InMemoryListingRecipeStore:
         self._recipes[recipe.route_key] = recipe
 
 
+class SnapshotListingRecipeStore:
+    """Read-only recipe replay store materialized from a frozen release."""
+
+    def __init__(self, recipes: Mapping[str, ListingRecipe]) -> None:
+        self._recipes = dict(recipes)
+
+    def get(self, route_key: str) -> ListingRecipe | None:
+        return self._recipes.get(route_key)
+
+    def put(self, recipe: ListingRecipe) -> None:
+        # The pipeline persists an acquired candidate only after the result is
+        # validated.  Keep this thread-local view usable for the current call.
+        self._recipes[recipe.route_key] = recipe
+
+
+def recipe_store_from_snapshot(request: ExtractionRequest) -> ListingRecipeStore:
+    """Expose matching, immutable record bindings from the release snapshot."""
+    page_url = request.capture.final_url or request.capture.requested_url
+    route_key = _route_key(request, page_url)
+    route = normalize_route(page_url, request.surface.value)
+    recipes: dict[str, ListingRecipe] = {}
+    for row in request.runtime_snapshot.get("templates", ()):
+        if not isinstance(row, Mapping):
+            continue
+        if (
+            row.get("surface") != request.surface.value
+            or row.get("route_pattern") != route
+        ):
+            continue
+        compiled = row.get("compiled_recipe")
+        candidate = (
+            compiled.get("record_bindings") if isinstance(compiled, Mapping) else None
+        )
+        recipe = _recipe_from_payload(route_key, candidate)
+        if recipe is not None:
+            recipes[route_key] = recipe
+    return SnapshotListingRecipeStore(recipes)
+
+
 def run_listing_generalized(
     request: ExtractionRequest,
     adapter: RuntimeModelAdapter | None,
@@ -144,15 +180,23 @@ def run_listing_generalized(
     artifact_id, html = source
     page_url = request.capture.final_url or request.capture.requested_url
     doc = HtmlDocument(artifact_id, html)
+    schema = listing_schema(request.surface)
+    if schema is None:
+        return ModelFallbackResult(outcome="no_match", artifact=artifact)
     boundaries = discover_listing_records(doc, page_url=page_url)
     if not boundaries:
-        return ModelFallbackResult(outcome="no_match", artifact=artifact)
-
+        # Structural discovery found no record spine (JS-rendered SPA, novel
+        # markup, or a page whose only repeated links were category/nav tiles the
+        # URL filter stripped). Do NOT give up — the exemplar tier needs a
+        # boundary, but the whole-page generalized pass can still *find* records.
+        # This is the decoupling: the LLM is no longer a slave to deterministic
+        # discovery. Grounding still binds every published value to page DOM text.
+        return run_model_fallback(request, adapter)
     route_key = _route_key(request, page_url)
     recipe = recipe_store.get(route_key) if recipe_store is not None else None
     if recipe is not None and _recipe_matches(recipe, artifact):
         replayed = _apply_bindings(
-            doc, boundaries, recipe.bindings, artifact_id=artifact_id
+            doc, boundaries, recipe.bindings, artifact_id=artifact_id, schema=schema
         )
         if replayed:
             rows = _emit(request, artifact_id, replayed)
@@ -170,6 +214,7 @@ def run_listing_generalized(
         artifact,
         doc=doc,
         boundaries=boundaries,
+        schema=schema,
         artifact_id=artifact_id,
         html=html,
         page_url=page_url,
@@ -185,6 +230,7 @@ def _acquire(
     *,
     doc: HtmlDocument,
     boundaries: tuple[RecordBoundary, ...],
+    schema: ListingSchema,
     artifact_id: str,
     html: str,
     page_url: str,
@@ -204,6 +250,7 @@ def _acquire(
         exemplar_map=exemplar_map,
         scope_path=exemplar_root,
         market_tags=_market_tags(request),
+        surface=request.surface.value,
     )
     if page.token_count > _input_token_budget():
         return ModelFallbackResult(
@@ -259,21 +306,28 @@ def _acquire(
             detail=identity_error or "exemplar model runtime budget exceeded",
         )
 
-    bindings = _bindings_from_predictions(result, exemplar_map, exemplar_root, artifact)
+    bindings = _bindings_from_predictions(
+        result, exemplar_map, exemplar_root, artifact, schema=schema
+    )
     grounded = (
-        _apply_bindings(doc, boundaries, bindings, artifact_id=artifact_id)
+        _apply_bindings(
+            doc, boundaries, bindings, artifact_id=artifact_id, schema=schema
+        )
         if bindings
         else []
     )
+    if len(grounded) != len(boundaries):
+        grounded = []
     if grounded and recipe_store is not None:
-        recipe_store.put(
-            ListingRecipe(
-                route_key=route_key,
-                adapter_id=artifact.adapter_id,
-                artifact_version=artifact.artifact_version,
-                bindings=bindings,
-            )
+        recipe = ListingRecipe(
+            route_key=route_key,
+            adapter_id=artifact.adapter_id,
+            artifact_version=artifact.artifact_version,
+            bindings=bindings,
         )
+        recipe_store.put(recipe)
+    else:
+        recipe = None
     rows = _emit(request, artifact_id, grounded)
     return ModelFallbackResult(
         outcome="produced_evidence" if rows else "no_match",
@@ -286,6 +340,7 @@ def _acquire(
         cost_usd=result.cost_usd,
         prediction_count=len(result.predictions),
         ungrounded_rejection_count=max(0, len(boundaries) - len(grounded)),
+        recipe_candidate=_recipe_payload(recipe) if recipe is not None else None,
     )
 
 
@@ -295,14 +350,16 @@ def _acquire(
 @dataclass(frozen=True)
 class _GroundedRecord:
     boundary: RecordBoundary
-    title: str
-    price: str
-    title_path: str
-    price_path: str
+    values: dict[str, tuple[str, str]]
 
 
 def _bindings_from_predictions(
-    result, exemplar_map: FlatMap, exemplar_root: str, artifact
+    result,
+    exemplar_map: FlatMap,
+    exemplar_root: str,
+    artifact,
+    *,
+    schema: ListingSchema,
 ) -> tuple[ListingBinding, ...]:
     """Keep the first groundable path per bound fact type as a relative binding.
 
@@ -313,7 +370,7 @@ def _bindings_from_predictions(
     bindings: dict[str, ListingBinding] = {}
     for candidate in result.predictions:
         fact_type = candidate.fact_type
-        if fact_type not in _BOUND_FACT_TYPES or fact_type in bindings:
+        if fact_type not in schema.bindable_facts or fact_type in bindings:
             continue
         if candidate.confidence < artifact.confidence_threshold:
             continue
@@ -326,7 +383,7 @@ def _bindings_from_predictions(
         bindings[fact_type] = ListingBinding(
             fact_type=fact_type, relative_path=relative
         )
-    return tuple(bindings[key] for key in _BOUND_FACT_TYPES if key in bindings)
+    return tuple(bindings[key] for key in schema.bindable_facts if key in bindings)
 
 
 def _apply_bindings(
@@ -335,31 +392,33 @@ def _apply_bindings(
     bindings: tuple[ListingBinding, ...],
     *,
     artifact_id: str,
+    schema: ListingSchema,
 ) -> list[_GroundedRecord]:
     """Resolve each binding against every record's own flat map (grounding gate).
 
     A record is kept only when its title binding resolves to non-empty DOM text.
     The value is always read from the page — never from the model.
     """
-    title_binding = _binding_for("product.title", bindings)
-    price_binding = _binding_for("offer.price", bindings)
+    title_binding = _binding_for(schema.title_fact, bindings)
     if title_binding is None:
         return []
     grounded: list[_GroundedRecord] = []
     for boundary in boundaries:
         record_root = _flat_root(boundary.node.dom_path())
         record_map = build_flat_map(doc, root_path=boundary.node.dom_path())
-        title, title_path = _resolve_binding(title_binding, record_root, record_map)
+        title, _ = _resolve_binding(title_binding, record_root, record_map)
         if not title:
             continue
-        price, price_path = _resolve_binding(price_binding, record_root, record_map)
+        values = {
+            binding.fact_type: _resolve_binding(binding, record_root, record_map)
+            for binding in bindings
+        }
         grounded.append(
             _GroundedRecord(
                 boundary=boundary,
-                title=title,
-                price=price,
-                title_path=title_path,
-                price_path=price_path,
+                values={
+                    fact_type: value for fact_type, value in values.items() if value[0]
+                },
             )
         )
     return grounded
@@ -387,21 +446,30 @@ def _binding_for(
 def _emit(
     request: ExtractionRequest, artifact_id: str, grounded: list[_GroundedRecord]
 ) -> tuple[Evidence, ...]:
+    schema = listing_schema(request.surface)
+    if schema is None:
+        return ()
     bundle = request.capture
     rows: list[Evidence] = []
     for record in grounded:
         subject_id = stable_id(
-            "subject", bundle.bundle_id, artifact_id, "product", record.boundary.index
+            "subject",
+            bundle.bundle_id,
+            artifact_id,
+            schema.root_entity,
+            record.boundary.index,
         )
+        title, title_path = record.values[schema.title_fact]
         rows.append(
             _row(
                 bundle.bundle_id,
                 artifact_id,
                 subject_id,
-                "product.title",
-                record.title,
-                record.title_path,
-                "product",
+                schema.title_fact,
+                title,
+                title_path,
+                schema.entity_type_for(schema.title_fact),
+                surface=schema.surface,
                 url=record.boundary.url,
                 directness="inferred",
             )
@@ -411,24 +479,30 @@ def _emit(
                 bundle.bundle_id,
                 artifact_id,
                 subject_id,
-                "product.url",
+                schema.url_fact,
                 record.boundary.url,
                 _flat_root(record.boundary.node.dom_path()),
-                "product",
+                schema.entity_type_for(schema.url_fact),
+                surface=schema.surface,
                 url=record.boundary.url,
                 directness="direct",
             )
         )
-        if record.price:
+        for fact_type in schema.optional_text_facts:
+            value = record.values.get(fact_type)
+            if value is None:
+                continue
+            text, path = value
             rows.append(
                 _row(
                     bundle.bundle_id,
                     artifact_id,
                     subject_id,
-                    "offer.price",
-                    record.price,
-                    record.price_path,
-                    "offer",
+                    fact_type,
+                    text,
+                    path,
+                    schema.entity_type_for(fact_type),
+                    surface=schema.surface,
                     url=record.boundary.url,
                     directness="inferred",
                 )
@@ -445,6 +519,7 @@ def _row(
     path: str,
     entity_type: str,
     *,
+    surface,
     url: str,
     directness: str,
 ) -> Evidence:
@@ -468,7 +543,7 @@ def _row(
         confidence=_GENERALIZED_CONFIDENCE,
         flags=("model_prediction",),
         metadata={"extraction_method": "generalized"},
-        surface=Surface.ECOMMERCE_LISTING,
+        surface=surface,
         subject_id=subject_id,
         subject_scope=entity_type,  # type: ignore[arg-type]
     )
@@ -484,6 +559,7 @@ def _exemplar_page(
     exemplar_map: FlatMap,
     scope_path: str,
     market_tags: tuple[str, ...],
+    surface: str,
 ) -> RuntimeFlatMapPage:
     return RuntimeFlatMapPage(
         source=RuntimeCompactSource(
@@ -497,6 +573,7 @@ def _exemplar_page(
         market_tags=market_tags,
         token_count=flat_map_token_count(exemplar_map),
         scope_path=scope_path,
+        surface=surface,
     )
 
 
@@ -533,4 +610,44 @@ def _recipe_matches(recipe: ListingRecipe, artifact) -> bool:
         recipe.adapter_id == artifact.adapter_id
         and recipe.artifact_version == artifact.artifact_version
         and bool(recipe.bindings)
+    )
+
+
+def _recipe_payload(recipe: ListingRecipe) -> dict[str, object]:
+    return {
+        "schema_version": "record_bindings.v1",
+        "adapter_id": recipe.adapter_id,
+        "artifact_version": recipe.artifact_version,
+        "bindings": [
+            {"fact_type": binding.fact_type, "relative_path": binding.relative_path}
+            for binding in recipe.bindings
+        ],
+    }
+
+
+def _recipe_from_payload(route_key: str, value: object) -> ListingRecipe | None:
+    if (
+        not isinstance(value, Mapping)
+        or value.get("schema_version") != "record_bindings.v1"
+    ):
+        return None
+    bindings = tuple(
+        ListingBinding(
+            fact_type=str(row.get("fact_type") or ""),
+            relative_path=str(row.get("relative_path") or ""),
+        )
+        for row in value.get("bindings", ())
+        if isinstance(row, Mapping)
+        and str(row.get("fact_type") or "")
+        and str(row.get("relative_path") or "")
+    )
+    adapter_id = str(value.get("adapter_id") or "")
+    artifact_version = str(value.get("artifact_version") or "")
+    if not bindings or not adapter_id or not artifact_version:
+        return None
+    return ListingRecipe(
+        route_key=route_key,
+        adapter_id=adapter_id,
+        artifact_version=artifact_version,
+        bindings=bindings,
     )

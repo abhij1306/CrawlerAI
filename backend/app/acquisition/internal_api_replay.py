@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 import httpx
 
@@ -13,7 +13,9 @@ from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
+    INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY,
     INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY,
+    INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY,
     INTERNAL_API_ENDPOINT_TYPE_KEY,
     INTERNAL_API_ENDPOINT_URL_KEY,
     INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS,
@@ -107,13 +109,27 @@ async def _replay_endpoint(
     url = str(endpoint.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").strip()
     if method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS or not url:
         return None
+    if str(
+        endpoint.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY) or ""
+    ) != _route_identity(page_url):
+        return None
+    request_json = endpoint.get(INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY)
+    if method == "POST" and not isinstance(request_json, Mapping):
+        return None
     if _blocked_replay_path(url):
         return None
     if not await _is_safe_replay_url(url, page_url=page_url):
         return None
     try:
         client = await get_shared_http_client(proxy=None)
-        response = await _request_replay_payload(client, method, url)
+        response = await _request_replay_payload(
+            client,
+            method,
+            url,
+            request_json=dict(request_json)
+            if isinstance(request_json, Mapping)
+            else None,
+        )
         body = _decode_response_body(response)
     except (httpx.HTTPError, OSError, ValueError):
         logger.debug("Internal API replay failed for %s", url, exc_info=True)
@@ -159,6 +175,8 @@ async def _request_replay_payload(
     client: httpx.AsyncClient,
     method: str,
     url: str,
+    *,
+    request_json: dict[str, object] | None = None,
 ) -> httpx.Response:
     timeout = max(
         0.1,
@@ -173,6 +191,7 @@ async def _request_replay_payload(
     async with client.stream(
         method,
         url,
+        json=request_json,
         timeout=timeout,
         follow_redirects=False,
     ) as response:
@@ -235,13 +254,25 @@ def _endpoint_from_payload(
     endpoint: dict[str, object] = {
         INTERNAL_API_ENDPOINT_URL_KEY: url,
         INTERNAL_API_ENDPOINT_METHOD_KEY: method,
+        INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY: _route_identity(page_url),
     }
     endpoint_type = str(payload.get(INTERNAL_API_ENDPOINT_TYPE_KEY) or "").strip()
+    if method == "POST" and endpoint_type not in {
+        "graphql",
+        "job_api",
+        "product_api",
+    }:
+        return {}
     if endpoint_type:
         endpoint[INTERNAL_API_ENDPOINT_TYPE_KEY] = endpoint_type
     endpoint_family = str(payload.get(INTERNAL_API_ENDPOINT_FAMILY_KEY) or "").strip()
     if endpoint_family:
         endpoint[INTERNAL_API_ENDPOINT_FAMILY_KEY] = endpoint_family
+    request_json = payload.get(INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY)
+    if method == "POST" and isinstance(request_json, Mapping):
+        endpoint[INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY] = dict(request_json)
+    elif method == "POST":
+        return {}
     if source_run_id > 0:
         endpoint[INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY] = int(source_run_id)
     return endpoint
@@ -258,7 +289,10 @@ def payload_extracts_surface(
         return _payload_has_listing_row(payload, page_url=page_url)
     if "detail" in surface:
         return _payload_has_detail_object(
-            payload, surface=surface, requested_fields=requested_fields
+            payload,
+            surface=surface,
+            page_url=page_url,
+            requested_fields=requested_fields,
         )
     return False
 
@@ -287,6 +321,7 @@ def _payload_has_detail_object(
     payload: dict[str, object],
     *,
     surface: str,
+    page_url: str,
     requested_fields: list[str],
 ) -> bool:
     requested = {
@@ -318,11 +353,45 @@ def _payload_has_detail_object(
         keys = {str(key or "").strip().lower() for key in node.value}
         if "ecommerce" in surface and not _commerce_detail_keys_are_product_like(keys):
             continue
+        if not _record_url_matches_page(node.value, page_url):
+            continue
         if requested and keys & requested:
             return True
         if keys & key_set:
             return True
     return False
+
+
+def _record_url_matches_page(row: Mapping[str, object], page_url: str) -> bool:
+    """A replay response must identify the requested detail route.
+
+    Domain-wide endpoint memory must not turn a successful response for product
+    A into a result for product B.  An unidentifiable response falls through to
+    normal acquisition instead of being published from stale network data.
+    """
+    expected = _route_identity(page_url)
+    if not expected:
+        return False
+    for key in ("url", "href", "link", "canonicalUrl", "productUrl", "jobUrl"):
+        candidate = row.get(key)
+        if isinstance(candidate, str) and _route_identity(candidate) == expected:
+            return True
+    return False
+
+
+def _route_identity(value: str) -> str:
+    parsed = urlsplit(str(value or "").strip())
+    if not parsed.scheme or not parsed.hostname or not parsed.path:
+        return ""
+    return urlunsplit(
+        (
+            parsed.scheme.casefold(),
+            parsed.hostname.casefold(),
+            parsed.path.rstrip("/"),
+            "",
+            "",
+        )
+    )
 
 
 def _blocked_replay_path(url: str) -> bool:

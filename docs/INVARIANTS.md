@@ -251,12 +251,34 @@ is a crawler bug, not stricter security detection.
 
 ## 7. Listing and Detail Stay Separate
 
-**Rule:** Listing extraction never falls back into single-record detail behavior. A listing run with zero records produces `listing_detection_failed`. It never produces a fake success with one row of page metadata.
+**Rule:** Listing extraction never falls back into single-record detail behavior. A
+DOM-only listing record needs repeated structural boundaries plus a record-local title
+and detail URL; a singleton needs a structured URL-identity join. A listing run with
+zero records produces `listing_detection_failed`. It never produces a fake success
+with one row of page metadata.
+
+Listing recipes are grounded record-relative source paths scoped by `(domain,
+surface, route)`. They store no values and no CSS selectors, and every replay must
+ground every required fact on every discovered record before publication.
+
+Network listing rows obey the same boundary gate: one response array needs at
+least two title + same-site detail-URL records before it may publish. A direct
+detail API replay must expose a record URL for the requested route; a response
+for another route is stale input and falls back to normal acquisition.
+
+When a repeated network row has an opaque record ID but no detail URL, it may use
+only a page-local URL anchor or a captured URL template with an explicit ID
+placeholder. The response ID is substituted into that observed template. Never
+invent a URL format from a platform name or a static site rule.
 
 Detail extraction must also reject collection/category URLs that expose product-tile prices. A category URL submitted under `ecommerce_detail` is a bad seed, not a single PDP. Do not turn its first tile or page heading into a detail record.
 
 **VIOLATION signatures:**
 - A listing run returns 1 record containing the page title, OG description, or brand name
+- A DOM-only singleton/footer/navigation card is published as a listing record
+- A listing recipe reuses a stale value or a binding that fails on any record
+- A network array, recommendation set, or stale direct API response publishes
+  without matching the requested listing/detail identity
 - `verdict.py` returns `success` for a listing run that extracted zero product rows
 - `crawl_engine.py` routes a listing URL through `detail_extractor.py`
 - An `ecommerce_detail` run on `/c/...`, `/category/...`, or `/collections/...` persists a fake detail record from a product tile

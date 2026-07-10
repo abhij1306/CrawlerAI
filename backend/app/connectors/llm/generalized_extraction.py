@@ -30,6 +30,7 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.model_runtime import RuntimeFlatMapPage
+from app.extraction.surfaces import listing_schema
 
 
 class HostedGeneralizedExtractionAdapter:
@@ -98,9 +99,9 @@ class HostedGeneralizedExtractionAdapter:
         user_prompt = Template(user_template).safe_substitute(
             {
                 "url": stringify_prompt_value(page.source.artifact_id),
-                "surface": stringify_prompt_value("ecommerce_detail"),
+                "surface": stringify_prompt_value(page.surface or "ecommerce_detail"),
                 "field_senses": stringify_prompt_value(
-                    list(GENERALIZED_EXTRACTION_FIELD_SENSES)
+                    _field_senses(page.surface)
                 ),
                 "page": stringify_prompt_value(_page_payload(page)),
             }
@@ -130,6 +131,20 @@ def _page_payload(page: RuntimeFlatMapPage) -> dict[str, Any]:
         "vision_recommended": page.vision_recommended,
         "path_to_text": {entry.path: entry.text for entry in page.entries},
     }
+
+
+def _field_senses(surface: str) -> list[dict[str, str]]:
+    schema = listing_schema(surface) if surface else None
+    if schema is None:
+        return list(GENERALIZED_EXTRACTION_FIELD_SENSES)
+    return [
+        {
+            "field": fact_type.rsplit(".", 1)[-1],
+            "fact_type": fact_type,
+            "sense": f"visible record-local {fact_type}",
+        }
+        for fact_type in schema.bindable_facts
+    ]
 
 
 def hosted_generalized_adapter(

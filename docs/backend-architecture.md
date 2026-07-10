@@ -403,6 +403,9 @@ Important implemented features:
 - final public shaping is owned by `app/extraction/publication.py`: projection entries authorize each atomic field, collection entity, and URL canonicalization trace before serialization
 - persistence writes the already-authorized record and performs no extraction repair
 - pipeline post-processing keeps selector self-heal for detail pages. Ecommerce detail is guarded from `extract_missing_fields()` and direct-record value generation; non-detail LLM fallback remains explicitly gated
+- commerce and job listings now share a schema-backed cascade: repeated structural record boundaries, deterministic structured or record-local DOM evidence, frozen record-relative binding replay, then one explicitly enabled exemplar model acquisition. Bindings contain source paths only, are re-grounded for every record, and persist through extraction memory for later zero-model replays
+- browser network captures persist as bounded `network_exchanges.json` evidence artifacts when payloads exist; a compact `network_exchanges.index.json` exposes endpoint/status/body-shape and candidate-row counts for triage. Raw responses retain grounding provenance but omit request headers and frame URLs; read-only GraphQL metadata is retained only after mutation/sensitive-key filtering
+- schema-backed listings materialize repeated JSON response arrays through `network_listing.py` using the same public record/evidence pipeline as DOM and JSON-LD. An opaque response ID may ground to a page-local detail anchor or captured placeholder URL template; it never receives an invented platform URL. Direct API replay is route-scoped and validates returned detail route identity before falling back to normal acquisition on mismatch
 
 ### 6.5 Publish and persistence
 

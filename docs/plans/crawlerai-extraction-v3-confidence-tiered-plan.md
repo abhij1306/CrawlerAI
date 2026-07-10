@@ -481,16 +481,22 @@ exemplar tier, whose runtime-degradation behaviour is covered by the new file.
 NOT yet validated live against dyson/toddsnyder/firstcry captures (LLM disabled in
 prod; live acquisition run is a follow-up). NOTHING COMMITTED yet.
 
-### Slice 4.5: Jobs listing + detail on the same tier cascade
-**Status:** TODO — **priority-3, after listing (4.2–4.4) lands**
-**Files:** `app/extraction/jobs.py`, reuses the entire 4.2–4.4 cascade unchanged.
-**What:** Point the identical Tier 0 → generalized (exemplar) → recipe cascade at
-`job_listing`/`job_detail` with the jobs field schema (title, url, location,
-company). `JobPosting` JSON-LD grounds at Tier 0 where present; DOM-only rendered
-sites go through the exemplar LLM once and cache a recipe. No jobs-specific parsers.
-**Verify:** run 6 (adp, rendered) yields all rendered openings via one exemplar pass,
-not 1; run 4 (ultipro, 30) grounds at Tier 0 and holds; second runs replay recipes
-with 0 LLM calls.
+### Slice 4.5: Universal listing cascade
+**Status:** IN PROGRESS (2026-07-10)
+**Files:** `app/extraction/surfaces.py`, `listing_records.py`, `listing_tier0.py`,
+`listing_generalized.py`, `engine.py`, extraction-memory persistence.
+**What:** Commerce and job listings share one schema-backed path: structural record
+boundaries → deterministic structured/record-local DOM evidence → frozen grounded
+source bindings → one exemplar LLM acquisition. A DOM-only floor requires repeated
+record structure; a singleton is admitted only when a structured URL join proves it.
+The old listing CSS collector is not a fallback. A recipe stores only typed,
+record-relative source paths, is re-grounded for every record on every run, and is
+persisted in the existing compiled extraction-memory recipe after validation. LLM is
+strictly opt-in; disabled runs return deterministic evidence or an honest empty result.
+**Verify:** static commerce and job grids publish without an LLM; JSON-LD JobPosting
+and Product grids ground at Tier 0; an enabled first run produces one exemplar call;
+an independent frozen-release run replays with zero calls; drift never republishes a
+stale value; empty commerce and job listings request the same rendered-HTML retry.
 
 ### Out of scope (acquisition, not extraction)
 Runs 3/5/7/9 (paycom, ultipro-curl, oracle SPA, arcteryx challenge) return 0
@@ -506,16 +512,39 @@ infrastructure left guarded in Slice 2.1.
 ## Phase 5 — Network/API/GraphQL + interaction sources (corpus-gated; the V2 §15–19 machinery)
 
 ### Slice 5.1: Re-capture a network-bearing corpus
-**Status:** TODO — **blocked: current corpus is HTML-only (`network_payloads_captured: false`)**
-**Files:** `backend/eval/labels/*` (network-bearing captures), acquisition capture-config (read-only from extraction's side)
-**What:** Using the existing acquisition network-capture (already built), persist `network_exchanges` alongside `page.html` for a set of sites whose variants/prices load via XHR/GraphQL and are **not** in any `<script>` tag. Label ground truth. This is the only way to test API/interaction extraction — do not build 5.2 against synthetic data.
-**Verify:** corpus contains real captured XHR/GraphQL responses with labeled variant/price truth; count of "data only reachable via network" pages is measured.
+**Status:** PARTIALLY VERIFIED (2026-07-10) — 25 recent commerce-detail captures
+contain 14 network artifacts (9 GraphQL/product API-bearing). Fresh UKG run 10 is
+the first valid dynamic-job capture: `LoadSearchResults` grounds 30 rows. Workday
+run 12 has no rows; iCIMS run 13 now rejects shell cards honestly. Two further valid
+dynamic-job captures and field labels remain before this corpus gate completes.
+**Files:** `persistence/url_result_artifacts.py`, `backend/eval/labels/*`, acquisition capture-config.
+**What:** Browser-captured response evidence now persists as bounded, sanitized
+`network_exchanges.json` beside `page.html`, plus a small
+`network_exchanges.index.json` for operator triage. The index shows endpoint,
+status, response shape, and likely product/job row counts; raw bodies remain the
+grounding source and are not the operator UI. Capture and label real XHR/GraphQL-only
+commerce price/variant pages and dynamic job listings. Do not build 5.2 against
+synthetic data.
+**Verify:** corpus contains real captured XHR/GraphQL responses with labeled variant/
+price truth; count of "data only reachable via network" pages is measured.
 
 ### Slice 5.2: Network + interaction extraction tier
-**Status:** TODO — **blocked until 5.1**
-**Files:** new `app/extraction/adapters/network.py`, `app/extraction/interactions.py`, recipe request-template + APQ + response-matcher schema
-**What:** Adopt the V2 §15–19 design **only now that it's testable**: materialize a source from a captured `NetworkExchange`; recipe request-templates with GraphQL/APQ (hash + full-query fallback); interaction snapshots (select-variant/tab/accordion/carousel) with the timing/protocol/endpoint/semantic response filter. Extraction *declares* the request; acquisition *executes* it (the seam is unchanged). Feeds the same record-first flow + grounding.
-**Verify:** on the 5.1 corpus, variants/prices reachable only via network are recovered and grounded to the captured response; APQ `PERSISTED_QUERY_NOT_FOUND` falls back to full query.
+**Status:** IN PROGRESS (2026-07-10)
+**Files:** `app/extraction/network_listing.py`, `listing_tier0.py`, `surfaces.py`,
+`acquisition/browser_capture.py`, `internal_api_replay.py`.
+**What:** Captured response arrays now materialize as one schema-driven listing
+source for commerce and jobs, preserving JSON-pointer evidence and requiring a
+repeated title + same-site detail URL. When an API row has an ID but no URL, it joins
+to a page-local anchor or captured URL template, then substitutes the grounded ID.
+Browser capture retains bounded, sanitized JSON POST/GraphQL request metadata;
+mutations and sensitive variables are excluded. GET/POST replay is route-scoped, so
+a response for product A never publishes for product B. UKG `LoadSearchResults`
+replays to 30 jobs and a full pipeline run publishes all 30. Interaction execution
+and APQ full-query fallback remain pending measured captures that prove their
+variable/response matchers.
+**Verify:** unit commerce/job response arrays publish through the same generic flow
+with no DOM or model; a mismatched replay response is rejected; GraphQL mutations
+and sensitive request payloads are never captured. Focused suite: 74 passed.
 
 ---
 

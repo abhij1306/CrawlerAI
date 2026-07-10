@@ -385,7 +385,13 @@ class CrawlRunSettings:
         )
 
     def llm_enabled(self) -> bool:
-        return bool(self.data.get("llm_enabled"))
+        # LLM extraction is the core of the cascade, so it is ON by default.
+        # Only an explicit ``llm_enabled: false`` (e.g. the public extraction
+        # API) disables it; an absent key must not silently drop the tier.
+        value = self.data.get("llm_enabled")
+        if value is None:
+            return True
+        return bool(value)
 
     def llm_config_snapshot(self) -> dict[str, Any]:
         snapshot = self.data.get("llm_config_snapshot")
@@ -469,6 +475,9 @@ class CrawlRunSettings:
         normalized["urls"] = self.urls()
         normalized["max_records"] = self.max_records()
         normalized["respect_robots_txt"] = self.respect_robots_txt()
+        # Freeze the resolved LLM flag so run records are self-describing and the
+        # default-on behaviour survives round-trips through storage/merge.
+        normalized["llm_enabled"] = self.llm_enabled()
         normalized["fetch_profile"] = self.fetch_profile()
         normalized.pop(ttl_key, None)
         if normalized["fetch_profile"].get(ttl_key) is not None:

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validat
 
 from app.core.config import field_mappings
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import SURFACE_SPECS, Surface
 
 JsonValue = Any
 Verdict = Literal[
@@ -71,7 +71,14 @@ OFFER_FACTS = frozenset(
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
 OPTION_FACTS = frozenset(f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS)
-FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
+FACT_TYPES = frozenset().union(
+    PRODUCT_FACTS,
+    VARIANT_FACTS,
+    OFFER_FACTS,
+    ASSET_FACTS,
+    OPTION_FACTS,
+    *(spec.allowed_facts for spec in SURFACE_SPECS.values()),
+)
 
 
 class FrozenModel(BaseModel):
@@ -492,6 +499,7 @@ class CapabilityRequest(FrozenModel):
         "empty_extraction",
         "explicit_variants_missing",
         "http_shell",
+        "listing_network_missing",
     ]
     required_artifacts: tuple[str, ...] = ()
     max_attempts: int = Field(default=1, ge=1, le=1)
@@ -503,6 +511,7 @@ RetryRequest = CapabilityRequest
 FailureTaxonomy = Literal[
     "wrong_surface",
     "insufficient_input_bundle",
+    "listing_detection_failed",
     "discovery",
     "record_boundary",
     "entity_binding",
@@ -564,6 +573,7 @@ class DiagnosticSummary(FrozenModel):
     ] = "not_considered"
     sentinel_state: SentinelDriftState | None = None
     sentinel_diagnostic: str | None = None
+    listing_discovery: dict[str, int] = Field(default_factory=dict)
 
 
 FieldValueType = Literal[
@@ -720,6 +730,7 @@ class UniversalModelArtifact(FrozenModel):
     benchmark_report_id: str = Field(min_length=1)
     benchmark_passed: bool
     approved: bool
+    approval_source: Literal["benchmark", "operator_config"] = "benchmark"
     enabled: bool
     confidence_threshold: float = Field(ge=0.0, le=1.0)
     timeout_ms: int = Field(gt=0)
@@ -1025,3 +1036,4 @@ class ExtractionResult(FrozenModel):
     )
     failure_classifications: tuple[FailureClassification, ...] = ()
     diagnostics: DiagnosticSummary = Field(default_factory=DiagnosticSummary)
+    recipe_candidate: dict[str, Any] | None = Field(default=None, exclude=True)

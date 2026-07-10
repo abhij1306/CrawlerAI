@@ -205,6 +205,91 @@ def test_diagnose_artifact_is_capped(tmp_path: Path, monkeypatch) -> None:
     assert payload["truncated"]["variants.dropped"]["total"] == 100
 
 
+def test_network_exchange_artifact_keeps_bounded_response_provenance(
+    tmp_path: Path,
+) -> None:
+    acquisition = SimpleNamespace(
+        final_url="https://example.test/listing",
+        html="<html>listing</html>",
+        method="browser",
+        status_code=200,
+        content_type="text/html",
+        blocked=False,
+        platform_family=None,
+        adapter_name=None,
+        json_data=None,
+        browser_diagnostics={},
+        acquisition_diagnostics={},
+        artifacts={},
+        network_payloads=[
+            {
+                "url": "https://api.example.test/jobs",
+                "method": "POST",
+                "status": 200,
+                "content_type": "application/json",
+                "endpoint_type": "graphql",
+                "endpoint_family": "api",
+                "body_sha256": "abc",
+                "request_headers": {"authorization": "not persisted"},
+                "frame_url": "not persisted",
+                "body": {"data": {"jobs": [{"title": "Backend Engineer"}]}},
+            }
+        ],
+    )
+    extraction = SimpleNamespace(
+        bundle_id="network-bundle",
+        model_dump=lambda **_: {"records": []},
+        evidence=[],
+        decisions=[],
+        findings=[],
+        verdict="empty",
+        data_integrity="unknown",
+        metrics=SimpleNamespace(model_dump=lambda **_: {}),
+        field_states=[],
+        collector_outcomes=[],
+        stage_outcomes=[],
+        contract_outcomes=[],
+    )
+
+    published = publish_url_result_artifacts(
+        run_id=7,
+        url_result_id=10,
+        acquisition_result=acquisition,
+        extraction_result=extraction,
+        record_count=0,
+        root_dir=tmp_path,
+    )
+
+    payload = json.loads(
+        (tmp_path / published.result_root / "network_exchanges.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["schema_version"] == "network_exchanges.v1"
+    exchange = payload["exchanges"][0]
+    assert exchange["body"]["data"]["jobs"][0]["title"] == "Backend Engineer"
+    assert "request_headers" not in exchange
+    assert "frame_url" not in exchange
+
+    index = json.loads(
+        (tmp_path / published.result_root / "network_exchanges.index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert index["schema_version"] == "network_exchange_index.v1"
+    assert index["exchanges"][0]["body_shape"] == {
+        "kind": "object",
+        "keys": ["data"],
+        "objects": {
+            "data": {
+                "candidate_row_counts": {"jobs": 1},
+                "kind": "object",
+                "keys": ["jobs"],
+            }
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_record_artifact_reader_prefers_matching_canonical_provenance(
     tmp_path: Path,
@@ -449,7 +534,13 @@ def test_canonical_url_artifacts_publish_compact_bundle(
     assert not (result_dir / "manifest.json").exists()
     assert not (result_dir / "screenshot.png").exists()
     files = sorted(result_dir.iterdir(), key=lambda p: p.name)
-    assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
+    assert [f.name for f in files] == [
+        "diagnose.json",
+        "network_exchanges.index.json",
+        "network_exchanges.json",
+        "page.html",
+        "record.json",
+    ]
 
     records_payload = repository.read_json(f"{published.result_root}/record.json")
     assert records_payload["records"] == [{"title": "Widget"}]

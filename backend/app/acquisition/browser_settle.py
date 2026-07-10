@@ -15,6 +15,7 @@ from app.acquisition.browser_readiness import analyze_html
 from app.acquisition.dom_runtime import get_page_html
 from app.core.config.selectors import CARD_SELECTORS
 from app.extraction.documents import HtmlAnalysis
+from app.extraction.surfaces import structured_type_selectors
 from app.core.shared.ids import content_sha256
 
 
@@ -238,13 +239,12 @@ async def _run_generic_detail_readiness(context: _SettleContext) -> dict[str, ob
     if max_wait_ms > 0:
         try:
             await context.page.wait_for_function(
-                """() => Boolean(
-                    document.querySelector('h1')
-                    || document.querySelector('[itemtype*="Product" i]')
-                    || document.querySelector('[data-testid*="product" i]')
-                    || document.querySelector('[class*="product" i]')
-                    || document.querySelector('script[type="application/ld+json"]')
-                )""",
+                "(selectors) => selectors.some((selector) => document.querySelector(selector))",
+                arg=[
+                    "h1",
+                    *structured_type_selectors(context.surface),
+                    'script[type="application/ld+json"]',
+                ],
                 timeout=min(int(context.timeout_seconds * 1000), max_wait_ms),
             )
         except PlaywrightTimeoutError:

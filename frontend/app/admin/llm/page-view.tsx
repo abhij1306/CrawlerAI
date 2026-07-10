@@ -28,6 +28,7 @@ import type {
 const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [
   'general',
+  'generalized_extraction',
   'data_enrichment_semantic',
   'grounded_extraction_repair',
   'product_intelligence_enrichment',

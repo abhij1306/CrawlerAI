@@ -82,6 +82,10 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
     result = _extract(
         "job_listing",
         """
+        <script type="application/ld+json">[
+          {"@type":"JobPosting","title":"Backend Engineer","url":"/jobs/backend","hiringOrganization":{"name":"Invoro"},"jobLocation":{"address":{"addressLocality":"Remote"}}},
+          {"@type":"JobPosting","title":"Data Engineer","url":"/jobs/data","hiringOrganization":{"name":"Invoro"}}
+        ]</script>
         <ul>
           <li class="job-card">
             <a href="/jobs/backend"><h2>Backend Engineer</h2></a>
@@ -105,12 +109,14 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
     assert all(row["_lineage"]["title"] for row in result.records)
     assert all(item.subject_id for item in result.evidence)
     assert all(item.surface.value == "job_listing" for item in result.evidence)
+    assert result.metrics.universal_model_invocation_count == 0
 
 
 def test_job_listing_result_is_replayable() -> None:
     result = _extract(
         "job_listing",
         """
+        <script type="application/ld+json">{"@type":"JobPosting","title":"Backend Engineer","url":"/jobs/backend","hiringOrganization":{"name":"Invoro"}}</script>
         <article class="job-card">
           <a href="/jobs/backend" title="Backend Engineer">Backend Engineer</a>
           <span class="company">Invoro</span>
@@ -133,10 +139,11 @@ def test_job_listing_greenhouse_table_rows_materialize() -> None:
     result = _extract(
         "job_listing",
         """
+        <script type="application/ld+json">{"@type":"JobPosting","title":"Senior Data Scientist","url":"/positions/123","jobLocation":{"address":{"addressLocality":"Remote"}}}</script>
         <main><table>
           <tr class="job-post">
             <td class="cell">
-              <a href="https://careers.test/positions/123">
+              <a href="/positions/123">
                 <p class="body body--medium">Senior Data Scientist</p>
                 <p class="body body__secondary body--metadata">Remote</p>
               </a>
@@ -149,8 +156,255 @@ def test_job_listing_greenhouse_table_rows_materialize() -> None:
     )
     assert result.records
     assert result.records[0]["title"] == "Senior Data Scientist"
-    assert result.records[0]["url"] == "https://careers.test/positions/123"
+    assert result.records[0]["url"] == "https://job-boards.test/positions/123"
     assert result.records[0]["location"] == "Remote"
+
+
+def test_static_commerce_listing_uses_record_local_dom_floor_without_llm() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <ul>
+          <li><a href="/products/alpha"><img src="alpha.jpg">Alpha Trail Shoe</a><span>$120</span></li>
+          <li><a href="/products/beta"><img src="beta.jpg">Beta Trail Shoe</a><span>$130</span></li>
+        </ul>
+        """,
+        "https://shop.test/collections/trail",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == [
+        "Alpha Trail Shoe",
+        "Beta Trail Shoe",
+    ]
+    # The commerce DOM floor now routes through the richer card collector
+    # (``ecommerce_listing_css``), which carries the full title/price/image
+    # admissibility rules the minimal generic floor lacks. Still deterministic
+    # and model-free — the point of the test.
+    assert {row.collector_id for row in result.evidence} == {"ecommerce_listing_css"}
+    assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_static_job_listing_uses_same_record_local_dom_floor_without_llm() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <ul>
+          <li><a href="/jobs/backend">Senior Backend Engineer</a></li>
+          <li><a href="/jobs/data">Senior Data Engineer</a></li>
+        </ul>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == [
+        "Senior Backend Engineer",
+        "Senior Data Engineer",
+    ]
+    assert {row.collector_id for row in result.evidence} == {"listing_dom_floor"}
+    assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_dom_listing_floor_rejects_repeated_footer_cards() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <footer><a href="/locations"><img src="location.jpg">Find a Location</a>
+        <a href="/providers"><img src="provider.jpg">Find a Provider</a></footer>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+
+    assert not result.records
+    assert result.verdict == "empty"
+
+
+def test_dom_job_listing_accepts_repeated_cross_host_text_cards() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <main><section>
+          <article><a href="https://jobs.ats.test/openings/one">Senior Backend Engineer</a><a href="https://jobs.ats.test/openings/one/apply">Apply</a><p>Remote India</p></article>
+          <article><a href="https://jobs.ats.test/openings/two">Senior Data Engineer</a><a href="https://jobs.ats.test/openings/two/apply">Apply</a><p>Remote India</p></article>
+        </section></main>
+        """,
+        "https://company.test/careers",
+        max_records=5,
+    )
+
+    assert [row["url"] for row in result.records] == [
+        "https://jobs.ats.test/openings/one",
+        "https://jobs.ats.test/openings/two",
+    ]
+
+
+def test_network_commerce_listing_materializes_repeated_rows_without_llm() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        "<main>Loading products...</main>",
+        "https://shop.test/collections/trail",
+        max_records=5,
+        network_payloads=(
+            {
+                "url": "https://shop.test/api/collections/trail",
+                "body": {
+                    "products": [
+                        {
+                            "name": "Alpha Trail Shoe",
+                            "url": "/products/alpha",
+                            "salePrice": "120",
+                        },
+                        {
+                            "name": "Beta Trail Shoe",
+                            "url": "/products/beta",
+                            "salePrice": "130",
+                        },
+                    ]
+                },
+            },
+        ),
+    )
+
+    assert [row["title"] for row in result.records] == [
+        "Alpha Trail Shoe",
+        "Beta Trail Shoe",
+    ]
+    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+    assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_network_job_listing_materializes_same_generic_record_flow() -> None:
+    result = _extract(
+        "job_listing",
+        "<main>Loading openings...</main>",
+        "https://jobs.test/careers",
+        max_records=5,
+        network_payloads=(
+            {
+                "url": "https://jobs.test/api/jobs",
+                "body": {
+                    "jobs": [
+                        {
+                            "jobTitle": "Backend Engineer",
+                            "jobUrl": "/jobs/backend",
+                            "companyName": "Invoro",
+                            "locationName": "Remote",
+                        },
+                        {
+                            "jobTitle": "Data Engineer",
+                            "jobUrl": "/jobs/data",
+                            "companyName": "Invoro",
+                            "locationName": "Delhi",
+                        },
+                    ]
+                },
+            },
+        ),
+    )
+
+    assert [row["title"] for row in result.records] == [
+        "Backend Engineer",
+        "Data Engineer",
+    ]
+    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+
+
+def test_network_job_listing_grounds_response_id_to_page_detail_link() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <main><a href="/jobs/OpportunityDetail?opportunityId=abc-123">Welding Cell Team Lead</a>
+        <a href="/jobs/OpportunityDetail?opportunityId=def-456">Data Engineer</a></main>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+        network_payloads=(
+            {
+                "url": "https://jobs.test/api/LoadSearchResults",
+                "body": {
+                    "opportunities": [
+                        {"Id": "abc-123", "Title": "Welding Cell Team Lead"},
+                        {"Id": "def-456", "Title": "Data Engineer"},
+                    ]
+                },
+            },
+        ),
+    )
+
+    assert [row["url"] for row in result.records] == [
+        "https://jobs.test/jobs/OpportunityDetail?opportunityId=abc-123",
+        "https://jobs.test/jobs/OpportunityDetail?opportunityId=def-456",
+    ]
+    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+
+
+def test_network_job_listing_grounds_response_id_to_captured_url_template() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <script>window.board = {opportunityLinkUrl: "/jobs/OpportunityDetail?opportunityId=00000000-0000-0000-0000-000000000000"};</script>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+        network_payloads=(
+            {
+                "url": "https://jobs.test/api/LoadSearchResults",
+                "body": {
+                    "opportunities": [
+                        {"Id": "abc-123", "Title": "Welding Cell Team Lead"},
+                        {"Id": "def-456", "Title": "Data Engineer"},
+                    ]
+                },
+            },
+        ),
+    )
+
+    assert [row["url"] for row in result.records] == [
+        "https://jobs.test/jobs/OpportunityDetail?opportunityId=abc-123",
+        "https://jobs.test/jobs/OpportunityDetail?opportunityId=def-456",
+    ]
+
+
+def test_empty_job_listing_requests_same_rendered_capability_as_commerce_listing() -> (
+    None
+):
+    result = _extract(
+        "job_listing",
+        "<main><h1>Careers</h1><p>Loading openings...</p></main>",
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+
+    assert result.verdict == "empty"
+    assert result.retry_request is not None
+    assert result.retry_request.required_artifacts == ("rendered_html",)
+    assert result.failure_classifications[0].code == "listing_detection_failed"
+    assert result.diagnostics.listing_discovery["candidate_anchor_count"] == 0
+
+
+def test_browser_empty_listing_requests_network_through_the_same_ladder() -> None:
+    request = fixture_request_from_inputs(
+        Surface.JOB_LISTING,
+        "<main><h1>Careers</h1><p>Loading openings...</p></main>",
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+    request = request.model_copy(
+        update={
+            "capture": request.capture.model_copy(update={"browser_attempted": True})
+        }
+    )
+
+    result = extract(request)
+
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "listing_network_missing"
+    assert result.retry_request.required_artifacts == (
+        "rendered_html",
+        "network_payloads",
+    )
 
 
 def test_parent_mixed_variant_prices_publish_explicit_range_semantics() -> None:

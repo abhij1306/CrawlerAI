@@ -32,6 +32,9 @@ from app.core.config.network_capture import (
     NETWORK_PAYLOAD_JSON_CONTENT_TYPE_HINTS,
     NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES,
     NETWORK_PAYLOAD_URL_HINTS,
+    NETWORK_REPLAY_REQUEST_ALLOWED_KEYS,
+    NETWORK_REPLAY_REQUEST_MAX_BYTES,
+    NETWORK_REPLAY_REQUEST_SENSITIVE_KEY_TOKENS,
 )
 from app.core.config.runtime_settings import (
     browser_capture_max_network_payload_bytes,
@@ -343,6 +346,10 @@ class BrowserNetworkCapture:
                         getattr(response.request, "resource_type", "") or ""
                     ),
                     "frame_url": _request_frame_url(response.request),
+                    "request_json": _safe_replay_request_json(
+                        response.request,
+                        endpoint_type=endpoint_info["type"],
+                    ),
                     "body": payload,
                 }
             )
@@ -401,6 +408,60 @@ def _request_frame_url(request: Any) -> str:
         return str(getattr(getattr(request, "frame", None), "url", "") or "")
     except Exception:
         return ""
+
+
+def _safe_replay_request_json(
+    request: Any, *, endpoint_type: str
+) -> dict[str, object] | None:
+    """Keep a bounded non-sensitive JSON POST template for recipe learning."""
+    if str(getattr(request, "method", "")).upper() != "POST":
+        return None
+    headers = getattr(request, "headers", {})
+    content_type = str(
+        headers.get("content-type", "") if isinstance(headers, Mapping) else ""
+    ).casefold()
+    if "json" not in content_type and endpoint_type != "graphql":
+        return None
+    raw = getattr(request, "post_data", None)
+    raw = raw() if callable(raw) else raw
+    if (
+        not isinstance(raw, str)
+        or len(raw.encode("utf-8")) > NETWORK_REPLAY_REQUEST_MAX_BYTES
+    ):
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    query = str(payload.get("query") or "")
+    if "mutation" in query.casefold():
+        return None
+    if endpoint_type == "graphql" and (
+        set(payload) - NETWORK_REPLAY_REQUEST_ALLOWED_KEYS
+        or not (query or payload.get("operationName") or payload.get("extensions"))
+    ):
+        return None
+    if _has_sensitive_request_key(payload):
+        return None
+    return dict(payload)
+
+
+def _has_sensitive_request_key(value: object) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = str(key).casefold()
+            if any(
+                token in normalized
+                for token in NETWORK_REPLAY_REQUEST_SENSITIVE_KEY_TOKENS
+            ):
+                return True
+            if _has_sensitive_request_key(item):
+                return True
+    elif isinstance(value, list):
+        return any(_has_sensitive_request_key(item) for item in value)
+    return False
 
 
 def should_capture_network_payload(

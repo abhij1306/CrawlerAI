@@ -307,6 +307,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_desktop_window_frame_width_px: int = 16
     browser_desktop_window_frame_height_px: int = 88
     browser_readiness_visible_text_min: int = 120
+    browser_js_shell_visible_text_max: int = 240
     interruptible_wait_poll_ms: int = 250
     cooperative_sleep_poll_ms: int = 250
     browser_shutdown_timeout_seconds: float = 10.0

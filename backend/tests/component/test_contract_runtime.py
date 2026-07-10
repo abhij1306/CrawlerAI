@@ -38,6 +38,7 @@ from app.extraction.surfaces import Surface
 from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
@@ -665,6 +666,29 @@ def test_compile_recipe_layers_fails_ambiguous_same_layer_override() -> None:
                 ),
             ]
         )
+
+
+@pytest.mark.unit
+def test_compile_recipe_layers_exposes_typed_record_bindings() -> None:
+    bindings = {
+        "schema_version": "record_bindings.v1",
+        "adapter_id": "fixture-runtime-adapter",
+        "artifact_version": "fixture-v1",
+        "bindings": [{"fact_type": "job.title", "relative_path": "/a[1]/span[1]"}],
+    }
+
+    compiled = compile_recipe_layers(
+        [
+            _recipe(
+                EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
+                {"record_bindings": bindings},
+            )
+        ],
+        surface="job_listing",
+    )
+
+    assert compiled["record_bindings"] == bindings
 
 
 @pytest.mark.asyncio

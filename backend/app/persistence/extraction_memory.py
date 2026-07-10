@@ -28,6 +28,7 @@ from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
@@ -108,9 +109,10 @@ def compile_recipe_layers(
     )
     selectors: dict[str, dict[str, object]] = {}
     contracts: dict[str, dict[str, object]] = {}
+    record_bindings = _compiled_record_bindings(ordered)
     provenance: list[dict[str, object]] = []
     layer_signatures: dict[tuple[str, str, str], str] = {}
-    for recipe in ordered:
+    for recipe in _non_binding_recipes(ordered):
         payload = dict(recipe.payload or {})
         provenance.append(
             {
@@ -158,8 +160,34 @@ def compile_recipe_layers(
         "contracts": list(contracts.values()),
         "source_pins": source_pins,
         "field_schema": field_schema,
+        "record_bindings": record_bindings,
         "provenance": provenance,
     }
+
+
+def _compiled_record_bindings(
+    recipes: Iterable[ExtractionRecipe],
+) -> dict[str, object] | None:
+    for recipe in reversed(tuple(recipes)):
+        if recipe.kind != EXTRACTION_RECIPE_KIND_RECORD_BINDINGS:
+            continue
+        candidate = dict(recipe.payload or {}).get("record_bindings")
+        if (
+            isinstance(candidate, dict)
+            and candidate.get("schema_version") == "record_bindings.v1"
+        ):
+            return dict(candidate)
+    return None
+
+
+def _non_binding_recipes(
+    recipes: Iterable[ExtractionRecipe],
+) -> Iterable[ExtractionRecipe]:
+    return (
+        recipe
+        for recipe in recipes
+        if recipe.kind != EXTRACTION_RECIPE_KIND_RECORD_BINDINGS
+    )
 
 
 def _selectors_disabled_for_surface(surface: str) -> bool:
@@ -837,6 +865,9 @@ async def record_extraction_result(
         surface=surface,
         result=result,
     )
+    compiled_recipe = await _persist_record_binding_candidate(
+        session, template=template, surface=surface, result=result
+    )
     observation = ExtractionObservation(
         template_id=template.id,
         run_id=run_id,
@@ -893,6 +924,9 @@ async def record_extraction_result(
             url_result_id=url_result_id,
             release_snapshot_id=release_snapshot_id,
             template_id=template.id,
+            compiled_recipe_id=compiled_recipe.id
+            if compiled_recipe is not None
+            else None,
             manifest_version=EXTRACTION_MANIFEST_VERSION,
             payload=manifest_payload,
         )
@@ -900,9 +934,40 @@ async def record_extraction_result(
     else:
         manifest.release_snapshot_id = release_snapshot_id
         manifest.template_id = template.id
+        manifest.compiled_recipe_id = (
+            compiled_recipe.id
+            if compiled_recipe is not None
+            else manifest.compiled_recipe_id
+        )
         manifest.payload = manifest_payload
     await session.flush()
     return manifest
+
+
+async def _persist_record_binding_candidate(
+    session: AsyncSession,
+    *,
+    template: ExtractionTemplate,
+    surface: str,
+    result: ExtractionResult,
+) -> CompiledExtractionRecipe | None:
+    candidate = result.recipe_candidate
+    if (
+        "listing" not in surface
+        or result.verdict not in EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS
+        or not result.records
+        or not isinstance(candidate, dict)
+        or candidate.get("schema_version") != "record_bindings.v1"
+    ):
+        return None
+    _recipe, compiled = await upsert_recipe(
+        session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
+        payload={"record_bindings": dict(candidate)},
+    )
+    return compiled
 
 
 async def _record_observed_field_preferences(

@@ -14,6 +14,7 @@ from app.connectors.llm.config_service import (
     serialize_config_snapshot,
 )
 from app.core.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
+from app.core.config.evaluation import GENERALIZED_EXTRACTION_LLM_TASK
 from app.core.config.field_mappings import PROMPT_REGISTRY
 
 
@@ -128,6 +129,41 @@ async def test_resolve_run_config_accepts_complete_snapshot(
         "api_key_encrypted": "",
         "task_type": "data_enrichment_semantic",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_resolve_run_config_uses_generalized_extraction_then_general(
+    db_session,
+) -> None:
+    exact = {
+        "provider": "mistral",
+        "model": "mistral-small-latest",
+        "api_key_encrypted": "",
+        "task_type": GENERALIZED_EXTRACTION_LLM_TASK,
+    }
+    fallback = {
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "api_key_encrypted": "",
+        "task_type": "general",
+    }
+
+    resolved = await resolve_run_config(
+        db_session,
+        run_id=None,
+        task_type=GENERALIZED_EXTRACTION_LLM_TASK,
+        config_snapshot={GENERALIZED_EXTRACTION_LLM_TASK: exact, "general": fallback},
+    )
+    general_only = await resolve_run_config(
+        db_session,
+        run_id=None,
+        task_type=GENERALIZED_EXTRACTION_LLM_TASK,
+        config_snapshot={"general": fallback},
+    )
+
+    assert resolved == exact
+    assert general_only == fallback
 
 
 @pytest.mark.asyncio

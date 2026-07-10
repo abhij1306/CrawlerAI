@@ -29,6 +29,12 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.shared.field_coerce import clean_text, coerce_int as _coerce_int
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.documents import HtmlAnalysis, HtmlDocument, HtmlNode
+from app.extraction.surfaces import (
+    ListingSchema,
+    SurfaceSpec,
+    listing_schema,
+    surface_spec,
+)
 
 
 _STRUCTURED_SHELL_TOKENS = (
@@ -41,34 +47,8 @@ _DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
     str(key): tuple(map(str, value or ()))
     for key, value in (BROWSER_DETAIL_READINESS_HINTS or {}).items()
 }
-_ECOMMERCE_READY_CARD_SELECTORS = (
-    "[data-product-id]",
-    "[itemscope][itemtype*='Product']",
-    ".product-grid-item",
-    "li.product-grid-product",
-    "li.product-base",
-    ".plp-card",
-    "[class*='productcard']",
-    "[class*='product-card']",
-    "[class*='product-item']",
-    "[class*='product-tile']",
-    "[class*='ProductPod']",
-    "[class*='item-tile']",
-    "[data-testid*='product']",
-    "[data-test*='product']",
-    "[data-component*='product']",
-    "[data-automation*='product']",
-)
-_ECOMMERCE_READY_PRICE_RE = re.compile(
+_READY_NUMERIC_RE = re.compile(
     r"(?:rs\.?|inr|₹|\$|£|€|cad|usd|brl|r\$)\s*\d|\b\d[\d,.]{2,}\s*(?:cad|usd|brl)\b",
-    re.I,
-)
-_ECOMMERCE_READY_PRODUCT_ATTR_RE = re.compile(
-    r"\bproduct[-_ ]?(?:cards?|items?|tiles?|grid|pod|base)(?=$|[^A-Za-z0-9_-])",
-    re.I,
-)
-_ECOMMERCE_READY_DETAIL_PATH_RE = re.compile(
-    r"/(?:products?|p|dp|item|shop)/",
     re.I,
 )
 
@@ -92,6 +72,7 @@ def analyze_extractable_content(
     analysis: HtmlAnalysis | None = None,
     url: str = "",
     status_code: int = 0,
+    surface: str = "ecommerce_detail",
 ) -> ExtractableContentSignals:
     parsed = analysis or analyze_html(html)
     placeholder = _is_js_required_placeholder(parsed)
@@ -99,7 +80,7 @@ def analyze_extractable_content(
         _structured_content_signals(parsed.document)
     )
     meaningful_detail = _has_meaningful_detail_dom(parsed)
-    dom_detail = _has_detail_dom_signals(parsed)
+    dom_detail = _has_detail_dom_signals(parsed, surface=surface)
     app_only = any(
         phrase in parsed.normalized_text.lower()
         for phrase in ("load in the app", "loads in the app")
@@ -138,10 +119,15 @@ def analyze_extractable_content(
     )
     script_count = len(parsed.document.safe_css("script"))
     js_shell = placeholder or bool(
-        len(parsed.visible_text) <= 120 and root_present and script_count >= 3
+        len(parsed.visible_text)
+        <= int(crawler_runtime_settings.browser_js_shell_visible_text_max)
+        and script_count >= 3
+        and not (structured_detail or structured_listing or state_content)
+        and (root_present or not meaningful_detail)
     )
     listing_shell = (
         placeholder
+        or js_shell
         or "#/" in str(url or "").strip().lower()
         or int(status_code or 0) == 202
     )
@@ -210,49 +196,49 @@ def _state_payload_has_content(payload: Any) -> bool:
     return payload not in (None, "")
 
 
-def _has_detail_dom_signals(analysis: HtmlAnalysis) -> bool:
-    if not analysis.h1_present:
-        return False
+def _surface_schema(value: str) -> SurfaceSpec | None:
+    try:
+        return surface_spec(value)
+    except ValueError:
+        return None
+
+
+def _has_detail_dom_signals(analysis: HtmlAnalysis, *, surface: str) -> bool:
+    schema = _surface_schema(surface)
     lowered_text = analysis.normalized_text.lower()
-    hint_count = detail_readiness_hint_count("ecommerce_detail", lowered_text)
+    hint_count = detail_readiness_hint_count(surface, lowered_text)
     hint_count += int(ACTION_BUY_NOW.strip().lower() in lowered_text)
-    product_anchor = any(
-        re.search(r"og:type", node.attribute("property") or "", re.I)
-        and re.search(r"\bproduct\b", node.attribute("content") or "", re.I)
-        for node in analysis.document.safe_css("[property][content]")
-    )
-    price_pattern = re.compile(
-        r"(?:[$€£₹]\s*)?\d{1,3}(?:,\d{3})*(?:[.,]\d{1,2})?"
-        r"|(?:[$€£₹]\s*)?\d+(?:[.,]\d{1,2})?",
-        re.I,
-    )
-    price_anchor = bool(
-        any(
-            re.search(r"(?:product:)?price", node.attribute("property") or "", re.I)
-            and price_pattern.search(node.attribute("content") or "")
-            for node in analysis.document.safe_css("[property][content]")
-        )
-        or any(
-            re.search(r"price", node.attribute("itemprop") or "", re.I)
-            for node in analysis.document.safe_css("[itemprop]")
-        )
-        or re.search(
-            r"(?:[$€£₹]\s*)\d+(?:[.,]\d{2})?",
-            analysis.normalized_text,
-        )
+    identity_anchor = _detail_identity_anchor(analysis, schema)
+    heading_anchor = bool(
+        analysis.document.css_first("main h1, article h1, [role='main'] h1, h1")
     )
     app_only = any(
         phrase in lowered_text for phrase in ("load in the app", "loads in the app")
     )
-    if app_only and not (product_anchor or price_anchor):
+    if app_only and not (heading_anchor or identity_anchor):
         return False
     if hint_count >= int(crawler_runtime_settings.detail_field_signal_min_count):
-        return bool(
-            analysis.document.css_first("main h1, article h1, [role='main'] h1")
-            or product_anchor
-            or price_anchor
+        return heading_anchor or identity_anchor
+    return hint_count > 0 and identity_anchor
+
+
+def _detail_identity_anchor(analysis: HtmlAnalysis, schema: SurfaceSpec | None) -> bool:
+    return bool(
+        schema
+        and (
+            any(
+                schema.root_entity in (node.attribute("content") or "").lower()
+                for node in analysis.document.safe_css("[property][content]")
+            )
+            or any(
+                any(
+                    schema_type.lower() in (node.attribute("itemtype") or "").lower()
+                    for schema_type in schema.structured_types
+                )
+                for node in analysis.document.safe_css("[itemtype]")
+            )
         )
-    return hint_count > 0 and product_anchor
+    )
 
 
 def _has_meaningful_detail_dom(analysis: HtmlAnalysis) -> bool:
@@ -405,6 +391,7 @@ async def probe_browser_readiness(
     )
     structured_data_present = has_detail_token or (not is_detail and has_shell_token)
     detail_hints = detail_readiness_hint_count(surface, analysis.visible_text.lower())
+    identity_anchor = _detail_identity_anchor(analysis, _surface_schema(surface))
     detail_title_matches_url = _detail_title_matches_url(
         url,
         analysis.title_text,
@@ -417,6 +404,7 @@ async def probe_browser_readiness(
         or structured_data_present
         or detail_hints > 0
         or detail_title_matches_url
+        or identity_anchor
     )
     listing_card_count = 0
     matched_listing_selectors = 0
@@ -448,6 +436,7 @@ async def probe_browser_readiness(
         )
         has_identity = bool(
             analysis.h1_present
+            or identity_anchor
             or detail_hints
             >= int(crawler_runtime_settings.detail_field_signal_min_count)
             or detail_title_matches_url
@@ -486,20 +475,15 @@ async def listing_card_signal_count(
     surface: str,
     analysis: HtmlAnalysis | None = None,
 ) -> int:
-    if str(surface or "").strip().lower().startswith("ecommerce"):
-        if analysis is None:
-            html = await get_page_html(page)
-            analysis = await asyncio.to_thread(analyze_html, html)
-        ready_count, candidates_present = _ecommerce_ready_card_count(analysis.document)
-        if ready_count <= 0:
-            if candidates_present:
-                return 0
-            return await count_listing_cards(page, surface=surface)
-        selector_count = await count_listing_cards(page, surface=surface)
-        return max(ready_count, selector_count)
-    return await count_listing_cards(
-        page,
-        surface=surface,
+    schema = _surface_listing_schema(surface)
+    if schema is None:
+        return await count_listing_cards(page, surface=surface)
+    if analysis is None:
+        html = await get_page_html(page)
+        analysis = await asyncio.to_thread(analyze_html, html)
+    return max(
+        _schema_ready_card_count(analysis.document, schema),
+        await count_listing_cards(page, surface=surface),
     )
 
 
@@ -530,27 +514,36 @@ def _detail_title_matches_url(
     return False
 
 
-def _ecommerce_ready_card_count(document: HtmlDocument) -> tuple[int, bool]:
+def _surface_listing_schema(value: str) -> ListingSchema | None:
+    try:
+        return listing_schema(value)
+    except ValueError:
+        return None
+
+
+def _schema_ready_card_count(document: HtmlDocument, schema: ListingSchema) -> int:
     seen: set[int] = set()
     count = 0
-    candidates_present = False
-    for selector in _ECOMMERCE_READY_CARD_SELECTORS:
+    selectors = (
+        "article, li, [itemscope], [data-testid], [data-id], [class]",
+        *(f'[itemtype*="{item_type}" i]' for item_type in schema.structured_types),
+    )
+    for selector in selectors:
         try:
             nodes = document.css(selector)
         except Exception:
             nodes = ()
         for node in nodes:
-            candidates_present = True
             node_id = node.identity()
             if node_id in seen:
                 continue
             seen.add(node_id)
-            if _ecommerce_node_has_product_evidence(node):
+            if _node_has_listing_evidence(node, schema):
                 count += 1
-    return count, candidates_present
+    return count
 
 
-def _ecommerce_node_has_product_evidence(node: HtmlNode) -> bool:
+def _node_has_listing_evidence(node: HtmlNode, schema: ListingSchema) -> bool:
     attrs = node.attributes()
     text = clean_text(node.text())
     signature = " ".join(
@@ -566,29 +559,36 @@ def _ecommerce_node_has_product_evidence(node: HtmlNode) -> bool:
             "data-automation",
         )
     )
-    product_signature = bool(_ECOMMERCE_READY_PRODUCT_ATTR_RE.search(signature))
-    has_product_id = bool(
-        attrs.get("data-product-id") or node.css_first("[data-product-id]")
+    fact_tokens = {
+        schema.root_entity,
+        *(fact.rsplit(".", 1)[-1] for fact in schema.bindable_facts),
+    }
+    has_identity_signature = any(token in signature.lower() for token in fact_tokens)
+    has_entity_id = any(
+        schema.root_entity in key.lower() and key.lower().startswith("data-")
+        for key in attrs
     )
     itemtype = str(attrs.get("itemtype") or "")
-    has_product_itemtype = "product" in itemtype.lower() or bool(
-        node.css_first("[itemscope][itemtype*='Product']")
+    has_structured_type = any(
+        item_type.lower() in itemtype.lower() for item_type in schema.structured_types
+    ) or any(
+        node.css_first(f'[itemscope][itemtype*="{item_type}" i]')
+        for item_type in schema.structured_types
     )
-    has_price = bool(_ECOMMERCE_READY_PRICE_RE.search(text))
+    has_numeric_signal = bool(_READY_NUMERIC_RE.search(text))
     has_media = bool(node.css_first("img, picture, source"))
     links = node.css("a[href]")[:8]
     hrefs = [str(link.attribute("href") or "").strip() for link in links]
-    has_link = any(href and not href.startswith(("#", "javascript:")) for href in hrefs)
     has_detail_link = any(
-        _ECOMMERCE_READY_DETAIL_PATH_RE.search(href) for href in hrefs
+        href and not href.startswith(("#", "javascript:")) for href in hrefs
     )
-    if has_product_id or has_product_itemtype:
+    if has_entity_id or has_structured_type:
         return True
-    if has_price and (has_link or has_media):
+    if has_numeric_signal and (has_detail_link or has_media):
         return True
-    if product_signature and (text or has_link or has_media):
+    if has_identity_signature and (text or has_detail_link or has_media):
         return True
-    return bool(has_detail_link and (has_price or product_signature or has_media))
+    return bool(has_detail_link and text and len(text) >= 12)
 
 
 async def count_matching_selectors(page: Any, *, selectors: list[str]) -> int:

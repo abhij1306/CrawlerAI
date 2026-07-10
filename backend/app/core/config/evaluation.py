@@ -336,6 +336,38 @@ GENERALIZED_EXTRACTION_BUDGET: Final[_GeneralizedExtractionBudget] = {
     "escalate_to_vision_below_confidence": 0.8,
     "cooldown_minutes": 5,
 }
+
+# An administrator activating a model for ``generalized_extraction`` is the
+# explicit production approval for a hosted fallback. This is distinct from an
+# offline benchmark artifact: the model choice is frozen in the run settings,
+# and the runtime still requires that run's ``llm_enabled`` control. Values
+# returned by this artifact remain subject to the normal grounding gate.
+GENERALIZED_EXTRACTION_OPERATOR_RUNTIME_ARTIFACT: Final[dict[str, object]] = {
+    "schema_version": "universal_model_artifact.v1",
+    "artifact_id": "operator-generalized-extraction",
+    "artifact_version": "v1",
+    "adapter_id": GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
+    "model_family": "operator-configured-hosted-llm",
+    "deployment_mode": "shared",
+    "benchmark_schema_version": UNIVERSAL_MODEL_BENCHMARK_SCHEMA_VERSION,
+    "benchmark_report_id": "operator-configured",
+    "benchmark_passed": False,
+    "approved": True,
+    "approval_source": "operator_config",
+    "enabled": True,
+    "confidence_threshold": 0.85,
+    "timeout_ms": GENERALIZED_EXTRACTION_BUDGET["budget_ms"],
+    "max_memory_mb": 512.0,
+    "max_cost_per_page_usd": GENERALIZED_EXTRACTION_BUDGET[
+        "max_cost_usd_per_page"
+    ],
+    "supported_surfaces": (
+        "ecommerce_listing",
+        "ecommerce_detail",
+        "job_listing",
+        "job_detail",
+    ),
+}
 EXTRACTION_V3_GROUNDING_CURRENCY_SYMBOLS: Final[dict[str, str]] = {
     "$": "usd",
     "€": "eur",

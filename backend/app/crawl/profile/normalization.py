@@ -7,7 +7,9 @@ from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
+    INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY,
     INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY,
+    INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY,
     INTERNAL_API_ENDPOINT_TYPE_KEY,
     INTERNAL_API_ENDPOINT_URL_KEY,
     INTERNAL_API_ENDPOINTS_PROFILE_KEY,
@@ -150,6 +152,9 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         )
         if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
             continue
+        source_route = _clean_str(item.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY))
+        if not source_route:
+            continue
         key = (method, url)
         if key in seen:
             continue
@@ -157,6 +162,7 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         endpoint: dict[str, object] = {
             INTERNAL_API_ENDPOINT_URL_KEY: url,
             INTERNAL_API_ENDPOINT_METHOD_KEY: method,
+            INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY: source_route,
         }
         endpoint_type = _clean_str(item.get(INTERNAL_API_ENDPOINT_TYPE_KEY))
         if endpoint_type:
@@ -164,6 +170,11 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         endpoint_family = _clean_str(item.get(INTERNAL_API_ENDPOINT_FAMILY_KEY))
         if endpoint_family:
             endpoint[INTERNAL_API_ENDPOINT_FAMILY_KEY] = endpoint_family
+        request_json = item.get(INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY)
+        if method == "POST":
+            if not isinstance(request_json, Mapping):
+                continue
+            endpoint[INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY] = dict(request_json)
         source_run_id = _coerce_int_clamped(
             item.get(INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY),
             default=0,

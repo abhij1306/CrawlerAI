@@ -34,16 +34,12 @@ from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
 from app.extraction.jobs import (
     collect_job_detail,
-    collect_job_listing,
     resolve_job_detail,
     resolve_job_listing,
     wrong_surface_findings_for_job_detail,
 )
-from app.extraction.listing import (
-    collect_ecommerce_listing,
-    resolve_ecommerce_listing,
-)
-from app.extraction.listing_tier0 import collect_structured_listing
+from app.extraction.listing import resolve_ecommerce_listing
+from app.extraction.listing_tier0 import collect_deterministic_listing
 from app.extraction.publication import (
     serialize_commerce_detail_projection,
     serialize_commerce_listing_projection,
@@ -105,19 +101,7 @@ def _request_locale_hint(request: ExtractionRequest) -> str | None:
 
 
 def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
-    # Tier 0 structured floor: if every discovered record grounds to a
-    # structured source (JSON-LD today), resolve the listing with zero LLM and
-    # zero selectors. Empty result means the floor did not hold — fall back to
-    # the CSS card collector (the generalized/recipe tiers replace it in 4.4).
-    structured = tuple(
-        collect_structured_listing(request.capture, request.artifact_reader)
-    )
-    if structured:
-        return _harvest_from_rows(Surface.ECOMMERCE_LISTING, structured)
-    return _harvest_from_rows(
-        Surface.ECOMMERCE_LISTING,
-        tuple(collect_ecommerce_listing(request.capture, request.artifact_reader)),
-    )
+    return _harvest_structured_listing(request)
 
 
 def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
@@ -128,10 +112,18 @@ def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
 
 
 def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:
-    return _harvest_from_rows(
-        Surface.JOB_LISTING,
-        tuple(collect_job_listing(request.capture, request.artifact_reader)),
+    return _harvest_structured_listing(request)
+
+
+def _harvest_structured_listing(request: ExtractionRequest) -> HarvestResult:
+    rows = tuple(
+        collect_deterministic_listing(
+            request.capture,
+            request.artifact_reader,
+            surface=request.surface,
+        )
     )
+    return _harvest_from_rows(request.surface, rows)
 
 
 def _harvest_from_rows(surface: Surface, rows: tuple[Evidence, ...]) -> HarvestResult:
