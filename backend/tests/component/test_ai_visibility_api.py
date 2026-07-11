@@ -35,6 +35,7 @@ async def test_provider_status_lists_direct_and_openrouter_surfaces(
     providers = {item["provider"]: item for item in response.json()}
     assert set(providers) == {
         "gemini",
+        "anthropic",
         "openrouter_openai",
         "openrouter_anthropic",
     }
@@ -42,6 +43,10 @@ async def test_provider_status_lists_direct_and_openrouter_surfaces(
         "openrouter_native_grounded_api"
     )
     assert providers["openrouter_anthropic"]["model"].startswith("anthropic/")
+    # Native Claude surface is distinct from the OpenRouter-proxied one.
+    assert providers["anthropic"]["surface"] == "anthropic_native_grounded_api"
+    assert providers["anthropic"]["model"] == "claude-sonnet-4-6"
+    assert providers["anthropic"]["supports_search_fanout"] is True
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +90,7 @@ async def test_provider_configured_flag(ai_visibility_client: AsyncClient) -> No
     response = await ai_visibility_client.get("/api/ai-visibility/providers")
     assert response.status_code == 200
     providers = response.json()
-    assert len(providers) == 3
+    assert len(providers) == 4
     provider = next(item for item in providers if item["provider"] == "gemini")
     assert provider["provider"] == "gemini"
     assert "configured" in provider

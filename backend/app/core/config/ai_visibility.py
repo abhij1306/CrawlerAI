@@ -7,17 +7,20 @@ from app.core.config.runtime_settings import settings_config
 
 # Provider identity
 AI_VISIBILITY_PROVIDER_GEMINI = "gemini"
+AI_VISIBILITY_PROVIDER_ANTHROPIC = "anthropic"
 AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI = "openrouter_openai"
 AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC = "openrouter_anthropic"
 AI_VISIBILITY_PROVIDERS = frozenset(
     {
         AI_VISIBILITY_PROVIDER_GEMINI,
+        AI_VISIBILITY_PROVIDER_ANTHROPIC,
         AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI,
         AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC,
     }
 )
 AI_VISIBILITY_PROVIDER_MODELS = {
     AI_VISIBILITY_PROVIDER_GEMINI: "gemini-flash-latest",
+    AI_VISIBILITY_PROVIDER_ANTHROPIC: "claude-sonnet-4-6",
     AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI: "openai/gpt-5.4",
     AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC: "anthropic/claude-sonnet-4.6",
 }
@@ -100,6 +103,8 @@ AI_VISIBILITY_ERROR_AUTH = "auth_failure"
 AI_VISIBILITY_ERROR_PARSE = "parse_error"
 AI_VISIBILITY_ERROR_UNKNOWN = "unknown"
 AI_VISIBILITY_ERROR_INVALID_SURFACE = "invalid_surface"
+# Run exceeded its wall-clock deadline; remaining executions are cut off.
+AI_VISIBILITY_ERROR_RUN_DEADLINE = "run_deadline_exceeded"
 
 AI_VISIBILITY_RETRYABLE_ERRORS = frozenset(
     {
@@ -123,6 +128,34 @@ class AiVisibilitySettings(BaseSettings):
     openrouter_chat_completions_url: str = (
         "https://openrouter.ai/api/v1/chat/completions"
     )
+    anthropic_messages_url: str = "https://api.anthropic.com/v1/messages"
+    anthropic_version: str = "2023-06-01"
+    anthropic_model: str = AI_VISIBILITY_PROVIDER_MODELS[AI_VISIBILITY_PROVIDER_ANTHROPIC]
+    # Caps server-side web_search invocations per request (Anthropic-only knob).
+    # Each search loads its result pages into context as input tokens, so this is
+    # the main input-token lever. These benchmark prompts are single shopping
+    # questions (1-3 searches suffice), not research agents; 3 bounds cost while
+    # rarely truncating.
+    anthropic_max_uses: int = 3
+
+    # --- Global guardrails (provider-agnostic) --------------------------------
+    # One set of knobs for all providers, so a stray or misused call cannot run
+    # away in tokens, time, or duration. Kept here (not per-provider) to avoid
+    # duplicate config and to guarantee a uniform ceiling regardless of provider.
+    #
+    # Per-call output-token cap. Sent to every provider payload so a single
+    # generation cannot balloon output tokens/cost. Grounded shopping answers are
+    # short; 4096 is generous headroom.
+    max_output_tokens: int = 4096
+    # Hard per-call ceiling enforced with asyncio.wait_for around the provider
+    # call, independent of the HTTP client timeout. >= request_timeout_seconds so
+    # the HTTP timeout normally fires first; this only catches a call that stalls
+    # past what the client itself detects (hung socket, redirect loop, etc.).
+    max_call_seconds: float = 90.0
+    # Per-run wall-clock deadline. Once exceeded, remaining executions stop at
+    # their boundary and are terminalized, so a run can never sit live forever
+    # (e.g. a provider throttling every request into the retry ceiling).
+    max_run_seconds: float = 1800.0
     openrouter_openai_model: str = AI_VISIBILITY_PROVIDER_MODELS[
         AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI
     ]
@@ -157,9 +190,14 @@ class AiVisibilitySettings(BaseSettings):
     def resolved_openrouter_api_key(self) -> str:
         return str(settings.openrouter_api_key or "").strip()
 
+    def resolved_anthropic_api_key(self) -> str:
+        return str(settings.anthropic_api_key or "").strip()
+
     def model_for_provider(self, provider: str) -> str:
         if provider == AI_VISIBILITY_PROVIDER_GEMINI:
             return self.gemini_model
+        if provider == AI_VISIBILITY_PROVIDER_ANTHROPIC:
+            return self.anthropic_model
         if provider == AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI:
             return self.openrouter_openai_model
         if provider == AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC:

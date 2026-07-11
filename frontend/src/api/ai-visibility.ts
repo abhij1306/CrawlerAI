@@ -3,6 +3,12 @@ import { apiClient } from './client';
 // --------------------------------------------------------------------------
 // Types
 // --------------------------------------------------------------------------
+export type AiVisibilityProviderId =
+  | 'gemini'
+  | 'anthropic'
+  | 'openrouter_openai'
+  | 'openrouter_anthropic';
+
 export type CompetitorInput = {
   name: string;
   aliases: string[];
@@ -54,7 +60,7 @@ export type AiVisibilityRun = {
   project_id: number;
   user_id?: number;
   status: string;
-  provider: 'gemini' | 'openrouter_openai' | 'openrouter_anthropic';
+  provider: AiVisibilityProviderId;
   model: string;
   repetitions: number;
   random_seed: string;
@@ -71,7 +77,7 @@ export type AiVisibilityRun = {
 
 export type AiVisibilityRunCreate = {
   project_id: number;
-  provider?: 'gemini' | 'openrouter_openai' | 'openrouter_anthropic';
+  provider?: AiVisibilityProviderId;
   repetitions?: number;
   prompt_indices?: number[];
 };

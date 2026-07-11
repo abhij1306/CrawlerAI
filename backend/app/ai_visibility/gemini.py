@@ -132,6 +132,8 @@ def _build_payload(request: AnswerEngineRequest) -> dict[str, Any]:
         "system_instruction": request.system_instruction,
         "tools": [{"type": "google_search"}],
         "store": False,
+        # Global per-call output cap so one generation cannot run away.
+        "max_output_tokens": ai_visibility_settings.max_output_tokens,
     }
 
 

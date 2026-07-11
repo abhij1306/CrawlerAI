@@ -164,9 +164,33 @@ async def test_execute_one_skips_when_run_cancelled(
         model="gemini-flash-latest",
         scoring_config=runner.ScoringConfig.from_project(run.configuration or {}),
         semaphore=asyncio.Semaphore(1),
+        deadline=float("inf"),  # never trips; this test exercises the cancel path
     )
 
     refreshed = (await service.list_executions(db_session, run=run))[0]
     # Left cancelled by cancel_run; the worker did not run it or mark completed.
     assert refreshed.status == "cancelled"
     assert not refreshed.answer_text
+
+
+async def test_run_benchmark_cuts_off_at_wall_clock_deadline(
+    _stub_runner, db_session, test_user, monkeypatch
+) -> None:
+    """A run past its deadline terminalizes remaining work instead of hanging."""
+    # Deadline already elapsed the instant the fan-out starts, so every worker
+    # hits the cutoff at its boundary before calling the (stub) provider.
+    monkeypatch.setattr(ai_visibility_settings, "max_run_seconds", 0.0)
+
+    run = await _make_run(db_session, test_user, repetitions=1)  # 3 executions
+
+    await runner.run_benchmark(run.id)
+
+    refreshed = await service.get_run(db_session, user=test_user, run_id=run.id)
+    executions = await service.list_executions(db_session, run=refreshed)
+
+    # Every execution is failed with the deadline code; none answered.
+    assert {e.status for e in executions} == {"failed"}
+    assert {e.error_code for e in executions} == {"run_deadline_exceeded"}
+    assert all(not e.answer_text for e in executions)
+    # 0 completed -> the run finalizes as failed, not left running.
+    assert refreshed.status == "failed"

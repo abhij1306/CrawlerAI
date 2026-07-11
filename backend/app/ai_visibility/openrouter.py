@@ -49,6 +49,8 @@ def _payload(request: AnswerEngineRequest, *, country_code: str) -> dict[str, An
             }
         ],
         "stream": False,
+        # Global per-call output cap so one generation cannot run away.
+        "max_tokens": ai_visibility_settings.max_output_tokens,
     }
 
 

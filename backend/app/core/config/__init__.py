@@ -60,7 +60,14 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 20.0
     http_max_connections: int = 100
     http_max_keepalive_connections: int = 40
-    anthropic_api_key: str = ""
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_API_KEY",
+            "anthropic_api_key",
+        ),
+    )
     gemini_api_key: str = Field(
         default="",
         validation_alias=AliasChoices(

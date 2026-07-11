@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, History, Play, Plus, Save, X } from 'lucide-
 
 import type {
   AiVisibilityProject,
+  AiVisibilityProviderId,
   AiVisibilityProviderStatus,
   PromptInput,
 } from '@/api/ai-visibility';
@@ -12,7 +13,7 @@ import { Card } from '../../components/ui/card';
 import { Dropdown } from '../../components/ui/dropdown';
 import { Input } from '../../components/ui/input';
 
-type ProviderId = 'gemini' | 'openrouter_openai' | 'openrouter_anthropic';
+type ProviderId = AiVisibilityProviderId;
 
 const PROMPT_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'No intent' },

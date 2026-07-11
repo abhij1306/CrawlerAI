@@ -31,6 +31,7 @@ from app.ai_visibility.service import (
     update_project,
 )
 from app.core.config.ai_visibility import (
+    AI_VISIBILITY_PROVIDER_ANTHROPIC,
     AI_VISIBILITY_PROVIDER_GEMINI,
     AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC,
     AI_VISIBILITY_PROVIDER_OPENROUTER_OPENAI,
@@ -71,6 +72,7 @@ async def ai_visibility_providers(
     _user: Annotated[User, Depends(get_current_user)],
 ) -> list[AiVisibilityProviderStatus]:
     gemini_configured = bool(ai_visibility_settings.resolved_gemini_api_key())
+    anthropic_configured = bool(ai_visibility_settings.resolved_anthropic_api_key())
     openrouter_configured = bool(ai_visibility_settings.resolved_openrouter_api_key())
     return [
         AiVisibilityProviderStatus(
@@ -80,6 +82,17 @@ async def ai_visibility_providers(
             configured=gemini_configured,
             model=ai_visibility_settings.model_for_provider(
                 AI_VISIBILITY_PROVIDER_GEMINI
+            ),
+            supports_search_fanout=True,
+            supports_citations=True,
+        ),
+        AiVisibilityProviderStatus(
+            provider=AI_VISIBILITY_PROVIDER_ANTHROPIC,
+            label="Claude grounded API direct",
+            surface="anthropic_native_grounded_api",
+            configured=anthropic_configured,
+            model=ai_visibility_settings.model_for_provider(
+                AI_VISIBILITY_PROVIDER_ANTHROPIC
             ),
             supports_search_fanout=True,
             supports_citations=True,

@@ -22,13 +22,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from app.ai_visibility.contracts import AnswerEngineRequest
+from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
 from app.ai_visibility.gemini import (
     AiVisibilityProviderError,
     GeminiAnswerEngineAdapter,
     is_retryable,
     resolve_redirect,
 )
+from app.ai_visibility.anthropic import AnthropicAnswerEngineAdapter
 from app.ai_visibility.openrouter import OpenRouterAnswerEngineAdapter
 from app.ai_visibility.scoring import ScoringConfig, aggregate_run, score_execution
 from app.core.config.ai_visibility import (
@@ -42,6 +43,9 @@ from app.core.config.ai_visibility import (
     AI_VISIBILITY_RUN_STATUS_FAILED,
     AI_VISIBILITY_RUN_STATUS_CANCELLED,
     AI_VISIBILITY_RUN_STATUS_RUNNING,
+    AI_VISIBILITY_ERROR_RUN_DEADLINE,
+    AI_VISIBILITY_ERROR_TIMEOUT,
+    AI_VISIBILITY_PROVIDER_ANTHROPIC,
     AI_VISIBILITY_PROVIDER_GEMINI,
     ai_visibility_settings,
 )
@@ -106,6 +110,89 @@ def _citation_payload(citation) -> dict:
     }
 
 
+def _dedup_citations(citations: list[dict]) -> list[dict]:
+    """Collapse citations that point at the same source URL.
+
+    Grounded providers (Anthropic, Gemini, OpenRouter) emit one citation per
+    supported *text span*, so a source cited in three sentences appears three
+    times. The UI and ``citation_count`` want one row per distinct source. Keeps
+    the first occurrence (its ``cited_text``) and re-numbers ``ordinal`` densely.
+    URL is the identity; a citation with no URL falls back to (domain, title) so
+    it is not silently dropped.
+    """
+    seen: set = set()
+    deduped: list[dict] = []
+    for citation in citations:
+        url = str(citation.get("redirect_url") or "").strip()
+        key = url or (citation.get("domain"), citation.get("title"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append({**citation, "ordinal": len(deduped)})
+    return deduped
+
+
+def _snapshot_provider_surface(provider_id: str) -> tuple[list[str], bool | None, str]:
+    """The grounding tool + storage posture recorded in ``request_snapshot``.
+
+    Each provider is stateless per request, but expresses it differently: Gemini
+    sends ``store=false``; Anthropic and the OpenRouter chat surface have no
+    equivalent request flag, so ``store`` is ``None`` and the control is noted.
+    """
+    if provider_id == AI_VISIBILITY_PROVIDER_GEMINI:
+        return ["google_search"], False, "store_false"
+    if provider_id == AI_VISIBILITY_PROVIDER_ANTHROPIC:
+        return (
+            ["anthropic:web_search"],
+            None,
+            "not_exposed_by_messages_surface",
+        )
+    return (
+        ["openrouter:web_search(engine=native)"],
+        None,
+        "not_exposed_by_chat_completions_surface",
+    )
+
+
+async def _call_with_retries(
+    adapter, request: AnswerEngineRequest
+) -> tuple[AnswerEngineResponse | None, AiVisibilityProviderError | None]:
+    """Call the provider with pacing, a hard per-call ceiling, and retries.
+
+    Returns ``(response, None)`` on success or ``(None, last_error)`` once the
+    attempt budget is spent. A single call can never run past
+    ``max_call_seconds`` (``asyncio.wait_for`` guards the HTTP client), and the
+    whole loop is bounded by ``max_retries``.
+    """
+    attempts = ai_visibility_settings.max_retries + 1
+    last_error: AiVisibilityProviderError | None = None
+    for attempt in range(attempts):
+        try:
+            await pace_provider_request(adapter.provider_id)
+            # Hard per-call ceiling independent of the HTTP client timeout: a
+            # stalled call (hung socket, redirect loop) can never run past this.
+            response = await asyncio.wait_for(
+                adapter.execute(request),
+                timeout=ai_visibility_settings.max_call_seconds,
+            )
+            return response, None
+        except TimeoutError:
+            last_error = AiVisibilityProviderError(
+                "provider call exceeded max_call_seconds "
+                f"({ai_visibility_settings.max_call_seconds}s)",
+                error_code=AI_VISIBILITY_ERROR_TIMEOUT,
+                retryable=True,
+            )
+        except AiVisibilityProviderError as exc:
+            last_error = exc
+            if not (exc.retryable and is_retryable(exc.error_code)):
+                break
+        if attempt == attempts - 1:
+            break
+        await asyncio.sleep(_retry_delay(attempt, last_error))
+    return None, last_error
+
+
 async def _run_single(
     *,
     adapter,
@@ -120,6 +207,7 @@ async def _run_single(
         model=model,
         timeout_seconds=ai_visibility_settings.request_timeout_seconds,
     )
+    tools, store, storage_control = _snapshot_provider_surface(adapter.provider_id)
     # Snapshot exactly what determines the request. Proves statelessness and that
     # no brand list is transmitted. Never store the API key.
     execution.request_snapshot = {
@@ -129,40 +217,16 @@ async def _run_single(
         "visible_prompt": execution.prompt_text_snapshot,
         "effective_prompt": request.prompt,
         "system_instruction": request.system_instruction,
-        "tools": (
-            ["google_search"]
-            if adapter.provider_id == AI_VISIBILITY_PROVIDER_GEMINI
-            else ["openrouter:web_search(engine=native)"]
-        ),
-        "store": False
-        if adapter.provider_id == AI_VISIBILITY_PROVIDER_GEMINI
-        else None,
-        "provider_storage_control": (
-            "store_false"
-            if adapter.provider_id == AI_VISIBILITY_PROVIDER_GEMINI
-            else "not_exposed_by_chat_completions_surface"
-        ),
+        "tools": tools,
+        "store": store,
+        "provider_storage_control": storage_control,
         "stateless": True,
         "benchmark_mode": scoring_config.benchmark_mode,
         "country_code": scoring_config.country_code,
         "language_code": scoring_config.language_code,
     }
 
-    attempts = ai_visibility_settings.max_retries + 1
-    last_error: AiVisibilityProviderError | None = None
-    response = None
-    for attempt in range(attempts):
-        try:
-            await pace_provider_request(adapter.provider_id)
-            response = await adapter.execute(request)
-            break
-        except AiVisibilityProviderError as exc:
-            last_error = exc
-            if not (exc.retryable and is_retryable(exc.error_code)) or (
-                attempt == attempts - 1
-            ):
-                break
-            await asyncio.sleep(_retry_delay(attempt, exc))
+    response, last_error = await _call_with_retries(adapter, request)
 
     if response is None:
         execution.status = AI_VISIBILITY_EXECUTION_STATUS_FAILED
@@ -173,7 +237,9 @@ async def _run_single(
         execution.completed_at = datetime.now(UTC)
         return
 
-    citations = [_citation_payload(c) for c in response.citations]
+    # One row per distinct source URL. Providers cite the same source once per
+    # supported text span, which otherwise inflates the list and citation_count.
+    citations = _dedup_citations([_citation_payload(c) for c in response.citations])
 
     # Optional, best-effort resolution of redirect URLs to the real cited page.
     # Resolution failures fall back to direct URL/title evidence.
@@ -232,6 +298,7 @@ async def _execute_one(
     model: str,
     scoring_config: ScoringConfig,
     semaphore: asyncio.Semaphore,
+    deadline: float,
 ) -> None:
     """Run a single execution inside its OWN session.
 
@@ -248,6 +315,19 @@ async def _execute_one(
         # stop at this execution boundary instead of hitting the provider again.
         run = await session.get(AiVisibilityRun, execution.run_id)
         if run is not None and run.status == AI_VISIBILITY_RUN_STATUS_CANCELLED:
+            return
+        # Per-run wall-clock cutoff: once the run's deadline has passed, stop at
+        # this boundary and terminalize instead of starting another provider call.
+        # Bounds total run duration even if every remaining call is slow/throttled.
+        if time.monotonic() >= deadline:
+            execution.status = AI_VISIBILITY_EXECUTION_STATUS_FAILED
+            execution.error_code = AI_VISIBILITY_ERROR_RUN_DEADLINE
+            execution.error_message = (
+                "run exceeded max_run_seconds "
+                f"({ai_visibility_settings.max_run_seconds}s)"
+            )
+            execution.completed_at = datetime.now(UTC)
+            await session.commit()
             return
         execution.status = AI_VISIBILITY_EXECUTION_STATUS_RUNNING
         await session.commit()
@@ -281,6 +361,8 @@ async def run_benchmark(run_id: int) -> None:
 
         if run.provider == AI_VISIBILITY_PROVIDER_GEMINI:
             api_key = ai_visibility_settings.resolved_gemini_api_key()
+        elif run.provider == AI_VISIBILITY_PROVIDER_ANTHROPIC:
+            api_key = ai_visibility_settings.resolved_anthropic_api_key()
         else:
             api_key = ai_visibility_settings.resolved_openrouter_api_key()
         if not api_key:
@@ -312,8 +394,18 @@ async def run_benchmark(run_id: int) -> None:
         )
 
     # Shared read-only across tasks; each task opens its own session internally.
+    adapter: (
+        GeminiAnswerEngineAdapter
+        | AnthropicAnswerEngineAdapter
+        | OpenRouterAnswerEngineAdapter
+    )
     if run.provider == AI_VISIBILITY_PROVIDER_GEMINI:
         adapter = GeminiAnswerEngineAdapter(api_key=api_key)
+    elif run.provider == AI_VISIBILITY_PROVIDER_ANTHROPIC:
+        adapter = AnthropicAnswerEngineAdapter(
+            api_key=api_key,
+            country_code=scoring_config.country_code,
+        )
     else:
         adapter = OpenRouterAnswerEngineAdapter(
             api_key=api_key,
@@ -321,6 +413,9 @@ async def run_benchmark(run_id: int) -> None:
             country_code=scoring_config.country_code,
         )
     semaphore = asyncio.Semaphore(max(1, ai_visibility_settings.run_concurrency))
+    # Per-run wall-clock deadline. Workers check it at their boundary and cut off
+    # rather than starting another call, so a run can never sit live forever.
+    deadline = time.monotonic() + ai_visibility_settings.max_run_seconds
 
     await asyncio.gather(
         *(
@@ -331,6 +426,7 @@ async def run_benchmark(run_id: int) -> None:
                 model=model,
                 scoring_config=scoring_config,
                 semaphore=semaphore,
+                deadline=deadline,
             )
             for execution_id in execution_ids
         )

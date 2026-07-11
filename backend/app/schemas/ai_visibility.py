@@ -81,7 +81,9 @@ class AiVisibilityProjectResponse(BaseModel):
 
 class AiVisibilityRunCreate(BaseModel):
     project_id: int
-    provider: Literal["gemini", "openrouter_openai", "openrouter_anthropic"] = "gemini"
+    provider: Literal[
+        "gemini", "anthropic", "openrouter_openai", "openrouter_anthropic"
+    ] = "gemini"
     repetitions: int | None = Field(default=None, ge=1, le=10)
     prompt_indices: list[int] | None = None
 

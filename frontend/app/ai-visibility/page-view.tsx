@@ -4,7 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import * as api from '@/api/ai-visibility';
-import type { AiVisibilityProjectCreate, CompetitorInput, PromptInput } from '@/api/ai-visibility';
+import type {
+  AiVisibilityProjectCreate,
+  AiVisibilityProviderId,
+  CompetitorInput,
+  PromptInput,
+} from '@/api/ai-visibility';
 import { getApiBaseUrl } from '@/api/client';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -266,7 +271,7 @@ export default function AiVisibilityPage() {
   }: {
     projectId: number;
     repetitions: number;
-    provider: 'gemini' | 'openrouter_openai' | 'openrouter_anthropic';
+    provider: AiVisibilityProviderId;
     promptIndices?: number[];
     openReport: boolean;
   }) => {
@@ -466,31 +471,11 @@ export default function AiVisibilityPage() {
                     </strong>
                   </div>
                   <div>
-                    Paid-list token estimate:{' '}
-                    <strong className="text-foreground">
-                      {usd(costValue(run.summary.cost, 'paid_list_token_estimate_usd'))}
-                    </strong>
-                  </div>
-                  <div>
-                    Grounding if billable:{' '}
-                    <strong className="text-foreground">
-                      {usd(costValue(run.summary.cost, 'grounding_cost_if_billable_usd'))}
-                    </strong>
-                  </div>
-                  <div>
                     Grounded requests:{' '}
                     <strong className="text-foreground">
                       {costValue(run.summary.cost, 'grounded_requests').toLocaleString()}
                     </strong>
                   </div>
-                  {costValue(run.summary.cost, 'provider_reported_cost_usd') > 0 ? (
-                    <div>
-                      Provider-reported cost:{' '}
-                      <strong className="text-foreground">
-                        {usd(costValue(run.summary.cost, 'provider_reported_cost_usd'))}
-                      </strong>
-                    </div>
-                  ) : null}
                 </div>
                 <div className="mt-3 flex gap-4">
                   <a
@@ -932,10 +917,6 @@ function tokenTotal(value: unknown): string {
 function costValue(value: unknown, key: string): number {
   const cost = (value ?? {}) as Record<string, unknown>;
   return typeof cost[key] === 'number' ? cost[key] : 0;
-}
-
-function usd(value: number): string {
-  return `$${value.toFixed(4)}`;
 }
 
 function statusTone(
