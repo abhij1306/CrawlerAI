@@ -222,6 +222,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     internal_api_replay_enabled: bool = True
     internal_api_replay_timeout_seconds: float = 3.0
     internal_api_replay_max_endpoints: int = 3
+    internal_api_replay_max_saved_endpoints: int = 100
+    internal_api_replay_failure_threshold: int = 2
     browser_accessibility_snapshot_timeout_seconds: float = 0.5
     browser_capture_queue_join_timeout_ms: int = 2000
     browser_artifact_capture_timeout_ms: int = 4000
@@ -456,6 +458,8 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_read_timeout_seconds",
             "internal_api_replay_timeout_seconds",
             "internal_api_replay_max_endpoints",
+            "internal_api_replay_max_saved_endpoints",
+            "internal_api_replay_failure_threshold",
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
             "browser_launch_timeout_seconds",

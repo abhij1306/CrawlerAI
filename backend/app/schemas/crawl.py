@@ -341,11 +341,13 @@ class DomainRunAcquisitionContract(BaseModel):
 
 
 class DomainRunInternalApiEndpoint(BaseModel):
-    url: str
+    url: str = Field(exclude=True)
     method: str = "GET"
     endpoint_type: str | None = None
     endpoint_family: str | None = None
+    source_route: str | None = None
     source_run_id: int | None = None
+    failure_count: int = Field(default=0, ge=0)
 
 
 class DomainRunProfilePayload(BaseModel):

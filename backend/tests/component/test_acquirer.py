@@ -9,7 +9,9 @@ from app.acquisition.acquirer import (
     acquire,
 )
 from app.acquisition.internal_api_replay import (
+    _endpoint_from_payload,
     _is_safe_replay_url,
+    learned_internal_api_endpoints,
     payload_extracts_surface,
 )
 from app.acquisition.policy import AcquisitionPolicy
@@ -316,6 +318,11 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
 async def test_acquire_uses_internal_api_replay_before_page_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    events: list[tuple[str, str]] = []
+
+    async def _on_event(level: str, message: str) -> None:
+        events.append((level, message))
+
     async def _fake_fetch_page(*args, **kwargs):
         raise AssertionError("page fetch should not run when API replay succeeds")
 
@@ -365,6 +372,7 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
             url="https://example.com/products/replay-widget",
             plan=AcquisitionIntent(surface="ecommerce_detail"),
             requested_fields=["title", "price"],
+            on_event=_on_event,
             acquisition_profile={
                 "internal_api_endpoints": [
                     {
@@ -386,6 +394,8 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
         "https://example.com/api/products/replay-widget.json"
     )
     assert result.browser_diagnostics["internal_api_replay"] is True
+    assert ("info", "Internal API replay attempting 1 endpoint(s)") in events
+    assert ("info", "Internal API replay used verified endpoint (status=200)") in events
 
 
 @pytest.mark.asyncio
@@ -463,6 +473,127 @@ async def test_internal_api_replay_rejects_non_https_and_private_ip() -> None:
             page_url="https://127.0.0.1/products",
         )
         is False
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_internal_api_replay_allows_captured_first_party_api_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _public_target(_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "app.acquisition.internal_api_replay.validate_public_target",
+        _public_target,
+    )
+    payload = {
+        "url": "https://api.example.com/products/widget",
+        "method": "GET",
+    }
+
+    assert _endpoint_from_payload(
+        payload,
+        page_url="https://www.example.com/products/widget",
+        source_run_id=1,
+    )
+    assert await _is_safe_replay_url(
+        payload["url"],
+        page_url="https://www.example.com/products/widget",
+    )
+
+
+@pytest.mark.component
+def test_internal_api_replay_keeps_significant_query_params_in_route_identity() -> None:
+    page_one = "https://example.com/jobs?page=1"
+    page_two = "https://example.com/jobs?page=2"
+    payload = {
+        "body": {
+            "pageUrl": page_one,
+            "jobs": [
+                {
+                    "title": "Engineer",
+                    "url": "https://example.com/jobs/engineer",
+                }
+            ],
+        }
+    }
+
+    assert payload_extracts_surface(
+        payload,
+        surface="job_listing",
+        page_url=page_one,
+        requested_fields=[],
+    )
+    assert not payload_extracts_surface(
+        payload,
+        surface="job_listing",
+        page_url=page_two,
+        requested_fields=[],
+    )
+
+
+@pytest.mark.component
+def test_post_replay_payload_relearns_request_template() -> None:
+    request_json = {"query": "query Product { product { title } }"}
+    endpoints = learned_internal_api_endpoints(
+        network_payloads=[
+            {
+                "url": "https://example.com/graphql",
+                "method": "POST",
+                "endpoint_type": "graphql",
+                "request_json": request_json,
+                "body": {
+                    "data": {
+                        "product": {
+                            "title": "Replay Widget",
+                            "price": "19.99",
+                            "url": "https://example.com/products/replay-widget",
+                        }
+                    }
+                },
+            }
+        ],
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/replay-widget",
+        requested_fields=["title", "price"],
+        source_run_id=1,
+    )
+
+    assert endpoints[0]["request_json"] == request_json
+
+
+@pytest.mark.component
+def test_internal_api_endpoint_learning_rejects_unsafe_templates() -> None:
+    page_url = "https://example.com/products/widget"
+
+    assert not _endpoint_from_payload(
+        {"url": "http://example.com/api/products/widget", "method": "GET"},
+        page_url=page_url,
+        source_run_id=1,
+    )
+    assert not _endpoint_from_payload(
+        {"url": "https://other.example/api/products/widget", "method": "GET"},
+        page_url=page_url,
+        source_run_id=1,
+    )
+    assert not _endpoint_from_payload(
+        {
+            "url": "https://example.com/analytics/event",
+            "method": "GET",
+        },
+        page_url=page_url,
+        source_run_id=1,
+    )
+    assert not _endpoint_from_payload(
+        {
+            "url": "https://example.com/graphql",
+            "method": "POST",
+            "endpoint_type": "graphql",
+        },
+        page_url=page_url,
+        source_run_id=1,
     )
 
 

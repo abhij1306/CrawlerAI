@@ -77,7 +77,7 @@ per-host politeness.
 
 ## Part 3 — Gaps and risks (ranked)
 
-### G1 (architectural) — endpoint memory is last-writer-wins per (domain, surface); replay only ever serves the most recently succeeded route
+### G1 (architectural, FIXED 2026-07-10) — endpoint memory is last-writer-wins per (domain, surface); replay only ever serves the most recently succeeded route
 `record_acquisition_contract_outcome` overwrites `internal_api_endpoints` with the
 endpoints of the page that just succeeded (acquisition_contract.py:285). All learned
 endpoints carry that one page's `source_route`, and replay requires
@@ -94,7 +94,7 @@ any scale.** The design goal ("avoid browser renders in future runs") needs eith
 route shape, the way `record_bindings.v1` recipes generalize), or (b) per-route
 endpoint storage rather than one list per domain+surface.
 
-### G2 (silent no-op) — host asymmetries make endpoints unlearnable or unreplayable
+### G2 (silent no-op, FIXED 2026-07-10) — host asymmetries make endpoints unlearnable or unreplayable
 Two related, verified issues:
 - **`api.*` subdomains are never learned.** `_endpoint_from_payload` (:250) requires
   `normalize_domain(endpoint) == normalize_domain(page)`, and `normalize_domain` only
@@ -109,7 +109,7 @@ At minimum make the two checks consistent; better, allow an explicit allow-list 
 first-party subdomains captured as evidence (the endpoint was literally observed
 serving this page's data — that provenance is the trust anchor).
 
-### G3 (correctness) — `_route_identity` strips query strings; listing has no wrong-page safeguard
+### G3 (correctness, FIXED 2026-07-10) — `_route_identity` strips query strings; listing has no wrong-page safeguard
 Verified: `/jobs?page=1` and `/jobs?page=2` have identical route identity, as do
 `?variant=blue|red` detail URLs. For detail, `_record_url_matches_page` mitigates
 (the body must name the route — but it too compares query-stripped identities, so a
@@ -120,7 +120,7 @@ learned on page-1 and publish page-1's rows as page-2's content. Fix: keep the q
 string in `source_route` (or hash significant params), and for listings require some
 overlap check or store the full learned URL including query.
 
-### G4 (performance/hygiene) — no eviction or negative feedback for dead endpoints
+### G4 (performance/hygiene, FIXED 2026-07-10) — no eviction or negative feedback for dead endpoints
 A learned endpoint that starts failing (401 after session change, API version bump,
 CDN rule) is retried on **every** acquisition: up to 3 endpoints × 3s sequential
 before falling through to fetch. Nothing decrements or removes it — the
@@ -129,7 +129,7 @@ contract does not gate replay (`apply_acquisition_contract_to_profile` only anno
 endpoints flow into the request regardless). Add a per-endpoint failure counter in the
 profile and drop endpoints after N consecutive replay failures.
 
-### G5 (untested core path) — nothing proves an `html=""` api_replay bundle survives extraction end-to-end
+### G5 (test gap, CLOSED 2026-07-10) — nothing proves an `html=""` api_replay bundle survives extraction end-to-end
 The replay result carries `html=""`; the only evidence source is the single
 `network_json` artifact. Detail's `NetworkCollector` and listing's
 `collect_network_listing` do read it, but downstream gates were designed against real
@@ -142,7 +142,7 @@ succeeds at acquisition and dies at extraction with `insufficient_input_bundle`,
 which the retry ladder then converts back into a browser run (safe, but the feature
 silently never pays off). This is the first thing to test (T2 below).
 
-### G6 (minor) — POST endpoints degrade after their first successful replay
+### G6 (minor, FIXED 2026-07-10) — POST endpoints degrade after their first successful replay
 The replay payload (`_replay_endpoint`'s return) does not include `request_json`, so
 when a replay success re-learns endpoints from its own payload, `_endpoint_from_payload`
 rejects the POST re-derivation (requires `request_json`). Saving is skipped when the
@@ -150,7 +150,7 @@ learned list is empty (`if endpoints:`), which protects the stored copy in the p
 case — but a mixed GET+POST profile will be overwritten with the GET-only list.
 Carry `request_json` through into the replay payload dict.
 
-### G7 (by design, but document it) — only truly public endpoints can ever replay
+### G7 (by design, FIXED 2026-07-10) — only truly public endpoints can ever replay
 Capture strips cookies/auth headers (allow-listed headers only) and replay sends a
 bare request from the shared client. Endpoints requiring session cookies, CSRF tokens,
 or API keys will always fail replay. That is the right security posture, but it means

@@ -307,6 +307,7 @@ The selectors UI is built on:
 - optional LLM suggestion flow from Crawl Studio field configuration, not from the selector tool page
 
 Domain Memory also includes a Knowledge Graph tab. It loads graph-only domains from `/api/knowledge/sites`, renders bounded graph neighborhoods from `/api/knowledge/graph`, fetches page-template contracts, and lets operators choose retained source candidates with graph-version conflict checks. It uses the existing UI primitives and pattern components; it does not add a separate graph canvas dependency.
+- `components/selectors/domain-memory/run-profile-row.tsx` owns the read-only Internal API Replay panel. It shows safe endpoint method, source route, readiness, and failure count; request templates, endpoint URLs, and response payloads stay out of frontend contracts.
 - a dedicated `/domain-memory` surface for edit/delete/toggle operations
 
 ### LLM Admin

@@ -27,13 +27,17 @@ from app.crawl.profile import (
     build_success_acquisition_contract,
     load_domain_run_profile,
     note_acquisition_contract_failure,
+    note_internal_api_replay_failures,
     normalize_acquisition_contract,
     normalize_domain_run_profile,
     record_acquisition_contract_outcome,
     resolve_url_acquisition_recipe,
     save_domain_run_profile,
 )
+from app.crawl.profile.normalization import merge_internal_api_endpoints
+from app.acquisition.internal_api_replay import endpoint_identity
 from app.core.exceptions import CrawlerConfigurationError
+from app.schemas.crawl import DomainRunProfilePayload
 from app.crawl.state import get_control_request, update_run_status
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
@@ -604,8 +608,19 @@ async def test_resolve_url_acquisition_recipe_reuses_saved_profile_for_batch_def
 @pytest.mark.component
 async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await record_acquisition_contract_outcome(
+    verified: list[dict[str, object]] = []
+
+    async def _verify(**kwargs):
+        verified.extend(kwargs["endpoints"])
+        return kwargs["endpoints"]
+
+    monkeypatch.setattr(
+        "app.crawl.profile.acquisition_contract.verify_internal_api_endpoints",
+        _verify,
+    )
+    memory_update = await record_acquisition_contract_outcome(
         db_session,
         domain="example.com",
         surface="ecommerce_detail",
@@ -663,6 +678,93 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
             "endpoint_family": "generic",
             "source_run_id": 92,
             "source_route": "https://example.com/products/replay-widget",
+        }
+    ]
+    assert verified
+    assert memory_update.observed_payload_count == 1
+    assert memory_update.candidate_count == 1
+    assert memory_update.learned_count == 1
+
+
+@pytest.mark.component
+def test_internal_api_endpoint_memory_keeps_exact_routes() -> None:
+    first = {
+        "url": "https://example.com/api/products/first.json",
+        "method": "GET",
+        "source_route": "https://example.com/products/first",
+    }
+    second = {
+        "url": "https://example.com/api/products/second.json",
+        "method": "GET",
+        "source_route": "https://example.com/products/second",
+    }
+
+    merged = merge_internal_api_endpoints([first], [second])
+
+    assert merged == [first, second]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_internal_api_replay_eviction_uses_consecutive_failures(
+    db_session: AsyncSession,
+) -> None:
+    endpoint = {
+        "url": "https://example.com/api/products/widget.json",
+        "method": "GET",
+        "source_route": "https://example.com/products/widget",
+    }
+    await save_domain_run_profile(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        profile={"internal_api_endpoints": [endpoint]},
+        source_run_id=1,
+    )
+
+    first = await note_internal_api_replay_failures(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        failed_endpoint_ids=[endpoint_identity(endpoint)],
+    )
+    second = await note_internal_api_replay_failures(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        failed_endpoint_ids=[endpoint_identity(endpoint)],
+    )
+
+    assert first is not None
+    assert first["internal_api_endpoints"][0]["failure_count"] == 1
+    assert second is not None
+    assert second["internal_api_endpoints"] == []
+
+
+@pytest.mark.component
+def test_domain_run_profile_exposes_safe_replay_endpoint_metadata() -> None:
+    payload = DomainRunProfilePayload.model_validate(
+        {
+            "internal_api_endpoints": [
+                {
+                    "url": "https://example.com/api/products/widget.json",
+                    "method": "GET",
+                    "source_route": "https://example.com/products/widget",
+                    "failure_count": 1,
+                    "request_json": {"secret": "never expose"},
+                }
+            ]
+        }
+    ).model_dump()
+
+    assert payload["internal_api_endpoints"] == [
+        {
+            "method": "GET",
+            "endpoint_type": None,
+            "endpoint_family": None,
+            "source_route": "https://example.com/products/widget",
+            "source_run_id": None,
+            "failure_count": 1,
         }
     ]
 

@@ -636,6 +636,6 @@ def listing_url_is_structural(url: str) -> bool:
     # A mid-path category token marks a landing page — but only reject it when the
     # URL does not otherwise look like a product detail page, so a genuine product
     # nested under a category prefix (``/c/mens/norvan-ld-4-shoe-0397``) survives.
-    return detail_url_has_category_path_segment(url) and not detail_url_looks_like_product(
+    return detail_url_has_category_path_segment(
         url
-    )
+    ) and not detail_url_looks_like_product(url)

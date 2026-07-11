@@ -412,6 +412,14 @@ export type DomainRunProfile = {
       stale: boolean;
     };
   };
+  internal_api_endpoints?: Array<{
+    method: string;
+    endpoint_type: string | null;
+    endpoint_family: string | null;
+    source_route: string | null;
+    source_run_id: number | null;
+    failure_count: number;
+  }>;
   source_run_id?: number | null;
   saved_at?: string | null;
 };

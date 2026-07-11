@@ -9,8 +9,12 @@ import httpx
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.policy import AcquisitionPolicy
 from app.acquisition.policy_middleware import PolicyMiddleware
-from app.acquisition.internal_api_replay import replay_internal_api_endpoints
+from app.acquisition.internal_api_replay import (
+    replay_endpoint_identities_for_page,
+    replay_internal_api_endpoints,
+)
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
@@ -239,7 +243,19 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
         INTERNAL_API_ENDPOINTS_PROFILE_KEY
     )
     acquisition_result = None
+    replay_endpoint_ids: list[tuple[str, str, str, str]] = []
     if acquisition_policy.fetch_mode != "browser_only":
+        if bool(crawler_runtime_settings.internal_api_replay_enabled):
+            replay_endpoint_ids = replay_endpoint_identities_for_page(
+                profile_endpoints,
+                page_url=effective_url,
+            )
+        if replay_endpoint_ids:
+            await _emit_event(
+                request.on_event,
+                "info",
+                f"Internal API replay attempting {len(replay_endpoint_ids)} endpoint(s)",
+            )
         acquisition_result = await _acquire_from_internal_api_replay(
             request,
             effective_url=effective_url,
@@ -247,6 +263,11 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
             profile_endpoints=profile_endpoints,
         )
     if acquisition_result is not None:
+        await _emit_event(
+            request.on_event,
+            "info",
+            f"Internal API replay used verified endpoint (status={acquisition_result.status_code})",
+        )
         attach_source_capability_diagnostics(acquisition_result)
         await policy_middleware.after_fetch(acquisition_result)
         return acquisition_result
@@ -256,6 +277,15 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
         acquisition_policy=acquisition_policy,
         browser_reason=browser_reason,
     )
+    if replay_endpoint_ids:
+        await _emit_event(
+            request.on_event,
+            "warning",
+            "Internal API replay unavailable; falling back to standard acquisition",
+        )
+        acquisition_result.acquisition_diagnostics[
+            "internal_api_replay_failed_endpoint_ids"
+        ] = replay_endpoint_ids
     attach_source_capability_diagnostics(acquisition_result)
     await policy_middleware.after_fetch(acquisition_result)
     return acquisition_result

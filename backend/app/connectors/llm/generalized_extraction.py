@@ -100,9 +100,7 @@ class HostedGeneralizedExtractionAdapter:
             {
                 "url": stringify_prompt_value(page.source.artifact_id),
                 "surface": stringify_prompt_value(page.surface or "ecommerce_detail"),
-                "field_senses": stringify_prompt_value(
-                    _field_senses(page.surface)
-                ),
+                "field_senses": stringify_prompt_value(_field_senses(page.surface)),
                 "page": stringify_prompt_value(_page_payload(page)),
             }
         )

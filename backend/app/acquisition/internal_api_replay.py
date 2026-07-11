@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from urllib.parse import SplitResult, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -19,9 +19,12 @@ from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_TYPE_KEY,
     INTERNAL_API_ENDPOINT_URL_KEY,
     INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS,
+    INTERNAL_API_REPLAY_FIRST_PARTY_SUBDOMAINS,
+    INTERNAL_API_REPLAY_ROUTE_QUERY_KEYS,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import normalize_domain
+from app.core.records.field_url_normalization import registrable_host
 from app.extraction.json_walk import walk_json
 from app.core.url_safety import validate_public_target
 
@@ -40,7 +43,7 @@ def learned_internal_api_endpoints(
     if not network_payloads:
         return []
     endpoints: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     max_endpoints = max(
         1,
         int(crawler_runtime_settings.internal_api_replay_max_endpoints),
@@ -53,10 +56,7 @@ def learned_internal_api_endpoints(
         )
         if not endpoint:
             continue
-        key = (
-            str(endpoint.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or ""),
-            str(endpoint.get(INTERNAL_API_ENDPOINT_URL_KEY) or ""),
-        )
+        key = endpoint_identity(endpoint)
         if key in seen:
             continue
         if not payload_extracts_surface(
@@ -94,6 +94,44 @@ async def replay_internal_api_endpoints(
         if payload is not None:
             return payload
     return None
+
+
+async def verify_internal_api_endpoints(
+    *,
+    page_url: str,
+    surface: str,
+    endpoints: list[dict[str, object]],
+    requested_fields: list[str],
+) -> list[dict[str, object]]:
+    """Keep only captured endpoints that also work without browser state."""
+    verified: list[dict[str, object]] = []
+    for endpoint in endpoints:
+        payload = await _replay_endpoint(
+            endpoint,
+            page_url=page_url,
+            surface=surface,
+            requested_fields=requested_fields,
+        )
+        if payload is not None:
+            verified.append(endpoint)
+    return verified
+
+
+def replay_endpoint_identities_for_page(
+    endpoints: object,
+    *,
+    page_url: str,
+) -> list[tuple[str, str, str, str]]:
+    if not isinstance(endpoints, (list, tuple)):
+        return []
+    source_route = _route_identity(page_url)
+    return [
+        endpoint_identity(endpoint)
+        for endpoint in endpoints
+        if isinstance(endpoint, Mapping)
+        and str(endpoint.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY) or "")
+        == source_route
+    ]
 
 
 async def _replay_endpoint(
@@ -154,6 +192,8 @@ async def _replay_endpoint(
         ),
         "body": body,
     }
+    if isinstance(request_json, Mapping):
+        payload[INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY] = dict(request_json)
     if not payload_extracts_surface(
         payload,
         surface=str(surface or "").strip().lower(),
@@ -215,9 +255,7 @@ async def _is_safe_replay_url(url: str, *, page_url: str) -> bool:
     page_parsed = urlsplit(page_url)
     if parsed.scheme.lower() != "https" or page_parsed.scheme.lower() != "https":
         return False
-    if normalize_domain(url) != normalize_domain(page_url):
-        return False
-    if _origin(parsed) != _origin(page_parsed):
+    if not _is_allowed_first_party_origin(parsed, page_parsed):
         return False
     hostname = parsed.hostname
     if not hostname:
@@ -235,6 +273,42 @@ def _origin(parsed: SplitResult) -> tuple[str, str, int]:
     return scheme, str(parsed.hostname or "").lower(), port
 
 
+def _is_allowed_first_party_origin(
+    endpoint: SplitResult,
+    page: SplitResult,
+) -> bool:
+    if endpoint.scheme.casefold() != page.scheme.casefold():
+        return False
+    if _origin(endpoint)[2] != _origin(page)[2]:
+        return False
+    endpoint_host = str(endpoint.hostname or "").casefold().strip(".")
+    page_host = str(page.hostname or "").casefold().strip(".")
+    if not endpoint_host or not page_host:
+        return False
+    if endpoint_host == page_host:
+        return True
+    endpoint_site = registrable_host(endpoint.geturl())
+    page_site = registrable_host(page.geturl())
+    if not endpoint_site or endpoint_site != page_site:
+        return False
+    return _first_party_subdomain(endpoint_host, endpoint_site) in {
+        "",
+        *INTERNAL_API_REPLAY_FIRST_PARTY_SUBDOMAINS,
+    } and _first_party_subdomain(page_host, page_site) in {
+        "",
+        *INTERNAL_API_REPLAY_FIRST_PARTY_SUBDOMAINS,
+    }
+
+
+def _first_party_subdomain(host: str, site: str) -> str:
+    if host == site:
+        return ""
+    suffix = f".{site}"
+    if not host.endswith(suffix):
+        return "!invalid!"
+    return host[: -len(suffix)]
+
+
 def _endpoint_from_payload(
     payload: object,
     *,
@@ -247,7 +321,11 @@ def _endpoint_from_payload(
     method = str(payload.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
     if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
         return {}
-    if normalize_domain(url) != normalize_domain(page_url):
+    endpoint_url = urlsplit(url)
+    page = urlsplit(page_url)
+    if endpoint_url.scheme.casefold() != "https" or page.scheme.casefold() != "https":
+        return {}
+    if not _is_allowed_first_party_origin(endpoint_url, page):
         return {}
     if _blocked_replay_path(url):
         return {}
@@ -299,7 +377,10 @@ def payload_extracts_surface(
 
 def _payload_has_listing_row(payload: dict[str, object], *, page_url: str) -> bool:
     page_domain = normalize_domain(page_url)
-    for node in walk_json(payload.get("body", payload)):
+    body = payload.get("body", payload)
+    if not _payload_mentions_page_route(body, page_url):
+        return False
+    for node in walk_json(body):
         if not isinstance(node.value, dict):
             continue
         row = node.value
@@ -313,6 +394,16 @@ def _payload_has_listing_row(payload: dict[str, object], *, page_url: str) -> bo
         if text_url.startswith("/"):
             return True
         if normalize_domain(text_url) == page_domain:
+            return True
+    return False
+
+
+def _payload_mentions_page_route(body: object, page_url: str) -> bool:
+    expected = _route_identity(page_url)
+    if not expected:
+        return False
+    for node in walk_json(body):
+        if isinstance(node.value, str) and _route_identity(node.value) == expected:
             return True
     return False
 
@@ -383,14 +474,36 @@ def _route_identity(value: str) -> str:
     parsed = urlsplit(str(value or "").strip())
     if not parsed.scheme or not parsed.hostname or not parsed.path:
         return ""
+    query = urlencode(
+        sorted(
+            (key, item)
+            for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            if key.casefold() in INTERNAL_API_REPLAY_ROUTE_QUERY_KEYS
+        )
+    )
     return urlunsplit(
         (
             parsed.scheme.casefold(),
             parsed.hostname.casefold(),
             parsed.path.rstrip("/"),
-            "",
+            query,
             "",
         )
+    )
+
+
+def endpoint_identity(endpoint: Mapping[str, object]) -> tuple[str, str, str, str]:
+    request_json = endpoint.get(INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY)
+    request_identity = (
+        json.dumps(request_json, sort_keys=True, separators=(",", ":"))
+        if isinstance(request_json, Mapping)
+        else ""
+    )
+    return (
+        str(endpoint.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "").strip().upper(),
+        str(endpoint.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").strip(),
+        str(endpoint.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY) or "").strip(),
+        request_identity,
     )
 
 
@@ -414,6 +527,9 @@ def _commerce_detail_keys_are_product_like(keys: set[str]) -> bool:
 
 __all__ = [
     "learned_internal_api_endpoints",
+    "endpoint_identity",
     "payload_extracts_surface",
+    "replay_endpoint_identities_for_page",
     "replay_internal_api_endpoints",
+    "verify_internal_api_endpoints",
 ]

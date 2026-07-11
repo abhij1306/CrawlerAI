@@ -130,6 +130,16 @@ export const domainRunProfileSchema: z.ZodSchema<DomainRunProfile> = z.object({
       stale: z.boolean(),
     }),
   }),
+  internal_api_endpoints: z.array(
+    z.object({
+      method: z.string(),
+      endpoint_type: z.string().nullable(),
+      endpoint_family: z.string().nullable(),
+      source_route: z.string().nullable(),
+      source_run_id: z.number().nullable(),
+      failure_count: z.number(),
+    }),
+  ),
   source_run_id: z.number().nullable().optional(),
   saved_at: z.string().nullable().optional(),
 });

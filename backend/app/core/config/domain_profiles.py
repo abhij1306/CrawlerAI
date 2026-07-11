@@ -22,6 +22,7 @@ INTERNAL_API_ENDPOINT_FAMILY_KEY = "endpoint_family"
 INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY = "source_run_id"
 INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY = "request_json"
 INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY = "source_route"
+INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY = "failure_count"
 INTERNAL_API_ENDPOINT_ALLOWED_METHODS = frozenset({"GET", "POST"})
 INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS = frozenset(
     {
@@ -30,6 +31,29 @@ INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS = frozenset(
         "/events/",
         "/settings",
         "/tracking",
+    }
+)
+INTERNAL_API_REPLAY_FIRST_PARTY_SUBDOMAINS = frozenset(
+    {
+        "api",
+        "shop",
+        "store",
+        "www",
+        "m",
+        "mobile",
+    }
+)
+INTERNAL_API_REPLAY_ROUTE_QUERY_KEYS = frozenset(
+    {
+        "page",
+        "p",
+        "offset",
+        "cursor",
+        "variant",
+        "sku",
+        "color",
+        "size",
+        "sort",
     }
 )
 
@@ -41,6 +65,7 @@ __all__ = [
     "INVALID_SURFACE_VALUES",
     "INTERNAL_API_ENDPOINT_ALLOWED_METHODS",
     "INTERNAL_API_ENDPOINT_FAMILY_KEY",
+    "INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY",
     "INTERNAL_API_ENDPOINT_METHOD_KEY",
     "INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY",
     "INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY",
@@ -49,6 +74,8 @@ __all__ = [
     "INTERNAL_API_ENDPOINT_URL_KEY",
     "INTERNAL_API_ENDPOINTS_PROFILE_KEY",
     "INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS",
+    "INTERNAL_API_REPLAY_FIRST_PARTY_SUBDOMAINS",
+    "INTERNAL_API_REPLAY_ROUTE_QUERY_KEYS",
     "LISTING_SURFACE_IDENTIFIER",
     "SURFACE_PAIRS",
     "SURFACE_VALIDATION_ERROR",

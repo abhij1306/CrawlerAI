@@ -113,6 +113,16 @@ describe('DomainMemoryPage', () => {
             capture_response_headers: true,
             capture_browser_diagnostics: true,
           },
+          internal_api_endpoints: [
+            {
+              method: 'GET',
+              endpoint_type: 'product_api',
+              endpoint_family: 'generic',
+              source_route: 'https://example.com/products/replay-widget',
+              source_run_id: 101,
+              failure_count: 1,
+            },
+          ],
           source_run_id: 101,
           saved_at: new Date('2026-04-08T10:05:00Z').toISOString(),
         },
@@ -400,6 +410,8 @@ describe('DomainMemoryPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Profiles (1)' }));
     expect(screen.getByText('Run Profile Defaults')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Internal API Replay' })).toBeInTheDocument();
+    expect(screen.getByText('Retrying · 1 failure(s)')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cookies (3)' }));
     expect(screen.getByText('Saved Domain Cookies')).toBeInTheDocument();

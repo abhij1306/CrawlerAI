@@ -136,9 +136,7 @@ async def _load_runtime_snapshot(context: _URLProcessingContext) -> dict[str, ob
     if (
         context.run.settings_view.llm_enabled()
         and _generalized_model_config(context) is not None
-        and not isinstance(
-            snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY), dict
-        )
+        and not isinstance(snapshot.get(UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY), dict)
     ):
         snapshot[UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY] = dict(
             GENERALIZED_EXTRACTION_OPERATOR_RUNTIME_ARTIFACT
@@ -347,7 +345,9 @@ def _model_adapter(
     return hosted_generalized_adapter(config_snapshot=config)
 
 
-def _generalized_model_config(context: _URLProcessingContext) -> dict[str, object] | None:
+def _generalized_model_config(
+    context: _URLProcessingContext,
+) -> dict[str, object] | None:
     snapshot = context.run.settings_view.llm_config_snapshot()
     for task_type in (GENERALIZED_EXTRACTION_LLM_TASK, "general"):
         config = snapshot.get(task_type)
@@ -402,7 +402,10 @@ async def _update_acquisition_contract_memory(
     diagnostics = mapping_or_empty(
         getattr(acquisition_result, "browser_diagnostics", {})
     )
-    await record_acquisition_contract_outcome(
+    acquisition_diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "acquisition_diagnostics", {})
+    )
+    return await record_acquisition_contract_outcome(
         context.session,
         domain=domain,
         surface=context.surface,
@@ -421,6 +424,9 @@ async def _update_acquisition_contract_memory(
         page_url=getattr(acquisition_result, "final_url", "") or context.url,
         network_payloads=list(
             getattr(acquisition_result, "network_payloads", []) or []
+        ),
+        replay_failed_endpoint_ids=list(
+            acquisition_diagnostics.get("internal_api_replay_failed_endpoint_ids") or []
         ),
     )
 

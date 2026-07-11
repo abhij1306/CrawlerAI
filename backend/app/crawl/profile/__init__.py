@@ -5,6 +5,7 @@ from .acquisition_contract import (
     apply_acquisition_contract_to_profile,
     build_success_acquisition_contract,
     note_acquisition_contract_failure,
+    note_internal_api_replay_failures,
     record_acquisition_contract_outcome,
     save_learned_acquisition_contract,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "normalize_domain_run_profile",
     "normalize_internal_api_endpoints",
     "note_acquisition_contract_failure",
+    "note_internal_api_replay_failures",
     "record_acquisition_contract_outcome",
     "resolve_url_acquisition_recipe",
     "save_domain_run_profile",

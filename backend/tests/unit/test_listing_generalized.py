@@ -427,11 +427,7 @@ def test_no_discoverable_boundaries_falls_through_to_whole_page_model() -> None:
     # Discovery finds no record spine (no repeated content-rich product grid),
     # but the page DOES contain a groundable product. The tier must NOT give up:
     # it fires the whole-page generalized pass so the LLM can find the record.
-    html = (
-        "<html><body><main>"
-        "<div><span>Hidden Shoe</span></div>"
-        "</main></body></html>"
-    )
+    html = "<html><body><main><div><span>Hidden Shoe</span></div></main></body></html>"
     adapter = WholePageAdapter()
     result = run_listing_generalized(_request(html), adapter)
 
@@ -527,9 +523,7 @@ class WholePageListingRecordAdapter:
         del timeout_ms
         self.calls += 1
         entry = next(row for row in page.entries if "Hidden Shoe" in row.text)
-        hint = EntityHint(
-            entity_type="product", url="https://shop.test/p/hidden-shoe"
-        )
+        hint = EntityHint(entity_type="product", url="https://shop.test/p/hidden-shoe")
         return UniversalModelResult(
             adapter_id=self.adapter_id,
             artifact_id=artifact.artifact_id,

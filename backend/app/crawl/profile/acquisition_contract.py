@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.acquisition.internal_api_replay import learned_internal_api_endpoints
-from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.acquisition.internal_api_replay import (
+    endpoint_identity,
+    learned_internal_api_endpoints,
+    verify_internal_api_endpoints,
+)
+from app.core.config.domain_profiles import (
+    INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY,
+    INTERNAL_API_ENDPOINTS_PROFILE_KEY,
+)
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.persistence.publish import (
     VERDICT_BLOCKED,
@@ -17,10 +25,21 @@ from app.persistence.publish import (
 from .normalization import (
     _BROWSER_ENGINE_VALUES,
     _coerce_optional_choice,
+    merge_internal_api_endpoints,
     normalize_acquisition_contract,
+    normalize_internal_api_endpoints,
     normalize_domain_run_profile,
 )
 from .repository import load_domain_run_profile, save_domain_run_profile
+
+
+@dataclass(frozen=True, slots=True)
+class InternalApiReplayMemoryUpdate:
+    observed_payload_count: int = 0
+    candidate_count: int = 0
+    learned_count: int = 0
+    failed_count: int = 0
+    evicted_count: int = 0
 
 
 def acquisition_contract_is_stale(profile: object) -> bool:
@@ -215,6 +234,78 @@ async def note_acquisition_contract_failure(
     )
 
 
+async def note_internal_api_replay_failures(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    failed_endpoint_ids: list[object],
+) -> dict[str, object] | None:
+    profile, _evicted_count = await _note_internal_api_replay_failures(
+        session,
+        domain=domain,
+        surface=surface,
+        failed_endpoint_ids=failed_endpoint_ids,
+    )
+    return profile
+
+
+async def _note_internal_api_replay_failures(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    failed_endpoint_ids: list[object],
+) -> tuple[dict[str, object] | None, int]:
+    failed = {
+        tuple(str(part) for part in endpoint_id)
+        for endpoint_id in failed_endpoint_ids
+        if isinstance(endpoint_id, (list, tuple)) and len(endpoint_id) == 4
+    }
+    if not failed:
+        return None, 0
+    existing = await load_domain_run_profile(
+        session,
+        domain=domain,
+        surface=surface,
+    )
+    if existing is None:
+        return None, 0
+    profile = dict(existing.profile or {})
+    threshold = max(
+        1,
+        int(crawler_runtime_settings.internal_api_replay_failure_threshold),
+    )
+    retained: list[dict[str, object]] = []
+    evicted_count = 0
+    for endpoint in normalize_internal_api_endpoints(
+        profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+    ):
+        if endpoint_identity(endpoint) not in failed:
+            retained.append(endpoint)
+            continue
+        failure_count = (
+            int(endpoint.get(INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY) or 0) + 1
+        )
+        if failure_count < threshold:
+            endpoint[INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY] = failure_count
+            retained.append(endpoint)
+        else:
+            evicted_count += 1
+    profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = retained
+    return (
+        await save_domain_run_profile(
+            session,
+            domain=domain,
+            surface=surface,
+            profile=profile,
+            source_run_id=_coerce_source_run_id(profile.get("source_run_id")),
+            existing_record=existing,
+        ),
+        evicted_count,
+    )
+
+
 async def record_acquisition_contract_outcome(
     session: AsyncSession,
     *,
@@ -231,7 +322,8 @@ async def record_acquisition_contract_outcome(
     blocked: bool,
     page_url: str | None = None,
     network_payloads: list[dict[str, object]] | None = None,
-) -> None:
+    replay_failed_endpoint_ids: list[object] | None = None,
+) -> InternalApiReplayMemoryUpdate:
     stale_threshold = int(
         crawler_runtime_settings.acquisition_contract_stale_failure_threshold
     )
@@ -248,6 +340,9 @@ async def record_acquisition_contract_outcome(
             and persisted_count == 0
         )
     )
+    learned_count = 0
+    candidate_count = 0
+    observed_payload_count = len(network_payloads or [])
     if quality_success:
         found_fields = sorted(
             {
@@ -281,8 +376,22 @@ async def record_acquisition_contract_outcome(
             requested_fields=requested_fields,
             source_run_id=source_run_id,
         )
+        candidate_count = len(endpoints)
+        if endpoints and str(method or "").strip().lower() != "api_replay":
+            endpoints = await verify_internal_api_endpoints(
+                page_url=page_url or "",
+                surface=surface,
+                endpoints=endpoints,
+                requested_fields=requested_fields,
+            )
         if endpoints:
-            saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = endpoints
+            learned_count = len(endpoints)
+            saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+                merge_internal_api_endpoints(
+                    saved_profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY),
+                    endpoints,
+                )
+            )
             existing_profile = await load_domain_run_profile(
                 session,
                 domain=domain,
@@ -296,14 +405,49 @@ async def record_acquisition_contract_outcome(
                 source_run_id=source_run_id,
                 existing_record=existing_profile,
             )
-        return
+        _profile, evicted_count = await _note_internal_api_replay_failures(
+            session,
+            domain=domain,
+            surface=surface,
+            failed_endpoint_ids=list(replay_failed_endpoint_ids or []),
+        )
+        return InternalApiReplayMemoryUpdate(
+            observed_payload_count=observed_payload_count,
+            candidate_count=candidate_count,
+            learned_count=learned_count,
+            failed_count=len(replay_failed_endpoint_ids or []),
+            evicted_count=evicted_count,
+        )
     if not count_failure:
-        return
+        _profile, evicted_count = await _note_internal_api_replay_failures(
+            session,
+            domain=domain,
+            surface=surface,
+            failed_endpoint_ids=list(replay_failed_endpoint_ids or []),
+        )
+        return InternalApiReplayMemoryUpdate(
+            observed_payload_count=observed_payload_count,
+            candidate_count=candidate_count,
+            failed_count=len(replay_failed_endpoint_ids or []),
+            evicted_count=evicted_count,
+        )
+    _profile, evicted_count = await _note_internal_api_replay_failures(
+        session,
+        domain=domain,
+        surface=surface,
+        failed_endpoint_ids=list(replay_failed_endpoint_ids or []),
+    )
     await note_acquisition_contract_failure(
         session,
         domain=domain,
         surface=surface,
         threshold=stale_threshold,
+    )
+    return InternalApiReplayMemoryUpdate(
+        observed_payload_count=observed_payload_count,
+        candidate_count=candidate_count,
+        failed_count=len(replay_failed_endpoint_ids or []),
+        evicted_count=evicted_count,
     )
 
 

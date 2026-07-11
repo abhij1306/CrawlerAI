@@ -8,6 +8,7 @@ from app.core.domain_utils import normalize_domain
 
 from .normalization import (
     _empty_acquisition_contract,
+    merge_internal_api_endpoints,
     normalize_acquisition_contract,
     normalize_internal_api_endpoints,
 )
@@ -195,23 +196,10 @@ def merge_saved_run_profile(
         merged.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
     )
     if saved_endpoints or explicit_endpoints:
-        endpoints_by_key = {
-            (
-                str(endpoint.get("method") or ""),
-                str(endpoint.get("url") or ""),
-            ): endpoint
-            for endpoint in saved_endpoints
-        }
-        endpoints_by_key.update(
-            {
-                (
-                    str(endpoint.get("method") or ""),
-                    str(endpoint.get("url") or ""),
-                ): endpoint
-                for endpoint in explicit_endpoints
-            }
+        merged[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = merge_internal_api_endpoints(
+            saved_endpoints,
+            explicit_endpoints,
         )
-        merged[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = list(endpoints_by_key.values())
     return merged
 
 

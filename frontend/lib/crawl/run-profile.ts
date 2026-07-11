@@ -39,6 +39,7 @@ export function defaultRunProfileBase(): DomainRunProfile {
         stale: false,
       },
     },
+    internal_api_endpoints: [],
     source_run_id: null,
     saved_at: null,
   };
@@ -62,6 +63,7 @@ export function mergeRunProfile(
         ...(profile.acquisition_contract?.stale_after_failures ?? {}),
       },
     },
+    internal_api_endpoints: profile.internal_api_endpoints ?? base.internal_api_endpoints,
     source_run_id: profile.source_run_id !== undefined ? profile.source_run_id : base.source_run_id,
     saved_at: profile.saved_at !== undefined ? profile.saved_at : base.saved_at,
   };

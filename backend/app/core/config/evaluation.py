@@ -358,9 +358,7 @@ GENERALIZED_EXTRACTION_OPERATOR_RUNTIME_ARTIFACT: Final[dict[str, object]] = {
     "confidence_threshold": 0.85,
     "timeout_ms": GENERALIZED_EXTRACTION_BUDGET["budget_ms"],
     "max_memory_mb": 512.0,
-    "max_cost_per_page_usd": GENERALIZED_EXTRACTION_BUDGET[
-        "max_cost_usd_per_page"
-    ],
+    "max_cost_per_page_usd": GENERALIZED_EXTRACTION_BUDGET["max_cost_usd_per_page"],
     "supported_surfaces": (
         "ecommerce_listing",
         "ecommerce_detail",

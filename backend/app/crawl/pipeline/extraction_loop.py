@@ -457,13 +457,49 @@ async def _run_persistence_stage(
         record_provenance=persisted_batch.provenance,
         verdict=verdict,
     )
-    await update_acquisition_contract_memory(
+    replay_memory_update = await update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,
         records=extracted_records,
         persisted_count=persisted_count,
         verdict=verdict,
     )
+    observed_payload_count = int(
+        getattr(replay_memory_update, "observed_payload_count", 0) or 0
+    )
+    candidate_count = int(getattr(replay_memory_update, "candidate_count", 0) or 0)
+    learned_count = int(getattr(replay_memory_update, "learned_count", 0) or 0)
+    failed_count = int(getattr(replay_memory_update, "failed_count", 0) or 0)
+    evicted_count = int(getattr(replay_memory_update, "evicted_count", 0) or 0)
+    if learned_count:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Internal API replay learned {learned_count} verified endpoint(s)",
+        )
+    elif observed_payload_count:
+        message = (
+            "Internal API replay rejected "
+            f"{candidate_count} candidate endpoint(s); none was anonymously replayable"
+            if candidate_count
+            else (
+                "Internal API replay observed "
+                f"{observed_payload_count} JSON response(s), but none contained same-product data"
+            )
+        )
+        await _log_pipeline_event(context, "info", message)
+    if failed_count:
+        await _log_pipeline_event(
+            context,
+            "warning",
+            f"Internal API replay marked {failed_count} endpoint(s) failed",
+        )
+    if evicted_count:
+        await _log_pipeline_event(
+            context,
+            "warning",
+            f"Internal API replay evicted {evicted_count} endpoint(s)",
+        )
     return URLProcessingResult(
         records=extracted_records,
         verdict=verdict,

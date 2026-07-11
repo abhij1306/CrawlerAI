@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from app.acquisition.internal_api_replay import endpoint_identity
 from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
+    INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
     INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY,
     INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY,
@@ -138,10 +140,10 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     endpoints: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     max_endpoints = max(
         1,
-        int(crawler_runtime_settings.internal_api_replay_max_endpoints),
+        int(crawler_runtime_settings.internal_api_replay_max_saved_endpoints),
     )
     for item in value:
         if not isinstance(item, Mapping):
@@ -155,7 +157,7 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         source_route = _clean_str(item.get(INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY))
         if not source_route:
             continue
-        key = (method, url)
+        key = endpoint_identity(item)
         if key in seen:
             continue
         seen.add(key)
@@ -182,10 +184,38 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         )
         if source_run_id > 0:
             endpoint[INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY] = source_run_id
+        failure_count = _coerce_int_clamped(
+            item.get(INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY),
+            default=0,
+            minimum=0,
+        )
+        if failure_count:
+            endpoint[INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY] = failure_count
         endpoints.append(endpoint)
         if len(endpoints) >= max_endpoints:
             break
     return endpoints
+
+
+def merge_internal_api_endpoints(
+    saved: object,
+    explicit: object,
+) -> list[dict[str, object]]:
+    endpoints_by_key = {
+        endpoint_identity(endpoint): endpoint
+        for endpoint in normalize_internal_api_endpoints(saved)
+    }
+    for endpoint in normalize_internal_api_endpoints(explicit):
+        key = endpoint_identity(endpoint)
+        endpoints_by_key.pop(key, None)
+        endpoints_by_key[key] = endpoint
+    max_endpoints = max(
+        1,
+        int(crawler_runtime_settings.internal_api_replay_max_saved_endpoints),
+    )
+    return normalize_internal_api_endpoints(
+        list(endpoints_by_key.values())[-max_endpoints:]
+    )
 
 
 def _coerce_country(value: object) -> str:
