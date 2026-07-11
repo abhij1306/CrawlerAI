@@ -33,6 +33,7 @@ from app.api.jobs import router as jobs_router
 from app.api.knowledge import router as knowledge_router
 from app.api.llm import router as llm_router
 from app.api.product_intelligence import router as product_intelligence_router
+from app.api.ai_visibility import router as ai_visibility_router
 from app.api.records import router as records_router
 from app.api.review import router as review_router
 from app.api.selectors import router as selectors_router
@@ -610,6 +611,7 @@ for router in [
     knowledge_router,
     llm_router,
     product_intelligence_router,
+    ai_visibility_router,
     public_extract_router,
     public_domains_router,
     public_capabilities_router,

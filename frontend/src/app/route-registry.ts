@@ -109,6 +109,17 @@ export const appRoutes: readonly AppRoute[] = [
     nav: { group: 'Intelligence', label: 'Product Intelligence', icon: BrainCircuit },
   },
   {
+    id: 'ai-visibility',
+    path: '/ai-visibility',
+    access: 'authenticated',
+    lazy: () => import('../../app/ai-visibility/page-view'),
+    metadata: {
+      title: 'AI Visibility',
+      description: 'Benchmark brand mentions and owned-domain citations in AI-grounded search.',
+    },
+    nav: { group: 'Intelligence', label: 'AI Visibility', icon: BrainCircuit },
+  },
+  {
     id: 'domain-memory',
     path: '/domain-memory',
     access: 'authenticated',

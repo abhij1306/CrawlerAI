@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     http_max_connections: int = 100
     http_max_keepalive_connections: int = 40
     anthropic_api_key: str = ""
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "gemini_api_key",
+        ),
+    )
     groq_api_key: str = ""
     mistral_api_key: str = Field(
         default="",

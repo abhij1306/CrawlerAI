@@ -67,6 +67,15 @@ export const queryKeys = {
     jobs: () => ['data-enrichment', 'jobs'] as const,
     detail: (jobId: number) => ['data-enrichment', 'detail', jobId] as const,
   },
+  aiVisibility: {
+    all: ['ai-visibility'] as const,
+    providers: () => ['ai-visibility', 'providers'] as const,
+    projects: () => ['ai-visibility', 'projects'] as const,
+    project: (projectId: number) => ['ai-visibility', 'project', projectId] as const,
+    runs: (projectId?: number) => ['ai-visibility', 'runs', projectId ?? 'all'] as const,
+    run: (runId: number) => ['ai-visibility', 'run', runId] as const,
+    execution: (executionId: number) => ['ai-visibility', 'execution', executionId] as const,
+  },
   admin: {
     users: (filters: RunListFilters = {}) => ['admin', 'users', filters] as const,
     llmProviders: () => ['admin', 'llm', 'providers'] as const,

@@ -1,6 +1,11 @@
 # pylint: disable=duplicate-code
 # ORM model exports.
 from app.core.database import Base
+from app.models.ai_visibility import (
+    AiVisibilityExecution,
+    AiVisibilityProject,
+    AiVisibilityRun,
+)
 from app.models.api_key import ApiKey
 from app.models.user import User
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
@@ -29,6 +34,9 @@ from app.models.product_intelligence import (
 
 __all__ = [
     "Base",
+    "AiVisibilityProject",
+    "AiVisibilityRun",
+    "AiVisibilityExecution",
     "ApiKey",
     "User",
     "CrawlRun",
