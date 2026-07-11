@@ -19,6 +19,7 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_DOM_SELECTORS,
     DETAIL_BRAND_DOM_VALUE_ATTRIBUTES,
     DETAIL_BRAND_VISIBLE_LABEL_PATTERN,
+    DETAIL_CATEGORY_DOM_SELECTORS,
     DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
     DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS,
     DETAIL_DOM_CURRENCY_CODE_PATTERN,
@@ -136,6 +137,7 @@ class DomCollector:
                     )
                 )
         out.extend(_product_brand_evidence(bundle, doc, product_subject))
+        out.extend(_product_category_evidence(bundle, doc, product_subject))
         product_roots = _product_root_nodes(doc)
         out.extend(
             _product_description_evidence(bundle, product_roots, product_subject)
@@ -163,6 +165,34 @@ class DomCollector:
         out.extend(_commercial_variant_controls(bundle, doc, product_subject))
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
+
+
+def _product_category_evidence(
+    bundle: CaptureBundle, doc, product_subject: str
+) -> tuple[Evidence, ...]:
+    values: list[tuple[str, str]] = []
+    for selector in DETAIL_CATEGORY_DOM_SELECTORS:
+        for node in doc.css(selector):
+            value = " ".join(node.text(separator=" ", strip=True).split())
+            if value and value.casefold() not in {"category", "categories", "home"}:
+                values.append((value, node.dom_path()))
+    if not values:
+        return ()
+    value, path = values[-1]
+    return (
+        evidence(
+            bundle,
+            "dom",
+            "dom",
+            "product.category",
+            value,
+            SourceLocator(kind="dom_path", value=path, preview=value[:120]),
+            hint=EntityHint(entity_type="product"),
+            confidence=0.72,
+            subject_id=product_subject,
+            subject_scope="product",
+        ),
+    )
 
 
 def _product_brand_evidence(

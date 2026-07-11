@@ -65,14 +65,19 @@ export function RunProfileRow({
           updateProfileDraft={updateProfileDraft}
         />
       </div>
-      <InternalApiReplayEndpoints endpoints={profile.internal_api_endpoints ?? []} />
+      <InternalApiReplayEndpoints
+        enabled={profile.internal_api_replay_enabled ?? false}
+        endpoints={profile.internal_api_endpoints ?? []}
+      />
     </>
   );
 }
 
 function InternalApiReplayEndpoints({
+  enabled,
   endpoints,
 }: Readonly<{
+  enabled: boolean;
   endpoints: NonNullable<DomainRunProfile['internal_api_endpoints']>;
 }>) {
   return (
@@ -81,7 +86,9 @@ function InternalApiReplayEndpoints({
         <div>
           <h4 className="text-sm font-medium text-foreground">Internal API Replay</h4>
           <p className="text-xs text-muted">
-            Verified public endpoint memory. Request payloads and response data stay private.
+            {enabled
+              ? 'Verified public endpoint memory. Request payloads and response data stay private.'
+              : 'Disabled pending controlled and live parity proof. Request payloads and response data stay private.'}
           </p>
         </div>
         <span className="text-xs text-muted">
@@ -99,13 +106,22 @@ function InternalApiReplayEndpoints({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium text-foreground">{endpoint.method}</span>
-                  <span className={retrying ? 'text-warning' : 'text-success'}>
-                    {retrying ? `Retrying · ${endpoint.failure_count} failure(s)` : 'Ready'}
+                  <span
+                    className={retrying ? 'text-warning' : enabled ? 'text-success' : 'text-muted'}
+                  >
+                    {retrying
+                      ? `Retrying · ${endpoint.failure_count} failure(s)`
+                      : enabled
+                        ? 'Ready'
+                        : 'Stored candidate'}
                   </span>
                 </div>
                 <div className="mt-1 break-all text-muted">
                   {endpoint.source_route || 'Route unavailable'}
                 </div>
+                {endpoint.admission_class ? (
+                  <div className="mt-1 text-muted">{endpoint.admission_class}</div>
+                ) : null}
               </div>
             );
           })}

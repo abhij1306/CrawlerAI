@@ -9,6 +9,7 @@ import pytest
 from app.core import database as database_module
 from app.core import dependencies as dependencies_module
 from app.core.config import settings
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.domain_memory import DomainRunProfile
 from app.models.extraction_memory import ExtractionOperatorLabel as ReviewPromotion
@@ -610,6 +611,7 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(crawler_runtime_settings, "internal_api_replay_enabled", True)
     verified: list[dict[str, object]] = []
 
     async def _verify(**kwargs):
@@ -655,6 +657,7 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
                     "product": {
                         "title": "Replay Widget",
                         "price": {"amount": "19.99"},
+                        "currency": "USD",
                         "sku": "RW-100",
                         "url": "https://example.com/products/replay-widget",
                     }
@@ -678,6 +681,7 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
             "endpoint_family": "generic",
             "source_run_id": 92,
             "source_route": "https://example.com/products/replay-widget",
+            "admission_class": "complete_pdp_candidate",
         }
     ]
     assert verified
@@ -765,6 +769,7 @@ def test_domain_run_profile_exposes_safe_replay_endpoint_metadata() -> None:
             "source_route": "https://example.com/products/widget",
             "source_run_id": None,
             "failure_count": 1,
+            "admission_class": None,
         }
     ]
 

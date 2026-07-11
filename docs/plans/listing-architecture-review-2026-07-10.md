@@ -1,7 +1,11 @@
 # Listing Architecture — Consolidated Review & Plan (2026-07-10)
 
-**Status:** IN PROGRESS
-**Active slice:** L2 — Surface-agnostic acquisition-escalation ladder
+**Status:** SUPERSEDED (2026-07-11)
+**Active slice:** None. Consolidation is owned by `extraction-v3-live-recovery-plan.md` Slices 6–7.
+
+The former listing-local exemplar/recipe runtime was deleted after Runs 39–45
+showed singleton false success and no grounded listing boundary. Keep this file
+as historical evidence only; do not resume its slices independently.
 
 **Scope:** why listing crawls still fail, what of the target architecture actually
 exists in the working tree, and the exact slices that close the gap. Anchored to
@@ -27,7 +31,7 @@ working tree:
 | Tier 0 structured floor (JSON-LD, all-or-nothing URL-identity join) | `listing_tier0.py:collect_structured_listing` | LANDED |
 | Tier 0 network-JSON floor (schema-driven repeated-array) | `network_listing.py` | LANDED |
 | Tier 0 DOM floor (selector-free boundary discovery + record-local title) | `listing_records.py` + `listing_tier0.py:_dom_floor_evidence` | LANDED |
-| Tier 2 exemplar LLM (flat-map ONE record; model picks paths, never values; deterministic apply + re-ground) | `listing_generalized.py` | LANDED |
+| Shared model fallback | `model_runtime.py` / `engine.py` | Eligible only after repeated deterministic or accepted network boundaries |
 | Tier 1 recipe persistence (`record_bindings.v1`) | `persistence/extraction_memory.py:943` (`_persist_record_binding_candidate`) → compiled into `compiled_recipe.record_bindings` (`:112`) → replayed via `recipe_store_from_snapshot` (`engine.py:165`) | **LANDED — plan doc Slice 4.4 "persistence is a follow-up" is stale** |
 | No CSS-collector fallback for listing | `adapters.py:_harvest_structured_listing` — Tier 0 only; plan doc 4.3's "falls back to CSS collector" is stale | LANDED |
 | Listing escalation seam (one rung) | `result_building.py:552` — `empty` + `!browser_attempted` → `rendered_html` retry | LANDED (partial) |
@@ -59,7 +63,8 @@ Replaying `discover_listing_records` on the captured `page.html`:
 
 **G1 — Single point of failure: anchor-based boundary discovery gates every tier.**
 Both the DOM floor **and the generalized LLM tier** require
-`discover_listing_records()` boundaries — `listing_generalized.py:182-184` returns
+`discover_listing_records()` boundaries — listing-local model orchestration is no
+longer an owner; model fallback cannot create a boundary.
 `no_match` *before any model call* when discovery finds nothing. When discovery = 0
 the LLM cannot help even when enabled. The escalation loop terminates at a
 heuristic instead of at intelligence. (Detail has no such gate: its model fallback

@@ -13,6 +13,7 @@ from app.extraction.model_runtime import (
     RuntimeFlatMapEntry,
     RuntimeFlatMapPage,
     _normalize_source_value,
+    run_model_fallback,
 )
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
@@ -65,6 +66,13 @@ class MustNotRunAdapter:
         raise AssertionError("universal model must remain lazy")
 
 
+class ProviderErrorAdapter:
+    adapter_id = "fixture-runtime-adapter"
+
+    def predict(self, *args, **kwargs) -> NoReturn:
+        raise RuntimeError("provider_error:timeout")
+
+
 def test_source_value_normalization_preserves_zero_like_values() -> None:
     assert _normalize_source_value(0) == "0"
     assert _normalize_source_value(False) == "false"
@@ -99,6 +107,19 @@ def test_run_setting_disables_approved_model_without_invocation() -> None:
     assert result.records == ()
     assert result.diagnostics.model_outcome == "disabled"
     assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_runtime_preserves_safe_provider_error_category() -> None:
+    result = run_model_fallback(
+        _request(
+            "<main>Trail Shoe</main>", runtime_snapshot=_approved_snapshot()
+        ),
+        ProviderErrorAdapter(),
+    )
+
+    assert result.invoked is True
+    assert result.terminal_state == "provider_error"
+    assert result.detail == "provider_error:timeout"
 
 
 def test_generalized_budget_config_has_required_runtime_controls() -> None:

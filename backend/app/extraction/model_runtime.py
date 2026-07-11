@@ -49,6 +49,18 @@ ModelRuntimeOutcome = Literal[
     "timed_out",
     "budget_limited",
 ]
+ModelTerminalState = Literal[
+    "contract_satisfied",
+    "disabled",
+    "config_missing",
+    "not_eligible",
+    "invoked_produced_evidence",
+    "invoked_no_match",
+    "timed_out",
+    "provider_error",
+    "invalid_response",
+    "budget_limited",
+]
 
 
 class RuntimeRepresentationModel(BaseModel):
@@ -119,6 +131,8 @@ class ModelFallbackResult:
     latency_ms: float = 0.0
     memory_mb: float = 0.0
     cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
     prediction_count: int = 0
     ungrounded_rejection_count: int = 0
     failure_code: (
@@ -126,6 +140,36 @@ class ModelFallbackResult:
     ) = None
     detail: str | None = None
     recipe_candidate: dict[str, object] | None = None
+    terminal_state: ModelTerminalState | None = None
+
+    def __post_init__(self) -> None:
+        if self.terminal_state is not None:
+            return
+        if self.invoked:
+            if self.outcome == "produced_evidence":
+                state: ModelTerminalState = "invoked_produced_evidence"
+            elif self.outcome == "no_match":
+                state = "invoked_no_match"
+            elif self.outcome == "timed_out":
+                state = "timed_out"
+            elif self.outcome == "budget_limited":
+                state = "budget_limited"
+            elif self.failure_code == "unsupported_representation":
+                state = "not_eligible"
+            elif "invalid" in str(self.detail or "").casefold():
+                state = "invalid_response"
+            else:
+                state = "provider_error"
+        elif self.outcome == "disabled":
+            detail = str(self.detail or "").casefold()
+            state = "disabled" if "disabled" in detail else "config_missing"
+        elif self.outcome == "budget_limited":
+            state = "budget_limited"
+        elif self.outcome == "no_match":
+            state = "contract_satisfied"
+        else:
+            state = "not_eligible"
+        object.__setattr__(self, "terminal_state", state)
 
 
 def run_model_fallback(
@@ -193,7 +237,7 @@ def run_model_fallback(
             invoked=True,
             latency_ms=(perf_counter() - started) * 1_000,
             failure_code="model_service_failure",
-            detail=f"universal model invocation failed: {type(exc).__name__}",
+            detail=_model_failure_detail(exc),
         )
     elapsed_ms = (perf_counter() - started) * 1_000
     identity_error = _result_identity_error(result, artifact)
@@ -206,6 +250,8 @@ def run_model_fallback(
             latency_ms=elapsed_ms,
             memory_mb=result.memory_mb,
             cost_usd=result.cost_usd,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
             prediction_count=len(result.predictions),
             failure_code="model_service_failure",
             detail=identity_error,
@@ -223,6 +269,8 @@ def run_model_fallback(
             latency_ms=elapsed_ms,
             memory_mb=result.memory_mb,
             cost_usd=result.cost_usd,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
             prediction_count=len(result.predictions),
             detail="universal model runtime budget exceeded",
         )
@@ -236,9 +284,20 @@ def run_model_fallback(
         latency_ms=elapsed_ms,
         memory_mb=result.memory_mb,
         cost_usd=result.cost_usd,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
         prediction_count=len(result.predictions),
         ungrounded_rejection_count=rejected,
     )
+
+
+def _model_failure_detail(exc: Exception) -> str:
+    if isinstance(exc, ValueError):
+        return "invalid_response"
+    detail = str(exc).strip()
+    if detail.startswith("provider_error:"):
+        return detail[:160]
+    return f"provider_error:{type(exc).__name__}"
 
 
 def build_runtime_compact_page(

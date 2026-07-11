@@ -40,7 +40,6 @@ default_module_cyclomatic_complexity_budget = 20
 "jobs.py" = 550
 "json_walk.py" = 150
 "listing.py" = 500
-"listing_generalized.py" = 600
 "listing_records.py" = 360
 "listing_tier0.py" = 450
 "model_runtime.py" = 550

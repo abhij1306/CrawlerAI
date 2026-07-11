@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-import typing
-from typing import Any
+from typing import Any, Literal
 
 from app.core.config.extraction_rules._detail import (
     DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
@@ -33,6 +32,7 @@ from app.extraction.contracts import (
 )
 from app.extraction.entities import EntitySet
 from app.extraction.field_states import FieldStateName, field_state
+from app.extraction.listing_records import accepted_network_listing_subject_count
 from app.core.shared.ids import stable_id
 from app.extraction.surfaces import SurfaceSpec, listing_schema
 
@@ -284,16 +284,13 @@ def field_evidence_states(
                 )
             )
         elif resolved_decision:
-            # Resolution accepted a value for this field, but publication policy
-            # suppressed it. Authoritative state comes from the decision graph,
-            # so this is a rejection with a reason, never a silent miss.
             state = "captured_but_rejected"
             reasons = ("withheld_after_resolution",)
         elif rows:
             state = "captured_but_rejected"
             row_ids = {row.evidence_id for row in rows}
             # Carry the resolver's rejection reasons (RejectedEvidence.reason)
-            # for these captured rows so diagnose.json explains *why* a captured
+            # for captured rows so diagnose.json explains *why* a captured
             # sku/availability/price was not published — not just its flags.
             rejection_reasons = {
                 item.reason
@@ -517,7 +514,7 @@ def data_integrity_status(
     verdict: str,
     field_states: tuple[FieldEvidenceState, ...],
     findings: tuple[Finding, ...] = (),
-) -> typing.Literal["clean", "partial", "defect", "blocked", "unknown", "divergent"]:
+) -> Literal["clean", "partial", "defect", "blocked", "unknown", "divergent"]:
     if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
         return "divergent"
     if verdict == "blocked":
@@ -548,38 +545,38 @@ def retry_request(
             reason="http_shell",
             required_artifacts=("rendered_html",),
         )
-    ecommerce_detail = request.surface.value == "ecommerce_detail"
+    listing_retry = (
+        ("empty_extraction", ("rendered_html",)),
+        ("listing_network_missing", ("rendered_html", "network_payloads")),
+    )[request.capture.browser_attempted]
     if (
         listing_schema(request.surface) is not None
         and verdict == "empty"
         and not records
-    ):
-        if not request.capture.browser_attempted:
-            return RetryRequest(
-                required=True,
-                reason="empty_extraction",
-                required_artifacts=("rendered_html",),
+        and any(
+            (
+                not request.capture.browser_attempted,
+                accepted_network_listing_subject_count(evidence) < 2,
             )
-        has_network_json = any(
-            artifact.artifact_type == "network_json"
-            for artifact in request.capture.artifacts
         )
-        if not has_network_json:
-            return RetryRequest(
-                required=True,
-                reason="listing_network_missing",
-                required_artifacts=("rendered_html", "network_payloads"),
-            )
-    explicit_variants = "variants" in request.requested_fields
+    ):
+        return RetryRequest(
+            required=True,
+            reason=listing_retry[0],
+            required_artifacts=listing_retry[1],
+        )
     if (
-        ecommerce_detail
+        request.surface.value == "ecommerce_detail"
         and not request.capture.browser_attempted
         and (
             (
                 _explicit_variant_dom_cues(evidence)
                 and _variant_controls_incomplete(records, evidence)
             )
-            or (explicit_variants and _variants_missing_or_incomplete(records))
+            or (
+                "variants" in request.requested_fields
+                and _variants_missing_or_incomplete(records)
+            )
         )
     ):
         return RetryRequest(
@@ -593,7 +590,7 @@ def retry_request(
         if field in field_mappings.ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS
     }
     if (
-        ecommerce_detail
+        request.surface.value == "ecommerce_detail"
         and verdict in {"error", "partial", "review"}
         and not request.capture.browser_attempted
         and (not request.requested_fields or requested_core_fields or not records)
@@ -624,12 +621,8 @@ def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
 
 
 def _variants_missing_or_incomplete(records: tuple[PublicRecord, ...]) -> bool:
-    if not records:
-        return True
-    variants = tuple(records[0].get("variants") or ())
-    if not variants:
-        return True
-    return any(
+    variants = tuple(records[0].get("variants") or ()) if records else ()
+    return not variants or any(
         not isinstance(variant, dict)
         or all(
             variant.get(field) in (None, "", [], {}, ())

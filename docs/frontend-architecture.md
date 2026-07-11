@@ -48,6 +48,7 @@ The data router in `frontend/src/app/app.tsx` maps these routes:
 - `/jobs`
 - `/selectors`
 - `/domain-memory`
+- `/ai-visibility`
 - `/admin/users`
 - `/admin/llm`
 
@@ -203,6 +204,8 @@ Primary files:
 - `app/jobs/page.tsx`
 - `app/selectors/page.tsx`
 - `app/data-enrichment/page-view.tsx`
+- `src/app/ai-visibility/page-view.tsx`
+- `src/app/ai-visibility/domain-workspace.tsx`
 - `app/data-enrichment/data-enrichment-state.ts`
 - `app/data-enrichment/enriched-product-view.tsx`
 - `app/data-enrichment/source-record-list.tsx`
@@ -307,7 +310,7 @@ The selectors UI is built on:
 - optional LLM suggestion flow from Crawl Studio field configuration, not from the selector tool page
 
 Domain Memory also includes a Knowledge Graph tab. It loads graph-only domains from `/api/knowledge/sites`, renders bounded graph neighborhoods from `/api/knowledge/graph`, fetches page-template contracts, and lets operators choose retained source candidates with graph-version conflict checks. It uses the existing UI primitives and pattern components; it does not add a separate graph canvas dependency.
-- `components/selectors/domain-memory/run-profile-row.tsx` owns the read-only Internal API Replay panel. It shows safe endpoint method, source route, readiness, and failure count; request templates, endpoint URLs, and response payloads stay out of frontend contracts.
+- `components/selectors/domain-memory/run-profile-row.tsx` owns the read-only Internal API Replay panel. It shows safe endpoint method, source route, admission class, failure count, and whether replay is enabled; disabled replay candidates never appear as active endpoints. Request templates, endpoint URLs, and response payloads stay out of frontend contracts.
 - a dedicated `/domain-memory` surface for edit/delete/toggle operations
 
 ### LLM Admin
@@ -338,6 +341,8 @@ Frontend tests currently cover:
 - visible-dataset live record polling
 - explicit transport retry opt-in and React Query retry ownership
 - Data Enrichment, App Shell, and architecture policy checks
+- AI Visibility domain workspaces persist prompt panels, expose single/all-prompt
+  benchmark actions, and load immutable saved reports through a deletable history drawer
 
 There is also Playwright e2e coverage under `frontend/e2e`.
 

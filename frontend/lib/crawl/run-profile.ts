@@ -40,6 +40,7 @@ export function defaultRunProfileBase(): DomainRunProfile {
       },
     },
     internal_api_endpoints: [],
+    internal_api_replay_enabled: false,
     source_run_id: null,
     saved_at: null,
   };
@@ -64,6 +65,8 @@ export function mergeRunProfile(
       },
     },
     internal_api_endpoints: profile.internal_api_endpoints ?? base.internal_api_endpoints,
+    internal_api_replay_enabled:
+      profile.internal_api_replay_enabled ?? base.internal_api_replay_enabled,
     source_run_id: profile.source_run_id !== undefined ? profile.source_run_id : base.source_run_id,
     saved_at: profile.saved_at !== undefined ? profile.saved_at : base.saved_at,
   };

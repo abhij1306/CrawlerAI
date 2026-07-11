@@ -391,6 +391,21 @@ def semantic_detail_identity_tokens(url: str) -> tuple[str, ...]:
     return semantic_identity_tokens(detail_title_from_url(url))
 
 
+def normalize_variant_identity(value: object) -> str:
+    return "".join(char for char in str(value or "").upper() if char.isalnum())
+
+
+def variant_identity_tokens(
+    identity_keys: tuple[str, ...], option_values: object
+) -> set[str]:
+    values = (*identity_keys, *getattr(option_values, "values", lambda: ())())
+    return {
+        token
+        for value in values
+        if (token := normalize_variant_identity(str(value).split(":", 1)[-1]))
+    }
+
+
 def _identity_token_sets_overlap(
     left: set[str] | frozenset[str],
     right: set[str] | frozenset[str],

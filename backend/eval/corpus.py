@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config.evaluation import (
+    EXTRACTION_V3_ACCEPTED_EVIDENCE_MIN_RUN_ID,
     EXTRACTION_V3_COMMERCE_DETAIL_SURFACE,
     EXTRACTION_V3_EXCLUDED_RESULT_DIRS,
     EXTRACTION_V3_LABEL_CORE_FIELDS,
@@ -37,6 +38,13 @@ class CorpusPage:
     @property
     def is_verified(self) -> bool:
         return bool((self.label or {}).get("human_verified"))
+
+
+def accepted_evidence_run(run_dir: Path) -> bool:
+    try:
+        return int(run_dir.name) >= EXTRACTION_V3_ACCEPTED_EVIDENCE_MIN_RUN_ID
+    except ValueError:
+        return False
 
 
 def load_pages(
@@ -120,6 +128,7 @@ def stats(
             bucket_counts.get(page.variant_bucket, 0) + 1
         )
     verified = sum(1 for page in pages if page.is_verified)
+    accepted_evidence = accepted_evidence_run(run_dir)
     target = (
         0
         if surface == EXTRACTION_V3_COMMERCE_DETAIL_SURFACE
@@ -129,10 +138,13 @@ def stats(
         "surface": surface,
         "registered": len(pages),
         "human_verified": verified,
+        "release_human_verified": verified if accepted_evidence else 0,
+        "accepted_evidence_run": accepted_evidence,
+        "evidence_run_id": run_dir.name,
         "unverified": len(pages) - verified,
         "missing_label_files": sum(1 for page in pages if page.label is None),
         "target_human_verified": target,
-        "ready_for_gate": target == 0 or verified >= target,
+        "ready_for_gate": accepted_evidence and (target == 0 or verified >= target),
         "variant_buckets": bucket_counts,
         "valid": _validate_pages(pages),
     }

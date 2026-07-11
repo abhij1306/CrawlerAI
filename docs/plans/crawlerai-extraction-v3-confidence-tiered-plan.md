@@ -2,7 +2,12 @@
 
 **Created:** 2026-07-05
 **Agent:** Claude (Fable 5) — research + authoring
-**Status:** IN PROGRESS
+**Status:** SUPERSEDED — generalized-as-runtime-floor architecture rejected (2026-07-11)
+
+This plan is historical. `domain-learned-extraction-rearchitecture-plan.md` is authoritative. Its recipe-first architecture replaces the tier cascade: generalized/model analysis may compile or repair grounded executable recipes but may not remain a parallel record-producing runtime.
+
+> **Do not execute any nested `IN PROGRESS`, `DONE`, or `TODO` slice below; those statuses describe historical branch work only.**
+
 **Touches buckets:** `app/extraction/*`, `app/core/records/*`, `app/core/extraction_memory/*`, `app/persistence/extraction_memory*`, `app/models/extraction_memory.py`, extraction-side of `app/crawl/pipeline/*`, new eval harness under `backend/eval/`, frontend Extraction Profile panel. **Explicitly NOT** acquisition (`app/acquisition/*`), fetch runtime, or run orchestration.
 
 ---

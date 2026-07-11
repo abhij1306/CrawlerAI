@@ -23,6 +23,23 @@ INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY = "source_run_id"
 INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY = "request_json"
 INTERNAL_API_ENDPOINT_SOURCE_ROUTE_KEY = "source_route"
 INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY = "failure_count"
+INTERNAL_API_ENDPOINT_ADMISSION_KEY = "admission_class"
+INTERNAL_API_ENDPOINT_ADMISSION_CLASSES = frozenset(
+    {
+        "complete_pdp_candidate",
+        "exact_supplemental",
+        "availability_only",
+        "variants_offers_only",
+        "recommendation",
+        "review_ugc",
+        "analytics",
+        "config_localization",
+        "promotion",
+        "auth_session",
+        "unrelated",
+        "complete_listing_candidate",
+    }
+)
 INTERNAL_API_ENDPOINT_ALLOWED_METHODS = frozenset({"GET", "POST"})
 INTERNAL_API_REPLAY_BLOCKED_PATH_MARKERS = frozenset(
     {
@@ -50,8 +67,13 @@ INTERNAL_API_REPLAY_ROUTE_QUERY_KEYS = frozenset(
         "offset",
         "cursor",
         "variant",
+        "variantid",
         "sku",
         "color",
+        "colour",
+        "colorcode",
+        "colorproductcode",
+        "style",
         "size",
         "sort",
     }
@@ -64,6 +86,8 @@ __all__ = [
     "DEFAULT_FALLBACK_SURFACE",
     "INVALID_SURFACE_VALUES",
     "INTERNAL_API_ENDPOINT_ALLOWED_METHODS",
+    "INTERNAL_API_ENDPOINT_ADMISSION_CLASSES",
+    "INTERNAL_API_ENDPOINT_ADMISSION_KEY",
     "INTERNAL_API_ENDPOINT_FAMILY_KEY",
     "INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY",
     "INTERNAL_API_ENDPOINT_METHOD_KEY",

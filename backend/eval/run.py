@@ -24,6 +24,7 @@ from eval.corpus import (
     DEFAULT_AUDIT_PATH,
     DEFAULT_LABEL_DIR,
     DEFAULT_RUN_DIR,
+    accepted_evidence_run,
     load_pages,
 )
 from eval.score import (
@@ -62,9 +63,13 @@ def run_label_score(
     label_dir: Path = DEFAULT_LABEL_DIR,
 ) -> dict[str, Any]:
     pages = load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
-    verified_pages = tuple(page for page in pages if page.is_verified)
+    accepted_evidence = accepted_evidence_run(run_dir)
+    verified_pages = tuple(
+        page for page in pages if accepted_evidence and page.is_verified
+    )
     report = score_records_against_labels(verified_pages).to_dict()
     report["verified_pages"] = len(verified_pages)
+    report["accepted_evidence_run"] = accepted_evidence
     return report
 
 
@@ -83,7 +88,10 @@ def run_v3_engine(
     out: Path | None = None,
 ) -> dict[str, Any]:
     pages = load_pages(run_dir=run_dir, audit_path=audit_path, label_dir=label_dir)
-    verified_pages = tuple(page for page in pages if page.is_verified)
+    accepted_evidence = accepted_evidence_run(run_dir)
+    verified_pages = tuple(
+        page for page in pages if accepted_evidence and page.is_verified
+    )
     adapter = (
         None
         if tier == "recipe"
@@ -128,6 +136,7 @@ def run_v3_engine(
         frozen_baseline_defects=frozen_baseline_defects,
         candidate_full_defects=candidate_full_defects,
         verified_pages=len(verified_pages),
+        accepted_evidence=accepted_evidence,
         tier=tier,
         model_invocations=int(candidate_runtime["model_invocations"]),
         llm_config_supplied=adapter is not None,
@@ -148,6 +157,7 @@ def run_v3_engine(
         "no_recipes": no_recipes,
         "no_selectors": no_selectors,
         "corpus_pages": len(pages),
+        "accepted_evidence_run": accepted_evidence,
         "verified_pages": len(verified_pages),
         "candidate": candidate,
         "baseline_on_verified_labels": baseline,
@@ -488,12 +498,15 @@ def _v3_gate_reasons(
     frozen_baseline_defects: dict[str, int],
     candidate_full_defects: dict[str, int],
     verified_pages: int,
+    accepted_evidence: bool,
     tier: str,
     model_invocations: int,
     llm_config_supplied: bool,
     cascade_progress: dict[str, Any],
 ) -> list[str]:
     reasons: list[str] = []
+    if not accepted_evidence:
+        return ["accepted_evidence_run_required"]
     defects = candidate["defect_counts"]
     baseline_verified_defects = baseline["defect_counts"]
     if verified_pages == 0:

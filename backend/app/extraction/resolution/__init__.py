@@ -145,6 +145,7 @@ def resolve(
                 ),
             )
         )
+    decisions = list(_guard_original_price_semantics(decisions, by_id))
     primary_product_entity_id = (
         entities.products[0].entity_id if len(entities.products) == 1 else None
     )
@@ -1319,6 +1320,68 @@ def _resolve_offer(
     )
 
 
+def _guard_original_price_semantics(
+    decisions: list[Decision], evidence_by_id: dict[str, Evidence]
+) -> tuple[Decision, ...]:
+    price_fact = field_mappings.OFFER_PRICE_FACT_TYPE
+    original_fact = field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE
+    guarded: list[Decision] = []
+    for decision in decisions:
+        if decision.fact_type != original_fact:
+            guarded.append(decision)
+            continue
+        price = next(
+            (candidate for candidate in decisions if candidate.entity_id == decision.entity_id
+             and candidate.fact_type == price_fact),
+            None,
+        )
+        original_value = _decision_value(decision, evidence_by_id)
+        current_value = _decision_value(price, evidence_by_id) if price else None
+        if (
+            price is not None
+            and price.status == "resolved"
+            and original_value is not None
+            and current_value is not None
+            and original_value > current_value
+        ):
+            guarded.append(decision)
+            continue
+        reason = (
+            "original_price_requires_current_price"
+            if price is None or price.status != "resolved"
+            else "original_price_not_above_current"
+        )
+        guarded.append(
+            decision.model_copy(
+                update={
+                    "accepted_evidence_ids": (),
+                    "status": "unresolved",
+                    "rule_id": "ORIGINAL_PRICE_REQUIRES_CURRENT_PRICE",
+                    "rejected": (*decision.rejected, *(
+                        RejectedEvidence(evidence_id=evidence_id, reason=reason)
+                        for evidence_id in decision.accepted_evidence_ids
+                    )),
+                }
+            )
+        )
+    return tuple(guarded)
+
+
+def _decision_value(
+    decision: Decision | None, evidence_by_id: dict[str, Evidence]
+) -> Decimal | None:
+    if (
+        decision is None
+        or decision.status != "resolved"
+        or not decision.accepted_evidence_ids
+    ):
+        return None
+    try:
+        return Decimal(str(evidence_by_id[decision.accepted_evidence_ids[0]].value))
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        return None
+
+
 def _offer_atomic_price_currency_preferences(
     offer: OfferEntity,
     evidence_by_id: dict[str, Evidence],
@@ -2029,6 +2092,14 @@ def _invalidity_reason(ev: Evidence) -> str | None:
         field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
     } and non_positive_money(ev.value):
         return "non_positive_price"
+    if ev.fact_type == field_mappings.PRODUCT_SKU_FACT_TYPE:
+        source_key = str(ev.locator.value or "").rsplit("/", 1)[-1].casefold()
+        scalar = str(ev.value or "").strip()
+        opaque_keys = getattr(
+            field_mappings, "OPAQUE_PLATFORM_ID_SOURCE_KEYS", frozenset()
+        )
+        if source_key in opaque_keys and scalar.isdigit() and len(scalar) >= 8:
+            return "opaque_platform_identifier"
     flags = set(ev.flags)
     title_rejections = flags & (DETAIL_TITLE_REJECTION_FLAGS - {"truncated_title"})
     if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and title_rejections:

@@ -378,6 +378,9 @@ ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
     "original_price": "offer.original_price",
     "price": OFFER_PRICE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
+    "style": PRODUCT_SKU_FACT_TYPE,
+    "styleCode": PRODUCT_SKU_FACT_TYPE,
+    "style_code": PRODUCT_SKU_FACT_TYPE,
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
@@ -393,6 +396,9 @@ ECOMMERCE_PUBLIC_FIELD_FACT_TYPES = {
     "brand": PRODUCT_BRAND_FACT_TYPE,
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
+    "style": PRODUCT_SKU_FACT_TYPE,
+    "styleCode": PRODUCT_SKU_FACT_TYPE,
+    "style_code": PRODUCT_SKU_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
     "currency": OFFER_CURRENCY_FACT_TYPE,
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
@@ -439,6 +445,7 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "brandName": PRODUCT_BRAND_FACT_TYPE,
     "brand_label": PRODUCT_BRAND_FACT_TYPE,
     "brandLabel": PRODUCT_BRAND_FACT_TYPE,
+    "category": "product.category",
     "currency": OFFER_CURRENCY_FACT_TYPE,
     "currencyCode": OFFER_CURRENCY_FACT_TYPE,
     "currentPrice": OFFER_PRICE_FACT_TYPE,
@@ -466,6 +473,9 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "productDescription": PRODUCT_DESCRIPTION_FACT_TYPE,
     "productName": PRODUCT_TITLE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
+    "style": PRODUCT_SKU_FACT_TYPE,
+    "styleCode": PRODUCT_SKU_FACT_TYPE,
+    "style_code": PRODUCT_SKU_FACT_TYPE,
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
@@ -516,6 +526,9 @@ ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
     "product_id",
     "productCode",
     "product_code",
+)
+OPAQUE_PLATFORM_ID_SOURCE_KEYS = frozenset(
+    {"id", "variantid", "variant_id", "skuid", "sku_id", "productid", "product_id"}
 )
 ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
@@ -584,6 +597,7 @@ ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
     "name": PRODUCT_TITLE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
+    "category": "product.category",
 }
 ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,

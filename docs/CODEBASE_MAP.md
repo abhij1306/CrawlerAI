@@ -28,6 +28,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
+| `ai_visibility.py` | AI visibility domain projects, provider runs, saved report history, exports, and terminal-run deletion |
 | `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create |
 | `public/*` | Public API v1 envelope, rate-limit helpers, HTTP-only extraction, domain info, capabilities, and deferred batch routes |
 | `crawls.py` | Run creation plus Crawl Studio category discovery API |
@@ -173,7 +174,7 @@ Canonical config owner:
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
 | `extraction/jobs.py` | Job collection, wrong-surface checks, and deterministic job detail/listing resolution |
-| `extraction/surfaces.py`, `listing_records.py`, `listing_tier0.py`, `network_listing.py`, `listing_generalized.py` | Typed many-record schema, structural boundaries, deterministic DOM/network floors, and grounded recipe replay for commerce/job listings |
+| `extraction/surfaces.py`, `listing_records.py`, `listing_tier0.py`, `network_listing.py` | Typed many-record schema, structural boundaries, deterministic DOM/network floors, and network row mapping for commerce/job listings; shared model fallback owns any eligible backfill |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
 | `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
 | `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |

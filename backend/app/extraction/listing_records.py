@@ -23,7 +23,7 @@ The algorithm rests on two invariants that hold across markup shapes (cards,
    fall out because they don't repeat.
 
 Output is an ordered tuple of ``RecordBoundary`` — the record subtree plus its
-detail URL and a stable index — consumed by the Tier 0 / generalized resolvers.
+detail URL and a stable index — consumed by deterministic listing mapping.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ class RecordBoundary:
 
 
 def discover_listing_records(
-    doc: HtmlDocument, *, page_url: str, allow_singleton: bool = True
+    doc: HtmlDocument, *, page_url: str, allow_singleton: bool = False
 ) -> tuple[RecordBoundary, ...]:
     """Return the page's product records by structural repetition.
 
@@ -215,6 +215,17 @@ def listing_discovery_diagnostics(
     counts["grid_candidates_considered"] = len(grid_candidates)
     counts["boundary_count"] = len(discover_listing_records(doc, page_url=page_url))
     return counts
+
+
+def accepted_network_listing_subject_count(evidence) -> int:
+    return len(
+        {
+            row.subject_id
+            for row in evidence
+            if row.collector_id == "network_listing_floor"
+            and row.fact_type.endswith((".title", ".url"))
+        }
+    )
 
 
 def _product_anchors(

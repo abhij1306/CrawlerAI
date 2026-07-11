@@ -419,7 +419,9 @@ export type DomainRunProfile = {
     source_route: string | null;
     source_run_id: number | null;
     failure_count: number;
+    admission_class?: string | null;
   }>;
+  internal_api_replay_enabled?: boolean;
   source_run_id?: number | null;
   saved_at?: string | null;
 };

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from app.extraction.contracts import (
     Evidence,
@@ -13,7 +14,10 @@ from app.core.records.url_identity import (
     detail_identity_codes_from_url,
     detail_url_product_slug,
     detail_url_resource_identity,
+    normalize_variant_identity,
+    variant_identity_tokens,
 )
+from app.core.config.extraction_rules import DETAIL_IDENTITY_QUERY_KEYS
 from app.extraction.entities import EntitySet
 from app.extraction.surfaces import SurfaceSpec
 
@@ -45,12 +49,20 @@ def select_commerce_target(
         selected = None
     if selected is None and len(root_ids) == 1 and not rejected_identity_roots:
         selected = root_ids[0]
-    return TargetSelection(
-        status=_commerce_target_status(
+    query_codes = _requested_variant_query_codes((request.capture.final_url, request.capture.requested_url))
+    selected_variant = _select_requested_variant(graph, selected, query_codes)
+    status = (
+        "ambiguous"
+        if selected is not None and query_codes and selected_variant is None
+        else _commerce_target_status(
             graph, evidence, root_ids, selected, rejected_identity_roots
-        ),
+        )
+    )
+    return TargetSelection(
+        status=status,
         root_entity_ids=root_ids,
         selected_root_entity_id=selected,
+        selected_variant_entity_id=selected_variant,
         rejected_roots=tuple(
             RejectedEntity(
                 entity_id=entity_id,
@@ -118,6 +130,8 @@ def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
         return tuple(item for item in graph_state if item in selected_ids)
     if not isinstance(graph_state, EntitySet):
         return graph_state
+    if target.status == "ambiguous":
+        return EntitySet()
     selected = target.selected_root_entity_id
     if not selected:
         if target.status == "missing" or any(
@@ -125,25 +139,46 @@ def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
         ):
             return EntitySet()
         return graph_state
-    return _scoped_entity_graph(graph_state, selected)
+    return _scoped_entity_graph(
+        graph_state, selected, selected_variant=target.selected_variant_entity_id
+    )
 
 
-def _scoped_entity_graph(graph_state: EntitySet, selected: str) -> EntitySet:
+def _scoped_entity_graph(
+    graph_state: EntitySet,
+    selected: str,
+    *,
+    selected_variant: str | None = None,
+) -> EntitySet:
+    variants = tuple(
+        variant
+        for variant in graph_state.variants
+        if variant.product_entity_id == selected
+    )
+    selected_variant_ids = {selected_variant} if selected_variant else set()
+    if selected_variant:
+        variants = tuple(
+            variant for variant in variants if variant.entity_id == selected_variant
+        )
+    offers = tuple(
+        offer
+        for offer in graph_state.offers
+        if offer.product_entity_id == selected
+        and (not selected_variant or offer.variant_entity_id in selected_variant_ids)
+    )
+    assets = tuple(
+        asset
+        for asset in graph_state.assets
+        if asset.product_entity_id == selected
+        and (not selected_variant or asset.variant_entity_id in selected_variant_ids)
+    )
     return EntitySet(
         products=tuple(
             product for product in graph_state.products if product.entity_id == selected
         ),
-        variants=tuple(
-            variant
-            for variant in graph_state.variants
-            if variant.product_entity_id == selected
-        ),
-        offers=tuple(
-            offer for offer in graph_state.offers if offer.product_entity_id == selected
-        ),
-        assets=tuple(
-            asset for asset in graph_state.assets if asset.product_entity_id == selected
-        ),
+        variants=variants,
+        offers=offers,
+        assets=assets,
         product_option_metadata=graph_state.product_option_metadata,
         option_catalogs=tuple(
             catalog
@@ -151,6 +186,51 @@ def _scoped_entity_graph(graph_state: EntitySet, selected: str) -> EntitySet:
             if catalog.product_entity_id == selected
         ),
     )
+
+
+def _select_requested_variant(
+    graph: EntitySet,
+    selected_product_id: str | None,
+    query_codes: set[str],
+) -> str | None:
+    if not selected_product_id:
+        return None
+    variants = tuple(
+        variant
+        for variant in graph.variants
+        if variant.product_entity_id == selected_product_id
+    )
+    if not variants:
+        return None
+    explicit = tuple(
+        variant for variant in variants if variant.selected and variant.identity_keys
+    )
+    if len(explicit) == 1:
+        return explicit[0].entity_id
+
+    if not query_codes:
+        return None
+    scores = {
+        variant.entity_id: len(
+            query_codes
+            & variant_identity_tokens(variant.identity_keys, variant.option_values)
+        )
+        for variant in variants
+    }
+    highest = max(scores.values(), default=0)
+    matches = tuple(entity_id for entity_id, score in scores.items() if score == highest)
+    return matches[0] if highest and len(matches) == 1 else None
+
+
+def _requested_variant_query_codes(requested_urls) -> set[str]:
+    return {
+        token
+        for url in requested_urls
+        for key, value in parse_qsl(urlsplit(str(url or "")).query)
+        if key.casefold() in DETAIL_IDENTITY_QUERY_KEYS
+        for token in (normalize_variant_identity(value),)
+        if token
+    }
 
 
 def _select_product_by_url(

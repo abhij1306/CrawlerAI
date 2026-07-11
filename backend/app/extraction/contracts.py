@@ -488,6 +488,7 @@ class TargetSelection(FrozenModel):
     status: TargetStatus = "missing"
     root_entity_ids: tuple[str, ...] = ()
     selected_root_entity_id: str | None = None
+    selected_variant_entity_id: str | None = None
     rejected_roots: tuple[RejectedEntity, ...] = ()
 
 
@@ -571,9 +572,28 @@ class DiagnosticSummary(FrozenModel):
         "timed_out",
         "budget_limited",
     ] = "not_considered"
+    model_terminal_state: Literal[
+        "contract_satisfied",
+        "disabled",
+        "config_missing",
+        "not_eligible",
+        "invoked_produced_evidence",
+        "invoked_no_match",
+        "timed_out",
+        "provider_error",
+        "invalid_response",
+        "budget_limited",
+        "not_considered",
+    ] = "not_considered"
     sentinel_state: SentinelDriftState | None = None
     sentinel_diagnostic: str | None = None
     listing_discovery: dict[str, int] = Field(default_factory=dict)
+    variant_coverage: Literal["complete", "partial", "not_applicable", "unknown"] = (
+        "unknown"
+    )
+    additional_image_coverage: Literal[
+        "complete", "partial", "not_applicable", "unknown"
+    ] = "unknown"
 
 
 FieldValueType = Literal[
@@ -715,6 +735,8 @@ class ExtractionMetrics(FrozenModel):
     universal_model_ungrounded_rejection_rate: float = 0.0
     universal_model_cost_usd: float = 0.0
     universal_model_cost_per_1000_pages: float = 0.0
+    universal_model_input_tokens: int = 0
+    universal_model_output_tokens: int = 0
 
 
 class UniversalModelArtifact(FrozenModel):
@@ -790,6 +812,8 @@ class UniversalModelResult(FrozenModel):
     latency_ms: float = Field(ge=0.0)
     memory_mb: float = Field(ge=0.0)
     cost_usd: float = Field(ge=0.0)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_prediction_ids(self) -> UniversalModelResult:

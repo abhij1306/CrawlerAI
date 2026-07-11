@@ -348,6 +348,7 @@ class DomainRunInternalApiEndpoint(BaseModel):
     source_route: str | None = None
     source_run_id: int | None = None
     failure_count: int = Field(default=0, ge=0)
+    admission_class: str | None = None
 
 
 class DomainRunProfilePayload(BaseModel):
@@ -365,6 +366,7 @@ class DomainRunProfilePayload(BaseModel):
     internal_api_endpoints: list[DomainRunInternalApiEndpoint] = Field(
         default_factory=list
     )
+    internal_api_replay_enabled: bool = False
     source_run_id: int | None = None
     saved_at: datetime | None = None
 

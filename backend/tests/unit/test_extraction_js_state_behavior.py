@@ -73,6 +73,130 @@ def test_js_state_explicit_variant_rows_are_materialized() -> None:
     ]
 
 
+def test_requested_variant_url_scopes_parent_fields_to_exact_child() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Everyday Tee</h1></body></html>",
+        "https://shop.test/products/everyday-tee?variant=v2",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Everyday Tee",
+                    "url": "https://shop.test/products/everyday-tee",
+                    "variants": [
+                        {
+                            "id": "v1",
+                            "sku": "TEE-BLK",
+                            "color": "Black",
+                            "price": "40.00",
+                            "currency": "USD",
+                        },
+                        {
+                            "id": "v2",
+                            "sku": "TEE-WHT",
+                            "color": "White",
+                            "price": "55.00",
+                            "currency": "USD",
+                        },
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records
+    record = result.records[0]
+    assert record["price"] == "55.00"
+    assert record["variants"] == [
+        {
+            "variant_id": "v2",
+            "sku": "TEE-WHT",
+            "price": "55.00",
+            "currency": "USD",
+            "color": "White",
+        }
+    ]
+
+
+def test_color_product_code_url_selects_exact_child() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Soleil Pant</h1></main>",
+        "https://shop.test/products/soleil?colorProductCode=CI939&colorCode=BR8825",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Soleil Pant",
+                    "url": "https://shop.test/products/soleil",
+                    "variants": [
+                        {
+                            "id": "BR8825",
+                            "sku": "CI939-BR8825",
+                            "color": "BR8825",
+                            "price": "121.44",
+                            "currency": "USD",
+                        },
+                        {
+                            "id": "BK0001",
+                            "sku": "CI939-BK0001",
+                            "color": "BK0001",
+                            "price": "99.00",
+                            "currency": "USD",
+                        },
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["price"] == "121.44"
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "BR8825",
+            "sku": "CI939-BR8825",
+            "price": "121.44",
+            "currency": "USD",
+        }
+    ]
+
+
+def test_ambiguous_requested_variant_fails_closed_instead_of_mixing_siblings() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Everyday Tee</h1></main>",
+        "https://shop.test/products/everyday-tee?color=Blue",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Everyday Tee",
+                    "url": "https://shop.test/products/everyday-tee",
+                    "variants": [
+                        {
+                            "id": "BLUE-S",
+                            "sku": "TEE-BLUE-S",
+                            "color": "Blue",
+                            "size": "S",
+                            "price": "40.00",
+                            "currency": "USD",
+                        },
+                        {
+                            "id": "BLUE-M",
+                            "sku": "TEE-BLUE-M",
+                            "color": "Blue",
+                            "size": "M",
+                            "price": "55.00",
+                            "currency": "USD",
+                        },
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.target.status == "ambiguous"
+    assert not result.records
+
+
 def test_js_state_nested_variant_options_and_offer_materialize() -> None:
     artifacts = {
         "js_state_objects": {

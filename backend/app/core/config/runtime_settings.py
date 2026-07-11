@@ -219,7 +219,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_capture_total_network_payload_bytes: int = 12000000
     browser_capture_workers: int = 4
     browser_capture_read_timeout_seconds: float = 5.0
-    internal_api_replay_enabled: bool = True
+    # Replay stays opt-in until a candidate passes controlled and live parity.
+    internal_api_replay_enabled: bool = False
     internal_api_replay_timeout_seconds: float = 3.0
     internal_api_replay_max_endpoints: int = 3
     internal_api_replay_max_saved_endpoints: int = 100

@@ -163,11 +163,6 @@ def _root_causes(
                     "reason_codes": list(_string_list(field.get("reason_codes"))),
                 },
             )
-            for reason in _string_list(field.get("reason_codes")):
-                causes.setdefault(
-                    f"field_reason:{field_name}:{status}:{reason}",
-                    {"field": field_name, "status": status, "reason": reason},
-                )
     # Run-level metric (audit Slice 1.5): a public parent commercial field is
     # absent while the same field is published on a child variant. This is the
     # divergence that path-aware field states make visible; surface it as its own

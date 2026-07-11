@@ -6,6 +6,8 @@ import logging
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.connectors.llm.config_service import validate_config_snapshot
+from app.connectors.llm.cost_logging import record_llm_cost_log
+from app.connectors.llm.errors import LLMErrorCategory, classify_error
 from app.connectors.llm.generalized_extraction import hosted_generalized_adapter
 from app.core.config.evaluation import (
     GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
@@ -48,6 +50,20 @@ __all__ = (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _ObservedModelAdapter:
+    def __init__(self, delegate, on_start) -> None:
+        self._delegate = delegate
+        self._on_start = on_start
+
+    @property
+    def adapter_id(self) -> str:
+        return self._delegate.adapter_id
+
+    def predict(self, page, artifact, *, timeout_ms: int):
+        self._on_start()
+        return self._delegate.predict(page, artifact, timeout_ms=timeout_ms)
 
 
 def extract_records_for_acquisition_result(
@@ -101,9 +117,69 @@ async def _extract_records_for_acquisition(
             fetched,
             selector_rules=selector_rules,
         )
-        if fallback_result is not None and fallback_result.records:
-            result = fallback_result
+        if fallback_result is not None:
+            await _record_model_cost_log(context, fallback_result)
+            if fallback_result.records:
+                result = fallback_result
     return result, selector_rules
+
+
+async def _record_model_cost_log(
+    context: _URLProcessingContext,
+    result: ExtractionResult,
+) -> None:
+    if not result.metrics.universal_model_invocation_count:
+        return
+    config = _generalized_model_config(context) or {}
+    state = result.diagnostics.model_terminal_state
+    error_message = (
+        ""
+        if state in {"invoked_produced_evidence", "invoked_no_match"}
+        else f"generalized extraction {state}"
+    )
+    await record_llm_cost_log(
+        context.session,
+        run_id=context.run.id,
+        task_type=GENERALIZED_EXTRACTION_LLM_TASK,
+        domain=normalize_domain(context.url),
+        provider=str(config.get("provider") or "unknown"),
+        model=str(config.get("model") or "unknown"),
+        input_tokens=result.metrics.universal_model_input_tokens,
+        output_tokens=result.metrics.universal_model_output_tokens,
+        error_message=error_message,
+        error_category=classify_error(f"Error: {error_message}")
+        if error_message
+        else LLMErrorCategory.NONE,
+    )
+    await _log_pipeline_event(
+        context,
+        "info",
+        "Generalized model invocation finished: "
+        f"{state} ({result.metrics.universal_model_latency_ms:.0f} ms)",
+    )
+
+
+def _observed_model_adapter(
+    context: _URLProcessingContext,
+    runtime_snapshot: dict[str, object],
+):
+    adapter = _model_adapter(context, runtime_snapshot)
+    if adapter is None:
+        return None
+    loop = asyncio.get_running_loop()
+
+    def _on_start() -> None:
+        loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(
+                _log_pipeline_event(
+                    context,
+                    "info",
+                    "Generalized model invocation started",
+                )
+            )
+        )
+
+    return _ObservedModelAdapter(adapter, _on_start)
 
 
 def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:
@@ -154,7 +230,7 @@ async def _run_record_extraction(
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
     runtime_snapshot = await _load_runtime_snapshot(context)
-    model_adapter = _model_adapter(context, runtime_snapshot)
+    model_adapter = _observed_model_adapter(context, runtime_snapshot)
     await context.session.commit()
     extract_records_impl = getattr(
         extraction_loop,
@@ -187,6 +263,7 @@ async def _run_record_extraction(
             runtime_snapshot=runtime_snapshot,
             model_adapter=model_adapter,
         )
+        await _record_model_cost_log(context, result)
         set_logfire_attributes(
             span,
             record_count=len(result.records),
@@ -271,7 +348,7 @@ async def _extract_records_from_preserved_browser_html(
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
     runtime_snapshot = await _load_runtime_snapshot(context)
-    model_adapter = _model_adapter(context, runtime_snapshot)
+    model_adapter = _observed_model_adapter(context, runtime_snapshot)
     try:
         fallback_result = await asyncio.to_thread(
             extract_impl,
@@ -287,6 +364,7 @@ async def _extract_records_from_preserved_browser_html(
     finally:
         acquisition_result.html = original_html
     if not fallback_result.records:
+        await _record_model_cost_log(context, fallback_result)
         await _log_pipeline_event(
             context,
             "warning",

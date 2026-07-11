@@ -17,6 +17,7 @@ from app.connectors.llm.provider_client import (
     call_provider_with_retry,
     estimate_cost_usd,
 )
+from app.connectors.llm.errors import ERROR_PREFIX, classify_error
 from app.core.config.evaluation import (
     GENERALIZED_EXTRACTION_BUDGET,
     GENERALIZED_EXTRACTION_FIELD_SENSES,
@@ -49,6 +50,9 @@ class HostedGeneralizedExtractionAdapter:
         raw, input_tokens, output_tokens = asyncio.run(
             self._call_provider(page, timeout_ms=timeout_ms)
         )
+        if str(raw or "").startswith(ERROR_PREFIX):
+            category = classify_error(str(raw))
+            raise RuntimeError(f"provider_error:{category}")
         payload = parse_payload(raw, response_type="object")
         validated, error = validate_task_payload(
             GENERALIZED_EXTRACTION_LLM_TASK,
@@ -81,6 +85,8 @@ class HostedGeneralizedExtractionAdapter:
                     output_tokens,
                 )
             ),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     async def _call_provider(

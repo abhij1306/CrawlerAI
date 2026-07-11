@@ -32,8 +32,10 @@ _WEB_SEARCH_TOOL_TYPE = "web_search_20250305"
 
 # In-body web_search_tool_result_error codes worth retrying. The Messages API
 # returns HTTP 200 even when a search fails, embedding the error in the content.
-_RETRYABLE_SEARCH_ERRORS = {"too_many_requests": AI_VISIBILITY_ERROR_RATE_LIMIT,
-                            "unavailable": AI_VISIBILITY_ERROR_SERVER}
+_RETRYABLE_SEARCH_ERRORS = {
+    "too_many_requests": AI_VISIBILITY_ERROR_RATE_LIMIT,
+    "unavailable": AI_VISIBILITY_ERROR_SERVER,
+}
 
 
 def _payload(request: AnswerEngineRequest, *, country_code: str) -> dict[str, Any]:

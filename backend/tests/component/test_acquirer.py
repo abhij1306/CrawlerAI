@@ -16,6 +16,7 @@ from app.acquisition.internal_api_replay import (
 )
 from app.acquisition.policy import AcquisitionPolicy
 from app.acquisition.runtime_plan import AcquisitionIntent
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
 
 
@@ -318,6 +319,7 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
 async def test_acquire_uses_internal_api_replay_before_page_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(crawler_runtime_settings, "internal_api_replay_enabled", True)
     events: list[tuple[str, str]] = []
 
     async def _on_event(level: str, message: str) -> None:
@@ -506,8 +508,8 @@ async def test_internal_api_replay_allows_captured_first_party_api_hosts(
 
 @pytest.mark.component
 def test_internal_api_replay_keeps_significant_query_params_in_route_identity() -> None:
-    page_one = "https://example.com/jobs?page=1"
-    page_two = "https://example.com/jobs?page=2"
+    page_one = "https://example.com/jobs?page=1&colorProductCode=CI939&colorCode=BR8825"
+    page_two = "https://example.com/jobs?page=1&colorProductCode=CI939&colorCode=BK0001"
     payload = {
         "body": {
             "pageUrl": page_one,

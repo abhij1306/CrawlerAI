@@ -130,7 +130,9 @@ class AiVisibilitySettings(BaseSettings):
     )
     anthropic_messages_url: str = "https://api.anthropic.com/v1/messages"
     anthropic_version: str = "2023-06-01"
-    anthropic_model: str = AI_VISIBILITY_PROVIDER_MODELS[AI_VISIBILITY_PROVIDER_ANTHROPIC]
+    anthropic_model: str = AI_VISIBILITY_PROVIDER_MODELS[
+        AI_VISIBILITY_PROVIDER_ANTHROPIC
+    ]
     # Caps server-side web_search invocations per request (Anthropic-only knob).
     # Each search loads its result pages into context as input tokens, so this is
     # the main input-token lever. These benchmark prompts are single shopping

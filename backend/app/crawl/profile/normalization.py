@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 
 from app.acquisition.internal_api_replay import endpoint_identity
 from app.core.config.domain_profiles import (
+    INTERNAL_API_ENDPOINT_ADMISSION_CLASSES,
+    INTERNAL_API_ENDPOINT_ADMISSION_KEY,
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
     INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY,
@@ -172,6 +174,9 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         endpoint_family = _clean_str(item.get(INTERNAL_API_ENDPOINT_FAMILY_KEY))
         if endpoint_family:
             endpoint[INTERNAL_API_ENDPOINT_FAMILY_KEY] = endpoint_family
+        admission = _clean_str(item.get(INTERNAL_API_ENDPOINT_ADMISSION_KEY))
+        if admission in INTERNAL_API_ENDPOINT_ADMISSION_CLASSES:
+            endpoint[INTERNAL_API_ENDPOINT_ADMISSION_KEY] = admission
         request_json = item.get(INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY)
         if method == "POST":
             if not isinstance(request_json, Mapping):

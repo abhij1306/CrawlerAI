@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    SplitResult,
+    parse_qsl,
+    urlencode,
+    urljoin,
+    urlsplit,
+    urlunsplit,
+)
 
 import httpx
 
@@ -11,6 +18,7 @@ from app.acquisition.browser_capture import classify_network_endpoint
 from app.acquisition.runtime import get_shared_http_client
 from app.core.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
+    INTERNAL_API_ENDPOINT_ADMISSION_KEY,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
     INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY,
@@ -66,6 +74,23 @@ def learned_internal_api_endpoints(
             requested_fields=requested_fields,
         ):
             continue
+        admission = classify_endpoint_admission(
+            payload,
+            surface=normalized_surface,
+            page_url=page_url,
+            requested_fields=requested_fields,
+        )
+        if admission in {
+            "analytics",
+            "config_localization",
+            "promotion",
+            "auth_session",
+            "recommendation",
+            "review_ugc",
+            "unrelated",
+        }:
+            continue
+        endpoint[INTERNAL_API_ENDPOINT_ADMISSION_KEY] = admission
         seen.add(key)
         endpoints.append(endpoint)
         if len(endpoints) >= max_endpoints:
@@ -194,13 +219,35 @@ async def _replay_endpoint(
     }
     if isinstance(request_json, Mapping):
         payload[INTERNAL_API_ENDPOINT_REQUEST_JSON_KEY] = dict(request_json)
+    return _admit_replay_payload(
+        payload, surface=surface, page_url=page_url, requested_fields=requested_fields
+    )
+
+
+def _admit_replay_payload(
+    payload: dict[str, object],
+    *,
+    surface: str,
+    page_url: str,
+    requested_fields: list[str],
+) -> dict[str, object] | None:
+    normalized_surface = str(surface or "").strip().lower()
     if not payload_extracts_surface(
         payload,
-        surface=str(surface or "").strip().lower(),
+        surface=normalized_surface,
         page_url=page_url,
         requested_fields=requested_fields,
     ):
         return None
+    admission = classify_endpoint_admission(
+        payload,
+        surface=normalized_surface,
+        page_url=page_url,
+        requested_fields=(*requested_fields, "title", "url", "price", "currency"),
+    )
+    if admission not in {"complete_pdp_candidate", "complete_listing_candidate"}:
+        return None
+    payload[INTERNAL_API_ENDPOINT_ADMISSION_KEY] = admission
     return payload
 
 
@@ -375,6 +422,100 @@ def payload_extracts_surface(
     return False
 
 
+def classify_endpoint_admission(
+    payload: Mapping[str, object],
+    *,
+    surface: str,
+    page_url: str,
+    requested_fields: list[str] | tuple[str, ...],
+) -> str:
+    """Classify captured JSON before it can become durable replay evidence."""
+    url = str(payload.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").casefold()
+    if admission := _url_admission_class(url):
+        return admission
+    body = payload.get("body", payload)
+    rows = [node.value for node in walk_json(body) if isinstance(node.value, Mapping)]
+    normalized_surface = str(surface or "").casefold()
+    if "listing" in normalized_surface:
+        return _listing_admission_class(rows, page_url=page_url)
+    matching = [row for row in rows if _record_url_matches_page(row, page_url)]
+    if not matching:
+        return "unrelated"
+    required_fields = {
+        str(field or "").strip().rsplit(".", 1)[-1].replace("_", "").casefold()
+        for field in requested_fields
+        if str(field or "").strip()
+    }
+    return _detail_admission_class(
+        matching, surface=normalized_surface, required_fields=required_fields
+    )
+
+
+def _url_admission_class(url: str) -> str:
+    classes = (
+        (("analytics", "/event", "/events/", "tracking"), "analytics"),
+        (("recommend", "related", "upsell"), "recommendation"),
+        (("review", "ugc", "rating"), "review_ugc"),
+        (("config", "locale", "translation", "i18n"), "config_localization"),
+        (("promotion", "promo", "coupon"), "promotion"),
+        (("login", "session", "auth", "token"), "auth_session"),
+    )
+    return next((name for tokens, name in classes if any(t in url for t in tokens)), "")
+
+
+def _listing_admission_class(rows, *, page_url: str) -> str:
+    count = sum(1 for row in rows if _listing_row(row, page_url=page_url))
+    return "complete_listing_candidate" if count >= 2 else "exact_supplemental"
+
+
+def _detail_admission_class(rows, *, surface: str, required_fields: set[str]) -> str:
+    for row in rows:
+        keys = {str(key or "").replace("_", "").casefold() for key in row}
+        title = bool(keys & {"title", "name", "productname", "jobtitle"})
+        url_present = bool(
+            keys & {"url", "href", "link", "canonicalurl", "producturl", "joburl"}
+        )
+        if "ecommerce" in surface:
+            price = bool(keys & {"price", "lowprice", "saleprice", "currentprice"})
+            currency = bool(keys & {"currency", "pricecurrency", "currencycode"})
+            if (
+                title
+                and url_present
+                and price
+                and currency
+                and (
+                    not required_fields
+                    or required_fields.issubset(keys | {"url", "title"})
+                )
+            ):
+                return "complete_pdp_candidate"
+            if keys & {"variants", "offers", "availability", "stockquantity"}:
+                return "variants_offers_only"
+            return "exact_supplemental"
+        if (
+            title
+            and url_present
+            and (keys & {"location", "joblocation", "company", "hiringorganization"})
+        ):
+            return "complete_pdp_candidate"
+        return "exact_supplemental"
+    return "unrelated"
+
+
+def _listing_row(row: Mapping[str, object], *, page_url: str) -> bool:
+    title = row.get("title") or row.get("name") or row.get("jobTitle")
+    url = row.get("url") or row.get("href") or row.get("link") or row.get("applyUrl")
+    return bool(title and url and _same_host(page_url, urljoin(page_url, str(url))))
+
+
+def _same_host(left: str, right: str) -> bool:
+    return (
+        bool(urlsplit(left).hostname)
+        and (urlsplit(left).hostname or "").casefold()
+        == (urlsplit(right).hostname or "").casefold()
+    )
+
+
 def _payload_has_listing_row(payload: dict[str, object], *, page_url: str) -> bool:
     page_domain = normalize_domain(page_url)
     body = payload.get("body", payload)
@@ -528,6 +669,7 @@ def _commerce_detail_keys_are_product_like(keys: set[str]) -> bool:
 __all__ = [
     "learned_internal_api_endpoints",
     "endpoint_identity",
+    "classify_endpoint_admission",
     "payload_extracts_surface",
     "replay_endpoint_identities_for_page",
     "replay_internal_api_endpoints",

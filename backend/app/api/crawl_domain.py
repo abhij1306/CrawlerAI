@@ -33,6 +33,7 @@ from app.crawl.profile import (
     load_domain_run_profile,
 )
 from app.core.domain_utils import normalize_domain
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.review import (
     build_domain_recipe_payload,
     list_domain_field_feedback,
@@ -51,13 +52,18 @@ RUN_NOT_FOUND_RESPONSE: dict[int | str, dict[str, Any]] = {
 
 def _domain_run_profile_payload(value: object) -> DomainRunProfilePayload:
     if isinstance(value, Mapping):
-        return DomainRunProfilePayload.model_validate(dict(value))
-    if isinstance(value, BaseModel):
-        return DomainRunProfilePayload.model_validate(value.model_dump())
-    raise ValueError(
-        "profile payload must be a mapping or Pydantic model; "
-        f"got {type(value).__name__}"
+        payload = dict(value)
+    elif isinstance(value, BaseModel):
+        payload = value.model_dump()
+    else:
+        raise ValueError(
+            "profile payload must be a mapping or Pydantic model; "
+            f"got {type(value).__name__}"
+        )
+    payload["internal_api_replay_enabled"] = bool(
+        crawler_runtime_settings.internal_api_replay_enabled
     )
+    return DomainRunProfilePayload.model_validate(payload)
 
 
 @router.get("/domain-run-profile")

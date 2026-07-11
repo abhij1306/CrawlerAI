@@ -35,6 +35,24 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_detail" for item in result.evidence)
 
 
+def test_unrequested_variant_and_image_coverage_is_not_applicable() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Trail Shoe",
+         "url":"https://shop.test/products/trail-shoe",
+         "offers":{"@type":"Offer","price":"129","priceCurrency":"USD"}}
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+        requested_fields=("title", "price"),
+    )
+
+    assert result.diagnostics.variant_coverage == "not_applicable"
+    assert result.diagnostics.additional_image_coverage == "not_applicable"
+
+
 def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> (
     None
 ):
@@ -160,6 +178,33 @@ def test_job_listing_greenhouse_table_rows_materialize() -> None:
     assert result.records[0]["location"] == "Remote"
 
 
+def test_detail_category_uses_structured_and_breadcrumb_provenance() -> None:
+    structured = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@type":"Product","name":"Trail Shoe","url":"https://shop.test/products/trail-shoe","category":"Running Shoes","offers":{"price":"120","priceCurrency":"USD"}}
+        </script>
+        <main><h1>Trail Shoe</h1></main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+    assert structured.records[0]["category"] == "Running Shoes"
+    category_sources = structured.records[0]["_field_sources"]["category"]
+    assert category_sources == ["jsonld"]
+
+    breadcrumb = _extract(
+        "ecommerce_detail",
+        """
+        <main><nav aria-label="Breadcrumb"><a>Home</a><a>Footwear</a><a>Trail Shoes</a></nav>
+        <h1>Trail Shoe</h1><span data-price="$120" data-currency="USD"></span></main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+    assert breadcrumb.records[0]["category"] == "Trail Shoes"
+    assert breadcrumb.records[0]["_field_sources"]["category"] == ["dom"]
+
+
 def test_static_commerce_listing_uses_record_local_dom_floor_without_llm() -> None:
     result = _extract(
         "ecommerce_listing",
@@ -183,6 +228,18 @@ def test_static_commerce_listing_uses_record_local_dom_floor_without_llm() -> No
     # and model-free — the point of the test.
     assert {row.collector_id for row in result.evidence} == {"ecommerce_listing_css"}
     assert result.metrics.universal_model_invocation_count == 0
+
+
+def test_singleton_commerce_css_card_cannot_define_listing_success() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        "<ul><li><a href='/products/only'><img src='only.jpg'>Only Shoe</a><span>$120</span></li></ul>",
+        "https://shop.test/collections/trail",
+        max_records=5,
+    )
+
+    assert not result.records
+    assert result.verdict == "empty"
 
 
 def test_static_job_listing_uses_same_record_local_dom_floor_without_llm() -> None:

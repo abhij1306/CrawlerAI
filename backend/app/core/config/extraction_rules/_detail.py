@@ -22,6 +22,14 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
         "style",
         "style_no",
         "styleno",
+        "stylecode",
+        "style_code",
+        "variantid",
+        "variant_id",
+        "colorcode",
+        "color_code",
+        "colorproductcode",
+        "color_product_code",
     }
 )
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
@@ -698,6 +706,12 @@ DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS = (
     "button[name*='add' i]",
     "button[class*='cart' i]",
     "button[class*='bag' i]",
+)
+DETAIL_CATEGORY_DOM_SELECTORS = (
+    "[itemprop='category']",
+    "nav[aria-label*='breadcrumb' i] a",
+    "[data-testid*='breadcrumb' i] a",
+    "[class*='breadcrumb' i] a",
 )
 DETAIL_DOM_DESCRIPTION_SELECTORS = (
     "[data-description]",

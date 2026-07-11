@@ -46,11 +46,6 @@ from app.extraction.contracts import (
     TargetSelection,
     Verdict,
 )
-from app.extraction.listing_generalized import (
-    ListingRecipeStore,
-    recipe_store_from_snapshot,
-    run_listing_generalized,
-)
 from app.extraction.model_runtime import (
     ModelFallbackResult,
     RuntimeModelAdapter,
@@ -94,7 +89,6 @@ def extract(
     request: ExtractionRequest,
     *,
     model_adapter: RuntimeModelAdapter | None = None,
-    listing_recipe_store: ListingRecipeStore | None = None,
 ) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
@@ -156,14 +150,14 @@ def extract(
                 )
             )
     if _needs_contract_fallback(request, attempt):
-        # Listing rides the exemplar-record generalized tier + per-domain recipe
-        # replay; detail keeps the whole-page universal-model fallback.
         if listing_schema(request.surface) is not None:
-            model_fallback = run_listing_generalized(
-                request,
-                model_adapter,
-                recipe_store=listing_recipe_store
-                or recipe_store_from_snapshot(request),
+            model_fallback = ModelFallbackResult(
+                outcome="disabled",
+                detail=(
+                    "listing boundary unavailable; model backfill cannot create "
+                    "record identity or URLs"
+                ),
+                terminal_state="not_eligible",
             )
         else:
             model_fallback = run_model_fallback(request, model_adapter)
@@ -270,6 +264,8 @@ def extract(
                 "universal_model_cost_per_1000_pages": (
                     model_fallback.cost_usd * 1_000
                 ),
+                "universal_model_input_tokens": model_fallback.input_tokens,
+                "universal_model_output_tokens": model_fallback.output_tokens,
             }
         )
     return ExtractionResult(
@@ -301,6 +297,7 @@ def extract(
             verdict=verdict,
             records=records,
             evidence=harvest.evidence,
+            requested_fields=request.requested_fields,
             stage_outcomes=tuple(stage_outcomes),
             field_states=field_states,
             findings=findings,
@@ -740,6 +737,7 @@ def _blocked_result(
             verdict="blocked",
             records=(),
             evidence=evidence,
+            requested_fields=request.requested_fields,
             stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
             field_states=states,
             findings=(finding,),
@@ -1032,6 +1030,7 @@ def _diagnostic_summary(
     verdict: Verdict,
     records: tuple[PublicRecord, ...],
     evidence: tuple[Evidence, ...],
+    requested_fields: tuple[str, ...] = (),
     stage_outcomes: tuple[StageOutcome, ...],
     field_states,
     failures: tuple[FailureClassification, ...],
@@ -1062,20 +1061,7 @@ def _diagnostic_summary(
         failure_codes=tuple(row.code for row in failures),
         evidence_count=len(evidence),
         review_required=review_required,
-        model_invoked=model_fallback.invoked if model_fallback is not None else False,
-        model_artifact_id=(
-            model_fallback.artifact.artifact_id
-            if model_fallback is not None and model_fallback.artifact is not None
-            else None
-        ),
-        model_artifact_version=(
-            model_fallback.artifact.artifact_version
-            if model_fallback is not None and model_fallback.artifact is not None
-            else None
-        ),
-        model_outcome=(
-            model_fallback.outcome if model_fallback is not None else "not_considered"
-        ),
+        **_model_diagnostic_fields(model_fallback),
         sentinel_state=sentinel_observations[0].state
         if sentinel_observations
         else None,
@@ -1083,7 +1069,78 @@ def _diagnostic_summary(
         if sentinel_observations
         else None,
         listing_discovery=dict(listing_discovery or {}),
+        variant_coverage=_variant_coverage(records, evidence, requested_fields),
+        additional_image_coverage=_additional_image_coverage(
+            records, evidence, requested_fields
+        ),
     )
+
+
+def _model_diagnostic_fields(
+    model_fallback: ModelFallbackResult | None,
+) -> dict[str, object]:
+    if model_fallback is None:
+        return {
+            "model_invoked": False,
+            "model_artifact_id": None,
+            "model_artifact_version": None,
+            "model_outcome": "not_considered",
+            "model_terminal_state": "not_considered",
+        }
+    artifact = model_fallback.artifact
+    return {
+        "model_invoked": model_fallback.invoked,
+        "model_artifact_id": artifact.artifact_id if artifact is not None else None,
+        "model_artifact_version": (
+            artifact.artifact_version if artifact is not None else None
+        ),
+        "model_outcome": model_fallback.outcome,
+        "model_terminal_state": model_fallback.terminal_state or "not_considered",
+    }
+
+
+def _variant_coverage(records, evidence, requested_fields) -> str:
+    if not records:
+        return "unknown"
+    if requested_fields and "variants" not in requested_fields:
+        return "not_applicable"
+    variant_evidence = any(
+        row.fact_type.startswith("variant.")
+        or row.relation_type
+        in {
+            "product_variant",
+            "variant_offer",
+            "variant_asset",
+        }
+        for row in evidence
+    )
+    if not variant_evidence:
+        return "unknown"
+    variants = records[0].get("variants") or ()
+    if not variants:
+        return "partial"
+    required_identity = ("variant_id", "sku")
+    return (
+        "complete"
+        if all(
+            any(row.get(field) not in (None, "") for field in required_identity)
+            for row in variants
+        )
+        else "partial"
+    )
+
+
+def _additional_image_coverage(records, evidence, requested_fields) -> str:
+    if not records:
+        return "unknown"
+    image_fields = {"image", "image_url", "additional_images"}
+    if requested_fields and image_fields.isdisjoint(requested_fields):
+        return "not_applicable"
+    asset_count = sum(row.fact_type == "asset.image_url" for row in evidence)
+    if asset_count <= 1:
+        return "unknown"
+    additional = records[0].get("additional_images") or ()
+    return "complete" if len(additional) >= asset_count - 1 else "partial"
 
 
 def _listing_discovery(request: ExtractionRequest) -> dict[str, int]:

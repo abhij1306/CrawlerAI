@@ -75,13 +75,17 @@ def test_ecommerce_listing_reads_drifted_test_data_product_card_attrs() -> None:
                 <a href="/p/trail-shoe" title="Trail Shoe">Trail Shoe</a>
                 <span data-price="$99.00"></span>
               </div>
+              <div {attr_name}="product-card">
+                <a href="/p/day-pack" title="Day Pack">Day Pack</a>
+                <span data-price="$79.00"></span>
+              </div>
             </main>
             """,
             "https://shop.test/category/shoes",
             max_records=5,
         )
 
-        assert [row["title"] for row in result.records] == ["Trail Shoe"]
+        assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
 
 
 def test_ecommerce_listing_preserves_brazilian_real_price_symbol() -> None:
@@ -92,6 +96,10 @@ def test_ecommerce_listing_preserves_brazilian_real_price_symbol() -> None:
           <article class="product-card">
             <a href="/kit-2-cuecas/p" title="Kit 2 Cuecas">Kit 2 Cuecas</a>
             <span class="price">R$ 269</span>
+          </article>
+          <article class="product-card">
+            <a href="/kit-3-cuecas/p" title="Kit 3 Cuecas">Kit 3 Cuecas</a>
+            <span class="price">R$ 299</span>
           </article>
         </main>
         """,
@@ -111,21 +119,23 @@ def test_ecommerce_listing_result_is_replayable() -> None:
             <a href="/products/trail-shoe" title="Trail Shoe">Trail Shoe</a>
             <div data-price="129.00"></div>
           </div>
+          <div class="product-tile">
+            <a href="/products/day-pack" title="Day Pack">Day Pack</a>
+            <div data-price="89.00"></div>
+          </div>
         </section>
         """,
         "https://shop.test/collections/all",
         max_records=3,
     )
     rows = result.model_dump(mode="json", exclude_none=True)["records"]
-    assert rows == [
-        {
-            "title": "Trail Shoe",
-            "url": "https://shop.test/products/trail-shoe",
-            "price": "129.00",
-            "_lineage": rows[0]["_lineage"],
-            "_subject_id": rows[0]["_subject_id"],
-        }
-    ]
+    assert {
+        (row["title"], row["url"], row["price"]) for row in rows
+    } == {
+        ("Trail Shoe", "https://shop.test/products/trail-shoe", "129.00"),
+        ("Day Pack", "https://shop.test/products/day-pack", "89.00"),
+    }
+    assert all(row["_lineage"] and row["_subject_id"] for row in rows)
     payload = result.model_dump(mode="json", exclude_none=True)
     assert payload["surface"] == "ecommerce_listing"
     assert payload["evidence"]
@@ -143,12 +153,15 @@ def test_ecommerce_listing_filters_docs_utility_links() -> None:
           <div class="row product">
             <a href="/products/trail-shoe"><h2>Trail Shoe</h2></a>
           </div>
+          <div class="row product">
+            <a href="/products/day-pack"><h2>Day Pack</h2></a>
+          </div>
         </main>
         """,
         "https://shop.test/products",
         max_records=5,
     )
-    assert [row["title"] for row in result.records] == ["Trail Shoe"]
+    assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
 
 
 def test_ecommerce_listing_rejects_site_chrome_and_unproven_category_links() -> None:
@@ -174,6 +187,12 @@ def test_ecommerce_listing_rejects_site_chrome_and_unproven_category_links() -> 
             </a>
             <span class="price">$200.00</span>
           </article>
+          <article class="product-card">
+            <a href="/ca/en/shop/mens/norvan-ld-5-shoe" title="Norvan LD 5 Shoe">
+              <img src="/images/norvan-5.jpg">
+            </a>
+            <span class="price">$210.00</span>
+          </article>
         </main>
         <footer>
           <ul><li><a href="/returns/">Returns</a></li></ul>
@@ -183,9 +202,13 @@ def test_ecommerce_listing_rejects_site_chrome_and_unproven_category_links() -> 
         max_records=20,
     )
 
-    assert [row["title"] for row in result.records] == ["Norvan LD 4 Shoe"]
+    assert [row["title"] for row in result.records] == [
+        "Norvan LD 4 Shoe",
+        "Norvan LD 5 Shoe",
+    ]
     assert [row["url"] for row in result.records] == [
-        "https://shop.test/ca/en/shop/mens/norvan-ld-4-shoe"
+        "https://shop.test/ca/en/shop/mens/norvan-ld-4-shoe",
+        "https://shop.test/ca/en/shop/mens/norvan-ld-5-shoe",
     ]
 
 
@@ -251,6 +274,10 @@ def test_ecommerce_listing_keeps_generic_card_with_price_and_detail_link() -> No
               <a href="/p/trail-shoe" title="Trail Shoe">Trail Shoe</a>
               <span class="price">$99.00</span>
             </li>
+            <li>
+              <a href="/p/day-pack" title="Day Pack">Day Pack</a>
+              <span class="price">$79.00</span>
+            </li>
           </ul>
         </main>
         """,
@@ -258,7 +285,7 @@ def test_ecommerce_listing_keeps_generic_card_with_price_and_detail_link() -> No
         max_records=5,
     )
 
-    assert [row["title"] for row in result.records] == ["Trail Shoe"]
+    assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
 
 
 def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> None:
@@ -278,13 +305,24 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
             <span>31-Inch Inseam</span>
             <span>$42.95</span>
           </div>
+          <div
+            data-tile-type="product"
+            data-cnstrc-item-name="Slim Fit Pants"
+            data-cnstrc-item-id="SKU124"
+          >
+            <a href="/p/slim-fit-pants/SKU124.html">
+              <img src="/images/slim-fit-pants.jpg" alt="Slim Fit Pants">
+            </a>
+            <a href="/p/slim-fit-pants/SKU124.html">Slim Fit Pants</a>
+            <span>$44.95</span>
+          </div>
         </main>
         """,
         "https://shop.test/men/pants/",
         max_records=5,
     )
 
-    assert len(result.records) == 1
+    assert len(result.records) == 2
     assert result.records[0]["title"] == "Classic Fit Pants"
     assert (
         result.records[0]["url"] == "https://shop.test/p/classic-fit-pants/SKU123.html"
@@ -312,12 +350,16 @@ def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards()
                 f'<a href="{product_url}" title="Classic Fit Pants">Classic Fit Pants</a>'
                 '<img src="https://shop.test/images/classic-fit-pants.jpg">'
                 '<span class="price">$42.95</span>'
+                '</article><article data-product-id="visual-1">'
+                '<a href="https://shop.test/p/slim-fit-pants/SKU124.html" title="Slim Fit Pants">Slim Fit Pants</a>'
+                '<img src="https://shop.test/images/slim-fit-pants.jpg">'
+                '<span class="price">$44.95</span>'
                 "</article></main>"
             )
         },
     )
 
-    assert len(result.records) == 1
+    assert len(result.records) == 2
     assert result.records[0]["title"] == "Classic Fit Pants"
     assert result.records[0]["url"] == product_url
     assert result.records[0]["price"] == "$42.95"
@@ -386,13 +428,17 @@ def test_ecommerce_listing_uses_title_from_product_link_scope() -> None:
             <a href="/products/linen-pant" title="Linen Pant">Shop now</a>
             <span class="price">$79.00</span>
           </article>
+          <article class="product-card">
+            <a href="/products/canvas-pant" title="Canvas Pant">Shop now</a>
+            <span class="price">$89.00</span>
+          </article>
         </main>
         """,
         "https://shop.test/collections/pants",
         max_records=5,
     )
 
-    assert [row["title"] for row in result.records] == ["Linen Pant"]
+    assert {row["title"] for row in result.records} == {"Linen Pant", "Canvas Pant"}
 
 
 def test_ecommerce_listing_excludes_inline_style_source_from_title() -> None:
@@ -438,13 +484,21 @@ def test_ecommerce_listing_skips_merchandising_badge_for_product_title(
             <img src="/images/kragg-shoe.jpg">
             <span class="price">$180.00</span>
           </article>
+          <article class="product-card">
+            <a href="/shop/mens/norvan-shoe-0079"><h2>Norvan Shoe Men's</h2></a>
+            <img src="/images/norvan-shoe.jpg">
+            <span class="price">$190.00</span>
+          </article>
         </main>
         """,
         "https://shop.test/ca/en/c/mens/footwear",
         max_records=5,
     )
 
-    assert [row["title"] for row in result.records] == ["Kragg Shoe Men's"]
+    assert [row["title"] for row in result.records] == [
+        "Kragg Shoe Men's",
+        "Norvan Shoe Men's",
+    ]
 
 
 def test_ecommerce_listing_rejects_utility_url_families() -> None:

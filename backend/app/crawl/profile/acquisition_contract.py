@@ -340,83 +340,23 @@ async def record_acquisition_contract_outcome(
             and persisted_count == 0
         )
     )
-    learned_count = 0
     candidate_count = 0
     observed_payload_count = len(network_payloads or [])
     if quality_success:
-        found_fields = sorted(
-            {
-                str(field_name)
-                for record in records
-                if isinstance(record, dict)
-                for field_name, value in record.items()
-                if not str(field_name).startswith("_")
-                and value not in (None, "", [], {})
-            }
-        )
-        saved_profile = await save_learned_acquisition_contract(
-            session,
+        return await _record_quality_success(
+            session=session,
             domain=domain,
             surface=surface,
             source_run_id=source_run_id,
-            contract=build_success_acquisition_contract(
-                method=method,
-                browser_engine=browser_engine,
-                browser_diagnostics=browser_diagnostics,
-                record_count=persisted_count,
-                requested_fields=requested_fields,
-                found_fields=found_fields,
-                source_run_id=source_run_id,
-            ),
-        )
-        endpoints = learned_internal_api_endpoints(
-            network_payloads=network_payloads,
-            surface=surface,
-            page_url=page_url or "",
+            method=method,
+            browser_engine=browser_engine,
+            browser_diagnostics=browser_diagnostics,
             requested_fields=requested_fields,
-            source_run_id=source_run_id,
-        )
-        candidate_count = len(endpoints)
-        if endpoints and str(method or "").strip().lower() != "api_replay":
-            endpoints = await verify_internal_api_endpoints(
-                page_url=page_url or "",
-                surface=surface,
-                endpoints=endpoints,
-                requested_fields=requested_fields,
-            )
-        if endpoints:
-            learned_count = len(endpoints)
-            saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
-                merge_internal_api_endpoints(
-                    saved_profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY),
-                    endpoints,
-                )
-            )
-            existing_profile = await load_domain_run_profile(
-                session,
-                domain=domain,
-                surface=surface,
-            )
-            await save_domain_run_profile(
-                session,
-                domain=domain,
-                surface=surface,
-                profile=saved_profile,
-                source_run_id=source_run_id,
-                existing_record=existing_profile,
-            )
-        _profile, evicted_count = await _note_internal_api_replay_failures(
-            session,
-            domain=domain,
-            surface=surface,
-            failed_endpoint_ids=list(replay_failed_endpoint_ids or []),
-        )
-        return InternalApiReplayMemoryUpdate(
-            observed_payload_count=observed_payload_count,
-            candidate_count=candidate_count,
-            learned_count=learned_count,
-            failed_count=len(replay_failed_endpoint_ids or []),
-            evicted_count=evicted_count,
+            records=records,
+            persisted_count=persisted_count,
+            page_url=page_url,
+            network_payloads=network_payloads,
+            replay_failed_endpoint_ids=replay_failed_endpoint_ids,
         )
     if not count_failure:
         _profile, evicted_count = await _note_internal_api_replay_failures(
@@ -446,6 +386,97 @@ async def record_acquisition_contract_outcome(
     return InternalApiReplayMemoryUpdate(
         observed_payload_count=observed_payload_count,
         candidate_count=candidate_count,
+        failed_count=len(replay_failed_endpoint_ids or []),
+        evicted_count=evicted_count,
+    )
+
+
+async def _record_quality_success(
+    *,
+    session: AsyncSession,
+    domain: str,
+    surface: str,
+    source_run_id: int,
+    method: object,
+    browser_engine: object,
+    browser_diagnostics: dict[str, object] | None,
+    requested_fields: list[str],
+    records: list[dict[str, object]],
+    persisted_count: int,
+    page_url: str | None,
+    network_payloads: list[dict[str, object]] | None,
+    replay_failed_endpoint_ids: list[object] | None,
+) -> InternalApiReplayMemoryUpdate:
+    found_fields = sorted(
+        {
+            str(field_name)
+            for record in records
+            if isinstance(record, dict)
+            for field_name, value in record.items()
+            if not str(field_name).startswith("_") and value not in (None, "", [], {})
+        }
+    )
+    saved_profile = await save_learned_acquisition_contract(
+        session,
+        domain=domain,
+        surface=surface,
+        source_run_id=source_run_id,
+        contract=build_success_acquisition_contract(
+            method=method,
+            browser_engine=browser_engine,
+            browser_diagnostics=browser_diagnostics,
+            record_count=persisted_count,
+            requested_fields=requested_fields,
+            found_fields=found_fields,
+            source_run_id=source_run_id,
+        ),
+    )
+    endpoints = (
+        learned_internal_api_endpoints(
+            network_payloads=network_payloads,
+            surface=surface,
+            page_url=page_url or "",
+            requested_fields=requested_fields,
+            source_run_id=source_run_id,
+        )
+        if crawler_runtime_settings.internal_api_replay_enabled
+        else []
+    )
+    candidate_count = len(endpoints)
+    if endpoints and str(method or "").strip().lower() != "api_replay":
+        endpoints = await verify_internal_api_endpoints(
+            page_url=page_url or "",
+            surface=surface,
+            endpoints=endpoints,
+            requested_fields=requested_fields,
+        )
+    if endpoints:
+        saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+            merge_internal_api_endpoints(
+                saved_profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY), endpoints
+            )
+        )
+        existing_profile = await load_domain_run_profile(
+            session, domain=domain, surface=surface
+        )
+        await save_domain_run_profile(
+            session,
+            domain=domain,
+            surface=surface,
+            profile=saved_profile,
+            source_run_id=source_run_id,
+            existing_record=existing_profile,
+        )
+    _profile, evicted_count = await _note_internal_api_replay_failures(
+        session,
+        domain=domain,
+        surface=surface,
+        failed_endpoint_ids=list(replay_failed_endpoint_ids or []),
+    )
+    return InternalApiReplayMemoryUpdate(
+        observed_payload_count=len(network_payloads or []),
+        candidate_count=candidate_count,
+        learned_count=len(endpoints),
         failed_count=len(replay_failed_endpoint_ids or []),
         evicted_count=evicted_count,
     )

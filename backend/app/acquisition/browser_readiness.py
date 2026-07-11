@@ -403,7 +403,6 @@ async def probe_browser_readiness(
         analysis.h1_present
         or structured_data_present
         or detail_hints > 0
-        or detail_title_matches_url
         or identity_anchor
     )
     listing_card_count = 0
@@ -439,7 +438,6 @@ async def probe_browser_readiness(
             or identity_anchor
             or detail_hints
             >= int(crawler_runtime_settings.detail_field_signal_min_count)
-            or detail_title_matches_url
         )
         is_ready = bool(
             (structured_data_present and enough_text)
@@ -447,8 +445,8 @@ async def probe_browser_readiness(
         )
     elif is_listing:
         is_ready = bool(
-            listing_card_count >= int(crawler_runtime_settings.listing_min_items)
-            or matched_listing_selectors > 0
+            listing_card_count
+            >= max(2, int(crawler_runtime_settings.listing_min_items))
         )
     else:
         is_ready = visible_text_length >= int(

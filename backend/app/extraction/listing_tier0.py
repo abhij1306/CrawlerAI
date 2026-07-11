@@ -90,7 +90,7 @@ def collect_deterministic_listing(
     # rejection, market-locale URL restoration) the minimal generic floor lacks.
     if surface is Surface.ECOMMERCE_LISTING:
         css_rows = collect_ecommerce_listing(bundle, reader)
-        if css_rows:
+        if len({row.subject_id for row in css_rows}) >= 2:
             return css_rows
     schema = listing_schema(surface)
     if schema is None:
@@ -114,7 +114,7 @@ def _dom_floor_evidence(
     page_url: str,
     schema: ListingSchema,
 ) -> list[Evidence]:
-    boundaries = discover_listing_records(doc, page_url=page_url, allow_singleton=True)
+    boundaries = discover_listing_records(doc, page_url=page_url)
     if not boundaries:
         return []
     rows: list[Evidence] = []
@@ -210,6 +210,9 @@ def _dom_row(
 def _structured_evidence(
     bundle: CaptureBundle, doc: HtmlDocument, *, page_url: str, schema: ListingSchema
 ) -> list[Evidence] | None:
+    # A singleton is admissible only on this structured path. The JSON-LD or
+    # microdata join must corroborate the same boundary; DOM-only discovery
+    # remains repetition-gated.
     boundaries = discover_listing_records(doc, page_url=page_url, allow_singleton=True)
     if not boundaries:
         return None

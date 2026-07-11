@@ -16,10 +16,22 @@ pytestmark = pytest.mark.unit
 def test_dedup_citations_collapses_same_url_and_renumbers() -> None:
     # Providers cite one source per supported text span; the same URL repeats.
     raw = [
-        {"ordinal": 0, "redirect_url": "https://savvysupporter.com.au/", "cited_text": "first"},
+        {
+            "ordinal": 0,
+            "redirect_url": "https://savvysupporter.com.au/",
+            "cited_text": "first",
+        },
         {"ordinal": 1, "redirect_url": "https://nrlshop.com/", "cited_text": "n"},
-        {"ordinal": 2, "redirect_url": "https://savvysupporter.com.au/", "cited_text": "second"},
-        {"ordinal": 3, "redirect_url": "https://savvysupporter.com.au/", "cited_text": "third"},
+        {
+            "ordinal": 2,
+            "redirect_url": "https://savvysupporter.com.au/",
+            "cited_text": "second",
+        },
+        {
+            "ordinal": 3,
+            "redirect_url": "https://savvysupporter.com.au/",
+            "cited_text": "third",
+        },
     ]
     deduped = _dedup_citations(raw)
     urls = [c["redirect_url"] for c in deduped]

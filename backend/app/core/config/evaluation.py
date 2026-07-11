@@ -5,6 +5,7 @@ from typing import Final, Literal, TypedDict
 EVALUATION_CASE_SCHEMA_VERSION: Final[Literal["evaluation_case.v1"]] = (
     "evaluation_case.v1"
 )
+EXTRACTION_V3_ACCEPTED_EVIDENCE_MIN_RUN_ID: Final[int] = 39
 GROUNDED_LABEL_SCHEMA_VERSION: Final[Literal["grounded_label.v1"]] = "grounded_label.v1"
 
 LABEL_AUTHORITIES = frozenset(

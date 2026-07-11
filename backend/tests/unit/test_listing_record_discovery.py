@@ -164,9 +164,9 @@ def test_product_nested_under_category_prefix_still_extracts() -> None:
     assert urls[0].endswith("/norvan-ld-4-gtx-shoe-0397.html")
 
 
-def test_single_content_rich_result_still_extracts() -> None:
-    # A genuine 1-item result page: no repetition, but the lone product card is
-    # content-rich and must still be returned.
+def test_single_content_rich_result_is_not_a_dom_listing_boundary() -> None:
+    # A lone card has no repeated-boundary proof. Detail-shaped or structured
+    # recovery may still handle it, but the DOM listing floor must not publish it.
     html = """
     <html><body>
       <main>
@@ -175,5 +175,4 @@ def test_single_content_rich_result_still_extracts() -> None:
     </body></html>
     """
     urls = _urls(html)
-    assert len(urls) == 1
-    assert urls[0].endswith("/only-dress-9001.html")
+    assert urls == []
