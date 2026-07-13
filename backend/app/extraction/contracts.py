@@ -4,9 +4,12 @@ from typing import Any, Literal, Mapping, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
-from app.core.config import field_mappings
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import SURFACE_SPECS, Surface
+from app.core.extraction_memory.recipe_contracts import (
+    RecipeCandidate,
+    RecipeExecutionResult,
+)
 
 JsonValue = Any
 Verdict = Literal[
@@ -19,7 +22,6 @@ Verdict = Literal[
     "error",
     "wrong_surface",
 ]
-ChallengerKind = Literal["deterministic", "ml"]
 BrandRole = Literal[
     "manufacturer",
     "designer",
@@ -100,9 +102,6 @@ class RequestContext(FrozenModel):
     session_fingerprint: str | None = None
 
 
-ExecutionContext = RequestContext
-
-
 class ArtifactRef(FrozenModel):
     artifact_id: str
     artifact_type: Literal[
@@ -139,23 +138,13 @@ class CaptureBundle(FrozenModel):
     captured_at: str | None = None
 
 
-ExtractionInputBundle = CaptureBundle
-
-
 class ExecutionManifestContext(FrozenModel):
     release_snapshot_id: str | None = None
     execution_manifest_id: str | None = None
     template_id: str | None = None
+    compiled_recipe_id: str | None = None
     manifest_version: str | None = None
     locale_policy_ref: str | None = None
-
-
-class CaptureCompletenessSignal(FrozenModel):
-    shadow_roots_detected: int = 0
-    shadow_roots_flattened: int = 0
-    closed_shadow_roots_detected: int = 0
-    hidden_panel_dom_present: bool = False
-    serialization_method_version: str
 
 
 class SourceLocator(FrozenModel):
@@ -242,15 +231,6 @@ class ArtifactReader(Protocol):
     def read_json(self, artifact: ArtifactRef) -> JsonValue: ...
 
     def exists(self, artifact_id: str) -> bool: ...
-
-
-class Collector(Protocol):
-    collector_id: str
-    collector_version: str
-
-    def collect(
-        self, bundle: CaptureBundle, artifacts: ArtifactReader
-    ) -> tuple[Evidence, ...]: ...
 
 
 class RejectedEvidence(FrozenModel):
@@ -412,17 +392,6 @@ class Decision(FrozenModel):
     status: Literal["resolved", "unresolved", "conflicted"]
 
 
-class OfferDecision(FrozenModel):
-    offer_entity_id: str
-    status: Literal["resolved", "unresolved", "conflicted"]
-    accepted_evidence_ids: tuple[str, ...]
-    price: JsonValue | None = None
-    currency: str | None = None
-    original_price: JsonValue | None = None
-    availability: str | None = None
-    seller: str | None = None
-
-
 class AssetDecision(FrozenModel):
     asset_entity_id: str | None
     url: str | None = None
@@ -526,15 +495,6 @@ FailureTaxonomy = Literal[
 ]
 
 
-SentinelDriftState = Literal[
-    "concordant",
-    "benign_difference",
-    "needs_review",
-    "suspected_drift",
-    "critical_drift",
-]
-
-
 class FailureClassification(FrozenModel):
     code: FailureTaxonomy
     message: str
@@ -545,9 +505,9 @@ class FailureClassification(FrozenModel):
 
 class DiagnosticSummary(FrozenModel):
     decision_path: tuple[str, ...] = ()
-    extractor_tier: Literal["blocked", "deterministic", "recipe", "ml", "llm"] = (
-        "deterministic"
-    )
+    extractor_tier: Literal[
+        "blocked", "deterministic", "recipe", "candidate_recipe", "ml", "llm"
+    ] = "deterministic"
     trust_state: Literal[
         "verified",
         "partial",
@@ -567,6 +527,7 @@ class DiagnosticSummary(FrozenModel):
         "not_considered",
         "disabled",
         "produced_evidence",
+        "produced_proposals",
         "no_match",
         "failed",
         "timed_out",
@@ -578,6 +539,7 @@ class DiagnosticSummary(FrozenModel):
         "config_missing",
         "not_eligible",
         "invoked_produced_evidence",
+        "invoked_produced_proposals",
         "invoked_no_match",
         "timed_out",
         "provider_error",
@@ -585,8 +547,6 @@ class DiagnosticSummary(FrozenModel):
         "budget_limited",
         "not_considered",
     ] = "not_considered"
-    sentinel_state: SentinelDriftState | None = None
-    sentinel_diagnostic: str | None = None
     listing_discovery: dict[str, int] = Field(default_factory=dict)
     variant_coverage: Literal["complete", "partial", "not_applicable", "unknown"] = (
         "unknown"
@@ -594,99 +554,6 @@ class DiagnosticSummary(FrozenModel):
     additional_image_coverage: Literal[
         "complete", "partial", "not_applicable", "unknown"
     ] = "unknown"
-
-
-FieldValueType = Literal[
-    "string",
-    "string_list",
-    "number",
-    "money",
-    "date",
-    "boolean",
-    "enum",
-    "key_value",
-    "structured_object",
-]
-
-
-class FieldContract(FrozenModel):
-    field: str
-    value_type: FieldValueType = "string"
-    semantic_role: str = "standard"
-    entity_scope: Literal["product", "variant", "offer", "asset", "job", "record"]
-    cardinality: Literal["one", "many"] = "one"
-    required: bool = False
-    criticality: Literal["critical", "important", "optional"] = "optional"
-    output_name: str | None = None
-    validators: tuple[str, ...] = ()
-    publish_behavior: Literal["block", "omit", "review"] = "omit"
-
-
-class LocalePolicy(FrozenModel):
-    locale: str | None = None
-    market: str | None = None
-    currency: str | None = None
-    timezone: str | None = None
-    tax_display: Literal["included", "excluded", "unknown"] = "unknown"
-    unit_system: Literal["metric", "imperial", "unknown"] = "unknown"
-    supplied_fields: tuple[str, ...] = ()
-    inferred_fields: tuple[str, ...] = ()
-
-
-def field_contracts_for_surface(surface: Surface) -> tuple[FieldContract, ...]:
-    surface_key = surface.value
-    defaults = set(field_mappings.SURFACE_FIELD_REPAIR_TARGETS.get(surface_key, ()))
-    contracts: list[FieldContract] = []
-    for field in field_mappings.CANONICAL_SCHEMAS.get(surface_key, ()):
-        contracts.append(
-            FieldContract(
-                field=field,
-                entity_scope=_field_entity_scope(field),
-                value_type=_field_value_type(field),
-                cardinality="many"
-                if field in {"additional_images", "variants", "tables"}
-                else "one",
-                required=field in defaults,
-                criticality="critical" if field in defaults else "optional",
-                output_name=field,
-                publish_behavior="block" if field in defaults else "omit",
-            )
-        )
-    return tuple(contracts)
-
-
-def _field_entity_scope(
-    field: str,
-) -> Literal["product", "variant", "offer", "asset", "job", "record"]:
-    if field in {
-        "price",
-        "currency",
-        "original_price",
-        "availability",
-        "stock_quantity",
-    }:
-        return "offer"
-    if field in {"image_url", "additional_images"}:
-        return "asset"
-    if field in {"variants", "variant_count", "color", "size"}:
-        return "variant"
-    if field in {"company", "location", "apply_url", "job_id", "job_type"}:
-        return "job"
-    return "product"
-
-
-def _field_value_type(field: str) -> FieldValueType:
-    if field in field_mappings.NORMALIZER_DECIMAL_FIELDS:
-        return "money" if "price" in field else "number"
-    if field in field_mappings.NORMALIZER_INTEGER_FIELDS:
-        return "number"
-    if field in field_mappings.NORMALIZER_BOOLEAN_FIELDS:
-        return "boolean"
-    if field in {"additional_images", "features", "tags"}:
-        return "string_list"
-    if field in {"variants", "tables"}:
-        return "structured_object"
-    return "string"
 
 
 class FieldEvidenceState(FrozenModel):
@@ -988,13 +855,6 @@ class ResolutionEnvelope(FrozenModel):
     contract_outcomes: tuple[ContractOutcome, ...] = ()
 
 
-class PublicationResult(FrozenModel):
-    """Serialized records plus publication-integrity findings."""
-
-    records: tuple[SerializeAsAny[PublicRecord], ...] = ()
-    findings: tuple[Finding, ...] = ()
-
-
 class VariantDrop(FrozenModel):
     """Dropped variant with bounded identity and root-cause fields."""
 
@@ -1002,25 +862,6 @@ class VariantDrop(FrozenModel):
     stage: str
     rule: str
     reason: str
-
-
-class SentinelObservation(FrozenModel):
-    """Bounded challenger comparison. Challenger never overrides records."""
-
-    challenger: ChallengerKind
-    state: SentinelDriftState
-    template_id: str | None = None
-    release_snapshot_id: str | None = None
-    sample_rate: float = 0.0
-    recipe_verdict: Verdict
-    challenger_verdict: Verdict
-    recipe_record_count: int
-    challenger_record_count: int
-    disagreement_classes: tuple[str, ...] = ()
-    evidence_ids: tuple[str, ...] = ()
-    diagnostic: str
-    next_action: str
-    suspended: bool = False
 
 
 class ExtractionResult(FrozenModel):
@@ -1054,10 +895,10 @@ class ExtractionResult(FrozenModel):
     stage_outcomes: tuple[StageOutcome, ...] = ()
     variant_drops: tuple[VariantDrop, ...] = ()
     contract_outcomes: tuple[ContractOutcome, ...] = ()
-    sentinel_observations: tuple[SentinelObservation, ...] = ()
     manifest_context: ExecutionManifestContext = Field(
         default_factory=ExecutionManifestContext
     )
     failure_classifications: tuple[FailureClassification, ...] = ()
     diagnostics: DiagnosticSummary = Field(default_factory=DiagnosticSummary)
-    recipe_candidate: dict[str, Any] | None = Field(default=None, exclude=True)
+    recipe_candidate: RecipeCandidate | None = Field(default=None, exclude=True)
+    recipe_execution: RecipeExecutionResult | None = None

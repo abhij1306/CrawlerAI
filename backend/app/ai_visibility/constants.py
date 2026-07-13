@@ -113,8 +113,8 @@ BEST_AND_LESS_PROMPTS: list[dict] = [
         "intent": "discovery",
     },
     {
-        "text": "affordable women's basics Australia",
-        "theme": "Womenswear",
+        "text": "affordable maternity clothes Australia",
+        "theme": "Maternity",
         "intent": "discovery",
     },
     {
@@ -138,8 +138,8 @@ BEST_AND_LESS_PROMPTS: list[dict] = [
         "intent": "discovery",
     },
     {
-        "text": "men's socks multipack under $10 Australia",
-        "theme": "Menswear",
+        "text": "affordable baby shower gifts Australia",
+        "theme": "Gifts",
         "intent": "purchase",
     },
     {
@@ -163,9 +163,9 @@ BEST_AND_LESS_PROMPTS: list[dict] = [
         "intent": "service",
     },
     {
-        "text": "cheap school uniforms in Sydney Australia",
-        "theme": "Schoolwear / local",
-        "intent": "local",
+        "text": "affordable kids birthday gifts and clothing sets Australia",
+        "theme": "Gifts",
+        "intent": "purchase",
     },
 ]
 

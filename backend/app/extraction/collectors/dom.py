@@ -67,7 +67,7 @@ from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, Source
 from app.extraction.documents import HtmlNode
 from app.core.shared.ids import stable_id
 from app.core.records.field_policy import normalize_field_key, normalize_requested_field
-from app.core.shared.url_utils import is_utility_image_url
+from app.core.shared.url_utils import is_utility_image_url, largest_srcset_url
 
 _IMAGE_SCOPE_ATTRIBUTES = (
     "id",
@@ -531,52 +531,10 @@ def _image_node_url(node: HtmlNode) -> str:
         if value and not is_utility_image_url(value):
             return value
     for attribute in DETAIL_IMAGE_SRCSET_ATTRS:
-        value = _largest_srcset_url(str(node.attribute(attribute) or ""))
+        value = largest_srcset_url(str(node.attribute(attribute) or ""))
         if value and not is_utility_image_url(value):
             return value
     return ""
-
-
-def _largest_srcset_url(value: str) -> str:
-    ranked: list[tuple[float, int, str]] = []
-    for index, (url, descriptor) in enumerate(_srcset_candidates(value)):
-        rank = float(index)
-        if descriptor[-1:].casefold() in {"w", "x"}:
-            try:
-                rank = float(descriptor[:-1])
-            except ValueError:
-                pass
-        ranked.append((rank, index, url))
-    return max(ranked, default=(0.0, 0, ""))[2]
-
-
-def _srcset_candidates(value: str) -> tuple[tuple[str, str], ...]:
-    """Parse srcset candidates without treating commas inside URLs as separators."""
-    source = str(value or "")
-    candidates: list[tuple[str, str]] = []
-    position = 0
-    while position < len(source):
-        while position < len(source) and (
-            source[position].isspace() or source[position] == ","
-        ):
-            position += 1
-        start = position
-        while position < len(source) and not source[position].isspace():
-            position += 1
-        url = source[start:position]
-        if not url:
-            continue
-        if url.endswith(","):
-            candidates.append((url.rstrip(","), ""))
-            continue
-        while position < len(source) and source[position].isspace():
-            position += 1
-        descriptor_start = position
-        while position < len(source) and source[position] != ",":
-            position += 1
-        descriptor = source[descriptor_start:position].strip().split(" ", 1)[0]
-        candidates.append((url, descriptor))
-    return tuple(candidates)
 
 
 def _image_scope_context(node: HtmlNode) -> str:

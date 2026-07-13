@@ -13,7 +13,10 @@ from app.acquisition.browser_block_detection import (
     BlockPageClassification,
     classify_blocked_page as _classify_blocked_page,
 )
-from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
+from app.acquisition.browser_readiness import (
+    analyze_extractable_content,
+    analyze_html,
+)
 from app.core.config import settings
 from app.core.config.block_signatures import BLOCK_SIGNATURES
 from app.core.config.content_types import HTML_CONTENT_TYPE
@@ -214,6 +217,12 @@ def should_escalate_to_browser(
     )
     has_detail_signals = content_signals.detail
     has_listing_signals = content_signals.listing
+    if (
+        surface == "ecommerce_detail"
+        and content_signals.js_shell
+        and not content_signals.meaningful_detail
+    ):
+        return True
     if (
         bool(escalation_policy.get("js_shell_without_detail_signals", True))
         and content_signals.js_shell

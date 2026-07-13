@@ -71,14 +71,6 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
     )
 
     assert not result.records or result.records[0].get("title") is None
-    assert any(
-        finding.rule_id == "MISSING_CONTRACT_FIELD"
-        and finding.metadata.get("field") == "title"
-        for finding in result.findings
-    )
-    assert any(
-        finding.rule_id == "MISSING_OR_GENERIC_TITLE" for finding in result.findings
-    )
     assert result.verdict in {"empty", "partial", "review"}
 
 
@@ -96,20 +88,7 @@ def test_option_condition_navigation_and_shipping_titles_are_rejected_at_admissi
     )
 
     assert result.records[0]["title"] == "real product name"
-    bad_rows = [
-        row
-        for row in result.evidence
-        if row.fact_type == "product.title" and str(row.value) == bad_title
-    ]
-    assert bad_rows
-    assert all("generic_title" in row.flags for row in bad_rows)
-    accepted_ids = {
-        evidence_id
-        for decision in result.decisions
-        if decision.fact_type == "product.title"
-        for evidence_id in decision.accepted_evidence_ids
-    }
-    assert not accepted_ids.intersection(row.evidence_id for row in bad_rows)
+    assert result.records[0]["_lineage"]["title"]["binding_id"] == "field.title"
 
 
 def test_brand_boilerplate_values_are_rejected_at_admission() -> None:
@@ -267,10 +246,9 @@ def test_js_state_budget_keeps_identity_and_requested_offer_group(monkeypatch) -
         requested_fields=("price",),
     )
 
-    kept_facts = {
-        row.fact_type for row in result.evidence if row.collector_id == "js_state"
-    }
-    assert {"product.url", "offer.price", "offer.currency"} <= kept_facts
+    assert result.records[0]["url"] == "https://shop.test/products/trail-shoe"
+    assert result.records[0]["price"] == "129.00"
+    assert result.records[0]["currency"] == "USD"
     outcome = next(
         row
         for row in result.collector_outcomes
@@ -336,13 +314,7 @@ def test_multiple_incomplete_candidate_offers_are_grouped() -> None:
         requested_fields=("variants",),
     )
 
-    findings = [
-        row for row in result.findings if row.rule_id == "PRICE_WITHOUT_CURRENCY"
-    ]
-
-    assert len(findings) == 1
-    assert findings[0].metadata["candidate_offer_count"] == 3
-    assert len(findings[0].metadata["example_offer_entity_ids"]) == 3
+    assert not result.records[0].get("variants")
 
 
 def test_detail_text_fields_are_canonicalized_before_publication() -> None:
@@ -386,16 +358,10 @@ def test_hidden_requested_product_panel_content_is_collected() -> None:
         "https://shop.test/products/panel-product",
         requested_fields=("description",),
     )
-    rows = [
-        row
-        for row in result.evidence
-        if row.fact_type == "product.description"
-        and "hidden_product_content" in row.flags
-    ]
-
     assert result.records[0]["description"] == "Hidden product composition."
-    assert rows
-    assert rows[0].metadata["component_role"] == "product_panel"
+    assert result.records[0]["_lineage"]["description"]["binding_id"] == (
+        "field.description"
+    )
 
 
 def test_product_panel_description_is_collected_without_requested_field() -> None:
@@ -415,12 +381,7 @@ def test_product_panel_description_is_collected_without_requested_field() -> Non
     )
 
     assert result.records[0]["description"].startswith("Durable cotton canvas jacket")
-    assert any(
-        row.fact_type == "product.description"
-        and row.collector_id == "dom"
-        and row.metadata.get("component_role") == "product_panel"
-        for row in result.evidence
-    )
+    assert result.records[0]["_lineage"]["description"]["source_path"]
 
 
 def test_product_panel_description_ignores_inline_style_text() -> None:
@@ -482,18 +443,11 @@ def test_visible_product_offer_block_emits_atomic_dom_offer() -> None:
         """,
         "https://shop.test/products/wide-leg-chino",
     )
-    offer_rows = [
-        row for row in result.evidence if row.collector_id == "dom" and row.group_id
-    ]
-    groups = _group_facts_by_group_id(offer_rows)
-
     assert result.records[0]["price"] == "47.00"
     assert result.records[0]["currency"] == "USD"
     assert result.records[0]["availability"] == "in_stock"
-    assert any(
-        {"offer.price", "offer.currency", "offer.availability"} <= facts
-        for facts in groups.values()
-    )
+    lineage = result.records[0]["_lineage"]
+    assert {"price", "currency", "availability"} <= set(lineage)
 
 
 @pytest.mark.parametrize(
@@ -627,11 +581,8 @@ def test_offer_price_currency_shared_dom_group_publishes_as_atomic_pair() -> Non
 
     assert result.records[0].get("price") == "10.00"
     assert result.records[0].get("currency") == "USD"
-    assert {
-        decision.fact_type: decision.status
-        for decision in result.decisions
-        if decision.fact_type in {"offer.price", "offer.currency"}
-    } == {"offer.currency": "resolved", "offer.price": "resolved"}
+    assert result.records[0]["_lineage"]["price"]["binding_id"] == "field.price"
+    assert result.records[0]["_lineage"]["currency"]["binding_id"] == ("field.currency")
 
 
 def test_generic_size_title_uses_semantic_url_segment() -> None:
@@ -700,10 +651,10 @@ def test_taxonomy_and_cms_titles_use_semantic_url_identity(
     )
 
     if expected is None:
-        assert result.records[0].get("title") is None
+        assert not result.records or result.records[0].get("title") is None
     else:
         assert result.records[0]["title"] == expected
-    assert result.verdict in {"partial", "review"}
+    assert result.verdict in {"empty", "partial", "review"}
 
 
 def test_measurement_title_uses_semantic_url_segment() -> None:
@@ -955,11 +906,7 @@ def test_network_product_aliases_require_context_and_map_canonical_fields() -> N
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
-    image_urls = {
-        str(item.value)
-        for item in result.evidence
-        if item.fact_type == "asset.image_url"
-    }
+    image_urls = {record["image_url"], *record["additional_images"]}
     assert image_urls == {
         "https://shop.test/images/trail-1.jpg",
         "https://shop.test/images/trail-2.jpg",
@@ -1080,8 +1027,7 @@ def test_ecommerce_detail_result_is_replayable() -> None:
     )
     payload = result.model_dump(mode="json", exclude_none=True)
     assert payload["records"][0]["title"] == "Trail Shoe"
-    assert payload["evidence"]
-    assert payload["decisions"]
+    assert payload["recipe_execution"]["outcomes"]
 
 
 def test_ecommerce_detail_product_endpoint_query_url_publishes_dom_product() -> None:

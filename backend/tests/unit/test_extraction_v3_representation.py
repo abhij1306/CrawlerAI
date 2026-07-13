@@ -117,6 +117,14 @@ def test_audit_sample_scoping_is_nonempty_and_capped() -> None:
 def test_audit_sample_report_summarizes_representation_gate() -> None:
     if not AUDIT_SUMMARY.exists():
         pytest.skip("audit summary is not present")
+    samples = json.loads(AUDIT_SUMMARY.read_text(encoding="utf-8"))[
+        "representation_tokens"
+    ]
+    if any(
+        not (RUN_DIR / "results" / str(sample["dir"]) / "page.html").exists()
+        for sample in samples
+    ):
+        pytest.skip("frozen run corpus is not present")
 
     report = audit_sample_report(
         run_dir=RUN_DIR,

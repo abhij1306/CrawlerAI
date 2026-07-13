@@ -17,14 +17,7 @@ from app.extraction.contracts import (
 )
 from eval.corpus import stats, write_proposals
 from eval.grounding import grounding_report
-from eval.run import (
-    _selector_deletion_reasons,
-    _v3_gate_reasons,
-    main,
-    run_baseline,
-    run_label_score,
-    run_v3_engine,
-)
+from eval.run import main, run_baseline, run_label_score, run_v3_engine
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +37,7 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def _synthetic_corpus(tmp_path: Path) -> tuple[Path, Path, Path]:
-    run_dir = tmp_path / "runs" / "1"
+    run_dir = tmp_path / "runs" / "39"
     audit_path = tmp_path / "audit_data.json"
     label_dir = tmp_path / "labels"
     _write_json(
@@ -132,7 +125,7 @@ def _write_verified_label(label_dir: Path) -> None:
 
 
 def _jsonld_recipe_corpus(tmp_path: Path) -> tuple[Path, Path, Path]:
-    run_dir = tmp_path / "runs" / "1"
+    run_dir = tmp_path / "runs" / "39"
     audit_path = tmp_path / "audit_data.json"
     label_dir = tmp_path / "labels"
     _write_json(
@@ -404,7 +397,7 @@ def test_corpus_counts_human_verified_seed_labels() -> None:
     assert result["valid"] is True
 
 
-def test_label_score_runs_on_verified_seed_labels() -> None:
+def test_label_score_rejects_verified_labels_from_ineligible_evidence() -> None:
     _require_private_audit()
     report = run_label_score(
         run_dir=RUN_DIR,
@@ -412,12 +405,9 @@ def test_label_score_runs_on_verified_seed_labels() -> None:
         label_dir=LABEL_DIR,
     )
 
-    assert report["verified_pages"] == 8
-    assert report["page_count"] == 8
-    assert report["variant_metrics"]["pages_with_expected_variants"] == 6
-    assert report["field_counts"]["price"]["tp"] >= 1
-    assert 0.0 <= report["hallucination_proxy_rate"] <= 1.0
-    assert 0.0 <= report["variant_matrix_accuracy"] <= 1.0
+    assert report["accepted_evidence_run"] is False
+    assert report["verified_pages"] == 0
+    assert report["page_count"] == 0
 
 
 def test_label_score_runs_on_synthetic_verified_label(tmp_path: Path) -> None:
@@ -456,16 +446,11 @@ def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
         audit_path=audit_path,
         label_dir=label_dir,
         tier="generalized",
-        no_recipes=True,
-        no_selectors=True,
         out=None,
     )
 
     assert report["engine"] == "v3"
     assert report["verified_pages"] == 1
-    assert report["no_recipes"] is True
-    assert report["no_selectors"] is True
-    assert report["selector_collectors_seen"] == []
     assert "dom" not in report["candidate_runtime"]["collector_ids"]
     assert report["gate_passed"] is False
     assert "generalized_adapter_missing" in report["gate_reasons"]
@@ -475,7 +460,9 @@ def test_v3_engine_gate_scores_candidate_records_and_fails_closed(
     )
 
 
-def test_v3_engine_gate_can_invoke_supplied_generalized_adapter(tmp_path: Path) -> None:
+def test_v3_engine_does_not_invoke_model_when_deterministic_candidate_succeeds(
+    tmp_path: Path,
+) -> None:
     run_dir, audit_path, label_dir = _synthetic_corpus(tmp_path)
     _write_verified_label(label_dir)
 
@@ -484,18 +471,16 @@ def test_v3_engine_gate_can_invoke_supplied_generalized_adapter(tmp_path: Path) 
         audit_path=audit_path,
         label_dir=label_dir,
         tier="generalized",
-        no_recipes=True,
-        no_selectors=True,
         model_adapter=EvalModelAdapter(),
         out=None,
     )
 
-    assert report["candidate_runtime"]["model_invocations"] == 1
-    assert report["candidate_runtime"]["extractor_tiers"] == ["ml"]
-    assert "generalized_tier_not_invoked" not in report["gate_reasons"]
+    assert report["candidate_runtime"]["model_invocations"] == 0
+    assert report["candidate_runtime"]["extractor_tiers"] == ["candidate_recipe"]
+    assert "generalized_tier_not_invoked" in report["gate_reasons"]
 
 
-def test_recipe_tier_replays_source_pins_without_model(tmp_path: Path) -> None:
+def test_recipe_tier_uses_cold_start_candidate_without_model(tmp_path: Path) -> None:
     run_dir, audit_path, label_dir = _jsonld_recipe_corpus(tmp_path)
     _write_jsonld_recipe_label(label_dir)
 
@@ -504,14 +489,12 @@ def test_recipe_tier_replays_source_pins_without_model(tmp_path: Path) -> None:
         audit_path=audit_path,
         label_dir=label_dir,
         tier="recipe",
-        no_selectors=True,
         model_adapter=EvalModelAdapter(),
         out=None,
     )
 
     assert report["candidate_runtime"]["model_invocations"] == 0
-    assert report["candidate_runtime"]["extractor_tiers"] == ["recipe"]
-    assert "dom" not in report["candidate_runtime"]["collector_ids"]
+    assert report["candidate_runtime"]["extractor_tiers"] == ["candidate_recipe"]
     assert "css_recipe" not in report["candidate_runtime"]["collector_ids"]
     assert report["gate_passed"] is True
 
@@ -586,8 +569,6 @@ def test_v3_engine_require_pass_returns_nonzero_for_red_gate(
             "v3",
             "--tier",
             "generalized",
-            "--no-recipes",
-            "--no-selectors",
             "--require-pass",
             "--run-dir",
             str(run_dir),
@@ -602,90 +583,6 @@ def test_v3_engine_require_pass_returns_nonzero_for_red_gate(
 
     assert code == 1
     assert json.loads(capsys.readouterr().out)["gate_passed"] is False
-
-
-def test_cascade_gate_passes_quality_while_selector_deletion_stays_locked() -> None:
-    candidate = {
-        "defect_counts": {
-            "empty_records": 0,
-            "empty_variants_where_expected": 3,
-            "missing_price_on_commerce_detail": 1,
-        },
-        "field_metrics": {"price": {"f1": 0.75}},
-    }
-    baseline = {
-        "defect_counts": {
-            "empty_records": 0,
-            "empty_variants_where_expected": 3,
-            "missing_price_on_commerce_detail": 1,
-        },
-        "field_metrics": {"price": {"f1": 0.75}},
-    }
-    frozen_baseline_defects = {
-        "empty_records": 5,
-        "empty_variants_where_expected": 11,
-        "missing_price_on_commerce_detail": 13,
-    }
-    candidate_full_defects = {
-        "empty_records": 3,
-        "empty_variants_where_expected": 11,
-        "missing_price_on_commerce_detail": 14,
-    }
-
-    gate_reasons = _v3_gate_reasons(
-        candidate=candidate,
-        baseline=baseline,
-        frozen_baseline_defects=frozen_baseline_defects,
-        candidate_full_defects=candidate_full_defects,
-        verified_pages=8,
-        tier="cascade",
-        model_invocations=2,
-        llm_config_supplied=True,
-        cascade_progress={
-            "baseline_failing_pages": 2,
-            "candidate_improved_failing_pages": [32, 90],
-            "generalized_helped_failing_pages": [32, 90],
-            "candidate_regressed_pages": [],
-        },
-    )
-
-    assert gate_reasons == []
-    deletion_reasons = _selector_deletion_reasons(
-        gate_reasons=gate_reasons,
-        no_recipes=False,
-        no_selectors=False,
-        selector_collectors=["dom"],
-        frozen_baseline_defects=frozen_baseline_defects,
-        candidate_full_defects=candidate_full_defects,
-    )
-    assert "recipes_not_disabled" in deletion_reasons
-    assert "selectors_not_disabled" in deletion_reasons
-    assert "selector_collectors_seen" in deletion_reasons
-    assert (
-        "regressed_full_corpus:missing_price_on_commerce_detail" not in deletion_reasons
-    )
-    assert "regressed_full_corpus:empty_variants_where_expected" not in deletion_reasons
-
-
-def test_selector_deletion_unlock_ignores_field_only_price_regression() -> None:
-    deletion_reasons = _selector_deletion_reasons(
-        gate_reasons=[],
-        no_recipes=True,
-        no_selectors=True,
-        selector_collectors=[],
-        frozen_baseline_defects={
-            "empty_records": 5,
-            "empty_variants_where_expected": 11,
-            "missing_price_on_commerce_detail": 13,
-        },
-        candidate_full_defects={
-            "empty_records": 2,
-            "empty_variants_where_expected": 11,
-            "missing_price_on_commerce_detail": 18,
-        },
-    )
-
-    assert deletion_reasons == []
 
 
 def test_grounding_report_runs_on_verified_seed_labels(tmp_path: Path) -> None:

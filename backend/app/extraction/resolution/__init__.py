@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
@@ -45,9 +43,6 @@ from app.core.config.variant_policy import (
     PUBLIC_VARIANT_AXIS_FIELDS,
     public_variant_row_is_sellable,
 )
-from app.core.records.url_identity import (
-    conflicting_product_asset_urls,
-)
 from app.core.shared.url_utils import (
     low_resolution_asset_urls,
     public_asset_delivery_url,
@@ -61,6 +56,7 @@ from app.core.shared.field_coerce_text import (
 )
 from app.core.shared.text_coerce import slug_tokens
 from app.core.records.url_identity import (
+    conflicting_product_asset_urls,
     detail_url_resource_identity,
     detail_style_code_from_url,
     detail_title_from_url,
@@ -80,8 +76,6 @@ from app.extraction.resolution.assets import (
 )
 from app.extraction.resolution.ranking import non_positive_money, rank
 from app.core.shared.ids import stable_id
-
-_rank = rank
 
 
 def inherit_variant_id_from_sku(
@@ -268,8 +262,7 @@ def resolve(
 
 
 def _asset_publication_facts(
-    asset_decisions: tuple[AssetDecision, ...],
-    decisions: tuple[Decision, ...],
+    asset_decisions: tuple[AssetDecision, ...], decisions: tuple[Decision, ...]
 ) -> tuple[DerivedFact, ...]:
     selected_by_entity = {
         row.entity_id: row
@@ -1331,8 +1324,12 @@ def _guard_original_price_semantics(
             guarded.append(decision)
             continue
         price = next(
-            (candidate for candidate in decisions if candidate.entity_id == decision.entity_id
-             and candidate.fact_type == price_fact),
+            (
+                candidate
+                for candidate in decisions
+                if candidate.entity_id == decision.entity_id
+                and candidate.fact_type == price_fact
+            ),
             None,
         )
         original_value = _decision_value(decision, evidence_by_id)
@@ -1357,10 +1354,13 @@ def _guard_original_price_semantics(
                     "accepted_evidence_ids": (),
                     "status": "unresolved",
                     "rule_id": "ORIGINAL_PRICE_REQUIRES_CURRENT_PRICE",
-                    "rejected": (*decision.rejected, *(
-                        RejectedEvidence(evidence_id=evidence_id, reason=reason)
-                        for evidence_id in decision.accepted_evidence_ids
-                    )),
+                    "rejected": (
+                        *decision.rejected,
+                        *(
+                            RejectedEvidence(evidence_id=evidence_id, reason=reason)
+                            for evidence_id in decision.accepted_evidence_ids
+                        ),
+                    ),
                 }
             )
         )
@@ -2085,8 +2085,6 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
 
 
 def _invalidity_reason(ev: Evidence) -> str | None:
-    """Return the concrete rejection reason, or ``None`` when admissible."""
-
     if ev.fact_type in {
         field_mappings.OFFER_PRICE_FACT_TYPE,
         field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
@@ -2095,7 +2093,7 @@ def _invalidity_reason(ev: Evidence) -> str | None:
     if ev.fact_type == field_mappings.PRODUCT_SKU_FACT_TYPE:
         source_key = str(ev.locator.value or "").rsplit("/", 1)[-1].casefold()
         scalar = str(ev.value or "").strip()
-        opaque_keys = getattr(
+        opaque_keys: frozenset[str] = getattr(
             field_mappings, "OPAQUE_PLATFORM_ID_SOURCE_KEYS", frozenset()
         )
         if source_key in opaque_keys and scalar.isdigit() and len(scalar) >= 8:

@@ -13,7 +13,7 @@ from app.extraction.model_runtime import (
     RuntimeFlatMapEntry,
     RuntimeFlatMapPage,
     _normalize_source_value,
-    run_model_fallback,
+    run_model_recipe_proposals,
 )
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
@@ -110,10 +110,8 @@ def test_run_setting_disables_approved_model_without_invocation() -> None:
 
 
 def test_runtime_preserves_safe_provider_error_category() -> None:
-    result = run_model_fallback(
-        _request(
-            "<main>Trail Shoe</main>", runtime_snapshot=_approved_snapshot()
-        ),
+    result = run_model_recipe_proposals(
+        _request("<main>Trail Shoe</main>", runtime_snapshot=_approved_snapshot()),
         ProviderErrorAdapter(),
     )
 

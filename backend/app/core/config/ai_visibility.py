@@ -165,13 +165,16 @@ class AiVisibilitySettings(BaseSettings):
         AI_VISIBILITY_PROVIDER_OPENROUTER_ANTHROPIC
     ]
     request_timeout_seconds: float = 60.0
-    # Speed is not a priority; a single serial stream is the most quota-friendly
-    # against Gemini's per-minute limit (parallel workers multiply RPM).
-    run_concurrency: int = 1
+    # Up to N executions run in parallel. Per-provider pacing (below) still
+    # serializes Gemini regardless, so this mainly speeds up OpenRouter runs on
+    # paid keys that have no meaningful per-minute limit.
+    run_concurrency: int = 5
     # Gemini project quotas can be as low as three requests per rolling minute.
     # Serialize starts across all runs in this process, not just within one run.
     gemini_min_request_interval_seconds: float = 21.0
-    openrouter_min_request_interval_seconds: float = 1.0
+    # OpenRouter paid keys have no per-minute cap worth pacing for, so allow the
+    # concurrent workers above to fire without artificial spacing.
+    openrouter_min_request_interval_seconds: float = 0.0
     # 5 retries -> backoff waits of ~2,4,8,16,32s (~62s total), enough to outlast
     # a per-minute (429) quota reset that a smaller budget could never clear.
     max_retries: int = 5

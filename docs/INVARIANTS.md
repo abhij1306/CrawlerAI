@@ -340,13 +340,13 @@ Static cleanup advice to persist/reuse more browser state caused a real regressi
 
 ## 10. LLM — Explicit, Degradable, Validated
 
-**Rule:** LLM runs only when both run settings and active config enable it. When enabled, LLM is a normal repair path for missing requested/default canonical fields after deterministic/browser evidence has been used. For ecommerce detail, default canonical LLM repair is limited to `price`, `title`, and `image_url`; deeper fields are repaired only when explicitly requested. LLM failures must be visible in diagnostics and must not corrupt deterministic extraction state.
+**Rule:** LLM runs only when both run settings and active config enable it. It may propose grounded recipe roots, paths, joins, and senses after deterministic discovery abstains; it never generates a publishable field value or `Evidence`. Compiler validation and candidate recipe execution remain mandatory. LLM failures must be visible in diagnostics and must not corrupt deterministic extraction state.
 
 **VIOLATION signatures:**
 - LLM fires on a run where `llm_enabled=False`
-- A deterministic field value is replaced by an LLM output without explicit gating
+- An LLM output is published as a field value or converted directly into `Evidence`
 - An LLM timeout or API error silently produces an empty record instead of a diagnostic log entry
-- A missing requested/default high-value field is left unrepaired without recording that LLM was disabled, unavailable, rejected, or unnecessary
+- A model proposal bypasses capture grounding, recipe compilation, or shared validation
 
 ---
 
@@ -480,16 +480,16 @@ apply to every branded ecommerce target. Raw internal retailer identifiers (a co
 
 **Supersession (2026-07-02, D4):** This rule replaces the former Knowledge Graph greenfield/no-backfill/reset-separation contract. The generic entity/relationship/claim graph and the parallel selector, review-promotion, field-feedback, and run-JSON stores were intentionally consolidated.
 
-**Rule:** `app/models/extraction_memory.py` is the only durable owner for structural templates, recipe layers, compiled recipes, locale-policy references, immutable run releases, per-URL manifests, operator labels, and extraction observations. PostgreSQL is authoritative.
+**Rule:** `app/models/extraction_memory.py` is the only durable owner for structural templates, executable recipe candidates and compiled recipes, locale-policy references, immutable run releases, per-URL manifests, operator labels, and extraction observations. PostgreSQL is authoritative.
 
 - **Frozen releases.** Run creation writes one immutable `ExtractionReleaseSnapshot`; workers load it through `CrawlRun.extraction_release_snapshot_id`. Live recipe changes cannot affect an in-flight run.
 - **Per-URL identity.** Every persisted URL result receives an `ExtractionManifest` and exposes its ID through `CrawlUrlResult.extraction_manifest_id`.
-- **Selectors are recipes.** `(domain, surface)` selector memory is the `domain-default` template's `selectors` recipe. `DomainMemory.selectors` must not return.
+- **Executable recipes are release-only.** Runtime selection accepts only `release.v2` executable recipes. Selector/source-pin/profile payloads may remain operator-facing historical data, but no extraction runtime translates or executes them.
 - **Labels are unified.** Review promotions and field feedback are typed rows in `ExtractionOperatorLabel`, distinguished by `label_kind`.
 - **Extraction stays storage-free.** `app/extraction/` may import pure helpers from `app/core/extraction_memory/`; it must not import `app/models/extraction_memory.py` or `app/persistence/extraction_memory.py`.
 - **Resolve remains authority.** Saved contracts rank already-admissible evidence only. They cannot create ownership, resurrect rejected evidence, or publish values directly.
 - **Models remain evaluated fallback.** ML/LLM output is evidence only, is lazy off the deterministic success path, and cannot enter release evaluation unless qualified by the evaluation schema. Runtime ML requires approved, passing benchmark metadata in the frozen release snapshot plus an exact adapter/artifact identity match. Missing or unapproved metadata disables it. Predictions must resolve to retained compact-source paths and source values before becoming Evidence.
-- **Challengers cannot override.** A Sentinel/challenger may diagnose or suspend a recipe under an approved policy; it cannot directly replace resolved truth. Sampled known-template traffic may run generic deterministic and optional ML challengers after recipe publication capture; their observations are persisted separately and future fallback is achieved by scoped template suspension, not by mutating a published record.
+- **Drift cannot override.** Typed active-recipe failures may suspend a recipe under the lifecycle policy; they cannot replace, mutate, or mix with the current result. Repair is a separately compiled candidate and explicit future-release promotion.
 - **Grounded publication.** No learned or LLM-produced value reaches publication without a source locator and resolver acceptance.
 
 **VIOLATION signatures:** parallel selector/review/feedback stores; `extraction_runtime_snapshot` in run settings; generic KG entity/edge/claim tables; extraction importing mutable memory; ungrounded learned values; challenger output directly changing records.

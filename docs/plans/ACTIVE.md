@@ -1,11 +1,12 @@
 # Active Plan
 
-**Current:** Domain-Learned Extraction Re-architecture — One Runtime, Executable Recipes, Net Code Reduction → `docs/plans/domain-learned-extraction-rearchitecture-plan.md`
-**Status:** ACTIVE — PLAN ONLY; implementation has not started
+**Current:** Extraction Architecture Freeze and Controlled Recovery → `docs/plans/extraction-architecture-freeze-recovery-plan.md`
+**Status:** IN PROGRESS — Slice 4 compiler parity reopened after full-suite evidence
 **Started:** 2026-07-11
-**First required phase:** Phase 0 — freeze architecture and establish the deletion ledger
+**Last slice completed:** Slice 3 — Executor repeated-value and provenance transfer
 
 ## Superseded Extraction Plans
 
-1. `extraction-v3-live-recovery-plan.md` — Run 39+ and Run 41 evidence retained; extraction implementation instructions superseded.
-2. `crawlerai-extraction-v3-confidence-tiered-plan.md` — generalized-as-runtime-floor architecture rejected and superseded.
+1. `domain-learned-extraction-rearchitecture-plan.md` — audited; valid recipe target work and pending phases carried into the active plan.
+2. `extraction-v3-live-recovery-plan.md` — completed fixes and Run 39+/Run 41 evidence retained; pending work carried into the active plan.
+3. `crawlerai-extraction-v3-confidence-tiered-plan.md` — superseded.

@@ -212,21 +212,21 @@ Writing templates, recipes, manifests, labels, or observations from extraction c
 
 **Fix:** Extraction emits immutable evidence, decisions, and contract outcomes. `app/persistence/extraction_memory.py` records observations after extraction; `app/api/knowledge.py` owns explicit operator refinement.
 
-### AP-25: Treating runtime LLM as forbidden instead of budgeted
+### AP-25: Treating model assistance as a record producer
 
-Banning per-page generalized fallback because automatic recipe replacement is forbidden confuses two separate controls.
+Automatic recipe replacement and model-generated record values are both forbidden. Model assistance may still improve discovery when explicitly enabled and budgeted.
 
-**Violation looks like:** a cold-start, stale-recipe, or identity-failing page returns empty output even though run settings and frozen runtime config enable grounded generalized extraction.
+**Violation looks like:** a model output becomes `Evidence`, a `PublicRecord`, or a field value that bypasses recipe execution and shared validation.
 
-**Fix:** Keep recipe replacement manual, but allow automatic per-page generalized fallback within config-owned budgets. Budget, cost, token, cooldown, and vision-escalation controls live in `app/core/config/*`; runtime exits record diagnostics.
+**Fix:** Models propose only grounded roots, paths, joins, and senses. The compiler validates proposals against the capture, emits a candidate recipe, and the candidate executes through the same executor, validator, and publisher as an active recipe. Budget, cost, token, cooldown, and terminal-state diagnostics remain config-owned.
 
 ### AP-26: Silent recipe miss degradation
 
 A recipe miss that quietly publishes nothing or keeps stale deterministic evidence hides drift and blocks repair.
 
-**Violation looks like:** `no_active_recipe`, `required_source_missing`, `identity_failure`, or `coverage_below_minimum` stops extraction without routing to the generalized tier or recording an operator-visible reason.
+**Violation looks like:** an active-recipe miss quietly publishes stale values, merges failed bindings with a candidate, or stops without causal diagnostics.
 
-**Fix:** Route the current page through generic/generalized fallback, discard stale failed-tier evidence from publication, and log the drift/health signal through the existing observation path.
+**Fix:** After a typed active-recipe failure, compile a fresh deterministic candidate, then optionally model-assisted proposals. Publish only a candidate that executes and validates independently; otherwise emit one typed honest failure and record drift after finalization.
 
 ### AP-27: Parallel learned-state stores
 

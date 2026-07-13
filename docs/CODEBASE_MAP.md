@@ -96,7 +96,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py` | Static sitemap/homepage category discovery plus rendered same-origin site-link fallback |
 | `tasks.py` | Celery task entry |
 | `pipeline/extraction_loop.py` | Per-URL stage orchestration: acquire -> extract -> normalize -> persist |
-| `pipeline/record_extraction_stage.py` | Adapter population, selector-rule loading, extraction invocation, acquisition-contract memory |
+| `pipeline/record_extraction_stage.py` | Adapter population, recipe-runtime invocation, model accounting, and acquisition-contract memory |
 | `pipeline/retry/stage.py` | Browser retry families, detail rejection guard, listing-integrity escalation |
 | `pipeline/url_processing_context.py` | Per-URL acquisition config and run-context resolution |
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
@@ -163,10 +163,13 @@ Canonical config owner:
 | `evaluation/baseline.py` | deterministic offline baseline reduction and stable artifact generation |
 | `evaluation/schema.py` | grounded-label truth plus evaluation partition, surface, scenario, and metric contracts |
 | `eval/*` | Extraction V3 offline eval CLI, commerce-detail corpus registry, label proposals, scoring, and frozen baseline reports |
-| `extraction/model_runtime.py` | Lazy evaluation-gated universal-model fallback, shared bounded runtime representation, source-grounding enforcement, and Evidence conversion |
-| `extraction/representation/*` | Extraction V3 flat path-to-text representation, detail scoping fallback, chunking, and grounding validator |
-| `extraction/sentinel.py` | Known-template challenger comparison, drift-state classification, and business-readable Sentinel diagnostics |
-| `evaluation/compact_representation.py` | Offline truth-label decoration over the shared runtime `compact_page.v2` representation |
+| `core/extraction_memory/recipe_contracts.py` | Storage-free executable recipe, candidate, binding, and typed failure contracts |
+| `core/extraction_memory/recipe_executor.py` | Mechanical capture reader for active and candidate recipes; never discovers, publishes, or persists |
+| `extraction/engine.py` | Frozen recipe-first orchestration: active execute, bounded discovery compile, optional model proposals, shared publication |
+| `extraction/recipe_compiler*.py` | Deterministic and model-assisted recipe compilation from grounded capture artifacts; never constructs public records |
+| `extraction/recipe_publication.py` | Shared recipe execution validation and public-record publication firewall |
+| `extraction/model_runtime.py` | Opt-in, budgeted, grounded binding-proposal adapter; no model value publication |
+| `evaluation/grounded_corrections.py` | Recipe-v2 representative replay and explicit candidate activation only |
 | `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |
 | `evaluation/model_harness.py` | offline evidence-only candidate adapter with model/deployment/artifact identity; cannot emit public records |
 | `evaluation/benchmark.py`, `evaluation/benchmarks/*` | `universal_model_benchmark.v2`: exact candidate/case checks, per-partition metrics, fail-closed decision, and committed Phase-4 NO-GO artifact |

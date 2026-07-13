@@ -50,7 +50,7 @@ async def retry_extraction_request_with_browser(
     if browser_result is None:
         return result
     fetched.acquisition_result = browser_result
-    retry_result, _selector_rules = await _extract_records_for_acquisition(
+    retry_result = await _extract_records_for_acquisition(
         context,
         fetched,
     )

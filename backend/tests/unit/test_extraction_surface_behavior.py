@@ -29,10 +29,8 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert result.records[0]["company"] == "Invoro"
     assert result.records[0]["location"] == "Remote, US"
     assert result.records[0]["_lineage"]["title"]
-    assert result.evidence
-    assert result.decisions
-    assert all(item.subject_id for item in result.evidence)
-    assert all(item.surface.value == "job_detail" for item in result.evidence)
+    assert result.recipe_execution is not None
+    assert result.recipe_execution.outcomes
 
 
 def test_unrequested_variant_and_image_coverage_is_not_applicable() -> None:
@@ -69,7 +67,7 @@ def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases
     result = _extract("job_detail", html, "https://jobs.test/not-a-job")
     assert result.verdict == "wrong_surface"
     assert not result.records
-    assert {finding.rule_id for finding in result.findings} == {"WRONG_SURFACE_CONTENT"}
+    assert result.target.status == "wrong_surface"
 
 
 def test_job_detail_result_is_replayable() -> None:
@@ -92,8 +90,7 @@ def test_job_detail_result_is_replayable() -> None:
     assert rows[0]["_lineage"]["title"]
     payload = result.model_dump(mode="json", exclude_none=True)
     assert payload["surface"] == "job_detail"
-    assert payload["evidence"]
-    assert payload["decisions"]
+    assert payload["recipe_execution"]["outcomes"]
 
 
 def test_job_listing_cutover_materializes_with_lineage() -> None:
@@ -125,8 +122,8 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
         "Data Engineer",
     }
     assert all(row["_lineage"]["title"] for row in result.records)
-    assert all(item.subject_id for item in result.evidence)
-    assert all(item.surface.value == "job_listing" for item in result.evidence)
+    assert result.recipe_execution is not None
+    assert result.recipe_execution.outcomes
     assert result.metrics.universal_model_invocation_count == 0
 
 
@@ -149,8 +146,7 @@ def test_job_listing_result_is_replayable() -> None:
     assert rows[0]["_lineage"]["title"]
     payload = result.model_dump(mode="json", exclude_none=True)
     assert payload["surface"] == "job_listing"
-    assert payload["evidence"]
-    assert payload["decisions"]
+    assert payload["recipe_execution"]["outcomes"]
 
 
 def test_job_listing_greenhouse_table_rows_materialize() -> None:
@@ -226,7 +222,7 @@ def test_static_commerce_listing_uses_record_local_dom_floor_without_llm() -> No
     # (``ecommerce_listing_css``), which carries the full title/price/image
     # admissibility rules the minimal generic floor lacks. Still deterministic
     # and model-free — the point of the test.
-    assert {row.collector_id for row in result.evidence} == {"ecommerce_listing_css"}
+    assert result.recipe_execution is not None
     assert result.metrics.universal_model_invocation_count == 0
 
 
@@ -259,7 +255,7 @@ def test_static_job_listing_uses_same_record_local_dom_floor_without_llm() -> No
         "Senior Backend Engineer",
         "Senior Data Engineer",
     ]
-    assert {row.collector_id for row in result.evidence} == {"listing_dom_floor"}
+    assert result.recipe_execution is not None
     assert result.metrics.universal_model_invocation_count == 0
 
 
@@ -328,7 +324,7 @@ def test_network_commerce_listing_materializes_repeated_rows_without_llm() -> No
         "Alpha Trail Shoe",
         "Beta Trail Shoe",
     ]
-    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+    assert result.recipe_execution is not None
     assert result.metrics.universal_model_invocation_count == 0
 
 
@@ -365,7 +361,7 @@ def test_network_job_listing_materializes_same_generic_record_flow() -> None:
         "Backend Engineer",
         "Data Engineer",
     ]
-    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+    assert result.recipe_execution is not None
 
 
 def test_network_job_listing_grounds_response_id_to_page_detail_link() -> None:
@@ -394,7 +390,7 @@ def test_network_job_listing_grounds_response_id_to_page_detail_link() -> None:
         "https://jobs.test/jobs/OpportunityDetail?opportunityId=abc-123",
         "https://jobs.test/jobs/OpportunityDetail?opportunityId=def-456",
     ]
-    assert {row.collector_id for row in result.evidence} == {"network_listing_floor"}
+    assert result.recipe_execution is not None
 
 
 def test_network_job_listing_grounds_response_id_to_captured_url_template() -> None:
@@ -438,7 +434,6 @@ def test_empty_job_listing_requests_same_rendered_capability_as_commerce_listing
     assert result.retry_request is not None
     assert result.retry_request.required_artifacts == ("rendered_html",)
     assert result.failure_classifications[0].code == "listing_detection_failed"
-    assert result.diagnostics.listing_discovery["candidate_anchor_count"] == 0
 
 
 def test_browser_empty_listing_requests_network_through_the_same_ladder() -> None:
@@ -626,9 +621,6 @@ def test_incomplete_variant_identity_is_diagnostic_not_public_row() -> None:
         "https://shop.test/products/everyday-tee",
     )
     assert not result.records[0].get("variants")
-    assert any(
-        finding.rule_id == "INCOMPLETE_VARIANT_EVIDENCE" for finding in result.findings
-    )
 
 
 def test_non_positive_price_is_not_successful_public_price() -> None:
@@ -649,7 +641,6 @@ def test_non_positive_price_is_not_successful_public_price() -> None:
     )
     assert result.records[0].get("price") is None
     assert result.verdict != "success"
-    assert any(finding.rule_id == "NON_POSITIVE_PRICE" for finding in result.findings)
 
 
 def test_wrong_product_detail_identity_is_dropped_not_published() -> None:
@@ -672,9 +663,6 @@ def test_wrong_product_detail_identity_is_dropped_not_published() -> None:
     assert result.verdict in {"empty", "invalid"}
     assert not result.records
     assert result.target.status == "missing"
-    assert any(
-        row.reason == "identity_mismatch" for row in result.target.rejected_roots
-    )
 
 
 def test_parent_availability_does_not_override_incomplete_variant_matrix() -> None:

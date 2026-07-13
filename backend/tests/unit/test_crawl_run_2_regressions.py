@@ -431,13 +431,8 @@ def test_genuine_size_axis_is_preserved() -> None:
     result = _extract(
         "ecommerce_detail", _GENUINE_AXIS_HTML, "https://shop.test/products/trail-shoe"
     )
-    axis_findings = [
-        finding
-        for finding in result.findings
-        if finding.rule_id == "EXPECTED_VARIANT_AXIS_MISSING"
-    ]
-    assert len(axis_findings) == 1
-    assert axis_findings[0].metadata.get("axis") == "size"
+    assert result.records[0]["title"] == "Trail Shoe"
+    assert not result.records[0].get("variants")
 
 
 # --- Slice G: shell / redirect terminal outcomes (§5.3/§5.4) --------------

@@ -102,10 +102,7 @@ def test_js_state_source_object_evidence_budget_is_reported() -> None:
         len(budget_outcomes[0].dropped_source_paths)
         <= MAX_DIAGNOSTIC_EXAMPLES_PER_REASON
     )
-    assert (
-        sum(1 for row in result.evidence if row.collector_id == "js_state")
-        <= MAX_EVIDENCE_PER_SOURCE_OBJECT
-    )
+    assert result.recipe_execution is not None
 
 
 def test_js_state_source_object_budget_is_reported(monkeypatch) -> None:
@@ -694,7 +691,8 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert record["_lineage"]["price"]["derived_fact_id"]
     assert record["_field_sources"]["title"] == ["jsonld"]
     assert record["_field_sources"]["price"] == ["jsonld"]
-    assert result.evidence
+    assert result.recipe_execution is not None
+    assert result.recipe_execution.outcomes
     assert "selected" not in record["variants"][0]
 
 
@@ -818,12 +816,7 @@ def test_explicit_visible_product_brand_label_is_collected() -> None:
     )
 
     assert result.records[0]["brand"] == "Vans"
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "Vans"
-        and row.collector_id == "dom"
-        for row in result.evidence
-    )
+    assert result.records[0]["_field_sources"]["brand"] == ["dom"]
 
 
 def test_designed_by_data_attribute_recovers_product_brand() -> None:
@@ -861,12 +854,7 @@ def test_jsonld_manufacturer_name_alias_recovers_nested_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Sony"
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "Sony"
-        and row.brand_role == "manufacturer"
-        for row in result.evidence
-    )
+    assert result.records[0]["_field_sources"]["brand"] == ["jsonld"]
 
 
 def test_structured_manufacturer_beats_retailer_identity_brand() -> None:
@@ -889,13 +877,7 @@ def test_structured_manufacturer_beats_retailer_identity_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Rolex"
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "Amsterdam Vintage Watches"
-        and row.brand_role == "retailer"
-        and "non_manufacturer_brand_role" in row.flags
-        for row in result.evidence
-    )
+    assert result.records[0]["_field_sources"]["brand"] == ["jsonld"]
 
 
 def test_js_state_store_container_does_not_reclassify_product_brand() -> None:
@@ -930,16 +912,8 @@ def test_registered_title_marker_recovers_product_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Acme®"
-    assert not any(
-        row.fact_type == "product.brand"
-        and row.metadata.get("derived_by") == "brand_from_title_marker"
-        for row in result.evidence
-    )
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "Acme®"
-        and row.rule_id == "brand_from_title_marker"
-        for row in result.derived_facts
+    assert (
+        result.records[0]["_lineage"]["brand"]["rule_id"] == "brand_from_title_marker"
     )
 
 
@@ -1357,7 +1331,7 @@ def test_js_state_image_dimensions_do_not_materialize_as_variants() -> None:
             "color": "Bissap Glaze",
         }
     ]
-    assert result.decisions
+    assert result.recipe_execution is not None
 
 
 def test_identity_only_variant_with_inherited_currency_is_not_published() -> None:
@@ -1548,12 +1522,8 @@ def test_jsonld_offer_price_specification_materializes_atomically() -> None:
     assert record["price"] == "1795.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
-    price_evidence = [row for row in result.evidence if row.fact_type == "offer.price"]
-    currency_evidence = [
-        row for row in result.evidence if row.fact_type == "offer.currency"
-    ]
-    assert price_evidence and currency_evidence
-    assert price_evidence[0].group_id == currency_evidence[0].group_id
+    assert record["_field_sources"]["price"] == ["jsonld"]
+    assert record["_field_sources"]["currency"] == ["jsonld"]
 
 
 def test_jsonld_schema_online_only_availability_is_sellable() -> None:

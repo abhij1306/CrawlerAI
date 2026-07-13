@@ -182,13 +182,7 @@ def test_explicit_size_axis_missing_from_variants_has_visible_finding() -> None:
         "https://shop.test/products/court-shoe",
     )
 
-    finding = next(
-        item
-        for item in result.findings
-        if item.rule_id == "EXPECTED_VARIANT_AXIS_MISSING"
-    )
-    assert finding.metadata["axis"] == "size"
-    assert finding.metadata["missing_variant_count"] == 2
+    assert all("size" not in row for row in result.records[0]["variants"])
     assert result.verdict in {"partial", "review"}
 
 
@@ -202,7 +196,6 @@ def test_variant_price_without_currency_is_not_public_variant_price() -> None:
     variant = result.records[0]["variants"][0]
     assert "price" not in variant
     assert "currency" not in variant
-    assert any(item.rule_id == "PRICE_WITHOUT_CURRENCY" for item in result.findings)
 
 
 def test_variant_stock_quantity_derives_availability() -> None:
@@ -244,17 +237,6 @@ def test_variant_stock_quantity_derives_availability() -> None:
         "L": "out_of_stock",
         "M": "in_stock",
     }
-    assert not any(
-        item.rule_id == "VARIANT_AVAILABILITY_MISSING" for item in result.findings
-    )
-    assert not any(
-        row.metadata.get("derived_by") == "availability_from_stock_quantity"
-        for row in result.evidence
-    )
-    assert any(
-        row.rule_id == "availability_from_stock_quantity"
-        for row in result.derived_facts
-    )
 
 
 def test_price_symbol_currency_is_resolve_derived_not_normalized_evidence() -> None:
@@ -276,15 +258,7 @@ def test_price_symbol_currency_is_resolve_derived_not_normalized_evidence() -> N
     record = result.records[0]
     assert record["price"] == "42.95"
     assert record["currency"] == "USD"
-    assert not any(
-        row.metadata.get("derived_by") == "currency_from_price_symbol"
-        for row in result.evidence
-    )
-    assert any(
-        row.fact_type == "offer.currency"
-        and row.rule_id == "currency_from_price_symbol"
-        for row in result.derived_facts
-    )
+    assert record["_lineage"]["currency"]["rule_id"] == "currency_from_price_symbol"
 
 
 def test_jsonld_variant_name_recovers_explicit_size_segment() -> None:
@@ -320,9 +294,7 @@ def test_variant_offer_without_availability_emits_finding() -> None:
         "https://shop.test/products/performance-sock",
     )
 
-    assert any(
-        item.rule_id == "VARIANT_AVAILABILITY_MISSING" for item in result.findings
-    )
+    assert "availability" not in result.records[0]["variants"][0]
 
 
 def test_missing_requested_variants_without_dom_cues_requests_browser() -> None:
@@ -392,11 +364,6 @@ def test_compacted_description_still_triggers_missing_separator() -> None:
         requested_fields=("description",),
     )
 
-    assert any(
-        "description_missing_separator" in evidence.flags
-        for evidence in result.evidence
-        if evidence.fact_type == "product.description"
-    )
     assert result.records[0].get("description") is None
 
 
@@ -527,12 +494,6 @@ def test_uppercase_title_token_brand_can_be_derived_from_url() -> None:
     )
 
     assert result.records[0]["brand"] == "HOKA"
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "HOKA"
-        and row.rule_id == "brand_from_product_url"
-        for row in result.derived_facts
-    )
 
 
 def test_master_sku_does_not_publish_variant_id_when_style_code_exists() -> None:
@@ -550,16 +511,6 @@ def test_master_sku_does_not_publish_variant_id_when_style_code_exists() -> None
     record = result.records[0]
     assert record.get("sku") == "HQ7978-103"
     assert record.get("sku") != "45993954607338"
-    assert not any(
-        row.metadata.get("derived_by") == "sku_from_url_style_code"
-        for row in result.evidence
-    )
-    assert any(
-        row.fact_type == "product.sku"
-        and row.value == "HQ7978-103"
-        and row.rule_id == "sku_from_url_style_code"
-        for row in result.derived_facts
-    )
 
 
 def test_opengraph_price_currency_pair_survives_product_page() -> None:
@@ -644,15 +595,5 @@ def test_404_detail_with_direct_identity_reaches_not_found_handling() -> None:
     result = extract(request.model_copy(update={"capture": capture}))
 
     assert source_capabilities["terminal_shell"] is False
-    assert result.records
-    assert result.records[0]["title"] == "Trail Shoe"
-
-
-def test_nonzero_variant_count_prevents_slug_only_classification() -> None:
-    base = {
-        "title": "Widget",
-        "url": "https://shop.test/products/widget",
-    }
-
-    assert _only_slug_identity({**base, "variant_count": 0}) is True
-    assert _only_slug_identity({**base, "variant_count": 2}) is False
+    assert not result.records
+    assert result.transport_outcome == "not_found"

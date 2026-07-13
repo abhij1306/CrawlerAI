@@ -113,10 +113,9 @@ async def test_grounded_repair_passes_replay_but_never_activates(
         representative_url_result_ids=[url_result.id],
     )
 
-    # The grounded selector replays cleanly...
-    assert result["replay"]["passed"] is True
-    # ...but the model may not activate a rule even so.
-    assert result["activation_status"] == "replay_passed"
+    # Legacy selector replay is disabled until a recipe-v2 candidate is compiled.
+    assert result["replay"] is None
+    assert result["activation_status"] == "recipe_candidate_required"
     assert result["activation_status"] != "activated"
 
     # No selector recipe was written for the template.
@@ -135,15 +134,8 @@ async def test_grounded_repair_passes_replay_but_never_activates(
     )
     assert release_count == baseline_release_count
 
-    # The proposal is retained as an unverified_model label for operator review.
-    label = await db_session.get(ExtractionOperatorLabel, result["correction_id"])
-    assert label is not None
-    assert label.payload["activation_requested"] is False
-    assert label.payload["labels"][0]["authority"] == "unverified_model"
-    assert (
-        label.payload["labels"][0]["uncertainty_reason"]
-        == "current value picked the compare-at price"
-    )
+    # No legacy correction row is written before recipe-v2 compilation.
+    assert result["correction_id"] is None
 
 
 @pytest.mark.asyncio

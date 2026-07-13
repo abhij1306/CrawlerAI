@@ -33,7 +33,6 @@ from app.core.records.field_policy import (
     canonical_fields_for_surface,
     normalize_field_key,
 )
-from app.evaluation.grounded_corrections import save_grounded_correction
 from app.models.crawl_run import CrawlRun
 
 _UNVERIFIED_MODEL_AUTHORITY = "unverified_model"
@@ -177,14 +176,14 @@ async def apply_grounded_repair(
             "activation_status": GROUNDED_REPAIR_NO_PROPOSALS_STATUS,
             "replay": None,
         }
-    return await save_grounded_correction(
-        session,
-        run=run,
-        labels=[_label_payload(proposal) for proposal in batch.proposals],
-        activate=False,
-        authority=_UNVERIFIED_MODEL_AUTHORITY,
-        representative_url_result_ids=representative_url_result_ids or [],
-    )
+    return {
+        "correction_id": None,
+        "domain": normalize_domain(run.url),
+        "surface": run.surface,
+        "label_count": len(batch.proposals),
+        "activation_status": "recipe_candidate_required",
+        "replay": None,
+    }
 
 
 async def run_grounded_repair(

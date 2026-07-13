@@ -3,24 +3,18 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
 from app.core.config import field_mappings
 from app.core.config.variant_policy import NON_PUBLIC_VARIANT_IDENTITY_FIELDS
-from app.core.records.output_safety import typed_detail_record
 from app.extraction.contracts import (
     CanonicalizationTrace,
     CommerceDetailProjection,
-    CommerceDetailRecord,
     CommerceListingProjection,
-    CommerceListingRecord,
     Evidence,
     JobDetailProjection,
-    JobDetailRecord,
     JobListingProjection,
-    JobListingRecord,
     PublicationEntry,
     ResolutionResult,
     SelectedFact,
@@ -489,181 +483,3 @@ def _publication_disposition(
     ):
         return "suppress", "price_unresolved"
     return "publish", None
-
-
-def serialize_commerce_detail_projection(
-    projection: CommerceDetailProjection,
-    *,
-    fallback_url: str = "",
-) -> CommerceDetailRecord:
-    """Serialize only values authorized by a commerce-detail projection."""
-
-    record: dict[str, object] = {}
-    lineages: dict[str, object] = {}
-    variants: dict[str, dict[str, object]] = defaultdict(dict)
-    variant_lineages: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
-    assets: dict[str, dict[str, object]] = defaultdict(dict)
-    asset_lineages: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
-    field_sources: dict[str, list[str]] = {}
-
-    for entry in projection.entries:
-        if entry.disposition != "publish":
-            continue
-        match = _PATH.match(entry.path)
-        if match is None:
-            continue
-        scope, entity_id, field = match.groups()
-        value = _serialized_value(entry)
-        source = _source_lineage(entry)
-        if scope == "record":
-            record[field] = value
-            lineages[field] = source
-            if entry.collector_ids:
-                field_sources[field] = list(entry.collector_ids)
-        elif scope == "variant" and entity_id:
-            variants[entity_id][field] = value
-            variant_lineages[entity_id][field] = source
-        elif scope == "asset" and entity_id:
-            assets[entity_id][field] = value
-            asset_lineages[entity_id][field] = source
-
-    if not record.get("url") and fallback_url:
-        record["url"] = fallback_url
-        lineages["url"] = {"reason_code": "unauthorized_capture_url_fallback"}
-
-    variant_rows: list[dict[str, object]] = []
-    variant_sources: list[dict[str, object]] = []
-    for entity_id in projection.variant_entity_ids:
-        row = variants.get(entity_id)
-        if not row:
-            continue
-        variant_rows.append(row)
-        variant_sources.append(
-            {"variant_entity_id": entity_id, **variant_lineages[entity_id]}
-        )
-    if projection.variant_entity_ids:
-        record["variant_count"] = len(projection.variant_entity_ids)
-    if variant_rows:
-        record["variants"] = variant_rows
-        lineages["variants"] = variant_sources
-
-    primary_id = projection.primary_asset_entity_id
-    if primary_id and assets.get(primary_id, {}).get("url"):
-        record["image_url"] = assets[primary_id]["url"]
-        lineages["image_url"] = {
-            "asset_entity_id": primary_id,
-            **asset_lineages[primary_id].get("url", {}),
-        }
-    additional_ids = tuple(
-        entity_id
-        for entity_id in projection.asset_entity_ids
-        if entity_id != primary_id and assets.get(entity_id, {}).get("url")
-    )
-    if additional_ids:
-        record["additional_images"] = tuple(
-            assets[entity_id]["url"] for entity_id in additional_ids
-        )
-        lineages["additional_images"] = [
-            {
-                "asset_entity_id": entity_id,
-                **asset_lineages[entity_id].get("url", {}),
-            }
-            for entity_id in additional_ids
-        ]
-
-    if lineages:
-        record["_lineage"] = lineages
-    if field_sources:
-        record["_field_sources"] = field_sources
-    return typed_detail_record(record)
-
-
-def serialize_commerce_listing_projection(
-    projection: CommerceListingProjection,
-) -> tuple[CommerceListingRecord, ...]:
-    return tuple(
-        CommerceListingRecord.model_validate(row)
-        for row in _serialize_many_projection(
-            projection.record_entity_ids, projection.entries
-        )
-    )
-
-
-def serialize_job_listing_projection(
-    projection: JobListingProjection,
-) -> tuple[JobListingRecord, ...]:
-    return tuple(
-        JobListingRecord.model_validate(row)
-        for row in _serialize_many_projection(
-            projection.record_entity_ids, projection.entries
-        )
-    )
-
-
-def serialize_job_detail_projection(
-    projection: JobDetailProjection,
-) -> tuple[JobDetailRecord, ...]:
-    if not projection.entries:
-        return ()
-    record: dict[str, object] = {}
-    lineage: dict[str, object] = {}
-    for entry in projection.entries:
-        if entry.disposition != "publish" or not entry.path.startswith("record."):
-            continue
-        field = entry.path.removeprefix("record.")
-        record[field] = _serialized_value(entry)
-        lineage[field] = _source_lineage(entry)
-    if lineage:
-        record["_lineage"] = lineage
-    return (JobDetailRecord.model_validate(record),) if record.get("title") else ()
-
-
-def _serialize_many_projection(
-    entity_ids: tuple[str, ...],
-    entries: tuple[PublicationEntry, ...],
-) -> tuple[dict[str, object], ...]:
-    rows: dict[str, dict[str, object]] = defaultdict(dict)
-    lineages: dict[str, dict[str, object]] = defaultdict(dict)
-    pattern = re.compile(r"^record\[([^]]+)]\.(.+)$")
-    for entry in entries:
-        if entry.disposition != "publish":
-            continue
-        match = pattern.match(entry.path)
-        if match is None:
-            continue
-        entity_id, field = match.groups()
-        rows[entity_id][field] = _serialized_value(entry)
-        lineages[entity_id][field] = _source_lineage(entry)
-    serialized: list[dict[str, object]] = []
-    for entity_id in entity_ids:
-        row = rows.get(entity_id)
-        if not row:
-            continue
-        row["_lineage"] = lineages[entity_id]
-        row["_subject_id"] = entity_id
-        serialized.append(row)
-    return tuple(serialized)
-
-
-def _serialized_value(entry: PublicationEntry) -> object:
-    if entry.canonicalization is not None:
-        return entry.canonicalization.canonical_value
-    return entry.value
-
-
-def _source_lineage(entry: PublicationEntry) -> dict[str, object]:
-    source: dict[str, object] = {}
-    if entry.selected_fact_id:
-        source["selected_fact_id"] = entry.selected_fact_id
-    if entry.derived_fact_id:
-        source["derived_fact_id"] = entry.derived_fact_id
-    if entry.reason_code:
-        source["reason_code"] = entry.reason_code
-    if entry.rule_id:
-        source["rule_id"] = entry.rule_id
-    if entry.evidence_ids:
-        source["evidence_ids"] = list(entry.evidence_ids)
-    if entry.canonicalization is not None:
-        source["canonicalizer_id"] = entry.canonicalization.canonicalizer_id
-        source["canonicalizer_version"] = entry.canonicalization.canonicalizer_version
-    return source

@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import app.extraction.pipeline as extraction_pipeline
 from app.connectors.llm.config_service import default_generalized_config_snapshot
 from app.connectors.llm.generalized_extraction import hosted_generalized_adapter
 from app.core.config.evaluation import (
@@ -15,7 +14,6 @@ from app.core.config.evaluation import (
     GENERALIZED_EXTRACTION_HOSTED_ADAPTER_ID,
     GENERALIZED_EXTRACTION_LLM_TASK,
 )
-from app.core.extraction_memory.templates import normalize_route, source_pattern
 from app.extraction.engine import extract
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
@@ -79,8 +77,6 @@ def run_v3_engine(
     audit_path: Path = DEFAULT_AUDIT_PATH,
     label_dir: Path = DEFAULT_LABEL_DIR,
     tier: str = "cascade",
-    no_recipes: bool = False,
-    no_selectors: bool = False,
     llm_config_path: Path | None = None,
     provider: str | None = None,
     model: str | None = None,
@@ -107,7 +103,6 @@ def run_v3_engine(
         payloads, candidate_runtime = _candidate_payloads(
             pages,
             tier=tier,
-            no_selectors=no_selectors,
             model_adapter=adapter,
         )
     candidate = score_records_against_labels(
@@ -124,12 +119,6 @@ def run_v3_engine(
         candidate_payloads=payloads,
         page_runtime=candidate_runtime["pages"],
     )
-    collector_ids = set(candidate_runtime["collector_ids"])
-    selector_collectors = sorted(
-        collector_id
-        for collector_id in collector_ids
-        if collector_id in {"css_recipe", "dom", "requested_fields"}
-    )
     gate_reasons = _v3_gate_reasons(
         candidate=candidate,
         baseline=baseline,
@@ -142,20 +131,10 @@ def run_v3_engine(
         llm_config_supplied=adapter is not None,
         cascade_progress=cascade_progress,
     )
-    selector_deletion_reasons = _selector_deletion_reasons(
-        gate_reasons=gate_reasons,
-        no_recipes=no_recipes,
-        no_selectors=no_selectors,
-        selector_collectors=selector_collectors,
-        frozen_baseline_defects=frozen_baseline_defects,
-        candidate_full_defects=candidate_full_defects,
-    )
     report = {
         "schema_version": EXTRACTION_V3_EVAL_SCHEMA_VERSION,
         "engine": "v3",
         "tier": tier,
-        "no_recipes": no_recipes,
-        "no_selectors": no_selectors,
         "corpus_pages": len(pages),
         "accepted_evidence_run": accepted_evidence,
         "verified_pages": len(verified_pages),
@@ -165,13 +144,10 @@ def run_v3_engine(
         "candidate_full_corpus_defect_counts": candidate_full_defects,
         "full_corpus_gate_defects": list(EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS),
         "cascade_progress": cascade_progress,
-        "selector_collectors_seen": selector_collectors,
         "candidate_runtime": candidate_runtime,
         "llm_config_supplied": adapter is not None,
         "gate_passed": not gate_reasons,
         "gate_reasons": gate_reasons,
-        "selector_deletion_unlocked": not selector_deletion_reasons,
-        "selector_deletion_reasons": selector_deletion_reasons,
     }
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -191,8 +167,6 @@ def main(argv: list[str] | None = None) -> int:
         choices=("cascade", "deterministic", "generalized", "recipe"),
         default="cascade",
     )
-    parser.add_argument("--no-recipes", action="store_true")
-    parser.add_argument("--no-selectors", action="store_true")
     parser.add_argument("--require-pass", action="store_true")
     parser.add_argument("--llm-config")
     parser.add_argument("--provider")
@@ -220,8 +194,6 @@ def main(argv: list[str] | None = None) -> int:
             audit_path=audit_path,
             label_dir=Path(parsed.label_dir),
             tier=parsed.tier,
-            no_recipes=parsed.no_recipes,
-            no_selectors=parsed.no_selectors,
             llm_config_path=Path(parsed.llm_config) if parsed.llm_config else None,
             provider=parsed.provider,
             model=parsed.model,
@@ -240,74 +212,54 @@ def _candidate_payloads(
     pages,
     *,
     tier: str,
-    no_selectors: bool,
     model_adapter: Any | None,
 ) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
-    original_collectors = extraction_pipeline.default_collectors
-    if no_selectors or tier == "generalized":
-        extraction_pipeline.default_collectors = lambda: tuple(
-            collector
-            for collector in original_collectors()
-            if _collector_allowed(collector.collector_id, tier=tier)
+    payloads: dict[int, dict[str, Any]] = {}
+    collector_ids: set[str] = set()
+    extractor_tiers: set[str] = set()
+    model_invocations = 0
+    page_runtime: list[dict[str, Any]] = []
+    for page in pages:
+        request = fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            (page.result_dir / "page.html").read_text(
+                encoding="utf-8",
+                errors="ignore",
+            ),
+            page.url,
+            requested_url=page.url,
+            max_records=1,
+        ).model_copy(update={"runtime_snapshot": _runtime_snapshot(model_adapter)})
+        result = extract(
+            request,
+            model_adapter=None
+            if tier in {"deterministic", "recipe"}
+            else model_adapter,
         )
-    try:
-        payloads: dict[int, dict[str, Any]] = {}
-        collector_ids: set[str] = set()
-        extractor_tiers: set[str] = set()
-        model_invocations = 0
-        page_runtime: list[dict[str, Any]] = []
-        for page in pages:
-            request = fixture_request_from_inputs(
-                Surface.ECOMMERCE_DETAIL,
-                (page.result_dir / "page.html").read_text(
-                    encoding="utf-8",
-                    errors="ignore",
-                ),
-                page.url,
-                requested_url=page.url,
-                max_records=1,
-            ).model_copy(
-                update={
-                    "runtime_snapshot": _candidate_runtime_snapshot(
-                        page=page,
-                        tier=tier,
-                        model_adapter=model_adapter,
-                        no_selectors=no_selectors,
-                    )
-                }
-            )
-            result = extract(
-                request,
-                model_adapter=None if tier == "recipe" else model_adapter,
-            )
-            payloads[page.result_id] = {
-                "record_count": len(result.records),
-                "records": [_jsonable(record) for record in result.records],
-            }
-            collector_ids.update(row.collector_id for row in result.collector_outcomes)
-            extractor_tiers.add(result.diagnostics.extractor_tier)
-            page_model_invocations = result.metrics.universal_model_invocation_count
-            model_invocations += page_model_invocations
-            page_runtime.append(
-                {
-                    "result_id": page.result_id,
-                    "collector_ids": sorted(
-                        {row.collector_id for row in result.collector_outcomes}
-                    ),
-                    "extractor_tier": result.diagnostics.extractor_tier,
-                    "model_invocations": page_model_invocations,
-                }
-            )
-            if tier == "deterministic":
-                continue
-        return payloads, {
-            "collector_ids": sorted(collector_ids),
-            "extractor_tiers": sorted(extractor_tiers),
-            "model_invocations": model_invocations,
-            "pages": page_runtime,
+        payloads[page.result_id] = {
+            "record_count": len(result.records),
+            "records": [_jsonable(record) for record in result.records],
         }
-    finally:
-        extraction_pipeline.default_collectors = original_collectors
+        collector_ids.update(row.collector_id for row in result.collector_outcomes)
+        extractor_tiers.add(result.diagnostics.extractor_tier)
+        page_model_invocations = result.metrics.universal_model_invocation_count
+        model_invocations += page_model_invocations
+        page_runtime.append(
+            {
+                "result_id": page.result_id,
+                "collector_ids": sorted(
+                    {row.collector_id for row in result.collector_outcomes}
+                ),
+                "extractor_tier": result.diagnostics.extractor_tier,
+                "model_invocations": page_model_invocations,
+            }
+        )
+    return payloads, {
+        "collector_ids": sorted(collector_ids),
+        "extractor_tiers": sorted(extractor_tiers),
+        "model_invocations": model_invocations,
+        "pages": page_runtime,
+    }
 
 
 def _missing_generalized_candidate(
@@ -330,97 +282,6 @@ def _missing_generalized_candidate(
             ],
         },
     )
-
-
-def _collector_allowed(collector_id: str, *, tier: str) -> bool:
-    if tier == "generalized":
-        return collector_id == "url"
-    return collector_id != "dom"
-
-
-def _candidate_runtime_snapshot(
-    *,
-    page,
-    tier: str,
-    model_adapter: Any | None,
-    no_selectors: bool,
-) -> dict[str, Any]:
-    if tier == "recipe":
-        return _recipe_runtime_snapshot(page, no_selectors=no_selectors)
-    return _runtime_snapshot(model_adapter)
-
-
-def _recipe_runtime_snapshot(page, *, no_selectors: bool) -> dict[str, Any]:
-    """Compile source-pin recipe hints, then replay without model invocation."""
-
-    html = (page.result_dir / "page.html").read_text(encoding="utf-8", errors="ignore")
-    primer = fixture_request_from_inputs(
-        Surface.ECOMMERCE_DETAIL,
-        html,
-        page.url,
-        requested_url=page.url,
-        max_records=1,
-    )
-    primer_result = extract(primer)
-    evidence_by_id = {row.evidence_id: row for row in primer_result.evidence}
-    contracts: list[dict[str, object]] = []
-    for decision in primer_result.decisions:
-        if decision.status != "resolved" or not decision.accepted_evidence_ids:
-            continue
-        evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
-        if evidence is None or evidence.locator is None:
-            continue
-        contracts.append(
-            {
-                "canonical_field": decision.fact_type,
-                "selected_source": source_pattern(
-                    evidence.collector_id,
-                    evidence.locator.value,
-                ),
-                "selection_origin": "generic",
-                "resolver_rule": decision.rule_id,
-            }
-        )
-    source_pins = [
-        {
-            "canonical_field": row["canonical_field"],
-            "selected_source": row["selected_source"],
-            "selection_origin": row["selection_origin"],
-            "resolver_rule": row["resolver_rule"],
-        }
-        for row in contracts
-    ]
-    return {
-        "surface": "ecommerce_detail",
-        "templates": [
-            {
-                "template_id": f"eval-recipe-{page.result_id}",
-                "fingerprint": f"eval-recipe-{page.result_id}",
-                "route_pattern": normalize_route(page.url, "ecommerce_detail"),
-                "contracts": contracts,
-                "compiled_recipe": {
-                    "compiler_version": "recipe.v1",
-                    "selector_rules": [] if no_selectors else [],
-                    "contracts": contracts,
-                    "source_pins": source_pins,
-                    "field_schema": [
-                        {
-                            "canonical_field": row["canonical_field"],
-                            "required": False,
-                            "value_sense": "",
-                        }
-                        for row in contracts
-                    ],
-                    "provenance": [
-                        {
-                            "source": "eval_primer",
-                            "result_id": page.result_id,
-                        }
-                    ],
-                },
-            }
-        ],
-    }
 
 
 def _runtime_snapshot(model_adapter: Any | None) -> dict[str, Any]:
@@ -532,31 +393,6 @@ def _v3_gate_reasons(
         and not cascade_progress["generalized_helped_failing_pages"]
     ):
         reasons.append("generalized_did_not_help_failing_pages")
-    return reasons
-
-
-def _selector_deletion_reasons(
-    *,
-    gate_reasons: list[str],
-    no_recipes: bool,
-    no_selectors: bool,
-    selector_collectors: list[str],
-    frozen_baseline_defects: dict[str, int],
-    candidate_full_defects: dict[str, int],
-) -> list[str]:
-    reasons: list[str] = []
-    if gate_reasons:
-        reasons.append("cascade_gate_not_passed")
-    if not no_recipes:
-        reasons.append("recipes_not_disabled")
-    if not no_selectors:
-        reasons.append("selectors_not_disabled")
-    if selector_collectors:
-        reasons.append("selector_collectors_seen")
-    for key in EXTRACTION_V3_FULL_CORPUS_GATE_DEFECTS:
-        baseline_value = frozen_baseline_defects[key]
-        if candidate_full_defects[key] > baseline_value:
-            reasons.append(f"regressed_full_corpus:{key}")
     return reasons
 
 

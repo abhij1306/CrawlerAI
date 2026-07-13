@@ -36,6 +36,5 @@ def test_extraction_result_is_the_canonical_persistence_payload() -> None:
 
     assert payload["verdict"] == result.verdict
     assert payload["records"]
-    assert payload["evidence"]
-    assert payload["decisions"]
+    assert payload["recipe_execution"]["outcomes"]
     assert "replay" not in payload

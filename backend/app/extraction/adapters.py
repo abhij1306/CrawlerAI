@@ -10,23 +10,14 @@ from app.core.extraction_memory.contract_runtime import (
     resolved_contract_outcomes,
 )
 from app.core.extraction_memory.templates import fingerprint_from_parts
-from app.core.records.divergence import (
-    compare_public_record_to_projection,
-    compare_records_to_projection,
-)
 from app.extraction.contracts import (
     CollectorOutcome,
-    CommerceDetailProjection,
-    CommerceListingProjection,
     Decision,
     Evidence,
     ExtractionRequest,
     Finding,
     HarvestResult,
     JobDetailProjection,
-    JobListingProjection,
-    PublicationResult,
-    PublicRecord,
     ResolutionEnvelope,
     TargetSelection,
 )
@@ -40,12 +31,6 @@ from app.extraction.jobs import (
 )
 from app.extraction.listing import resolve_ecommerce_listing
 from app.extraction.listing_tier0 import collect_deterministic_listing
-from app.extraction.publication import (
-    serialize_commerce_detail_projection,
-    serialize_commerce_listing_projection,
-    serialize_job_detail_projection,
-    serialize_job_listing_projection,
-)
 from app.extraction.pipeline import harvest_ecommerce_detail, normalize_ecommerce_detail
 from app.extraction.publication import (
     commerce_detail_projection,
@@ -73,7 +58,6 @@ from app.extraction.validation import validate as validate_ecommerce_detail
 class SurfaceAdapter:
     harvest: Callable[[ExtractionRequest], HarvestResult]
     resolve: Callable[[ExtractionRequest, HarvestResult], ResolutionEnvelope]
-    publish: Callable[[ResolutionEnvelope], PublicationResult]
 
 
 def adapter_for(surface: Surface) -> SurfaceAdapter:
@@ -355,42 +339,6 @@ def _envelope(
     )
 
 
-def _publish(envelope: ResolutionEnvelope) -> PublicationResult:
-    projection = envelope.publication
-    records: tuple[PublicRecord, ...]
-    if isinstance(projection, CommerceDetailProjection):
-        has_url = any(
-            row.path == "record.url" and row.disposition == "publish"
-            for row in projection.entries
-        )
-        records = (serialize_commerce_detail_projection(projection),) if has_url else ()
-        findings = (
-            compare_public_record_to_projection(
-                records[0].model_dump(mode="python", exclude_none=True),
-                projection,
-                blocking=True,
-                detect_extras=True,
-            )
-            if records
-            else ()
-        )
-        return PublicationResult(records=records, findings=findings)
-    if isinstance(projection, CommerceListingProjection):
-        records = serialize_commerce_listing_projection(projection)
-    elif isinstance(projection, JobDetailProjection):
-        records = serialize_job_detail_projection(projection)
-    elif isinstance(projection, JobListingProjection):
-        records = serialize_job_listing_projection(projection)
-    else:  # pragma: no cover - discriminated union exhaustiveness
-        return PublicationResult()
-    findings = compare_records_to_projection(
-        tuple(row.model_dump(mode="python", exclude_none=True) for row in records),
-        projection,
-        blocking=True,
-    )
-    return PublicationResult(records=records, findings=findings)
-
-
 def _subject_graph(evidence: tuple[Evidence, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(row.subject_id for row in evidence if row.subject_id))
 
@@ -467,21 +415,17 @@ _ADAPTERS = {
     Surface.ECOMMERCE_DETAIL: SurfaceAdapter(
         harvest=_harvest_detail,
         resolve=_resolve_detail,
-        publish=_publish,
     ),
     Surface.ECOMMERCE_LISTING: SurfaceAdapter(
         harvest=_harvest_listing,
         resolve=_resolve_listing,
-        publish=_publish,
     ),
     Surface.JOB_DETAIL: SurfaceAdapter(
         harvest=_harvest_job_detail,
         resolve=_resolve_job_detail_adapter,
-        publish=_publish,
     ),
     Surface.JOB_LISTING: SurfaceAdapter(
         harvest=_harvest_job_listing,
         resolve=_resolve_job_listing_adapter,
-        publish=_publish,
     ),
 }

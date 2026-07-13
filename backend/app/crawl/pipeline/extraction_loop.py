@@ -12,7 +12,6 @@ from app.acquisition.browser_fetch_support import browser_page_load_elapsed_ms
 from app.acquisition.browser_runtime import real_chrome_browser_available
 from app.acquisition.host_protection_memory import note_host_hard_block
 from app.core.db_utils import mapping_or_empty
-from app.crawl.domain_memory_service import load_domain_selector_rules
 from app.core.domain_utils import normalize_domain
 from app.acquisition.platform_policy import detect_platform_family
 from app.persistence.publish import (
@@ -84,7 +83,6 @@ __all__ = [
     "STAGE_PERSIST",
     "URLProcessingContext",
     "detect_platform_family",
-    "load_domain_selector_rules",
     "mark_run_failed",
     "note_host_hard_block",
     "process_single_url",
@@ -354,14 +352,13 @@ async def _run_extraction_stage_observed(
     span,
 ) -> _ExtractedURLStage:
     acquisition_result = fetched.acquisition_result
-    result, selector_rules = await extract_records_for_acquisition(
+    result = await extract_records_for_acquisition(
         context,
         fetched,
     )
     set_logfire_attributes(
         span,
         initial_record_count=len(result.records),
-        selector_rule_count=len(selector_rules),
         adapter=getattr(acquisition_result, "adapter_name", None),
         platform=getattr(acquisition_result, "platform_family", None),
         verdict=result.verdict,

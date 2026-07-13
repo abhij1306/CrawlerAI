@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import settings
+from app.core.extraction_memory.recipe_contracts import (
+    ExtractionRecipe as ExecutableRecipe,
+    RecipeBinding,
+    RecipeCandidate,
+    RecipeScope,
+)
 from app.models.crawl_run import CrawlRecord, CrawlUrlResult
 from app.models.extraction_memory import (
     ExtractionManifest,
@@ -16,7 +22,6 @@ from app.crawl.review import (
     save_grounded_correction,
     save_review,
 )
-from app.evaluation.grounded_corrections import GroundedCorrectionScopeMismatch
 from app.core.records.schema_service import ResolvedSchema
 from app.core.records.schema_service import load_resolved_schema
 from app.persistence.artifacts import ArtifactRepository
@@ -284,158 +289,7 @@ async def test_list_domain_field_feedback_skips_invalid_serialized_source_record
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_grounded_correction_rejects_text_only_field_label(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    with pytest.raises(ValueError, match="Every label requires a grounding reference"):
-        await save_grounded_correction(
-            db_session,
-            run=run,
-            labels=[
-                {
-                    "target_kind": "field",
-                    "subject_id": "product:1",
-                    "field_name": "price",
-                    "canonical_value": "19.99",
-                    "semantic_role": "primary_price",
-                    "locale_interpretation": "USD",
-                    "grounding": [],
-                }
-            ],
-        )
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_grounded_correction_requires_representative_replay_before_activation(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    result = await save_grounded_correction(
-        db_session,
-        run=run,
-        activate=True,
-        labels=[
-            {
-                "target_kind": "field",
-                "subject_id": "product:1",
-                "field_name": "price",
-                "canonical_value": "19.99",
-                "semantic_role": "primary_price",
-                "locale_interpretation": "USD",
-                "grounding": [
-                    {
-                        "kind": "node",
-                        "artifact_id": "url-result:1:html",
-                        "locator": "css:.price",
-                    }
-                ],
-            }
-        ],
-        representative_url_result_ids=[],
-    )
-
-    label = (
-        await db_session.execute(
-            select(ExtractionOperatorLabel)
-            .where(ExtractionOperatorLabel.id == result["correction_id"])
-            .limit(1)
-        )
-    ).scalar_one()
-
-    assert result["activation_status"] == "replay_failed"
-    assert result["replay"]["passed"] is False
-    assert label.payload["activation_requested"] is True
-    assert label.payload["activation_status"] == "replay_failed"
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_grounded_correction_proposal_keeps_all_field_selectors_and_metadata(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    result = await save_grounded_correction(
-        db_session,
-        run=run,
-        labels=[
-            {
-                "target_kind": "field",
-                "subject_id": "product:1",
-                "field_name": "price",
-                "canonical_value": "19.99",
-                "semantic_role": "primary_price",
-                "locale_interpretation": "USD",
-                "grounding": [
-                    {
-                        "kind": "node",
-                        "artifact_id": "url-result:1:html",
-                        "locator": "css:.sale-price",
-                    }
-                ],
-            },
-            {
-                "target_kind": "field",
-                "subject_id": "product:1",
-                "field_name": "price",
-                "canonical_value": "19.99",
-                "semantic_role": "display_price",
-                "locale_interpretation": "en-US",
-                "grounding": [
-                    {
-                        "kind": "node",
-                        "artifact_id": "url-result:1:html",
-                        "locator": "css:[itemprop='price']",
-                    }
-                ],
-            },
-        ],
-        representative_url_result_ids=[],
-    )
-
-    label = await db_session.get(ExtractionOperatorLabel, result["correction_id"])
-    assert label is not None
-    rules = sorted(
-        label.payload["proposal"]["selector_rules"],
-        key=lambda row: row["css_selector"],
-    )
-    assert [
-        (row["css_selector"], row["semantic_role"], row["locale_interpretation"])
-        for row in rules
-    ] == [
-        (".sale-price", "primary_price", "USD"),
-        ("[itemprop='price']", "display_price", "en-US"),
-    ]
-    assert label.payload["proposal"]["conflicts"] == [
-        {
-            "field_name": "price",
-            "selectors": [".sale-price", "[itemprop='price']"],
-        }
-    ]
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_grounded_correction_replays_and_activates_immutable_release(
+async def test_grounded_recipe_correction_replays_and_activates_v2_release(
     db_session: AsyncSession,
     test_user,
     create_test_run,
@@ -457,8 +311,8 @@ async def test_grounded_correction_replays_and_activates_immutable_release(
     template = ExtractionTemplate(
         domain="example.com",
         surface=run.surface,
-        fingerprint="price-template-v1",
-        route_pattern="/products/*",
+        fingerprint="recipe-template-v2",
+        route_pattern="/products/{id}",
         last_seen_run_id=run.id,
     )
     db_session.add_all([url_result, template])
@@ -477,41 +331,72 @@ async def test_grounded_correction_replays_and_activates_immutable_release(
         run_id=run.id,
         url_result_id=url_result.id,
         name="page.html",
-        content=b'<html><body><span class="price">19.99</span></body></html>',
+        content=(
+            b'<main data-product-id="P-1">'
+            b'<a data-canonical-product href="/products/widget">Widget</a>'
+            b"<h1>Widget Prime</h1></main>"
+        ),
     )
     await db_session.commit()
+    candidate = RecipeCandidate(
+        candidate_id="reviewed-candidate-v2",
+        recipe=ExecutableRecipe(
+            recipe_id="reviewed-recipe-v2",
+            scope=RecipeScope(
+                domain="example.com",
+                surface="ecommerce_detail",
+                route_pattern="/products/{id}",
+            ),
+            capture_requirements=("rendered_dom",),
+            record_root=RecipeBinding(
+                binding_id="record.root",
+                source="dom_text",
+                path="main[data-product-id]",
+                cardinality="one",
+                required=True,
+            ),
+            identity=(
+                RecipeBinding(
+                    binding_id="record.identity.url",
+                    source="dom_attribute",
+                    path="a[data-canonical-product]",
+                    attribute="href",
+                    field="url",
+                    compare_to="request.final_url",
+                    required=True,
+                ),
+            ),
+            fields={
+                "title": (
+                    RecipeBinding(
+                        binding_id="field.title",
+                        source="dom_text",
+                        path="h1",
+                        field="title",
+                        required=True,
+                    ),
+                )
+            },
+            required=("record.identity", "title"),
+        ),
+        origin="deterministic",
+        sample_urls=(run.url,),
+    )
 
     result = await save_grounded_correction(
         db_session,
         run=run,
+        recipe_candidate=candidate,
         activate=True,
-        labels=[
-            {
-                "target_kind": "field",
-                "subject_id": "product:1",
-                "field_name": "price",
-                "canonical_value": "19.99",
-                "semantic_role": "primary_price",
-                "locale_interpretation": "USD",
-                "grounding": [
-                    {
-                        "kind": "node",
-                        "artifact_id": f"url-result:{url_result.id}:page.html",
-                        "locator": "css:.price",
-                    }
-                ],
-            }
-        ],
         representative_url_result_ids=[url_result.id],
     )
 
     await db_session.refresh(run)
-    label = await db_session.get(ExtractionOperatorLabel, result["correction_id"])
     recipe = (
         await db_session.execute(
             select(ExtractionRecipe).where(
                 ExtractionRecipe.template_id == template.id,
-                ExtractionRecipe.kind == "selectors",
+                ExtractionRecipe.kind == "executable_v2",
             )
         )
     ).scalar_one()
@@ -522,23 +407,14 @@ async def test_grounded_correction_replays_and_activates_immutable_release(
             )
         )
     ).scalar_one()
-
     assert result["activation_status"] == "activated"
     assert result["replay"]["passed"] is True
-    assert result["replay"]["template_id"] == str(template.id)
-    assert label is not None
-    assert label.template_id == template.id
-    assert label.payload["labels"][0]["authority"] == "human_verified"
-    assert recipe.payload["rules"][0]["field_name"] == "price"
-    assert recipe.payload["rules"][0]["css_selector"] == ".price"
+    assert recipe.status == "active"
+    assert release.release_version == "release.v2"
+    assert release.payload["templates"][0]["compiled_recipe"]["recipe_id"] == (
+        "reviewed-recipe-v2"
+    )
     assert run.extraction_release_snapshot_id == release.id
-    # ecommerce_detail is a "proven" surface: extraction is deterministic via
-    # source-pins, so css selector recipes are intentionally compiled away at
-    # release time (see test_release_payload_strips_commerce_detail_selector_recipes
-    # and the runtime short-circuit in record_extraction_stage._load_selector_rules,
-    # which returns [] for this surface). The human correction is durably stored as
-    # a recipe (asserted above) but is absent from the frozen release for detail.
-    assert release.payload["templates"][0]["selector_rules"] == []
 
 
 @pytest.mark.asyncio
@@ -589,27 +465,10 @@ async def test_grounded_correction_activation_rejects_template_scope_mismatch(
     )
     await db_session.commit()
 
-    with pytest.raises(GroundedCorrectionScopeMismatch):
+    with pytest.raises(ValueError, match="recipe_candidate is required"):
         await save_grounded_correction(
             db_session,
             run=run,
             activate=True,
-            labels=[
-                {
-                    "target_kind": "field",
-                    "subject_id": "product:1",
-                    "field_name": "price",
-                    "canonical_value": "19.99",
-                    "semantic_role": "primary_price",
-                    "locale_interpretation": "USD",
-                    "grounding": [
-                        {
-                            "kind": "node",
-                            "artifact_id": f"url-result:{url_result.id}:page.html",
-                            "locator": "css:.price",
-                        }
-                    ],
-                }
-            ],
             representative_url_result_ids=[url_result.id],
         )

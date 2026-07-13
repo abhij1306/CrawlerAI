@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from app.core.config.extraction_rules._detail import (
@@ -19,7 +20,6 @@ from app.extraction.contracts import (
     EvidenceDisposition,
     EntityGraph,
     Evidence,
-    ExtractionMetrics,
     ExtractionRequest,
     FieldEvidenceState,
     Finding,
@@ -31,10 +31,45 @@ from app.extraction.contracts import (
     TargetSelection,
 )
 from app.extraction.entities import EntitySet
-from app.extraction.field_states import FieldStateName, field_state
 from app.extraction.listing_records import accepted_network_listing_subject_count
 from app.core.shared.ids import stable_id
 from app.extraction.surfaces import SurfaceSpec, listing_schema
+
+FieldStateName = Literal[
+    "captured_and_resolved",
+    "captured_but_rejected",
+    "captured_conflicting",
+    "capture_incomplete",
+    "collector_missed",
+    "join_failed",
+    "interaction_required",
+    "source_unavailable",
+    "not_present_in_captured_sources",
+    "output_divergent",
+    "not_captured",
+    "captured_published",
+    "captured_suppressed",
+    "captured_unowned",
+    "not_present_in_source",
+    "not_requested",
+]
+
+
+def field_state(
+    *,
+    field: str,
+    state: FieldStateName,
+    evidence_ids: Iterable[str] = (),
+    reason_codes: Iterable[str] = (),
+    entity_id: str | None = None,
+) -> FieldEvidenceState:
+    return FieldEvidenceState(
+        entity_id=entity_id,
+        field=field,
+        state=state,
+        evidence_ids=tuple(dict.fromkeys(evidence_ids)),
+        reason_codes=tuple(dict.fromkeys(code for code in reason_codes if code)),
+    )
 
 
 def decisions(resolution: Any) -> tuple[Decision, ...]:
@@ -190,128 +225,6 @@ def _evidence_disposition(
         status="diagnostic_only",
         reason_code="not_considered_by_current_resolver",
     )
-
-
-def field_evidence_states(
-    records: tuple[PublicRecord, ...],
-    evidence: tuple[Evidence, ...],
-    decision_rows: tuple[Decision, ...],
-    request: ExtractionRequest,
-    *,
-    primary_product_entity_id: str | None = None,
-    primary_offer_entity_id: str | None = None,
-) -> tuple[FieldEvidenceState, ...]:
-    record = records[0] if records else None
-    public_to_fact = field_mappings.ECOMMERCE_PUBLIC_FIELD_FACT_TYPES
-    requested = {
-        "image_url" if field == "image" else field for field in request.requested_fields
-    }
-    fields = tuple(dict.fromkeys((*public_to_fact, *sorted(requested))))
-    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
-        "source_capabilities"
-    )
-    affected = set(
-        source_capabilities.get("affected_field_families", ())
-        if isinstance(source_capabilities, dict)
-        else ()
-    )
-    detail_outcome = (
-        str(source_capabilities.get("detail_outcome") or "").strip()
-        if isinstance(source_capabilities, dict)
-        else ""
-    ) or normalized_detail_outcome(
-        http_status=request.capture.http_status,
-        blocked=bool(request.capture.blocked),
-        acquisition_outcome=request.capture.acquisition_outcome,
-    )
-    terminal_unavailable = request.surface.value == "ecommerce_detail" and (
-        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
-    )
-    by_fact = {
-        fact: tuple(row for row in evidence if row.fact_type == fact)
-        for fact in set(public_to_fact.values())
-    }
-    decisions_by_fact = {
-        fact: tuple(row for row in decision_rows if row.fact_type == fact)
-        for fact in set(public_to_fact.values())
-    }
-    states: list[FieldEvidenceState] = []
-    for field in fields:
-        fact = public_to_fact.get(field)
-        rows = by_fact.get(fact, ()) if fact else ()
-        candidate_decisions = decisions_by_fact.get(fact, ()) if fact else ()
-        target_entity_id = (
-            primary_offer_entity_id
-            if fact
-            in {
-                field_mappings.OFFER_PRICE_FACT_TYPE,
-                field_mappings.OFFER_CURRENCY_FACT_TYPE,
-                field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
-            }
-            else primary_product_entity_id
-        )
-        relevant_decisions = tuple(
-            row
-            for row in candidate_decisions
-            if target_entity_id is None or row.entity_id == target_entity_id
-        )
-        present = bool(record and record.get(field) not in (None, "", [], {}, ()))
-        resolved_decision = any(
-            row.status == "resolved" and row.accepted_evidence_ids
-            for row in relevant_decisions
-        )
-        state: FieldStateName
-        if present:
-            state = "captured_and_resolved"
-            reasons: tuple[str, ...] = ()
-        elif (
-            terminal_unavailable
-            or field in affected
-            or (field == "image_url" and "images" in affected)
-        ):
-            state = "source_unavailable"
-            reasons = ("product_data_source_unavailable",)
-        elif any(row.status == "conflicted" for row in relevant_decisions):
-            state = "captured_conflicting"
-            reasons = tuple(
-                sorted(
-                    {
-                        item.reason
-                        for row in relevant_decisions
-                        if row.status == "conflicted"
-                        for item in row.rejected
-                    }
-                )
-            )
-        elif resolved_decision:
-            state = "captured_but_rejected"
-            reasons = ("withheld_after_resolution",)
-        elif rows:
-            state = "captured_but_rejected"
-            row_ids = {row.evidence_id for row in rows}
-            # Carry the resolver's rejection reasons (RejectedEvidence.reason)
-            # for captured rows so diagnose.json explains *why* a captured
-            # sku/availability/price was not published — not just its flags.
-            rejection_reasons = {
-                item.reason
-                for decision in relevant_decisions
-                for item in decision.rejected
-                if item.evidence_id in row_ids and item.reason
-            }
-            flag_reasons = {flag for row in rows for flag in row.flags}
-            reasons = tuple(sorted(rejection_reasons | flag_reasons))
-        else:
-            state = "not_present_in_captured_sources"
-            reasons = ()
-        states.append(
-            field_state(
-                field=field,
-                state=state,
-                evidence_ids=(row.evidence_id for row in rows),
-                reason_codes=reasons,
-            )
-        )
-    return tuple(states)
 
 
 def projection_field_states(
@@ -510,26 +423,6 @@ def projection_field_states(
     return tuple(states)
 
 
-def data_integrity_status(
-    verdict: str,
-    field_states: tuple[FieldEvidenceState, ...],
-    findings: tuple[Finding, ...] = (),
-) -> Literal["clean", "partial", "defect", "blocked", "unknown", "divergent"]:
-    if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
-        return "divergent"
-    if verdict == "blocked":
-        return "blocked"
-    if any(row.state == "captured_conflicting" for row in field_states):
-        return "defect"
-    if verdict in {"success"}:
-        return "clean"
-    if verdict in {"partial", "review"}:
-        return "partial"
-    if verdict in {"invalid", "error"}:
-        return "defect"
-    return "unknown"
-
-
 def retry_request(
     verdict: str,
     records: tuple[PublicRecord, ...],
@@ -545,7 +438,9 @@ def retry_request(
             reason="http_shell",
             required_artifacts=("rendered_html",),
         )
-    listing_retry = (
+    listing_retry: tuple[
+        Literal["empty_extraction", "listing_network_missing"], tuple[str, ...]
+    ] = (
         ("empty_extraction", ("rendered_html",)),
         ("listing_network_missing", ("rendered_html", "network_payloads")),
     )[request.capture.browser_attempted]
@@ -570,7 +465,10 @@ def retry_request(
         and not request.capture.browser_attempted
         and (
             (
-                _explicit_variant_dom_cues(evidence)
+                (
+                    _explicit_variant_dom_cues(evidence)
+                    or _captured_variant_dom_cues(request)
+                )
                 and _variant_controls_incomplete(records, evidence)
             )
             or (
@@ -617,6 +515,35 @@ def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
     return any(
         row.collector_id == "dom" and row.fact_type.startswith("option.")
         for row in evidence
+    )
+
+
+def _captured_variant_dom_cues(request: ExtractionRequest) -> bool:
+    artifact = next(
+        (
+            row
+            for row in request.capture.artifacts
+            if row.artifact_type in {"rendered_html", "http_html"}
+        ),
+        None,
+    )
+    if artifact is None:
+        return False
+    document = request.artifact_reader.document_store.html(artifact.artifact_id)
+    return any(
+        len(select.css("option")) > 1
+        and any(
+            token
+            in " ".join(
+                (
+                    select.attribute("name") or "",
+                    select.attribute("id") or "",
+                    select.parent().content_text() if select.parent() else "",
+                )
+            ).casefold()
+            for token in ("size", "color", "colour")
+        )
+        for select in document.css("select")
     )
 
 
@@ -685,52 +612,4 @@ def entity_graph(
                 {row.subject_id for row in evidence if row.subject_id}
             ),
         },
-    )
-
-
-def metrics(
-    evidence: tuple[Evidence, ...],
-    graph: EntityGraph,
-    target: TargetSelection,
-    findings: tuple[Finding, ...],
-    decision_rows: tuple[Decision, ...],
-    records: tuple[PublicRecord, ...],
-    verdict: str,
-    *,
-    collector_count: int = 0,
-    resolve_duration_ms: float = 0.0,
-    publish_duration_ms: float = 0.0,
-) -> ExtractionMetrics:
-    lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
-    public_fields = sum(
-        sum(not str(key).startswith("_") for key in record.model_dump(mode="python"))
-        for record in records
-    )
-    completeness_score = next(
-        (
-            float(finding.metadata.get("score", 0.0))
-            for finding in findings
-            if finding.rule_id == "RECORD_COMPLETENESS"
-        ),
-        0.0,
-    )
-    return ExtractionMetrics(
-        collector_count=collector_count,
-        evidence_count=len(evidence),
-        entity_counts=graph.entity_counts,
-        finding_counts_by_severity=dict(
-            Counter(finding.severity for finding in findings)
-        ),
-        decision_counts_by_status=dict(
-            Counter(decision.status for decision in decision_rows)
-        ),
-        selected_root_ids=target.root_entity_ids,
-        variant_count=sum(len(record.get("variants") or []) for record in records),
-        public_lineage_coverage=(
-            lineage_fields / public_fields if public_fields else 0.0
-        ),
-        completeness_score=completeness_score,
-        verdict=verdict,
-        resolve_duration_ms=resolve_duration_ms,
-        publish_duration_ms=publish_duration_ms,
     )

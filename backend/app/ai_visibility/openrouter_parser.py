@@ -90,7 +90,13 @@ def parse_openrouter_completion(
     message = _message(payload)
     answer_text, annotations = _answer_and_annotations(message)
     usage = dict(payload.get("usage") or {})
-    server_tool_use = usage.get("server_tool_use") or {}
+    # OpenRouter reports the native web-search count under
+    # ``server_tool_use_details``; older/other routes use ``server_tool_use``.
+    # Accept either so the search-used signal survives a key rename, and fall
+    # back to citation presence when neither counter is populated.
+    server_tool_use = (
+        usage.get("server_tool_use_details") or usage.get("server_tool_use") or {}
+    )
     search_count = int(server_tool_use.get("web_search_requests") or 0)
     normalized_usage = {
         "total_input_tokens": int(
@@ -103,16 +109,20 @@ def parse_openrouter_completion(
         "web_search_requests": search_count,
         "provider_cost_usd": float(usage.get("cost") or 0),
     }
+    citations = _citations(annotations, answer_text)
+    # url_citation annotations only exist when native web search actually ran, so
+    # treat their presence as proof of search even if the counter is absent.
+    search_used = search_count > 0 or bool(citations)
     return AnswerEngineResponse(
         provider=provider,
         model=str(payload.get("model") or requested_model),
         answer_text=answer_text,
-        search_used=search_count > 0,
+        search_used=search_used,
         # OpenRouter standardizes count, not provider-generated query strings.
         search_events=tuple(
             SearchEventResult(sequence=index, query="") for index in range(search_count)
         ),
-        citations=_citations(annotations, answer_text),
+        citations=citations,
         provider_metadata={
             "id": payload.get("id"),
             "object": payload.get("object"),

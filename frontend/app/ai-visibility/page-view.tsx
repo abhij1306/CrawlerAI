@@ -246,6 +246,13 @@ export default function AiVisibilityPage() {
 
   const run = runDetail?.run;
   const executions = runDetail?.executions ?? [];
+  // Run-level counts are only persisted at finalize, so they read 0 mid-run.
+  // Derive live progress from the executions array, which updates per poll.
+  const liveCompleted = executions.filter((e) => e.status === 'completed').length;
+  const liveFailed = executions.filter((e) => e.status === 'failed').length;
+  const runInProgress = run?.status === 'running' || run?.status === 'pending';
+  const completedCount = runInProgress ? liveCompleted : (run?.completed_count ?? 0);
+  const failedCount = runInProgress ? liveFailed : (run?.failed_count ?? 0);
   const showSummary =
     run && (run.status === 'completed' || run.status === 'degraded') && run.summary;
 
@@ -429,14 +436,14 @@ export default function AiVisibilityPage() {
               </Stat>
               <Stat label="Progress">
                 <span className="type-metric text-foreground">
-                  {run.completed_count + run.failed_count} / {run.requested_count}
+                  {completedCount + failedCount} / {run.requested_count}
                 </span>
               </Stat>
               <Stat label="Failed">
                 <span
-                  className={`type-metric ${run.failed_count > 0 ? 'text-danger' : 'text-foreground'}`}
+                  className={`type-metric ${failedCount > 0 ? 'text-danger' : 'text-foreground'}`}
                 >
-                  {run.failed_count}
+                  {failedCount}
                 </span>
               </Stat>
               <Stat label="Model">
@@ -845,11 +852,21 @@ export default function AiVisibilityPage() {
             {executionDetail.search_events && executionDetail.search_events.length > 0 && (
               <div>
                 <span className="field-label">Search queries</span>
-                <ul className="type-body-sm mt-1 list-disc pl-5 text-secondary">
-                  {executionDetail.search_events.map((event, idx) => (
-                    <li key={idx}>{event.query}</li>
-                  ))}
-                </ul>
+                {executionDetail.search_events.some((event) => event.query?.trim()) ? (
+                  <ul className="type-body-sm mt-1 list-disc pl-5 text-secondary">
+                    {executionDetail.search_events
+                      .filter((event) => event.query?.trim())
+                      .map((event, idx) => (
+                        <li key={idx}>{event.query}</li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="type-body-sm mt-1 text-secondary">
+                    {executionDetail.search_events.length} web{' '}
+                    {executionDetail.search_events.length === 1 ? 'search' : 'searches'} run (this
+                    provider does not expose the query text).
+                  </p>
+                )}
               </div>
             )}
 

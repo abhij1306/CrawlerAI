@@ -15,7 +15,8 @@ import pytest
 from app.core.config import field_mappings
 from app.extraction.contracts import Evidence, SourceLocator
 from app.extraction.entities import OfferEntity
-from app.extraction.resolution import _rank, _resolve_offer, _resolve_scalar
+from app.extraction.resolution import _resolve_offer, _resolve_scalar
+from app.extraction.resolution.ranking import rank as _rank
 
 pytestmark = pytest.mark.unit
 

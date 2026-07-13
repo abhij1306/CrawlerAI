@@ -3,7 +3,7 @@
 **Created:** 2026-07-11
 **Revised:** 2026-07-11
 **Agent:** LUNA (implementation), Codex (audit and plan author)
-**Status:** SUPERSEDED FOR EXTRACTION ARCHITECTURE — evidence and completed fixes retained; remaining extraction instructions replaced by `domain-learned-extraction-rearchitecture-plan.md`
+**Status:** SUPERSEDED — evidence and completed fixes retained; pending work moved to `extraction-architecture-freeze-recovery-plan.md`
 
 > **Historical execution record only. Do not continue any `IN PROGRESS` or `TODO` slice below as an active extraction instruction.**
 

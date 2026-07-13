@@ -102,7 +102,8 @@ def test_product_asset_decision_materializes_primary_and_additional_images() -> 
     ]
     lineage = record["_lineage"]
     assert lineage["image_url"]["rule_id"] == "PRODUCT_ASSET_PRIMARY"
-    assert lineage["image_url"]["evidence_ids"]
+    assert lineage["image_url"]["binding_id"] == "field.image_url"
+    assert lineage["image_url"]["source_path"]
     assert [item["rule_id"] for item in lineage["additional_images"]] == [
         "PRODUCT_ASSET_ADDITIONAL",
         "PRODUCT_ASSET_ADDITIONAL",

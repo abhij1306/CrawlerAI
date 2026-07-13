@@ -126,8 +126,9 @@ POST /api/crawls
   -> crawl/batch_runtime.process_run
   -> pipeline/core._process_single_url for each URL
   -> acquire page + diagnostics + artifacts
-  -> extract records
-  -> optional selector self-heal; ecommerce detail never generates missing values with LLM
+  -> select active recipe or compile one bounded candidate from the capture
+  -> execute recipe -> shared validation/publication, or report a typed honest failure
+  -> record observation / candidate promotion or typed drift only after result finalization
   -> publish verdict + metrics + source trace
   -> persist CrawlRecord rows and run summary
 ```
@@ -201,7 +202,7 @@ Current live behavior:
 - acceptance reports now distinguish transport verdicts from output quality through `quality_verdict`, `observed_failure_mode`, and `quality_checks`, so runs that technically succeed but return shell pages, promo pages, chrome-heavy listings, or broken variant semantics no longer look healthy
 - reusable domain execution defaults are persisted separately from selector memory in `DomainRunProfile`; fetch/locality/diagnostics defaults still merge into single-URL run creation, while acquisition contracts are re-resolved per URL at runtime for every run type
 - category discovery runs static sitemap/homepage discovery first, then rendered DOM site-link discovery for empty, thin, blocked, invalid, or explicitly rendered cases; it returns grouped URL evidence and never extracts product fields or parses markdown as a link source
-- `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
+- `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules. Extraction is recipe-first: active recipes execute directly; deterministic discovery and opt-in model assistance can only compile grounded candidates, which execute through the same validator and publisher.
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
 - Product monitoring, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted surfaces. There are no monitor scheduler loops, alert routes, public alert routes, notification models, or monitor-owned run callbacks.
 - Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl orchestration internals.
@@ -512,7 +513,7 @@ Primary files:
 Responsibilities and current behavior:
 
 - `publish_url_result_artifacts` is the **sole** per-URL artifact writer. It emits exactly three files under `runs/{run_id}/results/{url_result_id}/`: `page.html` (written once), `record.json` (public record view, matching the records API), and `diagnose.json`.
-- `diagnose.json` is self-contained and bounded: per field it inlines the `FieldEvidenceState` status, evidence disposition summary, winning candidate, rejected candidates with reasons (≤120-char value previews), and any publication-policy suppression. It references no other file and invents no reason vocabulary — it reuses resolver, publication, and evidence-disposition reason codes. `ExtractionResult` carries `collector_outcomes`, `stage_outcomes`, and `evidence_dispositions` to feed it.
+- `diagnose.json` is self-contained and bounded: per field it inlines the `FieldEvidenceState` status, evidence disposition summary, winning candidate, rejected candidates with reasons (≤120-char value previews), and any publication-policy suppression. Its recipe section exposes selection, candidate origin, execution/binding outcomes, and causal stage states without captured values. It references no other file and invents no reason vocabulary. `ExtractionResult` carries collector, stage, recipe, and validation outcomes to feed it.
 - `run_report.py` registers as a run-complete callback (via `pipeline/run_complete_callbacks.py`) and folds every `diagnose.json` into a deterministic run-level `report.json` that groups root causes with direct links to each URL's diagnosis. Like all of `app/observability/`, it is observe-only: it must never mutate extraction output, verdicts, selector memory, or domain contracts, and must not grow monitor-style diffing/retention/webhook behavior.
 - The legacy second artifact scheme (`runs/{id}/pages/...`), `manifest.json`/`summary.json`/`records.json`/`debug.json`/`browser.json`/`trace.json`/screenshots, the never-written `acquisition.json`/`extraction.json` readers, the dead `source_trace` provenance keys, and the observe-only LLM diagnosis flow are all deleted. Deleted modules include `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, and `config/{audit_rules,observability}.py`. See `docs/INVARIANTS.md` §12.
 

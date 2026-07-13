@@ -1,19 +1,13 @@
 # ruff: noqa: F403, F405
 from tests.unit.extraction_pipeline_test_support import *
 from app.extraction import adapters
-from app.extraction.contracts import field_contracts_for_surface
 from app.extraction.contracts import EntityHint
 from app.extraction.contracts import ModelEvidenceCandidate
 from app.extraction.contracts import RequestContext
-from app.extraction.contracts import SentinelObservation
 from app.extraction.contracts import UniversalModelArtifact
 from app.extraction.contracts import UniversalModelResult
-from app.extraction.engine import _has_suspended_runtime_template
-from app.extraction.engine import _needs_contract_fallback
 from app.extraction.model_runtime import RuntimeFlatMapPage
-from app.extraction.sentinel import _disagreement_classes, _normalized
 from pydantic import ValidationError
-from types import SimpleNamespace
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
@@ -34,122 +28,6 @@ def test_currency_hint_is_not_used_as_locale_hint() -> None:
     )
 
     assert adapters._request_locale_hint(request) is None
-
-
-def test_review_detail_with_missing_repair_target_can_use_model_fallback() -> None:
-    request = fixture_request_from_inputs(
-        Surface.ECOMMERCE_DETAIL,
-        HTML,
-        "https://shop.test/products/trail-shoe",
-    )
-    attempt = SimpleNamespace(
-        verdict="review",
-        records=(
-            {"url": "https://shop.test/products/trail-shoe", "title": "Trail Shoe"},
-        ),
-    )
-
-    assert _needs_contract_fallback(request, attempt)
-
-
-def test_review_detail_with_coverage_does_not_use_model_fallback() -> None:
-    request = fixture_request_from_inputs(
-        Surface.ECOMMERCE_DETAIL,
-        HTML,
-        "https://shop.test/products/trail-shoe",
-    )
-    attempt = SimpleNamespace(
-        verdict="review",
-        records=(
-            {
-                "url": "https://shop.test/products/trail-shoe",
-                "title": "Trail Shoe",
-                "brand": "Acme",
-                "description": "Trail Shoe",
-                "image_url": "https://shop.test/trail.jpg",
-                "price": "19.00",
-                "currency": "USD",
-                "availability": "in_stock",
-            },
-        ),
-    )
-
-    assert not _needs_contract_fallback(request, attempt)
-
-
-def test_sentinel_matches_reordered_records_by_identity() -> None:
-    recipe = (
-        {"sku": "A", "title": "Alpha", "price": "19.90"},
-        {"sku": "B", "title": "Beta", "price": 3},
-    )
-    challenger = (
-        {"sku": "B", "title": "Beta", "price": 3.0},
-        {"sku": "A", "title": "Alpha", "price": "19.9"},
-    )
-
-    assert _disagreement_classes(recipe, challenger) == ()
-
-
-def test_sentinel_matches_partially_populated_identity() -> None:
-    recipe = ({"sku": "A", "title": "Old title"},)
-    challenger = ({"sku": "A"},)
-
-    assert _disagreement_classes(recipe, challenger) == ("critical_field:title",)
-
-
-def test_sentinel_ignores_identified_pagination_count_difference() -> None:
-    recipe = ({"sku": "A", "title": "Alpha"},)
-    challenger = (
-        {"sku": "A", "title": "Alpha"},
-        {"sku": "B", "title": "Beta"},
-    )
-
-    assert _disagreement_classes(recipe, challenger) == ()
-
-
-def test_sentinel_marks_one_sided_empty_results_as_record_count_drift() -> None:
-    assert _disagreement_classes(({"sku": "A"},), ()) == ("record_count",)
-
-
-def test_sentinel_normalizes_equivalent_numeric_shapes() -> None:
-    assert _normalized("19.90") == _normalized(19.9)
-    assert _normalized(3) == _normalized(3.0)
-
-
-def test_sentinel_rejects_invalid_verdicts() -> None:
-    with pytest.raises(ValidationError):
-        SentinelObservation(
-            challenger="deterministic",
-            state="concordant",
-            recipe_verdict="typo",
-            challenger_verdict="success",
-            recipe_record_count=1,
-            challenger_record_count=1,
-            diagnostic="invalid verdict probe",
-            next_action="continue_recipe",
-        )
-
-
-def test_suspended_template_check_is_route_scoped() -> None:
-    request = fixture_request_from_inputs(
-        Surface.ECOMMERCE_DETAIL,
-        HTML,
-        "https://shop.test/products/trail-shoe",
-    )
-    snapshot = {
-        "templates": [
-            {
-                "surface": "ecommerce_detail",
-                "route_pattern": "/collections/{id}",
-                "sentinel_suspended": True,
-            }
-        ]
-    }
-    request = request.model_copy(update={"runtime_snapshot": snapshot})
-
-    assert _has_suspended_runtime_template(request) is False
-    snapshot["templates"][0]["route_pattern"] = "/products/{id}"
-    assert _has_suspended_runtime_template(request) is True
 
 
 def test_listing_visual_capture_builds_extractable_html_artifact() -> None:
@@ -344,91 +222,8 @@ def test_known_template_source_pin_marks_recipe_without_css_collectors() -> None
     result = extract(request)
 
     assert result.records[0]["currency"] == "USD"
-    assert "css_recipe" not in {row.collector_id for row in result.evidence}
-    assert result.diagnostics.extractor_tier == "recipe"
-    assert result.manifest_context.template_id == "00000000-0000-0000-0000-000000000001"
-
-
-def test_sampled_recipe_success_records_sentinel_without_override() -> None:
-    url = "https://shop.test/products/recipe-shoe"
-    acquisition = PageAcquisitionResult(
-        request=AcquisitionRequest(
-            run_id=42,
-            url=url,
-            plan=AcquisitionIntent(surface="ecommerce_detail"),
-        ),
-        final_url=url,
-        html="""
-        <script type="application/ld+json">
-        {
-          "@context": "https://schema.org",
-          "@type": "Product",
-          "name": "Generic Shoe",
-          "sku": "GENERIC-1",
-          "url": "https://shop.test/products/recipe-shoe",
-          "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
-        }
-        </script>
-        <main><h1>Recipe Shoe</h1></main>
-        """,
-        method="browser",
-        status_code=200,
-        artifacts={},
-    )
-    request = request_from_acquisition_result(
-        Surface.ECOMMERCE_DETAIL,
-        acquisition,
-        requested_url=url,
-        max_records=1,
-        runtime_snapshot={
-            "surface": "ecommerce_detail",
-            "sentinel": {"sample_rate": 1.0},
-            "_release_snapshot_id": "release-1",
-            "templates": [
-                {
-                    "template_id": "00000000-0000-0000-0000-000000000001",
-                    "fingerprint": "known-template",
-                    "route_pattern": "/products/{id}",
-                    "status": "active",
-                    "contracts": [
-                        {
-                            "canonical_field": "offer.currency",
-                            "selected_source": "jsonld:/offers/0/priceCurrency",
-                            "selection_origin": "operator",
-                        }
-                    ],
-                    "compiled_recipe": {
-                        "selector_rules": [],
-                        "source_pins": [
-                            {
-                                "canonical_field": "offer.currency",
-                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
-                                "selection_origin": "operator",
-                            }
-                        ],
-                        "contracts": [
-                            {
-                                "canonical_field": "offer.currency",
-                                "selected_source": ("jsonld:/offers/0/priceCurrency"),
-                                "selection_origin": "operator",
-                            }
-                        ],
-                        "provenance": [],
-                    },
-                }
-            ],
-        },
-    )
-
-    result = extract(request)
-
-    assert result.records[0]["currency"] == "USD"
-    assert result.sentinel_observations
-    observation = result.sentinel_observations[0]
-    assert observation.challenger == "deterministic"
-    assert observation.state == "concordant"
-    assert "sentinel_deterministic_challenger" in result.diagnostics.decision_path
-    assert result.diagnostics.sentinel_state == observation.state
+    assert result.diagnostics.extractor_tier == "candidate_recipe"
+    assert result.recipe_execution is not None
 
 
 def test_suspended_runtime_template_routes_to_generic_without_css_recipe() -> None:
@@ -491,8 +286,8 @@ def test_suspended_runtime_template_routes_to_generic_without_css_recipe() -> No
     result = extract(request)
 
     assert result.records[0]["title"].casefold() == "generic shoe"
-    assert result.diagnostics.extractor_tier == "deterministic"
-    assert "css_recipe" not in {row.collector_id for row in result.evidence}
+    assert result.diagnostics.extractor_tier == "candidate_recipe"
+    assert result.recipe_execution is not None
 
 
 def test_recipe_identity_failure_falls_back_to_grounded_model_record() -> None:
@@ -579,13 +374,10 @@ def test_recipe_identity_failure_falls_back_to_grounded_model_record() -> None:
 
     result = extract(request, model_adapter=GroundedDetailAdapter())
 
-    assert result.records
-    assert result.records[0]["title"].casefold() == "correct shoe"
-    assert result.records[0]["url"] == url
-    assert result.records[0]["price"] == "19.00"
-    assert result.diagnostics.extractor_tier == "ml"
-    assert "model_fallback" in result.diagnostics.decision_path
-    assert any(row.collector_id == "universal_model" for row in result.evidence)
+    assert not result.records
+    assert result.recipe_execution is not None
+    assert result.recipe_execution.failure_code == "recipe_identity_mismatch"
+    assert result.diagnostics.model_outcome != "produced_values"
 
 
 class GroundedDetailAdapter:
@@ -824,36 +616,22 @@ def test_zero_record_result_has_failure_taxonomy_and_diagnostics() -> None:
     }
     assert result.diagnostics.failure_codes
     assert result.diagnostics.decision_path == (
-        "harvest",
-        "resolve",
-        "publish",
-        "validate",
-        "model_fallback",
+        "recipe_select",
+        "recipe_discovery",
+        "model_recipe_proposal",
     )
     assert result.diagnostics.model_outcome == "disabled"
     assert result.diagnostics.trust_state == "rejected"
 
 
-def test_field_contract_registry_marks_default_detail_fields_critical() -> None:
-    contracts = {
-        row.field: row for row in field_contracts_for_surface(Surface.ECOMMERCE_DETAIL)
-    }
-
-    assert contracts["title"].required is True
-    assert contracts["title"].criticality == "critical"
-    assert contracts["price"].entity_scope == "offer"
-    assert contracts["image_url"].entity_scope == "asset"
-    assert contracts["variants"].cardinality == "many"
-
-
-def test_evidence_is_immutable() -> None:
+def test_recipe_binding_outcomes_are_immutable() -> None:
     result = _extract("ecommerce_detail", HTML, "https://shop.test/products/trail-shoe")
-    item = result.evidence[0]
+    assert result.recipe_execution is not None
+    item = result.recipe_execution.outcomes[0]
     try:
         item.value = "changed"  # type: ignore[misc]
     except (ValidationError, TypeError):
         pass
-    assert isinstance(item, Evidence)
     assert item.value != "changed"
 
 
@@ -864,7 +642,6 @@ def test_offer_price_without_currency_is_not_published() -> None:
     public = result.records[0].model_dump(mode="json", exclude_none=True)
     assert "price" not in public
     assert "currency" not in public
-    assert "PRICE_WITHOUT_CURRENCY" in {finding.rule_id for finding in result.findings}
 
 
 def test_offer_price_inherits_currency_from_locale_path_segment() -> None:
@@ -879,15 +656,8 @@ def test_offer_price_inherits_currency_from_locale_path_segment() -> None:
     public = result.records[0].model_dump(mode="json", exclude_none=True)
     assert public.get("price") == "129.00"
     assert public.get("currency") == "INR"
-    assert not any(
-        row.metadata.get("derived_by") == "currency_from_page_url_hint"
-        for row in result.evidence
-    )
-    assert any(
-        row.fact_type == "offer.currency"
-        and row.value == "INR"
-        and row.rule_id == "currency_from_page_url_hint"
-        for row in result.derived_facts
+    assert result.records[0]["_lineage"]["currency"]["rule_id"] == (
+        "currency_from_page_url_hint"
     )
 
 
@@ -945,13 +715,8 @@ def test_explicit_usd_minor_unit_price_is_converted_to_major_units() -> None:
     )
 
     assert result.records[0]["price"] == "138.75"
-    facts = _price_repair_facts(result, "explicit_minor_unit_price")
-    assert any(fact.value == "138.75" for fact in facts)
-    assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 13875
-        and "explicit_minor_unit_price" not in item.flags
-        for item in result.evidence
+    assert result.records[0]["_lineage"]["price"]["rule_id"] == (
+        "explicit_minor_unit_price"
     )
 
 
@@ -980,12 +745,6 @@ def test_explicit_inr_minor_unit_variant_price_is_converted_to_major_units() -> 
     )
 
     assert result.records[0]["variants"][0]["price"] == "28200.00"
-    facts = _price_repair_facts(result, "explicit_minor_unit_price")
-    assert any(fact.value == "28200.00" for fact in facts)
-    assert any(
-        item.fact_type == "offer.price" and item.raw_value == 2820000 and not item.flags
-        for item in result.evidence
-    )
 
 
 def test_dom_direct_variant_controls_emit_full_variant_matrix_rows() -> None:
@@ -1065,15 +824,6 @@ def test_nested_variant_minor_unit_price_is_converted_to_major_units() -> None:
     )
 
     assert result.records[0]["variants"][0]["price"] == "138.75"
-    facts = _price_repair_facts(result, "explicit_minor_unit_price")
-    assert any(fact.value == "138.75" for fact in facts)
-    assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 13875
-        and item.locator.value.endswith("/priceInCents")
-        and not item.flags
-        for item in result.evidence
-    )
 
 
 def test_zero_decimal_currency_explicit_minor_key_is_not_divided() -> None:
@@ -1159,17 +909,6 @@ def test_independent_parent_price_corroborates_variant_minor_unit_scale() -> Non
 
     assert result.records[0]["price"] == "138.75"
     assert result.records[0]["variants"][0]["price"] == "138.75"
-    facts = _price_repair_facts(result, "corroborated_price_scale")
-    assert any(fact.value == "138.75" for fact in facts)
-    repaired_evidence_ids = {
-        evidence_id for fact in facts for evidence_id in fact.input_evidence_ids
-    }
-    assert any(
-        item.evidence_id in repaired_evidence_ids
-        and item.fact_type == "offer.price"
-        and item.raw_value == 13875
-        for item in result.evidence
-    )
 
 
 def test_parent_price_band_corroborates_different_variant_minor_unit_prices() -> None:
@@ -1226,16 +965,6 @@ def test_parent_price_band_corroborates_different_variant_minor_unit_prices() ->
         "M": "52500.00",
         "L": "59400.00",
     }
-    repaired_evidence_ids = {
-        evidence_id
-        for fact in _price_repair_facts(result, "corroborated_price_scale")
-        for evidence_id in fact.input_evidence_ids
-    }
-    assert {
-        item.raw_value
-        for item in result.evidence
-        if item.evidence_id in repaired_evidence_ids
-    } >= {4170000, 5250000, 5940000}
 
 
 def test_parent_currency_outranks_stray_dom_currency_for_variant_scale() -> None:
@@ -1407,12 +1136,6 @@ def test_same_offer_formatted_price_corroborates_raw_minor_unit_price() -> None:
 
     assert result.records[0]["price"] == "215.00"
     assert {row["price"] for row in result.records[0]["variants"]} == {"215.00"}
-    facts = _price_repair_facts(result, "corroborated_price_scale")
-    assert any(fact.value == "215.00" for fact in facts)
-    assert any(
-        item.fact_type == "offer.price" and item.raw_value == 21500 and not item.flags
-        for item in result.evidence
-    )
 
 
 def test_uncorroborated_expensive_inr_price_is_not_divided() -> None:

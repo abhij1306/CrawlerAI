@@ -153,9 +153,12 @@ _CONTROL_ROLE_HTML = """
 """
 
 
-def _dom_option_values(result) -> dict[str, set[str]]:
+def _dom_option_values(html: str, page_url: str) -> dict[str, set[str]]:
+    from app.extraction.collectors.dom import DomCollector
+
+    request = fixture_request_from_inputs(Surface.ECOMMERCE_DETAIL, html, page_url)
     values: dict[str, set[str]] = {}
-    for row in result.evidence:
+    for row in DomCollector().collect(request.capture, request.artifact_reader):
         if row.fact_type.startswith("option.") and row.collector_id == "dom":
             values.setdefault(row.fact_type, set()).add(row.value)
     return values
@@ -165,13 +168,7 @@ def test_non_product_select_controls_create_no_option_axes() -> None:
     """Slice 2: sort, country, quantity and review-filter selects must never
     become size/color axes; genuine size/color selects still do (results
     10/17/21/58/70/79/95 lost axes; 11/12/20/25/30/75 kept them)."""
-    result = _extract(
-        "ecommerce_detail",
-        _CONTROL_ROLE_HTML,
-        "https://shop.test/p",
-        requested_fields=("title", "price"),
-    )
-    values = _dom_option_values(result)
+    values = _dom_option_values(_CONTROL_ROLE_HTML, "https://shop.test/p")
 
     # Legitimate product options survive.
     assert {"9", "10", "11"} <= values.get("option.size", set())
@@ -223,9 +220,7 @@ def test_control_role_classifier_rejects_and_admits_generically() -> None:
 
 
 def test_colour_and_wrapped_select_controls_create_color_axis() -> None:
-    result = _extract(
-        "ecommerce_detail",
-        """
+    html = """
         <html><body><main>
           <h1>Trail Shoe</h1>
           <form class="product-form">
@@ -238,12 +233,11 @@ def test_colour_and_wrapped_select_controls_create_color_axis() -> None:
             <button data-option-name="colour">Blue</button>
           </form>
         </main></body></html>
-        """,
-        "https://shop.test/p",
-        requested_fields=("title",),
-    )
+        """
 
-    assert _dom_option_values(result).get("option.color", set()) == {
+    assert _dom_option_values(html, "https://shop.test/p").get(
+        "option.color", set()
+    ) == {
         "Black",
         "Bone",
         "Red",
@@ -252,20 +246,17 @@ def test_colour_and_wrapped_select_controls_create_color_axis() -> None:
 
 
 def test_select_label_lookup_ignores_css_special_id_without_crashing() -> None:
-    result = _extract(
-        "ecommerce_detail",
-        """
+    html = """
         <html><body><main>
           <h1>Trail Shoe</h1>
           <label for='product"]colour'>Colour</label>
           <select id='product"]colour'><option>Black</option></select>
         </main></body></html>
-        """,
-        "https://shop.test/p",
-        requested_fields=("title",),
-    )
+        """
 
-    assert _dom_option_values(result).get("option.color", set()) == {"Black"}
+    assert _dom_option_values(html, "https://shop.test/p").get(
+        "option.color", set()
+    ) == {"Black"}
 
 
 # --- Slice 3: child ownership + commercial projection policy ---------------
@@ -595,14 +586,8 @@ def test_asset_selection_and_publication_share_high_resolution_lineage() -> None
 
     assert result.records[0].get("image_url") == high_res
     lineage = result.records[0]["_lineage"]["image_url"]
-    evidence_by_id = {row.evidence_id: row for row in result.evidence}
-    selected_by_id = {row.selected_fact_id: row for row in result.selected_facts}
-    assert tuple(
-        evidence_by_id[evidence_id].value for evidence_id in lineage["evidence_ids"]
-    ) == (high_res,)
-    assert selected_by_id[lineage["selected_fact_id"]].evidence_ids == tuple(
-        lineage["evidence_ids"]
-    )
+    assert lineage["binding_id"] == "field.image_url"
+    assert lineage["source_path"]
 
 
 def test_url_confirmed_product_keeps_direct_brand_despite_title_slug_mismatch() -> None:

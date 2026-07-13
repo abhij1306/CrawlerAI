@@ -23,12 +23,10 @@ def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
         max_records=5,
     )
     assert result.verdict == "success"
-    assert result.evidence
-    assert result.decisions
+    assert result.recipe_execution is not None
+    assert result.recipe_execution.outcomes
     assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
     assert all(row["_lineage"]["title"] for row in result.records)
-    assert all(item.subject_id for item in result.evidence)
-    assert all(item.surface.value == "ecommerce_listing" for item in result.evidence)
 
 
 def test_ecommerce_listing_reads_hyphenated_data_test_id_product_cards() -> None:
@@ -129,17 +127,14 @@ def test_ecommerce_listing_result_is_replayable() -> None:
         max_records=3,
     )
     rows = result.model_dump(mode="json", exclude_none=True)["records"]
-    assert {
-        (row["title"], row["url"], row["price"]) for row in rows
-    } == {
+    assert {(row["title"], row["url"], row["price"]) for row in rows} == {
         ("Trail Shoe", "https://shop.test/products/trail-shoe", "129.00"),
         ("Day Pack", "https://shop.test/products/day-pack", "89.00"),
     }
     assert all(row["_lineage"] and row["_subject_id"] for row in rows)
     payload = result.model_dump(mode="json", exclude_none=True)
     assert payload["surface"] == "ecommerce_listing"
-    assert payload["evidence"]
-    assert payload["decisions"]
+    assert payload["recipe_execution"]["outcomes"]
 
 
 def test_ecommerce_listing_filters_docs_utility_links() -> None:
@@ -366,7 +361,10 @@ def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards()
     assert result.records[0]["image_url"] == (
         "https://shop.test/images/classic-fit-pants.jpg"
     )
-    assert {row.artifact_id for row in result.evidence} == {"listing_visual_html"}
+    assert all(
+        "listing_visual_html" in row["_lineage"]["title"]["source_path"]
+        for row in result.records
+    )
 
 
 def test_ecommerce_listing_accepts_same_site_subdomain_detail_url() -> None:
@@ -577,7 +575,10 @@ def test_ecommerce_listing_tier0_structured_floor_resolves_without_llm() -> None
         "https://shop.test/p/mira-1002.html",
     }
     # Every published fact is sourced from the structured floor collector...
-    assert {row.collector_id for row in result.evidence} == {"listing_structured_floor"}
+    assert all(
+        row["_field_sources"]["title"] == ["listing_structured_floor"]
+        for row in result.records
+    )
     # ...and the floor spends zero LLM invocations (acquire-cheap fast path).
     assert result.metrics.universal_model_invocation_count == 0
 

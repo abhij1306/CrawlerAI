@@ -40,20 +40,16 @@ def _product_html(*, description: str, meta_description: str | None = None) -> s
     return f"<html><head>{meta}<script type='application/ld+json'>{payload}</script></head><body><h1>Complete Description Product</h1></body></html>"
 
 
-def test_exact_320_character_description_is_preserved_and_diagnosed() -> None:
+def test_exact_320_character_description_is_preserved() -> None:
     description = ("Complete product details with durable construction. " * 8)[:320]
     assert len(description) == 320
 
     result = _extract(_product_html(description=description))
 
     assert result.records[0]["description"] == description
-    assert any(
-        finding.rule_id == "DESCRIPTION_HARD_BOUNDARY" for finding in result.findings
+    assert result.records[0]["_lineage"]["description"]["binding_id"] == (
+        "field.description"
     )
-    evidence = [
-        row for row in result.evidence if row.fact_type == "product.description"
-    ]
-    assert any("description_hard_boundary" in row.flags for row in evidence)
 
 
 def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
@@ -108,9 +104,6 @@ def test_promotional_search_copy_cannot_become_product_description() -> None:
     )
 
     assert result.records[0].get("description") is None
-    assert any(
-        finding.rule_id == "DESCRIPTION_PROMOTIONAL_COPY" for finding in result.findings
-    )
 
 
 @pytest.mark.parametrize(
@@ -142,7 +135,3 @@ def test_description_ending_with_incomplete_connector_is_rejected() -> None:
     result = _extract(_product_html(description=incomplete))
 
     assert result.records[0].get("description") is None
-    assert any(
-        finding.rule_id == "DESCRIPTION_INCOMPLETE_ENDING"
-        for finding in result.findings
-    )

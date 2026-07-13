@@ -213,7 +213,7 @@ async def test_extraction_memory_pending_rollback_is_not_swallowed() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_extraction_stage_releases_db_session_after_selector_read(
+async def test_extraction_stage_has_no_selector_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = CommitTrackingSession()
@@ -237,38 +237,23 @@ async def test_extraction_stage_releases_db_session_after_selector_read(
         url_metrics={},
     )
 
-    async def _fake_load_selector_rules(ctx, page_url: str):
-        del page_url
-        ctx.session.checked_out = True
-        return []
-
-    async def _fake_run_record_extraction(ctx, *, acquisition_result, selector_rules):
-        del acquisition_result, selector_rules
-        assert ctx.session.checked_out is False
-        assert ctx.session.commit_count >= 1
+    async def _fake_run_record_extraction(ctx, *, acquisition_result):
+        del acquisition_result
+        assert not hasattr(record_extraction_stage, "_load_selector_rules")
         return URLProcessingResult(records=[], verdict="empty")
 
-    monkeypatch.setattr(
-        record_extraction_stage,
-        "_load_selector_rules",
-        _fake_load_selector_rules,
-    )
     monkeypatch.setattr(
         record_extraction_stage,
         "_run_record_extraction",
         _fake_run_record_extraction,
     )
 
-    (
-        result,
-        selector_rules,
-    ) = await record_extraction_stage._extract_records_for_acquisition(
+    result = await record_extraction_stage._extract_records_for_acquisition(
         context,
         fetched,
     )
 
     assert result.verdict == "empty"
-    assert selector_rules == []
 
 
 @pytest.mark.asyncio

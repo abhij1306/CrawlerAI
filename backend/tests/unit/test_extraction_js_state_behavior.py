@@ -21,7 +21,8 @@ def test_js_state_dict_values_do_not_crash_dedupe() -> None:
     record = result.records[0] if result.records else None
     assert record is not None
     assert record["price"] == "29.90"
-    assert result.evidence
+    assert result.recipe_execution is not None
+    assert any(row.status == "resolved" for row in result.recipe_execution.outcomes)
 
 
 def test_js_state_shopify_compare_at_price_maps_to_original_price() -> None:
@@ -991,14 +992,10 @@ def test_js_state_variant_assets_and_gtin_keep_variant_ownership() -> None:
             "size": "9",
         }
     ]
-    gtin = next(row for row in result.evidence if row.fact_type == "variant.gtin")
-    image = next(
-        row
-        for row in result.evidence
-        if row.fact_type == "asset.image_url" and row.collector_id == "js_state"
+    variant_lineage = result.records[0]["_lineage"]["variants"][0]
+    assert variant_lineage["image_url"]["binding_id"].startswith(
+        "entity.variant.image_url"
     )
-    assert gtin.subject_id == image.parent_subject_id
-    assert image.relation_type == "variant_asset"
 
 
 def test_shopify_meta_assignment_keeps_default_variant_diagnostic_only() -> None:
@@ -1017,11 +1014,7 @@ def test_shopify_meta_assignment_keeps_default_variant_diagnostic_only() -> None
 
     assert result.records[0]["price"] == "8.00"
     assert not result.records[0].get("variants")
-    assert any(
-        "default_variant_placeholder" in row.flags
-        for row in result.evidence
-        if row.fact_type == "variant.id"
-    )
+    assert result.recipe_execution is not None
 
 
 def test_shopify_vendor_and_public_title_materialize_brand_and_size() -> None:
@@ -1042,12 +1035,7 @@ def test_shopify_vendor_and_public_title_materialize_brand_and_size() -> None:
     assert result.records[0]["brand"] == "JORDAN"
     assert result.records[0]["variants"][0]["size"] == "XS"
     assert result.records[0]["variants"][0]["price"] == "19.98"
-    assert any(
-        row.fact_type == "product.brand"
-        and row.value == "Mens Short Sleeve Shirt"
-        and "category_as_brand" in row.flags
-        for row in result.evidence
-    )
+    assert result.records[0]["_lineage"]["brand"]["binding_id"] == "field.brand"
 
 
 def test_richer_shopify_product_axis_outranks_compact_meta_fallback() -> None:
@@ -1245,17 +1233,13 @@ def test_js_state_parent_selling_price_and_vendor_brand_paths_publish() -> None:
     assert record["price"] == "3295.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
-    offer_rows = [
-        row
-        for row in result.evidence
-        if row.fact_type.startswith("offer.") and "/sellingPrice/" in row.locator.value
-    ]
-    grouped_facts = _group_facts_by_group_id(offer_rows)
-    assert any(
-        facts >= {"offer.price", "offer.currency", "offer.availability"}
-        for facts in grouped_facts.values()
-    )
-    assert any(row.locator.value.endswith("/sellingPrice/amount") for row in offer_rows)
+    assert result.recipe_execution is not None
+    resolved_paths = {
+        row.source_path
+        for row in result.recipe_execution.outcomes
+        if row.status == "resolved" and row.source_path
+    }
+    assert any(path.endswith("/sellingPrice/amount") for path in resolved_paths)
 
 
 def test_js_state_value_path_checks_complete_suffix_across_list_items() -> None:
@@ -1344,23 +1328,8 @@ def test_js_state_variant_selling_price_container_is_atomic() -> None:
             "size": "M",
         }
     ]
-    rows: list[Evidence] = [
-        row
-        for row in result.evidence
-        if row.entity_hint
-        and row.entity_hint.entity_type == "variant"
-        and row.fact_type.startswith("offer.")
-    ]
-    assert {row.fact_type for row in rows} >= {
-        "offer.price",
-        "offer.currency",
-        "offer.availability",
-    }
-    grouped_facts = _group_facts_by_group_id(rows)
-    assert any(
-        facts >= {"offer.price", "offer.currency", "offer.availability"}
-        for facts in grouped_facts.values()
-    )
+    variant_lineage = result.records[0]["_lineage"]["variants"][0]
+    assert {"price", "currency", "availability"} <= set(variant_lineage)
 
 
 def test_unrelated_application_json_does_not_create_variant() -> None:
@@ -1585,12 +1554,9 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
             "size": "M",
         },
     }
-    variant_evidence = [
-        item for item in result.evidence if item.fact_type.startswith("variant.")
-    ]
-    assert variant_evidence
-    assert all(item.subject_id for item in variant_evidence)
-    assert all(item.parent_subject_id for item in variant_evidence)
+    variant_lineage = result.records[0]["_lineage"]["variants"]
+    assert len(variant_lineage) == 2
+    assert all(row["variant_id"]["binding_id"] for row in variant_lineage)
 
 
 def test_typed_commerce_detail_record_round_trip_preserves_variants() -> None:

@@ -157,11 +157,6 @@ def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
     )
     assert result.records
     assert not result.records[0].get("variants")
-    option_evidence = [
-        item for item in result.evidence if item.fact_type.startswith("option.")
-    ]
-    assert option_evidence
-    assert result.graph.entity_counts["option"] == 3
 
 
 def test_demandware_dom_variation_buttons_materialize_selected_color_sizes() -> None:
@@ -556,7 +551,6 @@ def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
             "size": "S",
         }
     ]
-    assert result.graph.entity_counts["variant"] == 1
     assert result.records[0]["_lineage"]["variants"][0]["price"]
 
 
@@ -652,10 +646,8 @@ def test_js_state_parent_price_object_preserves_nested_currency_path() -> None:
     assert record["price"] == "3295.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
-    assert any(
-        row.fact_type == "offer.currency"
-        and row.locator.value.endswith("/currentPrice/currencyCode")
-        for row in result.evidence
+    assert record["_lineage"]["currency"]["source_path"].endswith(
+        "/currentPrice/currencyCode"
     )
 
 
@@ -891,10 +883,7 @@ def test_network_variant_offer_rows_materialize_with_lineage() -> None:
         },
     }
     assert all(row["availability"] for row in result.records[0]["_lineage"]["variants"])
-    assert any(
-        item.artifact_id == "network_0" and item.collector_id == "network"
-        for item in result.evidence
-    )
+    assert result.recipe_execution is not None
 
 
 def test_mixed_numeric_and_string_identity_values_do_not_crash() -> None:
@@ -939,12 +928,6 @@ def test_boolean_product_title_is_rejected_before_typed_publication() -> None:
     assert result.records
     assert result.records[0].get("title") is not True
     assert not isinstance(result.records[0].get("title"), bool)
-    assert any(
-        item.fact_type == "product.title"
-        and item.value is True
-        and "invalid_scalar_type" in item.flags
-        for item in result.evidence
-    )
 
 
 def test_integer_variant_url_is_rejected_before_typed_publication() -> None:
@@ -970,12 +953,6 @@ def test_integer_variant_url_is_rejected_before_typed_publication() -> None:
     variant = result.records[0]["variants"][0]
     assert variant["sku"] == "OLD-SKOOL-BLK-9"
     assert "url" not in variant
-    assert any(
-        item.fact_type == "variant.url"
-        and item.value == 1079
-        and "invalid_scalar_type" in item.flags
-        for item in result.evidence
-    )
 
 
 def test_valid_string_title_url_and_boolean_availability_remain_unchanged() -> None:
@@ -1042,4 +1019,4 @@ def test_adapter_artifact_flows_through_evidence_engine() -> None:
     assert result.records
     assert result.records[0]["title"] == "Adapter Widget"
     assert result.records[0]["_lineage"]["title"]
-    assert any(item.artifact_id == "adapter_0" for item in result.evidence)
+    assert result.recipe_execution is not None

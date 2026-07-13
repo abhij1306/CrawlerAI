@@ -89,6 +89,7 @@ class CompiledExtractionRecipe(CreatedAtMixin, Base):
             "uq_compiled_extraction_recipes_checksum",
             "recipe_id",
             "checksum",
+            "compiler_version",
             unique=True,
         ),
     )

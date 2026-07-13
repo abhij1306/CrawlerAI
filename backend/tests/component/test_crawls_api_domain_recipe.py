@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
 from app.api import crawl_domain as crawl_domain_api
-from app.models.extraction_memory import ExtractionOperatorLabel as DomainFieldFeedback
 from app.crawl.batch_runtime import process_run
 from app.acquisition.cookie_store import persist_storage_state_for_domain
 from app.acquisition.acquirer import PageAcquisitionResult
@@ -324,7 +322,7 @@ async def test_crawls_domain_recipe_routes_round_trip(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_crawls_grounded_correction_route_enforces_replay_gate(
+async def test_crawls_grounded_correction_route_rejects_legacy_selector_payload(
     crawls_api_client: AsyncClient,
     db_session,
     test_user,
@@ -340,7 +338,7 @@ async def test_crawls_grounded_correction_route_enforces_replay_gate(
     )
     run_id = run.id
 
-    accepted_response = await crawls_api_client.post(
+    response = await crawls_api_client.post(
         f"/api/crawls/{run_id}/corrections",
         json={
             "activate": True,
@@ -365,20 +363,7 @@ async def test_crawls_grounded_correction_route_enforces_replay_gate(
         },
     )
 
-    assert accepted_response.status_code == 200
-    payload = accepted_response.json()
-    assert payload["activation_status"] == "replay_failed"
-    assert payload["replay"]["passed"] is False
-    assert payload["replay"]["reason"] == "representative_results_not_owned_by_run"
-    label = (
-        await db_session.execute(
-            select(DomainFieldFeedback)
-            .where(DomainFieldFeedback.id == payload["correction_id"])
-            .limit(1)
-        )
-    ).scalar_one()
-    assert label.label_kind == "grounded_correction"
-    assert label.payload["labels"][0]["grounding"][0]["locator"] == "css:.price"
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -432,8 +417,7 @@ async def test_crawls_grounded_correction_route_maps_scope_mismatch_to_conflict(
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "template scope mismatch"
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

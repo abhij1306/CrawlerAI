@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 from app.schemas.selectors import SelectorRecordResponse
+from app.core.extraction_memory.recipe_contracts import RecipeCandidate
 from app.extraction.surfaces import parse_surface
 from app.persistence.publish.verdict import run_health_verdict
 
@@ -422,36 +423,8 @@ class DomainRecipeSaveRunProfileRequest(BaseModel):
     profile: DomainRunProfilePayload
 
 
-class GroundingReferencePayload(BaseModel):
-    kind: Literal["node", "path", "region", "absence_assertion"]
-    artifact_id: str
-    locator: str
-    bounding_box: dict[str, float] | None = None
-
-
-class GroundedCorrectionLabelPayload(BaseModel):
-    target_kind: Literal[
-        "page_region",
-        "record_boundary",
-        "field",
-        "entity_relationship",
-        "explicit_absence",
-    ]
-    subject_id: str | None = None
-    record_id: str | None = None
-    field_name: str | None = None
-    canonical_value: Any = None
-    semantic_role: str | None = None
-    locale_interpretation: str | None = None
-    region_role: (
-        Literal["primary", "recommendation", "boilerplate", "unrelated"] | None
-    ) = None
-    relationship: dict[str, str] | None = None
-    grounding: list[GroundingReferencePayload] = Field(default_factory=list)
-
-
 class GroundedCorrectionRequest(BaseModel):
-    labels: list[GroundedCorrectionLabelPayload] = Field(default_factory=list)
+    recipe_candidate: RecipeCandidate
     activate: bool = False
     representative_url_result_ids: list[int] = Field(default_factory=list)
 

@@ -16,11 +16,8 @@ from app.core.config.evaluation import (
     UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
 )
 from app.crawl.profile import record_acquisition_contract_outcome
+from app.crawl.profile.acquisition_contract import InternalApiReplayMemoryUpdate
 from app.core.db_utils import mapping_or_empty
-from app.crawl.domain_memory_service import (
-    compose_runtime_selector_rules,
-    load_domain_selector_rules,
-)
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.extraction import extract, parse_surface
@@ -34,10 +31,7 @@ from app.crawl.pipeline.runtime_helpers import (
 from app.acquisition.platform_policy import detect_platform_family
 from app.acquisition.variant_endpoint_expansion import expand_sfcc_variant_endpoints
 from app.persistence.publish import build_url_metrics
-from app.persistence.extraction_memory import (
-    load_release_payload,
-    selector_rules_from_release,
-)
+from app.persistence.extraction_memory import load_release_payload
 
 from .url_processing_context import (
     FetchedURLStage as _FetchedURLStage,
@@ -73,7 +67,6 @@ def extract_records_for_acquisition_result(
     max_records: int,
     requested_page_url: str,
     requested_fields: list[str] | None = None,
-    selector_rules: list[dict[str, object]] | None = None,
     runtime_snapshot: dict[str, object] | None = None,
     model_adapter=None,
 ) -> ExtractionResult:
@@ -83,7 +76,6 @@ def extract_records_for_acquisition_result(
         requested_url=requested_page_url,
         max_records=max_records,
         requested_fields=tuple(str(field) for field in requested_fields or ()),
-        selector_rules=selector_rules,
         runtime_snapshot=runtime_snapshot or {},
     )
     return extract(request, model_adapter=model_adapter)
@@ -92,7 +84,7 @@ def extract_records_for_acquisition_result(
 async def _extract_records_for_acquisition(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
-) -> tuple[ExtractionResult, list[dict[str, object]]]:
+) -> ExtractionResult:
     acquisition_result = fetched.acquisition_result
     _assign_platform_family(acquisition_result)
 
@@ -100,12 +92,9 @@ async def _extract_records_for_acquisition(
         acquisition_result,
         requested_fields=list(context.requested_fields),
     )
-    selector_rules = await _load_selector_rules(context, acquisition_result.final_url)
-    await context.session.commit()
     result = await _run_record_extraction(
         context,
         acquisition_result=acquisition_result,
-        selector_rules=selector_rules,
     )
     if (
         not result.records
@@ -115,13 +104,12 @@ async def _extract_records_for_acquisition(
         fallback_result = await _extract_records_from_preserved_browser_html(
             context,
             fetched,
-            selector_rules=selector_rules,
         )
         if fallback_result is not None:
             await _record_model_cost_log(context, fallback_result)
             if fallback_result.records:
                 result = fallback_result
-    return result, selector_rules
+    return result
 
 
 async def _record_model_cost_log(
@@ -224,7 +212,6 @@ async def _run_record_extraction(
     context: _URLProcessingContext,
     *,
     acquisition_result: PageAcquisitionResult,
-    selector_rules: list[dict[str, object]],
 ) -> ExtractionResult:
     from app.crawl.pipeline import extraction_loop
 
@@ -250,7 +237,6 @@ async def _run_record_extraction(
         surface=context.surface,
         adapter_artifact_count=adapter_artifact_count,
         network_payload_count=len(acquisition_result.network_payloads or []),
-        selector_rule_count=len(selector_rules or []),
     ) as span:
         result = await asyncio.to_thread(
             extract_records_impl,
@@ -259,7 +245,6 @@ async def _run_record_extraction(
             max_records=context.config.max_records,
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
-            selector_rules=selector_rules,
             runtime_snapshot=runtime_snapshot,
             model_adapter=model_adapter,
         )
@@ -325,8 +310,6 @@ async def _expand_variant_endpoint_payloads(
 async def _extract_records_from_preserved_browser_html(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
-    *,
-    selector_rules: list[dict[str, object]],
 ) -> ExtractionResult | None:
     acquisition_result = fetched.acquisition_result
     browser_diagnostics = mapping_or_empty(
@@ -357,7 +340,6 @@ async def _extract_records_from_preserved_browser_html(
             max_records=context.config.max_records,
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
-            selector_rules=selector_rules,
             runtime_snapshot=runtime_snapshot,
             model_adapter=model_adapter,
         )
@@ -434,36 +416,6 @@ def _generalized_model_config(
     return None
 
 
-async def _load_selector_rules(
-    context: _URLProcessingContext,
-    page_url: str,
-) -> list[dict[str, object]]:
-    if str(context.surface or "").strip().lower() == "ecommerce_detail":
-        return []
-    if context.run.extraction_release_snapshot_id is not None:
-        release = await load_release_payload(
-            context.session, context.run.extraction_release_snapshot_id
-        )
-        saved_rules = selector_rules_from_release(release, surface=context.surface)
-    else:
-        from app.crawl.pipeline import extraction_loop
-
-        load_rules = getattr(
-            extraction_loop,
-            "load_domain_selector_rules",
-            load_domain_selector_rules,
-        )
-        saved_rules = await load_rules(
-            context.session,
-            domain=normalize_domain(page_url),
-            surface=context.surface,
-        )
-    return compose_runtime_selector_rules(
-        saved_rules,
-        context.run.settings_view.extraction_contract(),
-    )
-
-
 async def _update_acquisition_contract_memory(
     context: _URLProcessingContext,
     *,
@@ -471,17 +423,21 @@ async def _update_acquisition_contract_memory(
     records: list[dict[str, object]],
     persisted_count: int,
     verdict: str,
-) -> None:
+) -> InternalApiReplayMemoryUpdate:
     domain = normalize_domain(
         getattr(acquisition_result, "final_url", "") or context.url
     )
     if not domain:
-        return
+        return InternalApiReplayMemoryUpdate()
     diagnostics = mapping_or_empty(
         getattr(acquisition_result, "browser_diagnostics", {})
     )
     acquisition_diagnostics = mapping_or_empty(
         getattr(acquisition_result, "acquisition_diagnostics", {})
+    )
+    network_payloads = getattr(acquisition_result, "network_payloads", ())
+    failed_endpoint_ids = acquisition_diagnostics.get(
+        "internal_api_replay_failed_endpoint_ids"
     )
     return await record_acquisition_contract_outcome(
         context.session,
@@ -500,11 +456,15 @@ async def _update_acquisition_contract_memory(
         verdict=verdict,
         blocked=_effective_blocked(acquisition_result),
         page_url=getattr(acquisition_result, "final_url", "") or context.url,
-        network_payloads=list(
-            getattr(acquisition_result, "network_payloads", []) or []
+        network_payloads=(
+            list(network_payloads)
+            if isinstance(network_payloads, (list, tuple))
+            else []
         ),
-        replay_failed_endpoint_ids=list(
-            acquisition_diagnostics.get("internal_api_replay_failed_endpoint_ids") or []
+        replay_failed_endpoint_ids=(
+            list(failed_endpoint_ids)
+            if isinstance(failed_endpoint_ids, (list, tuple))
+            else []
         ),
     )
 

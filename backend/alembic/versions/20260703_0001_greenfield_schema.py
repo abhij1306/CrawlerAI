@@ -636,7 +636,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_compiled_extraction_recipes_checksum",
         "compiled_extraction_recipes",
-        ["recipe_id", "checksum"],
+        ["recipe_id", "checksum", "compiler_version"],
         unique=True,
     )
     op.create_table(

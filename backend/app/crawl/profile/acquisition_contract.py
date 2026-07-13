@@ -281,15 +281,23 @@ async def _note_internal_api_replay_failures(
     for endpoint in normalize_internal_api_endpoints(
         profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
     ):
-        if endpoint_identity(endpoint) not in failed:
-            retained.append(endpoint)
+        endpoint_payload = dict(endpoint) if isinstance(endpoint, Mapping) else {}
+        if endpoint_identity(endpoint_payload) not in failed:
+            retained.append(endpoint_payload)
             continue
-        failure_count = (
-            int(endpoint.get(INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY) or 0) + 1
-        )
+        failure_value = endpoint_payload.get(INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY)
+        try:
+            failure_count = (
+                int(failure_value)
+                if isinstance(failure_value, (str, bytes, bytearray, int, float))
+                else 0
+            )
+        except (TypeError, ValueError, OverflowError):
+            failure_count = 0
+        failure_count += 1
         if failure_count < threshold:
-            endpoint[INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY] = failure_count
-            retained.append(endpoint)
+            endpoint_payload[INTERNAL_API_ENDPOINT_FAILURE_COUNT_KEY] = failure_count
+            retained.append(endpoint_payload)
         else:
             evicted_count += 1
     profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = retained

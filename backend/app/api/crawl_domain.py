@@ -203,7 +203,7 @@ async def crawls_save_grounded_correction(
         result = await save_grounded_correction(
             session,
             run=run,
-            labels=[item.model_dump() for item in payload.labels],
+            recipe_candidate=payload.recipe_candidate,
             activate=payload.activate,
             representative_url_result_ids=payload.representative_url_result_ids,
         )

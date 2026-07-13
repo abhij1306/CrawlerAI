@@ -1,88 +1,64 @@
-"""Common extraction orchestration: Harvest → Resolve → Publish."""
+"""One extraction runtime: select/compile recipe, execute, validate, publish."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from time import perf_counter
 from typing import Literal, cast
 
+from pydantic import ValidationError
+
+from app.acquisition.browser_block_detection import classify_blocked_page
+from app.core.config import field_mappings
 from app.core.config.extraction_rules import (
-    DETAIL_CAPTURE_BLOCKED_OUTCOME,
-    DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
-    DETAIL_CAPTURE_OK_OUTCOME,
-    DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS,
     DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS,
     DETAIL_REVIEW_RISK_FINDING_RULE_IDS,
     DETAIL_SHELL_FINDING_RULE_ID,
     DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS,
-    DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
+    DETAIL_SHELL_TITLE_KEYS,
 )
-from app.core.config.field_mappings import SURFACE_FIELD_REPAIR_TARGETS
 from app.core.domain_utils import normalize_domain
-from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
-from app.core.extraction_memory.contract_runtime import match_template
-from app.core.extraction_memory.templates import fingerprint_from_parts, normalize_route
+from app.core.extraction_memory.contract_runtime import select_active_recipe
+from app.core.extraction_memory.recipe_contracts import (
+    DiscoveryResult,
+    ExtractionRecipe,
+    RecipeCandidate,
+    RecipeExecutionResult,
+    RecipeFailureCode,
+)
+from app.core.extraction_memory.recipe_executor import execute_recipe
 from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.ids import stable_id
-from app.extraction.adapters import SurfaceAdapter, adapter_for
 from app.extraction.contracts import (
     CollectorOutcome,
+    CommerceDetailRecord,
     DiagnosticSummary,
     EntityGraph,
     Evidence,
     ExecutionManifestContext,
+    ExtractionMetrics,
     ExtractionRequest,
     ExtractionResult,
     FailureClassification,
+    FieldEvidenceState,
     Finding,
-    HarvestResult,
-    PublicationResult,
     PublicRecord,
-    ResolutionEnvelope,
-    SentinelObservation,
     StageOutcome,
     TargetSelection,
     Verdict,
 )
 from app.extraction.model_runtime import (
-    ModelFallbackResult,
+    ModelRecipeProposalResult,
     RuntimeModelAdapter,
-    run_model_fallback,
+    run_model_recipe_proposals,
 )
-from app.extraction.sentinel import (
-    compare_challenger,
-    sentinel_enabled,
-    sentinel_sample_rate,
-    should_sample_sentinel,
+from app.extraction.recipe_compiler import (
+    compile_model_proposals,
+    compile_recipe_candidate,
 )
-from app.extraction.result_building import (
-    assert_resolution_accounting,
-    data_integrity_status,
-    evidence_dispositions,
-    field_evidence_states,
-    field_state,
-    is_shell_record,
-    metrics,
-    retry_request,
-)
+from app.extraction.recipe_publication import publish_recipe_execution
+from app.extraction.result_building import is_shell_record, retry_request
 from app.extraction.surfaces import Surface, listing_schema
-from app.extraction.listing_records import listing_discovery_diagnostics
-from app.extraction.validation import validate_selected_contract_fields
-
-
-@dataclass(frozen=True)
-class _ExtractionAttempt:
-    harvest: HarvestResult
-    resolution: ResolutionEnvelope
-    publication: PublicationResult
-    findings: tuple[Finding, ...]
-    verdict: Verdict
-    records: tuple[PublicRecord, ...]
-    resolve_duration_ms: float
-    publish_duration_ms: float
-    stage_outcomes: tuple[StageOutcome, ...]
 
 
 def extract(
@@ -92,582 +68,343 @@ def extract(
 ) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
-    adapter = adapter_for(request.surface)
-    compiled_template = None
-    extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic"
-    harvest = (
-        _generic_harvest(request, adapter)
-        if _has_suspended_runtime_template(request)
-        else adapter.harvest(request)
-    )
-    compiled_template = _compiled_source_pin_template(request, harvest)
-    attempt = _execute_attempt(request, adapter, harvest)
-    if _source_pin_recipe_applied(compiled_template, attempt):
-        extractor_tier = "recipe"
-    stage_outcomes = list(attempt.stage_outcomes)
-    sentinel_observations: tuple[SentinelObservation, ...] = ()
 
-    if extractor_tier == "recipe" and not attempt.records:
-        generic_harvest = _generic_harvest(request, adapter)
-        generic_collector_ids = {
-            row.collector_id for row in generic_harvest.collector_outcomes
-        }
-        # Keep recipe-only outcomes to avoid double-counting shared collectors.
-        recipe_only_outcomes = tuple(
-            row
-            for row in harvest.collector_outcomes
-            if row.collector_id not in generic_collector_ids
-        )
-        generic_harvest = generic_harvest.model_copy(
-            update={
-                "collector_outcomes": (
-                    *recipe_only_outcomes,
-                    *generic_harvest.collector_outcomes,
+    stages = [StageOutcome(stage="recipe_select", outcome="no_match")]
+    template = select_active_recipe(
+        dict(request.runtime_snapshot),
+        surface=request.surface.value,
+        url=request.capture.final_url or request.capture.requested_url,
+        template_signature=str(
+            request.runtime_snapshot.get("_template_signature") or ""
+        ),
+    )
+    active_failure: RecipeExecutionResult | None = None
+    if template is not None:
+        stages[0] = StageOutcome(stage="recipe_select", outcome="ran")
+        active_request, recipe = _active_recipe_request(request, template)
+        active_failure = execute_recipe(active_request, recipe)
+        stages.append(_execution_stage("recipe_execute", active_failure))
+        if active_failure.records:
+            return _execution_result(
+                active_request,
+                recipe,
+                active_failure,
+                candidate=None,
+                template=template,
+                stages=tuple(stages),
+                model=None,
+            )
+
+    discovery = compile_recipe_candidate(request)
+    stages.append(_discovery_stage("recipe_discovery", discovery))
+    if discovery.candidate is not None:
+        execution = execute_recipe(request, discovery.candidate.recipe)
+        stages.append(_execution_stage("candidate_recipe_execute", execution))
+        if execution.records:
+            return _execution_result(
+                request,
+                discovery.candidate.recipe,
+                execution,
+                candidate=discovery.candidate,
+                template=template,
+                stages=tuple(stages),
+                model=None,
+                discovery=discovery,
+            )
+        active_failure = execution
+
+    model = run_model_recipe_proposals(request, model_adapter)
+    stages.append(_model_stage(model))
+    if model.proposals:
+        model_discovery = compile_model_proposals(request, model.proposals)
+        stages.append(_discovery_stage("model_recipe_compile", model_discovery))
+        if model_discovery.candidate is not None:
+            execution = execute_recipe(request, model_discovery.candidate.recipe)
+            stages.append(_execution_stage("candidate_recipe_execute", execution))
+            if execution.records:
+                return _execution_result(
+                    request,
+                    model_discovery.candidate.recipe,
+                    execution,
+                    candidate=model_discovery.candidate,
+                    template=template,
+                    stages=tuple(stages),
+                    model=model,
                 )
+            active_failure = execution
+
+    return _failed_result(
+        request,
+        execution=active_failure,
+        discovery=discovery,
+        template=template,
+        stages=tuple(stages),
+        model=model,
+    )
+
+
+def _active_recipe_request(
+    request: ExtractionRequest, template: dict[str, object]
+) -> tuple[ExtractionRequest, ExtractionRecipe]:
+    recipe = ExtractionRecipe.model_validate(template.get("compiled_recipe"))
+    manifest = request.manifest_context.model_copy(
+        update={
+            "template_id": str(template.get("template_id") or "") or None,
+            "compiled_recipe_id": str(template.get("compiled_recipe_id") or "") or None,
+        }
+    )
+    return request.model_copy(update={"manifest_context": manifest}), recipe
+
+
+def _execution_result(
+    request: ExtractionRequest,
+    recipe: ExtractionRecipe,
+    execution: RecipeExecutionResult,
+    *,
+    candidate: RecipeCandidate | None,
+    template: dict[str, object] | None,
+    stages: tuple[StageOutcome, ...],
+    model: ModelRecipeProposalResult | None,
+    discovery: DiscoveryResult | None = None,
+) -> ExtractionResult:
+    try:
+        records, findings = publish_recipe_execution(request, recipe, execution)
+    except (TypeError, ValueError, ValidationError) as exc:
+        failed = execution.model_copy(
+            update={
+                "records": (),
+                "failure_code": "recipe_value_validation_failed",
+                "detail": str(exc),
             }
         )
-        attempt = _execute_attempt(
-            request, adapter, generic_harvest, stage_prefix="generic_"
-        )
-        stage_outcomes.extend(attempt.stage_outcomes)
-        extractor_tier = "deterministic"
-
-    model_fallback: ModelFallbackResult | None = None
-    if extractor_tier == "recipe" and attempt.records:
-        sentinel_observations = _sentinel_observations(
+        return _failed_result(
             request,
-            adapter,
-            recipe_attempt=attempt,
-            compiled_template=compiled_template,
-            model_adapter=model_adapter,
+            execution=failed,
+            discovery=None,
+            template=template,
+            stages=stages,
+            model=model,
         )
-        for observation in sentinel_observations:
-            stage_outcomes.append(
-                StageOutcome(
-                    stage=f"sentinel_{observation.challenger}_challenger",
-                    outcome="produced_evidence",
-                    detail=observation.state,
-                )
-            )
-    if _needs_contract_fallback(request, attempt):
-        if listing_schema(request.surface) is not None:
-            model_fallback = ModelFallbackResult(
-                outcome="disabled",
-                detail=(
-                    "listing boundary unavailable; model backfill cannot create "
-                    "record identity or URLs"
-                ),
-                terminal_state="not_eligible",
-            )
-        else:
-            model_fallback = run_model_fallback(request, model_adapter)
-        model_outcome = _model_collector_outcome(model_fallback)
-        stage_outcomes.append(
-            StageOutcome(
-                stage="model_fallback",
-                outcome=model_outcome.outcome,
-                detail=model_outcome.detail,
-            )
-        )
-        attempt = replace(
-            attempt,
-            harvest=attempt.harvest.model_copy(
-                update={
-                    "collector_outcomes": (
-                        *attempt.harvest.collector_outcomes,
-                        model_outcome,
-                    )
-                }
-            ),
-        )
-        if model_fallback.evidence:
-            fallback_evidence = (
-                model_fallback.evidence
-                if _identity_failure(attempt)
-                else (*attempt.harvest.evidence, *model_fallback.evidence)
-            )
-            model_harvest = attempt.harvest.model_copy(
-                update={
-                    "evidence": fallback_evidence,
-                }
-            )
-            attempt = _execute_attempt(
-                request, adapter, model_harvest, stage_prefix="model_"
-            )
-            stage_outcomes.extend(attempt.stage_outcomes)
-            extractor_tier = "ml"
-
-    harvest = attempt.harvest
-    resolution = attempt.resolution
-    publication = attempt.publication
-    findings = attempt.findings
-    verdict = attempt.verdict
-    records = attempt.records
-    failures = _failure_classifications(
-        request,
-        verdict=verdict,
-        records=records,
-        target=resolution.target,
-        findings=findings,
-        evidence=harvest.evidence,
-        model_fallback=model_fallback,
+    retry_records = records
+    semantic_shell = _is_semantic_detail_shell(request, records, findings)
+    terminal_outcome = normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=request.capture.blocked,
+        acquisition_outcome=request.capture.acquisition_outcome,
+        semantic_shell=semantic_shell,
     )
-    transport_outcome = _capture_outcome(
-        request, verdict, findings, publication.records
+    if request.surface is Surface.ECOMMERCE_DETAIL and terminal_outcome in {
+        "not_found",
+        "semantic_shell",
+    }:
+        records = ()
+    roots = tuple(str(record.get("_subject_id") or "") for record in records)
+    target = TargetSelection(
+        status="resolved" if records else "missing",
+        root_entity_ids=roots,
+        selected_root_entity_id=roots[0] if roots else None,
     )
-    field_states = _terminal_detail_field_states(
-        request,
-        resolution.field_states,
-        transport_outcome=transport_outcome,
+    graph = EntityGraph(
+        root_entity_ids=roots,
+        entity_counts={"record": len(records)},
     )
-    retry = retry_request(verdict, publication.records, request, harvest.evidence)
-    review_required = _review_required(
+    field_states = _field_states(request, records, execution)
+    verdict = (
+        "error"
+        if terminal_outcome in {"not_found", "semantic_shell"}
+        else _assess(request, target, records, findings)
+    )
+    retry = retry_request(verdict, retry_records, request)
+    review = _review_required(
         request,
         verdict=verdict,
         findings=findings,
         field_states=field_states,
         retry=retry,
     )
-    extraction_metrics = metrics(
-        harvest.evidence,
-        resolution.graph,
-        resolution.target,
-        findings,
-        resolution.decisions,
-        publication.records,
-        verdict,
-        collector_count=len(harvest.collector_outcomes),
-        resolve_duration_ms=attempt.resolve_duration_ms,
-        publish_duration_ms=attempt.publish_duration_ms,
+    tier: Literal["candidate_recipe", "recipe"] = (
+        "candidate_recipe" if candidate is not None else "recipe"
     )
-    if model_fallback is not None:
-        extraction_metrics = extraction_metrics.model_copy(
-            update={
-                "universal_representation_build_count": int(
-                    model_fallback.representation_built
-                ),
-                "universal_model_invocation_count": int(model_fallback.invoked),
-                "universal_model_latency_ms": model_fallback.latency_ms,
-                "universal_model_service_failure_count": int(
-                    model_fallback.failure_code == "model_service_failure"
-                ),
-                "universal_model_ungrounded_rejection_count": (
-                    model_fallback.ungrounded_rejection_count
-                ),
-                "universal_model_ungrounded_rejection_rate": (
-                    model_fallback.ungrounded_rejection_count
-                    / model_fallback.prediction_count
-                    if model_fallback.prediction_count
-                    else 0.0
-                ),
-                "universal_model_cost_usd": model_fallback.cost_usd,
-                "universal_model_cost_per_1000_pages": (
-                    model_fallback.cost_usd * 1_000
-                ),
-                "universal_model_input_tokens": model_fallback.input_tokens,
-                "universal_model_output_tokens": model_fallback.output_tokens,
-            }
-        )
+    collector_outcomes = _discovery_collector_outcomes(
+        discovery
+    ) + _recipe_reader_outcomes(recipe, execution)
+    metrics = _metrics(
+        records,
+        graph,
+        verdict,
+        findings=findings,
+        model=model,
+        collector_count=len(collector_outcomes),
+    )
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
-        evidence=harvest.evidence,
-        graph=resolution.graph,
-        target=resolution.target,
-        findings=findings,
-        decisions=resolution.decisions,
-        selected_facts=resolution.selected_facts,
-        derived_facts=resolution.derived_facts,
-        evidence_dispositions=resolution.evidence_dispositions,
-        field_states=field_states,
-        publication=resolution.publication,
-        transport_outcome=transport_outcome,
-        data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
+        graph=graph,
+        target=target,
+        findings=findings,
+        field_states=field_states,
+        transport_outcome=terminal_outcome,
+        data_integrity=_integrity(verdict),
         verdict=verdict,
         retry_request=retry,
-        metrics=extraction_metrics,
-        collector_outcomes=harvest.collector_outcomes,
-        stage_outcomes=tuple(stage_outcomes),
-        contract_outcomes=resolution.contract_outcomes,
-        sentinel_observations=sentinel_observations,
-        manifest_context=_manifest_context(request, compiled_template),
-        failure_classifications=failures,
-        diagnostics=_diagnostic_summary(
-            verdict=verdict,
-            records=records,
-            evidence=harvest.evidence,
-            requested_fields=request.requested_fields,
-            stage_outcomes=tuple(stage_outcomes),
-            field_states=field_states,
-            findings=findings,
-            failures=failures,
-            review_required=review_required,
-            extractor_tier=extractor_tier,
-            model_fallback=model_fallback,
-            sentinel_observations=sentinel_observations,
-            listing_discovery=(
-                _listing_discovery(request) if listing_schema(request.surface) else {}
+        metrics=metrics,
+        collector_outcomes=collector_outcomes,
+        stage_outcomes=stages,
+        manifest_context=request.manifest_context,
+        diagnostics=DiagnosticSummary(
+            decision_path=tuple(row.stage for row in stages),
+            extractor_tier=tier,
+            trust_state=_trust_state(verdict, records, review),
+            missing_critical_fields=_missing_fields(findings),
+            review_required=review,
+            model_invoked=bool(model and model.invoked),
+            model_artifact_id=(
+                model.artifact.artifact_id if model and model.artifact else None
+            ),
+            model_artifact_version=(
+                model.artifact.artifact_version if model and model.artifact else None
+            ),
+            model_outcome=(
+                "produced_proposals"
+                if model and model.proposals
+                else model.outcome
+                if model
+                else "not_considered"
+            ),
+            model_terminal_state=(
+                "invoked_produced_proposals"
+                if model and model.proposals
+                else model.terminal_state
+                if model and model.terminal_state
+                else "not_considered"
+            ),
+            variant_coverage=_variant_coverage(records, request.requested_fields),
+            additional_image_coverage=_image_coverage(
+                records, request.requested_fields
             ),
         ),
-        recipe_candidate=(
-            model_fallback.recipe_candidate if model_fallback is not None else None
-        ),
+        recipe_candidate=candidate,
+        recipe_execution=execution,
     )
 
 
-def _terminal_detail_field_states(
+def _failed_result(
     request: ExtractionRequest,
-    states,
     *,
-    transport_outcome: str,
-):
-    if (
-        request.surface != Surface.ECOMMERCE_DETAIL
-        or transport_outcome not in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
-    ):
-        return states
-    requested = {
-        "image_url" if field == "image" else field for field in request.requested_fields
-    }
-    out = []
-    for row in states:
-        if row.field in requested or row.state != "not_requested":
-            out.append(
-                field_state(
-                    field=row.field,
-                    state="source_unavailable",
-                    evidence_ids=row.evidence_ids,
-                    reason_codes=("product_data_source_unavailable",),
-                )
+    execution: RecipeExecutionResult | None,
+    discovery: DiscoveryResult | None,
+    template: dict[str, object] | None,
+    stages: tuple[StageOutcome, ...],
+    model: ModelRecipeProposalResult | None,
+) -> ExtractionResult:
+    code: RecipeFailureCode = (
+        execution.failure_code
+        if execution and execution.failure_code
+        else discovery.failure_code
+        if discovery
+        else "recipe_binding_not_found"
+    ) or "recipe_binding_not_found"
+    terminal_outcome = _capture_outcome(request, "empty", (), ())
+    verdict: Verdict = (
+        "wrong_surface"
+        if discovery is not None
+        and discovery.detail == "wrong surface discovery target"
+        else "error"
+        if request.capture.acquisition_outcome == "error"
+        or terminal_outcome in {"not_found", "semantic_shell"}
+        else "empty"
+    )
+    taxonomy = _failure_taxonomy(code, request.surface)
+    failure = FailureClassification(
+        code=taxonomy,
+        message=(execution.detail if execution else None)
+        or (discovery.detail if discovery else None)
+        or "No executable recipe produced a valid record.",
+    )
+    target = TargetSelection(
+        status=(
+            "wrong_surface"
+            if discovery is not None
+            and discovery.detail == "wrong surface discovery target"
+            else "ambiguous"
+            if discovery is not None
+            and discovery.detail == "ambiguous discovery target"
+            else "missing"
+        )
+    )
+    field_states = (
+        tuple(
+            FieldEvidenceState(
+                field=field,
+                state="source_unavailable",
+                reason_codes=("semantic_shell",),
             )
-        else:
-            out.append(row)
-    return tuple(out)
-
-
-def _execute_attempt(
-    request: ExtractionRequest,
-    adapter: SurfaceAdapter,
-    harvest: HarvestResult,
-    *,
-    stage_prefix: str = "",
-) -> _ExtractionAttempt:
-    stage_outcomes = [_stage_outcome(f"{stage_prefix}harvest", len(harvest.evidence))]
-    resolve_started = perf_counter()
-    resolution = adapter.resolve(request, harvest)
-    resolve_duration_ms = (perf_counter() - resolve_started) * 1_000
-    stage_outcomes.append(
-        _stage_outcome(f"{stage_prefix}resolve", len(resolution.decisions))
-    )
-    publish_started = perf_counter()
-    publication = adapter.publish(resolution)
-    publish_duration_ms = (perf_counter() - publish_started) * 1_000
-    stage_outcomes.append(
-        _stage_outcome(f"{stage_prefix}publish", len(publication.records))
-    )
-    publication_validation = (
-        validate_selected_contract_fields(
-            publication.records,
-            request.requested_fields,
-            harvest.evidence,
+            for field in sorted(
+                {
+                    "image_url" if field == "image" else field
+                    for field in request.requested_fields
+                }
+            )
         )
-        if request.surface == Surface.ECOMMERCE_DETAIL
+        if terminal_outcome == "semantic_shell"
         else ()
     )
-    findings = (
-        *resolution.findings,
-        *publication.findings,
-        *publication_validation,
-    )
-    verdict = _assess(request, resolution.target, publication.records, findings)
-    records = publication.records if verdict in {"success", "partial", "review"} else ()
-    stage_outcomes.append(_stage_outcome(f"{stage_prefix}validate", len(findings)))
-    return _ExtractionAttempt(
-        harvest=harvest,
-        resolution=resolution,
-        publication=publication,
-        findings=findings,
-        verdict=verdict,
-        records=records,
-        resolve_duration_ms=resolve_duration_ms,
-        publish_duration_ms=publish_duration_ms,
-        stage_outcomes=tuple(stage_outcomes),
-    )
-
-
-def _needs_contract_fallback(
-    request: ExtractionRequest, attempt: _ExtractionAttempt
-) -> bool:
-    if attempt.verdict in {"empty", "partial"}:
-        return True
-    detail = request.surface == Surface.ECOMMERCE_DETAIL
-    if detail and not attempt.records and _identity_failure(attempt):
-        return True
-    if attempt.verdict != "review" or not detail:
-        return False
-    if not attempt.records:
-        return False
-    return _missing_repair_target(request, attempt.records[0])
-
-
-def _missing_repair_target(request: ExtractionRequest, record: PublicRecord) -> bool:
-    targets = set(SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ()))
-    targets.update(
-        "image_url" if field == "image" else field for field in request.requested_fields
-    )
-    return any(record.get(field) in (None, "", [], {}, ()) for field in targets)
-
-
-def _identity_failure(attempt: _ExtractionAttempt) -> bool:
-    return any(
-        row.reason == "identity_mismatch"
-        for row in attempt.resolution.target.rejected_roots
-    )
-
-
-def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
-    return CollectorOutcome(
-        collector_id="universal_model",
-        outcome=("skipped" if result.outcome == "disabled" else result.outcome),
-        evidence_count=len(result.evidence),
-        detail=result.detail,
-    )
-
-
-def _has_suspended_runtime_template(request: ExtractionRequest) -> bool:
-    templates = (
-        request.runtime_snapshot.get("templates", [])
-        if request.runtime_snapshot
+    retry_records: tuple[PublicRecord, ...] = (
+        (
+            CommerceDetailRecord(
+                url=request.capture.final_url,
+                title=next(iter(DETAIL_SHELL_TITLE_KEYS)),
+            ),
+        )
+        if terminal_outcome == "semantic_shell"
         else ()
     )
-    route = normalize_route(
-        request.capture.final_url or request.capture.requested_url,
-        request.surface.value,
+    retry = retry_request(verdict, retry_records, request)
+    manifest = _manifest_context(request, template)
+    collector_outcomes = _discovery_collector_outcomes(discovery)
+    metrics = _metrics(
+        (), EntityGraph(), verdict, model=model, collector_count=len(collector_outcomes)
     )
-    return any(
-        isinstance(row, dict)
-        and str(row.get("surface") or "") == request.surface.value
-        and str(row.get("route_pattern") or "") == route
-        and (
-            str(row.get("status") or "").strip().lower()
-            == EXTRACTION_MEMORY_STATUS_SUSPENDED
-            or bool(row.get("sentinel_suspended"))
-        )
-        for row in templates
-    )
-
-
-def _sentinel_observations(
-    request: ExtractionRequest,
-    adapter: SurfaceAdapter,
-    *,
-    recipe_attempt: _ExtractionAttempt,
-    compiled_template: dict[str, object] | None,
-    model_adapter: RuntimeModelAdapter | None,
-) -> tuple[SentinelObservation, ...]:
-    if compiled_template is None or not request.runtime_snapshot:
-        return ()
-    manifest_context = _manifest_context(request, compiled_template)
-    sample_rate = sentinel_sample_rate(request.runtime_snapshot)
-    if not should_sample_sentinel(
+    return ExtractionResult(
+        surface=request.surface,
         bundle_id=request.capture.bundle_id,
-        template_id=manifest_context.template_id,
-        sample_rate=sample_rate,
-    ):
-        return ()
-    observations = []
-    if sentinel_enabled(request.runtime_snapshot, "deterministic_challenger_enabled"):
-        generic_attempt = _execute_attempt(
-            request,
-            adapter,
-            _generic_harvest(request, adapter),
-            stage_prefix="sentinel_generic_",
-        )
-        observations.append(
-            compare_challenger(
-                challenger="deterministic",
-                manifest_context=manifest_context,
-                sample_rate=sample_rate,
-                recipe_verdict=recipe_attempt.verdict,
-                challenger_verdict=generic_attempt.verdict,
-                recipe_records=recipe_attempt.records,
-                challenger_records=generic_attempt.records,
-                evidence_ids=(
-                    *(row.evidence_id for row in recipe_attempt.harvest.evidence),
-                    *(row.evidence_id for row in generic_attempt.harvest.evidence),
-                ),
-            )
-        )
-    if sentinel_enabled(request.runtime_snapshot, "ml_challenger_enabled"):
-        model_result = run_model_fallback(request, model_adapter)
-        model_harvest = recipe_attempt.harvest.model_copy(
-            update={
-                "evidence": model_result.evidence,
-                "collector_outcomes": (_model_collector_outcome(model_result),),
-            }
-        )
-        model_attempt = (
-            _execute_attempt(
-                request,
-                adapter,
-                model_harvest,
-                stage_prefix="sentinel_model_",
-            )
-            if model_result.evidence
-            else replace(
-                recipe_attempt,
-                harvest=model_harvest,
-                records=(),
-                verdict="empty",
-            )
-        )
-        observations.append(
-            compare_challenger(
-                challenger="ml",
-                manifest_context=manifest_context,
-                sample_rate=sample_rate,
-                recipe_verdict=recipe_attempt.verdict,
-                challenger_verdict=model_attempt.verdict,
-                recipe_records=recipe_attempt.records,
-                challenger_records=model_attempt.records,
-                evidence_ids=(
-                    *(row.evidence_id for row in recipe_attempt.harvest.evidence),
-                    *(row.evidence_id for row in model_result.evidence),
-                ),
-            )
-        )
-    return tuple(observations)
-
-
-def _generic_harvest(
-    request: ExtractionRequest, adapter: SurfaceAdapter
-) -> HarvestResult:
-    harvest = adapter.harvest(request)
-    if request.surface != Surface.ECOMMERCE_DETAIL:
-        return harvest
-    return harvest.model_copy(
-        update={
-            "evidence": tuple(
-                row for row in harvest.evidence if row.collector_id != "css_recipe"
+        records=(),
+        target=target,
+        field_states=field_states,
+        verdict=verdict,
+        transport_outcome=terminal_outcome,
+        data_integrity=_integrity(verdict),
+        retry_request=retry,
+        metrics=metrics,
+        collector_outcomes=collector_outcomes,
+        stage_outcomes=stages,
+        manifest_context=manifest,
+        failure_classifications=(failure,),
+        diagnostics=DiagnosticSummary(
+            decision_path=tuple(row.stage for row in stages),
+            extractor_tier="recipe" if template is not None else "candidate_recipe",
+            trust_state=(
+                "needs_review" if terminal_outcome == "semantic_shell" else "rejected"
             ),
-            "collector_outcomes": tuple(
-                row
-                for row in harvest.collector_outcomes
-                if row.collector_id != "css_recipe"
+            failure_codes=(taxonomy,),
+            review_required=terminal_outcome == "semantic_shell",
+            model_invoked=bool(model and model.invoked),
+            model_artifact_id=(
+                model.artifact.artifact_id if model and model.artifact else None
             ),
-        }
+            model_artifact_version=(
+                model.artifact.artifact_version if model and model.artifact else None
+            ),
+            model_outcome=model.outcome if model else "not_considered",
+            model_terminal_state=(
+                model.terminal_state
+                if model and model.terminal_state
+                else "not_considered"
+            ),
+        ),
+        recipe_execution=execution,
     )
-
-
-def _compiled_source_pin_template(
-    request: ExtractionRequest, harvest: HarvestResult
-) -> dict[str, object] | None:
-    if not request.runtime_snapshot:
-        return None
-    fingerprint = fingerprint_from_parts(
-        request.capture.final_url or request.capture.requested_url,
-        request.surface.value,
-        harvest.evidence,
-        harvest.collector_outcomes,
-    )
-    template = match_template(
-        dict(request.runtime_snapshot),
-        fingerprint,
-        request.surface.value,
-        url=request.capture.final_url or request.capture.requested_url,
-    )
-    if not template or not _template_has_source_pins(template):
-        return None
-    return template
-
-
-def _template_has_source_pins(template: dict[str, object]) -> bool:
-    compiled = template.get("compiled_recipe")
-    if isinstance(compiled, dict) and compiled.get("source_pins"):
-        return True
-    return bool(template.get("contracts"))
-
-
-def _source_pin_recipe_applied(
-    template: dict[str, object] | None, attempt: _ExtractionAttempt
-) -> bool:
-    return bool(
-        template is not None
-        and (
-            any(row.applied for row in attempt.resolution.contract_outcomes)
-            or any(
-                row.rule_id == "CONTRACT_PREFERRED_SOURCE"
-                for row in attempt.resolution.decisions
-            )
-        )
-    )
-
-
-def _manifest_context(
-    request: ExtractionRequest, template: dict[str, object] | None
-) -> ExecutionManifestContext:
-    if template is None:
-        return request.manifest_context
-    template_id = str(template.get("template_id") or "").strip()
-    if not template_id:
-        return request.manifest_context
-    return request.manifest_context.model_copy(update={"template_id": template_id})
-
-
-def _assess(
-    request: ExtractionRequest,
-    target: TargetSelection,
-    records: tuple[PublicRecord, ...],
-    findings: tuple[Finding, ...],
-) -> Verdict:
-    if request.capture.acquisition_outcome in {"blocked", "error"}:
-        return cast(Verdict, request.capture.acquisition_outcome)
-    if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
-        return "invalid"
-    wrong_surface = any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings)
-    if request.surface == Surface.ECOMMERCE_DETAIL:
-        record = records[0] if records else None
-        detail_outcome = _normalized_detail_outcome(request, records, findings)
-        thin_not_found = (
-            request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
-            and _is_thin_detail_record(record)
-        )
-        if (
-            detail_outcome
-            in {DETAIL_CAPTURE_NOT_FOUND_OUTCOME, DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME}
-            or thin_not_found
-        ):
-            return "error"
-    if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
-        return "error" if request.surface == Surface.JOB_DETAIL else "invalid"
-    if wrong_surface:
-        return "wrong_surface"
-    if target.status == "ambiguous":
-        return "invalid" if request.surface == Surface.JOB_DETAIL else "review"
-    if not records:
-        return "empty"
-    if request.surface == Surface.ECOMMERCE_DETAIL:
-        record = records[0]
-        missing_requested = {
-            "image_url" if field == "image" else field
-            for field in request.requested_fields
-            if record.get("image_url" if field == "image" else field)
-            in (None, "", [], {}, ())
-        }
-        if missing_requested or any(
-            row.rule_id
-            in {
-                "EXPECTED_VARIANT_AXIS_MISSING",
-                "MISSING_CONTRACT_FIELD",
-                "VARIANT_AVAILABILITY_MISSING",
-            }
-            for row in findings
-        ):
-            return "partial"
-        if target.status != "resolved":
-            return "review"
-    return "success"
 
 
 def _blocked_result(
@@ -676,12 +413,7 @@ def _blocked_result(
     collector_outcomes,
 ) -> ExtractionResult:
     finding = Finding(
-        finding_id=stable_id(
-            "finding",
-            request.capture.bundle_id,
-            "ACQUISITION_BLOCKED",
-            request.capture.acquisition_outcome,
-        ),
+        finding_id=stable_id("finding", request.capture.bundle_id, "blocked"),
         rule_id="ACQUISITION_BLOCKED",
         severity="critical",
         scope="artifact",
@@ -690,282 +422,76 @@ def _blocked_result(
         message="Acquisition was blocked before extraction.",
         blocking=True,
     )
-    target = TargetSelection(status="missing")
-    dispositions = evidence_dispositions(evidence, (), (), target)
-    assert_resolution_accounting(evidence, (), (), dispositions)
-    states = field_evidence_states((), evidence, (), request)
-    failures = _failure_classifications(
-        request,
-        verdict="blocked",
-        records=(),
-        target=target,
-        findings=(finding,),
-        evidence=evidence,
+    failure = FailureClassification(
+        code="insufficient_input_bundle",
+        message="Input bundle was blocked before extraction.",
+        finding_ids=(finding.finding_id,),
+        evidence_ids=finding.evidence_ids,
     )
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
-        evidence=evidence,
-        graph=EntityGraph(),
-        target=target,
-        findings=(finding,),
-        decisions=(),
-        selected_facts=(),
-        derived_facts=(),
-        evidence_dispositions=dispositions,
-        field_states=states,
-        transport_outcome=_capture_outcome(request, "blocked", (finding,), ()),
-        data_integrity="blocked",
         records=(),
+        evidence=evidence,
+        findings=(finding,),
         verdict="blocked",
-        retry_request=None,
-        metrics=metrics(
-            evidence,
-            EntityGraph(),
-            target,
-            (finding,),
-            (),
-            (),
-            "blocked",
-            collector_count=len(collector_outcomes),
+        transport_outcome="blocked",
+        data_integrity="blocked",
+        metrics=ExtractionMetrics(
+            collector_count=len(tuple(collector_outcomes)), verdict="blocked"
         ),
         collector_outcomes=tuple(collector_outcomes),
-        stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
+        stage_outcomes=(StageOutcome(stage="blocked", outcome="failed"),),
         manifest_context=request.manifest_context,
-        failure_classifications=failures,
-        diagnostics=_diagnostic_summary(
-            verdict="blocked",
-            records=(),
-            evidence=evidence,
-            requested_fields=request.requested_fields,
-            stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
-            field_states=states,
-            findings=(finding,),
-            failures=failures,
-            review_required=_review_required(
-                request,
-                verdict="blocked",
-                findings=(finding,),
-                field_states=states,
-                retry=None,
-            ),
+        failure_classifications=(failure,),
+        diagnostics=DiagnosticSummary(
+            decision_path=("blocked",),
+            extractor_tier="blocked",
+            trust_state="blocked",
+            failure_codes=("insufficient_input_bundle",),
         ),
     )
 
 
-def _stage_outcome(stage: str, produced: int) -> StageOutcome:
-    return StageOutcome(
-        stage=stage,
-        outcome="produced_evidence" if produced else "no_match",
-    )
-
-
-def _failure_classifications(
+def _assess(
     request: ExtractionRequest,
-    *,
-    verdict: Verdict,
-    records: tuple[PublicRecord, ...],
     target: TargetSelection,
+    records: tuple[PublicRecord, ...],
     findings: tuple[Finding, ...],
-    evidence: tuple[Evidence, ...],
-    model_fallback: ModelFallbackResult | None = None,
-) -> tuple[FailureClassification, ...]:
-    if records:
-        return ()
-    if (
-        listing_schema(request.surface) is not None
-        and not evidence
-        and request.capture.acquisition_outcome == "ok"
-        and not request.capture.blocked
+) -> Verdict:
+    if request.surface is Surface.ECOMMERCE_DETAIL and (
+        request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
+        or _is_semantic_detail_shell(request, records, findings)
     ):
-        return (
-            _failure(
-                "listing_detection_failed",
-                "Listing capture was usable but no publishable record boundary was found.",
-                findings,
-                evidence,
-            ),
-        )
-    if model_fallback is not None and model_fallback.failure_code is not None:
-        deterministic = _failure_classifications(
-            request,
-            verdict=verdict,
-            records=records,
-            target=target,
-            findings=findings,
-            evidence=evidence,
-        )
-        return (
-            *deterministic,
-            _failure(
-                model_fallback.failure_code,
-                "Universal model fallback degraded; deterministic extraction remained authoritative.",
-                findings,
-                evidence,
-            ),
-        )
-    if (
-        request.capture.acquisition_outcome in {"blocked", "error"}
-        or request.capture.blocked
-    ):
-        return (
-            _failure(
-                "insufficient_input_bundle",
-                "Input bundle could not supply usable extraction content.",
-                findings,
-                evidence,
-            ),
-        )
-    if request.surface == Surface.ECOMMERCE_DETAIL:
-        detail_outcome = _normalized_detail_outcome(request, records, findings)
-        if detail_outcome in {
-            DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
-            DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
-        }:
-            return (
-                _failure(
-                    "insufficient_input_bundle",
-                    "Terminal detail source could not supply usable product content.",
-                    findings,
-                    evidence,
-                ),
-            )
-    if verdict == "wrong_surface" or target.status == "wrong_surface":
-        return (
-            _failure(
-                "wrong_surface",
-                "Input content does not match the requested surface.",
-                findings,
-                evidence,
-            ),
-        )
+        return "error"
+    if request.capture.acquisition_outcome in {"blocked", "error"}:
+        return cast(Verdict, request.capture.acquisition_outcome)
+    if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
+        return "invalid"
     if any(row.blocking for row in findings):
-        return (
-            _failure(
-                "validation",
-                "Critical validation blocked publication.",
-                findings,
-                evidence,
-            ),
-        )
+        return "error" if request.surface is Surface.JOB_DETAIL else "invalid"
     if target.status == "ambiguous":
-        return (
-            _failure(
-                "entity_binding",
-                "Primary entity could not be selected safely.",
-                findings,
-                evidence,
-            ),
-        )
-    if target.status == "missing":
-        code = "discovery" if evidence else "insufficient_input_bundle"
-        return (
-            _failure(
-                code, "No publishable record boundary was found.", findings, evidence
-            ),
-        )
-    if verdict in {"invalid", "error"}:
-        return (
-            _failure(
-                "semantic_resolution",
-                "Resolved evidence could not pass publication trust gates.",
-                findings,
-                evidence,
-            ),
-        )
-    return (
-        _failure(
-            "discovery", "No publishable records were discovered.", findings, evidence
-        ),
-    )
+        return "review"
+    if not records:
+        return "empty"
+    if request.surface is Surface.ECOMMERCE_DETAIL:
+        if _is_semantic_detail_shell(request, records, findings):
+            return "error"
+        missing_requested = {
+            "image_url" if field == "image" else field
+            for field in request.requested_fields
+            if records[0].get("image_url" if field == "image" else field)
+            in (None, "", [], {}, ())
+        }
+        if missing_requested or any(
+            row.rule_id in {"MISSING_CONTRACT_FIELD", "VARIANT_AVAILABILITY_MISSING"}
+            for row in findings
+        ):
+            return "partial"
+    return "success"
 
 
-def _capture_outcome(
-    request: ExtractionRequest,
-    verdict: Verdict,
-    findings: tuple[Finding, ...],
-    records: tuple[PublicRecord, ...],
-) -> str:
-    if request.surface == Surface.ECOMMERCE_DETAIL:
-        return _normalized_detail_outcome(request, records, findings)
-    if request.capture.blocked or request.capture.acquisition_outcome == "blocked":
-        return "blocked"
-    if verdict == "blocked":
-        return "blocked"
-    return request.capture.acquisition_outcome or "unknown"
-
-
-def _normalized_detail_outcome(
-    request: ExtractionRequest,
-    records: tuple[PublicRecord, ...],
-    findings: tuple[Finding, ...],
-) -> str:
-    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
-        "source_capabilities"
-    )
-    configured = (
-        str(source_capabilities.get("detail_outcome") or "").strip()
-        if isinstance(source_capabilities, dict)
-        else ""
-    )
-    if configured in {
-        DETAIL_CAPTURE_BLOCKED_OUTCOME,
-        DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
-        DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME,
-    }:
-        return configured
-    browser = dict(request.capture.acquisition_diagnostics or {}).get(
-        "browser_diagnostics"
-    )
-    browser_outcome = (
-        str(browser.get("browser_outcome") or "").strip()
-        if isinstance(browser, dict)
-        else None
-    )
-    return normalized_detail_outcome(
-        http_status=None
-        if configured == DETAIL_CAPTURE_OK_OUTCOME
-        else request.capture.http_status,
-        blocked=bool(request.capture.blocked),
-        acquisition_outcome=request.capture.acquisition_outcome,
-        browser_outcome=browser_outcome,
-        semantic_shell=_is_semantic_detail_shell(request, records, findings),
-    )
-
-
-def _is_semantic_detail_shell(
-    request: ExtractionRequest,
-    records: tuple[PublicRecord, ...],
-    findings: tuple[Finding, ...],
-) -> bool:
-    if request.surface != Surface.ECOMMERCE_DETAIL:
-        return False
-    record = records[0] if records else None
-    if (record is not None and is_shell_record(record)) or any(
-        row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
-    ):
-        return True
-    requested_host = normalize_domain(request.capture.requested_url)
-    final_host = normalize_domain(request.capture.final_url)
-    crossed_host = bool(requested_host and final_host and requested_host != final_host)
-    return record is not None and _is_thin_detail_record(record) and crossed_host
-
-
-def _is_thin_detail_record(record: PublicRecord | None) -> bool:
-    return record is None or not any(
-        record.get(field) not in (None, "", [], {}, ())
-        for field in DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS
-    )
-
-
-def _review_required(
-    request: ExtractionRequest,
-    *,
-    verdict: Verdict,
-    findings: tuple[Finding, ...],
-    field_states,
-    retry,
-) -> bool:
+def _review_required(request, *, verdict, findings, field_states, retry) -> bool:
     if verdict == "review":
         return True
     if retry is not None and retry.required:
@@ -975,182 +501,325 @@ def _review_required(
         for row in findings
     ):
         return True
-    if _parent_child_commercial_divergence(field_states):
+    states = {row.field: row.state for row in field_states}
+    if any(
+        states.get(f"variants.{field}") == "captured_published"
+        and states.get(field) not in {"captured_published", "captured_and_resolved"}
+        for field in DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS
+    ):
         return True
-    return _requested_high_value_field_unresolved(request, field_states)
-
-
-def _parent_child_commercial_divergence(field_states) -> bool:
-    states_by_field = {row.field: row.state for row in field_states}
-    for field in DETAIL_REVIEW_PARENT_CHILD_DIVERGENCE_FIELDS:
-        child_state = states_by_field.get(f"variants.{field}")
-        parent_state = states_by_field.get(field)
-        if child_state == "captured_published" and parent_state not in {
-            "captured_published",
-            "captured_and_resolved",
-        }:
-            return True
-    return False
-
-
-def _requested_high_value_field_unresolved(
-    request: ExtractionRequest, field_states
-) -> bool:
-    if request.surface != Surface.ECOMMERCE_DETAIL:
-        return False
     requested = {
         "image_url" if field == "image" else field for field in request.requested_fields
     } & DETAIL_REVIEW_HIGH_VALUE_REQUESTED_FIELDS
-    if not requested:
-        return False
-    states_by_field = {row.field: row.state for row in field_states}
     return any(
-        states_by_field.get(field)
-        not in {"captured_published", "captured_and_resolved"}
+        states.get(field) not in {"captured_published", "captured_and_resolved"}
         for field in requested
     )
 
 
-def _failure(
-    code,
-    message: str,
-    findings: tuple[Finding, ...],
-    evidence: tuple[Evidence, ...],
-) -> FailureClassification:
-    return FailureClassification(
-        code=code,
-        message=message,
-        finding_ids=tuple(row.finding_id for row in findings),
-        evidence_ids=tuple(row.evidence_id for row in evidence),
-    )
-
-
-def _diagnostic_summary(
-    *,
-    verdict: Verdict,
+def _field_states(
+    request: ExtractionRequest,
     records: tuple[PublicRecord, ...],
-    evidence: tuple[Evidence, ...],
-    requested_fields: tuple[str, ...] = (),
-    stage_outcomes: tuple[StageOutcome, ...],
-    field_states,
-    failures: tuple[FailureClassification, ...],
-    findings: tuple[Finding, ...] = (),
-    review_required: bool = False,
-    extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
-    model_fallback: ModelFallbackResult | None = None,
-    sentinel_observations=(),
-    listing_discovery: dict[str, int] | None = None,
-) -> DiagnosticSummary:
-    # Prefer contract gaps; some surfaces only expose raw field-state gaps.
-    completeness = next(
-        (row for row in findings if row.rule_id == "RECORD_COMPLETENESS"), None
-    )
-    if completeness is not None:
-        missing = tuple(completeness.metadata.get("missing_fields") or ())
-    else:
-        missing = tuple(
-            row.field
-            for row in field_states
-            if row.state in {"not_present_in_captured_sources", "source_unavailable"}
-        )
-    return DiagnosticSummary(
-        decision_path=tuple(row.stage for row in stage_outcomes),
-        extractor_tier="blocked" if verdict == "blocked" else extractor_tier,
-        trust_state=_trust_state(verdict, records, review_required),
-        missing_critical_fields=missing,
-        failure_codes=tuple(row.code for row in failures),
-        evidence_count=len(evidence),
-        review_required=review_required,
-        **_model_diagnostic_fields(model_fallback),
-        sentinel_state=sentinel_observations[0].state
-        if sentinel_observations
-        else None,
-        sentinel_diagnostic=sentinel_observations[0].diagnostic
-        if sentinel_observations
-        else None,
-        listing_discovery=dict(listing_discovery or {}),
-        variant_coverage=_variant_coverage(records, evidence, requested_fields),
-        additional_image_coverage=_additional_image_coverage(
-            records, evidence, requested_fields
-        ),
-    )
-
-
-def _model_diagnostic_fields(
-    model_fallback: ModelFallbackResult | None,
-) -> dict[str, object]:
-    if model_fallback is None:
-        return {
-            "model_invoked": False,
-            "model_artifact_id": None,
-            "model_artifact_version": None,
-            "model_outcome": "not_considered",
-            "model_terminal_state": "not_considered",
-        }
-    artifact = model_fallback.artifact
-    return {
-        "model_invoked": model_fallback.invoked,
-        "model_artifact_id": artifact.artifact_id if artifact is not None else None,
-        "model_artifact_version": (
-            artifact.artifact_version if artifact is not None else None
-        ),
-        "model_outcome": model_fallback.outcome,
-        "model_terminal_state": model_fallback.terminal_state or "not_considered",
+    execution: RecipeExecutionResult,
+) -> tuple[FieldEvidenceState, ...]:
+    resolved = {
+        row.binding_id.removeprefix("field."): row
+        for row in execution.outcomes
+        if row.status == "resolved" and row.binding_id.startswith("field.")
     }
-
-
-def _variant_coverage(records, evidence, requested_fields) -> str:
-    if not records:
-        return "unknown"
-    if requested_fields and "variants" not in requested_fields:
-        return "not_applicable"
-    variant_evidence = any(
-        row.fact_type.startswith("variant.")
-        or row.relation_type
-        in {
-            "product_variant",
-            "variant_offer",
-            "variant_asset",
-        }
-        for row in evidence
+    published = {
+        key
+        for record in records
+        for key, value in record.model_dump(mode="python").items()
+        if not key.startswith("_") and value not in (None, "", [], {}, ())
+    }
+    fields = (
+        set(field_mappings.ECOMMERCE_PUBLIC_FIELD_FACT_TYPES)
+        | {"variants", "variant_count"}
+        | published
     )
-    if not variant_evidence:
-        return "unknown"
-    variants = records[0].get("variants") or ()
-    if not variants:
-        return "partial"
-    required_identity = ("variant_id", "sku")
-    return (
-        "complete"
-        if all(
-            any(row.get(field) not in (None, "") for field in required_identity)
-            for row in variants
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    affected = set(
+        source_capabilities.get("affected_field_families", ())
+        if isinstance(source_capabilities, dict)
+        else ()
+    )
+    return tuple(
+        FieldEvidenceState(
+            field=field,
+            state=(
+                "captured_published"
+                if field in published
+                else "not_requested"
+                if field == "variants" and field not in request.requested_fields
+                else "source_unavailable"
+                if field in affected or field == "image_url" and "images" in affected
+                else "not_present_in_captured_sources"
+            ),
+            reason_codes=(
+                (resolved[field].binding_id,)
+                if field in resolved
+                else ("product_data_source_unavailable",)
+                if field in affected or field == "image_url" and "images" in affected
+                else ()
+            ),
         )
-        else "partial"
+        for field in sorted(fields)
     )
 
 
-def _additional_image_coverage(records, evidence, requested_fields) -> str:
-    if not records:
-        return "unknown"
-    image_fields = {"image", "image_url", "additional_images"}
-    if requested_fields and image_fields.isdisjoint(requested_fields):
-        return "not_applicable"
-    asset_count = sum(row.fact_type == "asset.image_url" for row in evidence)
-    if asset_count <= 1:
-        return "unknown"
-    additional = records[0].get("additional_images") or ()
-    return "complete" if len(additional) >= asset_count - 1 else "partial"
+def _recipe_reader_outcomes(
+    recipe: ExtractionRecipe, execution: RecipeExecutionResult
+) -> tuple[CollectorOutcome, ...]:
+    sources = {
+        binding.source
+        for binding in (
+            recipe.record_root,
+            *recipe.identity,
+            *sum(recipe.fields.values(), ()),
+        )
+    }
+    return tuple(
+        CollectorOutcome(
+            collector_id=f"recipe_reader:{source}",
+            outcome="produced_evidence",
+            evidence_count=sum(row.status == "resolved" for row in execution.outcomes),
+        )
+        for source in sorted(sources)
+    )
 
 
-def _listing_discovery(request: ExtractionRequest) -> dict[str, int]:
-    for artifact in request.capture.artifacts:
-        if artifact.artifact_type == "rendered_html":
-            return listing_discovery_diagnostics(
-                request.artifact_reader.document_store.html(artifact.artifact_id),
-                page_url=request.capture.final_url,
+def _discovery_collector_outcomes(
+    discovery: DiscoveryResult | None,
+) -> tuple[CollectorOutcome, ...]:
+    if discovery is None:
+        return ()
+    return tuple(
+        CollectorOutcome.model_validate(row) for row in discovery.collector_diagnostics
+    )
+
+
+def _metrics(
+    records: tuple[PublicRecord, ...],
+    graph: EntityGraph,
+    verdict: Verdict,
+    *,
+    findings: tuple[Finding, ...] = (),
+    model: ModelRecipeProposalResult | None,
+    collector_count: int = 0,
+) -> ExtractionMetrics:
+    public_fields = sum(
+        sum(not str(key).startswith("_") for key in record.model_dump(mode="python"))
+        for record in records
+    )
+    lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
+    completeness_score = next(
+        (
+            float(finding.metadata.get("score", 0.0))
+            for finding in findings
+            if finding.rule_id == "RECORD_COMPLETENESS"
+        ),
+        0.0,
+    )
+    return ExtractionMetrics(
+        collector_count=collector_count,
+        entity_counts=graph.entity_counts,
+        variant_count=sum(len(record.get("variants") or ()) for record in records),
+        public_lineage_coverage=(
+            lineage_fields / public_fields if public_fields else 0.0
+        ),
+        completeness_score=completeness_score,
+        verdict=verdict,
+        universal_representation_build_count=int(
+            bool(model and model.representation_built)
+        ),
+        universal_model_invocation_count=int(bool(model and model.invoked)),
+        universal_model_latency_ms=model.latency_ms if model else 0.0,
+        universal_model_service_failure_count=int(
+            bool(model and model.failure_code == "model_service_failure")
+        ),
+        universal_model_ungrounded_rejection_count=(
+            model.ungrounded_rejection_count if model else 0
+        ),
+        universal_model_ungrounded_rejection_rate=(
+            model.ungrounded_rejection_count / model.prediction_count
+            if model and model.prediction_count
+            else 0.0
+        ),
+        universal_model_cost_usd=model.cost_usd if model else 0.0,
+        universal_model_cost_per_1000_pages=(model.cost_usd * 1000 if model else 0.0),
+        universal_model_input_tokens=model.input_tokens if model else 0,
+        universal_model_output_tokens=model.output_tokens if model else 0,
+    )
+
+
+def _execution_stage(stage: str, execution: RecipeExecutionResult) -> StageOutcome:
+    return StageOutcome(
+        stage=stage,
+        outcome="ran" if execution.records else "failed",
+        detail=execution.failure_code or execution.detail,
+    )
+
+
+def _discovery_stage(stage: str, discovery: DiscoveryResult) -> StageOutcome:
+    return StageOutcome(
+        stage=stage,
+        outcome="ran" if discovery.candidate else "no_match",
+        detail=discovery.failure_code or discovery.detail,
+    )
+
+
+def _model_stage(model: ModelRecipeProposalResult) -> StageOutcome:
+    outcome: Literal[
+        "produced_evidence",
+        "no_match",
+        "failed",
+        "timed_out",
+        "budget_limited",
+        "skipped",
+    ] = (
+        "produced_evidence"
+        if model.proposals
+        else (
+            cast(
+                Literal["no_match", "failed", "timed_out", "budget_limited"],
+                model.outcome,
             )
-    return {}
+            if model.outcome in {"no_match", "failed", "timed_out", "budget_limited"}
+            else "skipped"
+        )
+    )
+    return StageOutcome(
+        stage="model_recipe_proposal", outcome=outcome, detail=model.detail
+    )
+
+
+def _failure_taxonomy(code: RecipeFailureCode, surface: Surface):
+    if code == "recipe_capture_requirement_missing":
+        return "insufficient_input_bundle"
+    if code == "recipe_root_not_found":
+        return (
+            "listing_detection_failed" if listing_schema(surface) else "record_boundary"
+        )
+    if code in {"recipe_identity_mismatch", "recipe_join_failed"}:
+        return "entity_binding"
+    if code == "recipe_binding_not_found":
+        return "listing_detection_failed" if listing_schema(surface) else "discovery"
+    return "validation"
+
+
+def _manifest_context(
+    request: ExtractionRequest, template: dict[str, object] | None
+) -> ExecutionManifestContext:
+    if template is None:
+        return request.manifest_context
+    return request.manifest_context.model_copy(
+        update={
+            "template_id": str(template.get("template_id") or "") or None,
+            "compiled_recipe_id": str(template.get("compiled_recipe_id") or "") or None,
+        }
+    )
+
+
+def _capture_outcome(request, verdict, findings, records) -> str:
+    if request.surface is not Surface.ECOMMERCE_DETAIL:
+        return request.capture.acquisition_outcome or "unknown"
+    browser = dict(request.capture.acquisition_diagnostics or {}).get(
+        "browser_diagnostics"
+    )
+    return normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=request.capture.blocked,
+        acquisition_outcome=request.capture.acquisition_outcome,
+        browser_outcome=(
+            str(browser.get("browser_outcome") or "")
+            if isinstance(browser, dict)
+            else None
+        ),
+        semantic_shell=_is_semantic_detail_shell(request, records, findings),
+    )
+
+
+def _is_semantic_detail_shell(request, records, findings) -> bool:
+    if request.surface is not Surface.ECOMMERCE_DETAIL:
+        return False
+    record = records[0] if records else None
+    if (record is not None and is_shell_record(record)) or any(
+        row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
+    ):
+        return True
+    if record is None:
+        artifact = next(
+            (
+                row
+                for row in request.capture.artifacts
+                if row.artifact_type in {"rendered_html", "http_html"}
+            ),
+            None,
+        )
+        if artifact is not None:
+            document = request.artifact_reader.document_store.html(artifact.artifact_id)
+            classification = classify_blocked_page(
+                document.html(), request.capture.http_status or 200
+            )
+            if classification.blocked or classification.outcome in {
+                "challenge_page",
+                "low_content_shell",
+            }:
+                return True
+            title_node = document.css_first("h1") or document.css_first("title")
+            if title_node is not None and is_shell_record(
+                CommerceDetailRecord(
+                    url=request.capture.final_url,
+                    title=title_node.content_text(),
+                )
+            ):
+                return True
+    requested_host = normalize_domain(request.capture.requested_url)
+    final_host = normalize_domain(request.capture.final_url)
+    thin = record is None or not any(
+        record.get(field) not in (None, "", [], {}, ())
+        for field in DETAIL_SHELL_MEANINGFUL_RECORD_FIELDS
+    )
+    return bool(record is not None and thin and requested_host != final_host)
+
+
+def _missing_fields(findings: tuple[Finding, ...]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                str(row.metadata.get("field"))
+                for row in findings
+                if row.rule_id == "MISSING_CONTRACT_FIELD" and row.metadata.get("field")
+            }
+        )
+    )
+
+
+def _variant_coverage(records, requested_fields):
+    if "variants" not in requested_fields:
+        return "not_applicable"
+    return "complete" if records and records[0].get("variants") else "partial"
+
+
+def _image_coverage(records, requested_fields):
+    if not {"image", "image_url", "additional_images"}.intersection(requested_fields):
+        return "not_applicable"
+    return "complete" if records and records[0].get("image_url") else "partial"
+
+
+def _integrity(verdict: Verdict):
+    if verdict == "blocked":
+        return "blocked"
+    if verdict == "success":
+        return "clean"
+    if verdict in {"partial", "review"}:
+        return "partial"
+    if verdict in {"invalid", "error"}:
+        return "defect"
+    return "unknown"
 
 
 def _trust_state(

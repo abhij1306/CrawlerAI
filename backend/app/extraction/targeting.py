@@ -49,11 +49,15 @@ def select_commerce_target(
         selected = None
     if selected is None and len(root_ids) == 1 and not rejected_identity_roots:
         selected = root_ids[0]
-    query_codes = _requested_variant_query_codes((request.capture.final_url, request.capture.requested_url))
+    request_urls = request.capture.final_url, request.capture.requested_url
+    query_codes = _requested_variant_query_codes(request_urls)
     selected_variant = _select_requested_variant(graph, selected, query_codes)
     status = (
         "ambiguous"
-        if selected is not None and query_codes and selected_variant is None
+        if selected is not None
+        and graph.variants
+        and query_codes
+        and selected_variant is None
         else _commerce_target_status(
             graph, evidence, root_ids, selected, rejected_identity_roots
         )
@@ -218,7 +222,7 @@ def _select_requested_variant(
         for variant in variants
     }
     highest = max(scores.values(), default=0)
-    matches = tuple(entity_id for entity_id, score in scores.items() if score == highest)
+    matches = tuple(key for key, score in scores.items() if score == highest)
     return matches[0] if highest and len(matches) == 1 else None
 
 

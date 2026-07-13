@@ -89,19 +89,6 @@ from app.core.shared.field_coerce_text import (
 from app.core.shared.text_coerce import coerce_long_text, coerce_text
 
 
-def collect_ecommerce_detail(
-    bundle: CaptureBundle,
-    reader: ArtifactReader,
-    *,
-    requested_fields: tuple[str, ...] = (),
-) -> tuple[Evidence, ...]:
-    return harvest_ecommerce_detail(
-        bundle,
-        reader,
-        requested_fields=requested_fields,
-    ).evidence
-
-
 def harvest_ecommerce_detail(
     bundle: CaptureBundle,
     reader: ArtifactReader,
@@ -411,91 +398,6 @@ def _brand_role_can_publish(row: Evidence) -> bool:
         "vendor",
         "unknown",
     }
-
-
-def assess_ecommerce_detail_quality(
-    record: dict[str, object],
-    resolution,
-    bundle: CaptureBundle,
-    *,
-    requested_fields: tuple[str, ...] = (),
-) -> str:
-    if bundle.acquisition_outcome in {"error", "blocked"}:
-        return bundle.acquisition_outcome
-    if not record:
-        return "empty"
-    if resolution.blocking_finding_ids:
-        return "invalid"
-    if not resolution.primary_product_entity_id:
-        return "review"
-    if _only_slug_identity(record):
-        return "review"
-    if _title_is_review_only(resolution):
-        return "review"
-    requested_fields_present = all(
-        record.get("image_url" if field == "image" else field)
-        not in (None, "", [], {}, ())
-        for field in requested_fields
-    )
-    if (
-        record.get("url")
-        and record.get("title")
-        and _has_complete_public_offer(record)
-        and requested_fields_present
-        and not resolution.unresolved_fact_types
-    ):
-        return "success"
-    return "partial" if record.get("title") or record.get("price") else "review"
-
-
-def _only_slug_identity(record: dict[str, object]) -> bool:
-    title = str(record.get("title") or "").strip()
-    url = str(record.get("url") or "").strip()
-    if not title or not url:
-        return False
-    commerce_fields = {
-        "brand",
-        "sku",
-        "mpn",
-        "gtin",
-        "price",
-        "currency",
-        "availability",
-        "image_url",
-        "description",
-        "variants",
-    }
-    if bool(record.get("variant_count")) or any(
-        record.get(field) not in (None, "", [], {}, ()) for field in commerce_fields
-    ):
-        return False
-    return title.casefold() == detail_title_from_url(url).casefold()
-
-
-def _has_complete_public_offer(record: dict[str, object]) -> bool:
-    if record.get("price") not in (None, "", [], {}, ()) and record.get(
-        "currency"
-    ) not in (None, "", [], {}, ()):
-        return True
-    variants = record.get("variants")
-    if not isinstance(variants, (list, tuple)):
-        return False
-    return any(
-        isinstance(row, dict)
-        and row.get("price") not in (None, "", [], {}, ())
-        and row.get("currency") not in (None, "", [], {}, ())
-        for row in variants
-    )
-
-
-def _title_is_review_only(resolution) -> bool:
-    return any(
-        decision.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
-        and decision.entity_id == resolution.primary_product_entity_id
-        and decision.status == "resolved"
-        and decision.rule_id == "TITLE_URL_REVIEW_ONLY"
-        for decision in resolution.decisions
-    )
 
 
 def normalize_evidence(

@@ -175,48 +175,6 @@ def discover_listing_records(
     return tuple(boundaries)
 
 
-def listing_discovery_diagnostics(
-    doc: HtmlDocument, *, page_url: str
-) -> dict[str, int]:
-    """Return bounded, source-agnostic reasons why DOM boundary discovery failed."""
-    counts = {
-        "candidate_anchor_count": 0,
-        "accepted_anchor_count": 0,
-        "rejected_hidden_count": 0,
-        "rejected_shell_count": 0,
-        "rejected_non_http_count": 0,
-        "rejected_cross_host_count": 0,
-        "rejected_structural_url_count": 0,
-    }
-    grid_candidates: set[int] = set()
-    for anchor in doc.css("a[href]"):
-        counts["candidate_anchor_count"] += 1
-        if _is_visually_hidden(anchor):
-            counts["rejected_hidden_count"] += 1
-            continue
-        if any(
-            node.tag() in {"header", "footer", "nav"} for node in anchor.ancestors()
-        ):
-            counts["rejected_shell_count"] += 1
-            continue
-        href = (anchor.attribute("href") or "").strip()
-        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
-            counts["rejected_non_http_count"] += 1
-            continue
-        url = urljoin(page_url, href)
-        if not same_site(page_url, url):
-            counts["rejected_cross_host_count"] += 1
-            continue
-        if listing_url_is_structural(url) or not _link_identity(url):
-            counts["rejected_structural_url_count"] += 1
-            continue
-        counts["accepted_anchor_count"] += 1
-        grid_candidates.update(node.identity() for node in anchor.ancestors())
-    counts["grid_candidates_considered"] = len(grid_candidates)
-    counts["boundary_count"] = len(discover_listing_records(doc, page_url=page_url))
-    return counts
-
-
 def accepted_network_listing_subject_count(evidence) -> int:
     return len(
         {

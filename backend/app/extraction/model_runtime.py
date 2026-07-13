@@ -1,8 +1,7 @@
-"""Lazy, evaluation-gated universal-model fallback.
+"""Lazy, evaluation-gated universal-model recipe proposals.
 
 The runtime accepts only approved artifact metadata from the frozen run snapshot.
-Predictions are converted to normal Evidence after source-grounding checks. This
-module never resolves or publishes records.
+Predictions become grounded binding proposals. Model values never enter records.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Thread
 from time import perf_counter
-from typing import Literal, Mapping, Protocol
+from typing import Literal, Mapping, Protocol, cast
 from urllib.parse import urljoin
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -25,15 +24,12 @@ from app.core.config.evaluation import (
     COMPACT_REPRESENTATION_SCHEMA_VERSION,
     EXTRACTION_V3_FLAT_MAP_PAGE_SCHEMA_VERSION,
     GENERALIZED_EXTRACTION_BUDGET,
-    UNIVERSAL_MODEL_COLLECTOR_ID,
     UNIVERSAL_MODEL_RUNTIME_SNAPSHOT_KEY,
 )
-from app.core.shared.ids import stable_id
+from app.core.extraction_memory.recipe_contracts import RecipeBindingProposal
 from app.extraction.contracts import (
-    Evidence,
     ExtractionRequest,
     ModelEvidenceCandidate,
-    SourceLocator,
     UniversalModelArtifact,
     UniversalModelResult,
 )
@@ -122,9 +118,9 @@ class RuntimeModelAdapter(Protocol):
 
 
 @dataclass(frozen=True)
-class ModelFallbackResult:
+class ModelRecipeProposalResult:
     outcome: ModelRuntimeOutcome
-    evidence: tuple[Evidence, ...] = ()
+    proposals: tuple[RecipeBindingProposal, ...] = ()
     artifact: UniversalModelArtifact | None = None
     representation_built: bool = False
     invoked: bool = False
@@ -135,18 +131,15 @@ class ModelFallbackResult:
     output_tokens: int = 0
     prediction_count: int = 0
     ungrounded_rejection_count: int = 0
-    failure_code: (
-        Literal["model_service_failure", "unsupported_representation"] | None
-    ) = None
+    failure_code: str | None = None
     detail: str | None = None
-    recipe_candidate: dict[str, object] | None = None
     terminal_state: ModelTerminalState | None = None
 
     def __post_init__(self) -> None:
         if self.terminal_state is not None:
             return
         if self.invoked:
-            if self.outcome == "produced_evidence":
+            if self.proposals:
                 state: ModelTerminalState = "invoked_produced_evidence"
             elif self.outcome == "no_match":
                 state = "invoked_no_match"
@@ -161,8 +154,11 @@ class ModelFallbackResult:
             else:
                 state = "provider_error"
         elif self.outcome == "disabled":
-            detail = str(self.detail or "").casefold()
-            state = "disabled" if "disabled" in detail else "config_missing"
+            state = (
+                "disabled"
+                if "disabled" in str(self.detail or "").casefold()
+                else "config_missing"
+            )
         elif self.outcome == "budget_limited":
             state = "budget_limited"
         elif self.outcome == "no_match":
@@ -172,22 +168,23 @@ class ModelFallbackResult:
         object.__setattr__(self, "terminal_state", state)
 
 
-def run_model_fallback(
+def run_model_recipe_proposals(
     request: ExtractionRequest,
     adapter: RuntimeModelAdapter | None,
-) -> ModelFallbackResult:
+) -> ModelRecipeProposalResult:
+    """Return only capture-grounded paths; never model field values."""
     artifact, disabled_reason = _approved_artifact(request)
     if artifact is None:
-        return ModelFallbackResult(outcome="disabled", detail=disabled_reason)
+        return ModelRecipeProposalResult(outcome="disabled", detail=disabled_reason)
     if adapter is None:
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="failed",
             artifact=artifact,
             failure_code="model_service_failure",
             detail="approved model artifact has no runtime adapter",
         )
     if adapter.adapter_id != artifact.adapter_id:
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="failed",
             artifact=artifact,
             failure_code="model_service_failure",
@@ -195,7 +192,7 @@ def run_model_fallback(
         )
     source = _html_source(request)
     if source is None:
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="failed",
             artifact=artifact,
             failure_code="unsupported_representation",
@@ -209,7 +206,7 @@ def run_model_fallback(
         surface=request.surface.value,
     )
     if page.vision_recommended or page.token_count > _input_token_budget():
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="budget_limited",
             artifact=artifact,
             representation_built=True,
@@ -220,7 +217,7 @@ def run_model_fallback(
     try:
         result = _predict_with_timeout(adapter, page, artifact)
     except TimeoutError:
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="timed_out",
             artifact=artifact,
             representation_built=True,
@@ -230,7 +227,7 @@ def run_model_fallback(
             detail="universal model invocation timed out",
         )
     except Exception as exc:  # model service must degrade without breaking extraction
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="failed",
             artifact=artifact,
             representation_built=True,
@@ -242,7 +239,7 @@ def run_model_fallback(
     elapsed_ms = (perf_counter() - started) * 1_000
     identity_error = _result_identity_error(result, artifact)
     if identity_error:
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="failed",
             artifact=artifact,
             representation_built=True,
@@ -261,7 +258,7 @@ def run_model_fallback(
         or result.memory_mb > artifact.max_memory_mb
         or result.cost_usd > _runtime_cost_cap_usd(artifact)
     ):
-        return ModelFallbackResult(
+        return ModelRecipeProposalResult(
             outcome="budget_limited",
             artifact=artifact,
             representation_built=True,
@@ -274,10 +271,10 @@ def run_model_fallback(
             prediction_count=len(result.predictions),
             detail="universal model runtime budget exceeded",
         )
-    evidence, rejected = _grounded_evidence(request, page, artifact, result)
-    return ModelFallbackResult(
-        outcome="produced_evidence" if evidence else "no_match",
-        evidence=evidence,
+    proposals, rejected = _grounded_proposals(request, page, artifact, result)
+    return ModelRecipeProposalResult(
+        outcome="produced_evidence" if proposals else "no_match",
+        proposals=proposals,
         artifact=artifact,
         representation_built=True,
         invoked=True,
@@ -457,14 +454,14 @@ def _result_identity_error(
     return None
 
 
-def _grounded_evidence(
+def _grounded_proposals(
     request: ExtractionRequest,
     page: RuntimeFlatMapPage,
     artifact: UniversalModelArtifact,
     result: UniversalModelResult,
-) -> tuple[tuple[Evidence, ...], int]:
+) -> tuple[tuple[RecipeBindingProposal, ...], int]:
     flat_map = _flat_map(page)
-    rows: list[Evidence] = []
+    rows: list[RecipeBindingProposal] = []
     rejected = 0
     for candidate in result.predictions:
         if candidate.confidence < artifact.confidence_threshold:
@@ -474,13 +471,7 @@ def _grounded_evidence(
             rejected += 1
             continue
         rows.append(
-            _candidate_evidence(
-                request,
-                artifact,
-                candidate,
-                source_text=flat_map[grounding.source_path or candidate.source_path],
-                grounding_match_type=grounding.match_type,
-            )
+            _candidate_proposal(candidate, grounding_match_type=grounding.match_type)
         )
     return tuple(rows), rejected
 
@@ -519,52 +510,27 @@ def _input_token_budget() -> int:
     return int(GENERALIZED_EXTRACTION_BUDGET["max_input_tokens"])
 
 
-def _candidate_evidence(
-    request: ExtractionRequest,
-    artifact: UniversalModelArtifact,
+def _candidate_proposal(
     candidate: ModelEvidenceCandidate,
     *,
-    source_text: str,
     grounding_match_type: str,
-) -> Evidence:
-    return Evidence(
-        evidence_id=stable_id(
-            "evidence",
-            request.capture.bundle_id,
-            UNIVERSAL_MODEL_COLLECTOR_ID,
-            artifact.artifact_id,
-            candidate.prediction_id,
-        ),
-        bundle_id=request.capture.bundle_id,
+) -> RecipeBindingProposal:
+    attribute = (
+        "src"
+        if candidate.fact_type == "asset.image_url"
+        else "href"
+        if candidate.fact_type in {"product.url", "job.url", "job.apply_url"}
+        else None
+    )
+    return RecipeBindingProposal(
+        proposal_id=candidate.prediction_id,
         artifact_id=candidate.artifact_id,
-        collector_id=UNIVERSAL_MODEL_COLLECTOR_ID,
-        collector_version=artifact.artifact_version,
-        fact_type=candidate.fact_type,
-        raw_value=candidate.raw_value,
-        value=candidate.value,
-        locator=SourceLocator(
-            kind="dom_path",
-            value=candidate.source_path,
-            preview=_bounded_text(source_text),
-        ),
-        entity_hint=candidate.entity_hint,
-        group_id=candidate.group_id,
-        directness="inferred",
+        field=candidate.fact_type.rsplit(".", 1)[-1],
+        source="dom_attribute" if attribute else "dom_text",
+        path=candidate.source_path,
+        attribute=attribute,
         confidence=candidate.confidence,
-        flags=("model_prediction",),
-        metadata={
-            "model_artifact_id": artifact.artifact_id,
-            "model_artifact_version": artifact.artifact_version,
-            "model_family": artifact.model_family,
-            "benchmark_report_id": artifact.benchmark_report_id,
-            "extraction_method": "generalized",
-            "grounding_match_type": grounding_match_type,
-        },
-        surface=request.surface,
-        subject_id=candidate.subject_id,
-        parent_subject_id=candidate.parent_subject_id,
-        subject_scope=candidate.subject_scope,
-        relation_type=candidate.relation_type,
+        grounding_match_type=cast(Literal["exact", "normalized"], grounding_match_type),
     )
 
 

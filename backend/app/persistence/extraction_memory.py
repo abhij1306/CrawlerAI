@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from copy import deepcopy
 import hashlib
 import json
 import uuid
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -13,48 +13,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
-    EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS,
-    EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
     EXTRACTION_CONTRACT_SELECTION_ORIGIN_OPERATOR,
-    EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
-    EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
     EXTRACTION_PROFILE_ROUTE_PATTERN,
     EXTRACTION_PROFILE_TECH_SIGNAL,
     EXTRACTION_PROFILE_TEMPLATE_FINGERPRINT,
     EXTRACTION_LABEL_KIND_V3_CUTOVER,
-    EXTRACTION_LEGACY_ENGINE,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
-    EXTRACTION_MEMORY_STATUS_SUSPENDED,
-    EXTRACTION_MEMORY_STATUS_TRUSTED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
-    EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
-    EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
-    EXTRACTION_RECIPE_LAYER_TEMPLATE,
-    EXTRACTION_RECIPE_LAYER_ORDER,
-    EXTRACTION_RELEASE_VERSION,
+    EXTRACTION_RELEASE_VERSION_V2,
     EXTRACTION_RUNTIME_OBSERVATION_KIND,
     EXTRACTION_V3_CUTOVER_ACTION_ENABLE,
     EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS,
-    EXTRACTION_V3_ENGINE,
-    RECIPE_REPAIR_QUEUE_KIND,
-    RECIPE_REPAIR_QUEUE_VERDICT,
-    RECIPE_REPAIR_REVIEW_STATES,
-    SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
-    SENTINEL_OBSERVATION_KIND,
-    SENTINEL_SUSPENSION_KIND,
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config import field_mappings
-from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.extraction_memory.templates import (
     extract_tech_signals,
     fingerprint_template,
     normalize_source_pattern,
     normalize_route,
-    source_pattern,
 )
+from app.core.extraction_memory.recipe_contracts import RecipeCandidate
 from app.models.crawl_run import CrawlRun
 from app.models.extraction_memory import (
     CompiledExtractionRecipe,
@@ -64,9 +45,6 @@ from app.models.extraction_memory import (
     ExtractionRecipe,
     ExtractionReleaseSnapshot,
     ExtractionTemplate,
-)
-from app.persistence.extraction_memory_sources import (
-    merge_observed_sources as _merge_observed_sources,
 )
 
 if TYPE_CHECKING:
@@ -78,183 +56,10 @@ def _checksum(payload: dict) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-class RecipeCompileError(ValueError):
-    """Recipe layers cannot be merged into one bounded runtime recipe."""
-
-
 def _canonical_field(field: object) -> str:
     key = str(field or "").strip()
     normalized = key.casefold()
     return field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(normalized, key)
-
-
-def compile_recipe_layers(
-    recipes: list[ExtractionRecipe], *, surface: str = ""
-) -> dict[str, object]:
-    """Flatten scoped recipe layers into one bounded payload.
-
-    Higher layers may override lower layers. Two recipes at the same layer/kind
-    that define different rules for the same field are ambiguous and fail
-    closed.
-    """
-
-    ordered = sorted(
-        recipes,
-        key=lambda row: (
-            _layer_rank(row.layer),
-            row.kind,
-            row.version,
-            str(row.id),
-        ),
-    )
-    selectors: dict[str, dict[str, object]] = {}
-    contracts: dict[str, dict[str, object]] = {}
-    record_bindings = _compiled_record_bindings(ordered)
-    provenance: list[dict[str, object]] = []
-    layer_signatures: dict[tuple[str, str, str], str] = {}
-    for recipe in _non_binding_recipes(ordered):
-        payload = dict(recipe.payload or {})
-        provenance.append(
-            {
-                "recipe_id": str(recipe.id),
-                "layer": recipe.layer,
-                "kind": recipe.kind,
-                "version": recipe.version,
-            }
-        )
-        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS:
-            if _selectors_disabled_for_surface(surface):
-                continue
-            for row in list(payload.get("rules") or []):
-                if not isinstance(row, dict):
-                    continue
-                field = str(row.get("field_name") or row.get("canonical_field") or "")
-                selector = str(row.get("css_selector") or "")
-                _merge_layer_rule(
-                    selectors,
-                    layer_signatures,
-                    recipe=recipe,
-                    field=field,
-                    value=selector,
-                    payload=dict(row),
-                )
-        elif recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS:
-            for row in list(payload.get("contracts") or []):
-                if not isinstance(row, dict):
-                    continue
-                field = str(row.get("canonical_field") or row.get("field_name") or "")
-                selected = str(row.get("selected_source") or "")
-                _merge_layer_rule(
-                    contracts,
-                    layer_signatures,
-                    recipe=recipe,
-                    field=field,
-                    value=selected,
-                    payload=dict(row),
-                )
-    source_pins = [_source_pin_from_contract(row) for row in contracts.values()]
-    field_schema = _field_schema_from_contracts(contracts.values())
-    return {
-        "compiler_version": EXTRACTION_COMPILER_VERSION,
-        "selector_rules": list(selectors.values()),
-        "contracts": list(contracts.values()),
-        "source_pins": source_pins,
-        "field_schema": field_schema,
-        "record_bindings": record_bindings,
-        "provenance": provenance,
-    }
-
-
-def _compiled_record_bindings(
-    recipes: Iterable[ExtractionRecipe],
-) -> dict[str, object] | None:
-    for recipe in reversed(tuple(recipes)):
-        if recipe.kind != EXTRACTION_RECIPE_KIND_RECORD_BINDINGS:
-            continue
-        candidate = dict(recipe.payload or {}).get("record_bindings")
-        if (
-            isinstance(candidate, dict)
-            and candidate.get("schema_version") == "record_bindings.v1"
-        ):
-            return dict(candidate)
-    return None
-
-
-def _non_binding_recipes(
-    recipes: Iterable[ExtractionRecipe],
-) -> Iterable[ExtractionRecipe]:
-    return (
-        recipe
-        for recipe in recipes
-        if recipe.kind != EXTRACTION_RECIPE_KIND_RECORD_BINDINGS
-    )
-
-
-def _selectors_disabled_for_surface(surface: str) -> bool:
-    return str(surface or "").strip().lower() == "ecommerce_detail"
-
-
-def _source_pin_from_contract(contract: dict[str, object]) -> dict[str, object]:
-    return {
-        "canonical_field": str(
-            contract.get("canonical_field") or contract.get("field_name") or ""
-        ),
-        "selected_source": normalize_source_pattern(
-            str(contract.get("selected_source") or "")
-        ),
-        "selection_origin": str(contract.get("selection_origin") or "generic"),
-        "resolver_rule": str(contract.get("resolver_rule") or ""),
-    }
-
-
-def _field_schema_from_contracts(
-    contracts: Iterable[object],
-) -> list[dict[str, object]]:
-    fields: list[dict[str, object]] = []
-    for row in contracts:
-        if not isinstance(row, dict):
-            continue
-        field = str(row.get("canonical_field") or row.get("field_name") or "").strip()
-        if not field:
-            continue
-        fields.append(
-            {
-                "canonical_field": field,
-                "required": bool(row.get("required", False)),
-                "value_sense": str(row.get("value_sense") or "").strip(),
-            }
-        )
-    return fields
-
-
-def _merge_layer_rule(
-    target: dict[str, dict[str, object]],
-    layer_signatures: dict[tuple[str, str, str], str],
-    *,
-    recipe: ExtractionRecipe,
-    field: str,
-    value: str,
-    payload: dict[str, object],
-) -> None:
-    field_key = field.strip().lower()
-    value_key = value.strip()
-    if not field_key or not value_key:
-        return
-    layer_key = (recipe.layer, recipe.kind, field_key)
-    existing = layer_signatures.get(layer_key)
-    if existing is not None and existing != value_key:
-        raise RecipeCompileError(
-            f"ambiguous {recipe.kind} override for {field_key} at {recipe.layer}"
-        )
-    layer_signatures[layer_key] = value_key
-    target[field_key] = dict(payload)
-
-
-def _layer_rank(layer: str) -> int:
-    try:
-        return EXTRACTION_RECIPE_LAYER_ORDER.index(layer)
-    except ValueError:
-        return len(EXTRACTION_RECIPE_LAYER_ORDER)
 
 
 async def ensure_template(
@@ -366,6 +171,8 @@ async def upsert_recipe(
             select(CompiledExtractionRecipe).where(
                 CompiledExtractionRecipe.recipe_id == recipe.id,
                 CompiledExtractionRecipe.checksum == checksum,
+                CompiledExtractionRecipe.compiler_version
+                == EXTRACTION_COMPILER_VERSION,
             )
         )
     ).scalar_one_or_none()
@@ -386,6 +193,8 @@ async def upsert_recipe(
                     select(CompiledExtractionRecipe).where(
                         CompiledExtractionRecipe.recipe_id == recipe.id,
                         CompiledExtractionRecipe.checksum == checksum,
+                        CompiledExtractionRecipe.compiler_version
+                        == EXTRACTION_COMPILER_VERSION,
                     )
                 )
             ).scalar_one()
@@ -591,127 +400,26 @@ def _v3_cutover_report_passed(report: dict[str, object], *, surface: str) -> boo
 async def build_release_payload(
     session: AsyncSession, *, domain: str, surface: str
 ) -> dict[str, object]:
-    templates = list(
-        (
-            await session.execute(
-                select(ExtractionTemplate).where(
-                    ExtractionTemplate.domain == str(domain or "").strip().lower(),
-                    ExtractionTemplate.surface.in_((surface, DEFAULT_FALLBACK_SURFACE)),
-                    ExtractionTemplate.status.in_(
-                        (
-                            EXTRACTION_MEMORY_STATUS_ACTIVE,
-                            EXTRACTION_MEMORY_STATUS_TRUSTED,
-                        )
-                    ),
-                )
-            )
-        )
-        .scalars()
-        .all()
+    from app.persistence.extraction_recipe_lifecycle import (
+        build_executable_release_payload,
     )
-    template_rows: list[dict[str, object]] = []
-    for template in templates:
-        recipes = list(
-            (
-                await session.execute(
-                    select(ExtractionRecipe).where(
-                        ExtractionRecipe.template_id == template.id,
-                        ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        compiled_recipe = compile_recipe_layers(recipes, surface=template.surface)
-        contracts = list(cast(list[dict], compiled_recipe["contracts"]))
-        selector_rules = list(cast(list[dict], compiled_recipe["selector_rules"]))
-        template_rows.append(
-            {
-                "template_id": str(template.id),
-                "fingerprint": template.fingerprint,
-                "surface": template.surface,
-                "route_pattern": template.route_pattern,
-                "status": template.status,
-                "contracts": contracts,
-                "selector_rules": selector_rules,
-                "compiled_recipe": compiled_recipe,
-            }
-        )
-    return {
-        "domain": domain,
-        "surface": surface,
-        "templates": template_rows,
-        "cutover": {
-            "engine": EXTRACTION_V3_ENGINE,
-            "enabled": True,
-        },
-    }
 
-
-def _legacy_release_payload(domain: str, surface: str) -> dict[str, object]:
-    return {
-        "domain": domain,
-        "surface": surface,
-        "templates": [],
-        "cutover": {
-            "engine": EXTRACTION_LEGACY_ENGINE,
-            "enabled": False,
-        },
-    }
-
-
-def selector_rules_from_release(
-    payload: dict[str, object], *, surface: str
-) -> list[dict[str, object]]:
-    if _selectors_disabled_for_surface(surface):
-        return []
-    raw_templates = payload.get("templates")
-    templates = list(raw_templates) if isinstance(raw_templates, list) else []
-    ordered_surfaces = (surface, DEFAULT_FALLBACK_SURFACE)
-    rules: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
-    for candidate_surface in ordered_surfaces:
-        for template in templates:
-            if not isinstance(template, dict):
-                continue
-            if str(template.get("surface") or "") != candidate_surface:
-                continue
-            if str(
-                template.get("status") or ""
-            ).strip().lower() == EXTRACTION_MEMORY_STATUS_SUSPENDED or bool(
-                template.get("sentinel_suspended")
-            ):
-                continue
-            for row in list(template.get("selector_rules") or []):
-                if not isinstance(row, dict):
-                    continue
-                signature = (
-                    str(row.get("field_name") or "").strip().lower(),
-                    str(row.get("css_selector") or "").strip(),
-                )
-                if signature in seen:
-                    continue
-                seen.add(signature)
-                rules.append(dict(row))
-    return rules
+    return await build_executable_release_payload(
+        session,
+        domain=normalize_domain(domain),
+        surface=surface,
+    )
 
 
 async def create_release_snapshot(
     session: AsyncSession, *, run_id: int, domain: str, surface: str
 ) -> ExtractionReleaseSnapshot:
     payload = await build_release_payload(session, domain=domain, surface=surface)
-    if surface == EXTRACTION_V3_CUTOVER_REQUIRED_REPORT_FIELDS[
-        "surface"
-    ] and not await extraction_v3_cutover_enabled(
-        session, domain=domain, surface=surface
-    ):
-        payload = _legacy_release_payload(domain, surface)
     row = ExtractionReleaseSnapshot(
         run_id=run_id,
         domain=domain,
         surface=surface,
-        release_version=EXTRACTION_RELEASE_VERSION,
+        release_version=EXTRACTION_RELEASE_VERSION_V2,
         payload=payload,
     )
     session.add(row)
@@ -728,7 +436,7 @@ async def create_candidate_release_snapshot(
         run_id=None,
         domain=domain,
         surface=surface,
-        release_version=EXTRACTION_RELEASE_VERSION,
+        release_version=EXTRACTION_RELEASE_VERSION_V2,
         payload=await build_release_payload(session, domain=domain, surface=surface),
     )
     session.add(row)
@@ -803,41 +511,7 @@ async def load_release_payload(
     row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
     if row is None:
         return {}
-    payload = deepcopy(row.payload)
-    await _overlay_suspended_templates(session, payload)
-    return payload
-
-
-async def _overlay_suspended_templates(
-    session: AsyncSession, payload: dict[str, object]
-) -> None:
-    templates = payload.get("templates")
-    if not isinstance(templates, list):
-        return
-    ids = [
-        uuid.UUID(str(row.get("template_id")))
-        for row in templates
-        if isinstance(row, dict) and _uuid_or_none(row.get("template_id")) is not None
-    ]
-    if not ids:
-        return
-    result = await session.execute(
-        select(ExtractionTemplate.id, ExtractionTemplate.status).where(
-            ExtractionTemplate.id.in_(ids)
-        )
-    )
-    statuses: dict[uuid.UUID, str] = {
-        template_id: status for template_id, status in result
-    }
-    for row in templates:
-        if not isinstance(row, dict):
-            continue
-        template_id = _uuid_or_none(row.get("template_id"))
-        if template_id is None:
-            continue
-        if statuses.get(template_id) == EXTRACTION_MEMORY_STATUS_SUSPENDED:
-            row["status"] = EXTRACTION_MEMORY_STATUS_SUSPENDED
-            row["sentinel_suspended"] = True
+    return deepcopy(row.payload)
 
 
 async def record_extraction_result(
@@ -859,14 +533,35 @@ async def record_extraction_result(
         tech_signals=extract_tech_signals(result),
         run_id=run_id,
     )
-    await _record_observed_field_preferences(
+    compiled_recipe = None
+    if isinstance(result.recipe_candidate, RecipeCandidate):
+        from app.persistence.extraction_recipe_lifecycle import (
+            record_candidate_validation,
+            save_recipe_candidate,
+        )
+
+        _recipe, compiled_recipe = await save_recipe_candidate(
+            session,
+            template=template,
+            candidate=result.recipe_candidate,
+        )
+        execution = result.recipe_execution
+        await record_candidate_validation(
+            session,
+            compiled=compiled_recipe,
+            sample_url=url,
+            run_id=run_id,
+            url_result_id=url_result_id,
+            succeeded=bool(
+                execution and execution.records and not execution.failure_code
+            ),
+        )
+    await _record_active_recipe_drift(
         session,
-        template=template,
-        surface=surface,
+        run_id=run_id,
+        url_result_id=url_result_id,
+        url=url,
         result=result,
-    )
-    compiled_recipe = await _persist_record_binding_candidate(
-        session, template=template, surface=surface, result=result
     )
     observation = ExtractionObservation(
         template_id=template.id,
@@ -892,21 +587,27 @@ async def record_extraction_result(
                 result.metrics.universal_model_cost_per_1000_pages
             ),
             "finding_rule_ids": sorted({row.rule_id for row in result.findings}),
+            "recipe_candidate_id": (
+                result.recipe_candidate.candidate_id
+                if result.recipe_candidate is not None
+                else None
+            ),
+            "recipe_execution_id": (
+                result.recipe_execution.recipe_id
+                if result.recipe_execution is not None
+                else None
+            ),
+            "recipe_failure_code": (
+                result.recipe_execution.failure_code
+                if result.recipe_execution is not None
+                else None
+            ),
             "contract_outcomes": [
                 row.model_dump(mode="json") for row in result.contract_outcomes
             ],
         },
     )
     session.add(observation)
-    await _record_sentinel_observations(
-        session,
-        run_id=run_id,
-        url_result_id=url_result_id,
-        current_domain=template.domain,
-        current_surface=template.surface,
-        current_route_pattern=template.route_pattern,
-        result=result,
-    )
     manifest = (
         await session.execute(
             select(ExtractionManifest).where(
@@ -944,283 +645,34 @@ async def record_extraction_result(
     return manifest
 
 
-async def _persist_record_binding_candidate(
+async def _record_active_recipe_drift(
     session: AsyncSession,
     *,
-    template: ExtractionTemplate,
-    surface: str,
+    run_id: int,
+    url_result_id: int,
+    url: str,
     result: ExtractionResult,
-) -> CompiledExtractionRecipe | None:
-    candidate = result.recipe_candidate
-    if (
-        "listing" not in surface
-        or result.verdict not in EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS
-        or not result.records
-        or not isinstance(candidate, dict)
-        or candidate.get("schema_version") != "record_bindings.v1"
-    ):
-        return None
-    _recipe, compiled = await upsert_recipe(
+) -> None:
+    compiled_id = result.manifest_context.compiled_recipe_id
+    execution = result.recipe_execution
+    if not compiled_id or execution is None or execution.failure_code is None:
+        return
+    try:
+        recipe_id = uuid.UUID(compiled_id)
+    except (TypeError, ValueError):
+        return
+    compiled = await session.get(CompiledExtractionRecipe, recipe_id)
+    if compiled is None:
+        return
+    from app.persistence.extraction_recipe_lifecycle import record_recipe_drift
+
+    await record_recipe_drift(
         session,
-        template=template,
-        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
-        kind=EXTRACTION_RECIPE_KIND_RECORD_BINDINGS,
-        payload={"record_bindings": dict(candidate)},
-    )
-    return compiled
-
-
-async def _record_observed_field_preferences(
-    session: AsyncSession,
-    *,
-    template: ExtractionTemplate,
-    surface: str,
-    result: ExtractionResult,
-) -> None:
-    if (
-        result.verdict not in EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS
-        or not result.records
-    ):
-        return
-    evidence_by_id = {row.evidence_id: row for row in result.evidence}
-    winner_ids = {
-        row.accepted_evidence_ids[0]
-        for row in result.decisions
-        if row.status == "resolved" and row.accepted_evidence_ids
-    }
-    observed_sources: dict[str, list[str]] = {}
-    for state in result.field_states:
-        if state.state not in {"captured_published", "captured_and_resolved"}:
-            continue
-        if state.field.startswith("variants."):
-            continue
-        winner_id = next(
-            (
-                evidence_id
-                for evidence_id in state.evidence_ids
-                if evidence_id in winner_ids
-            ),
-            next(iter(state.evidence_ids), None),
-        )
-        evidence = evidence_by_id.get(winner_id) if winner_id else None
-        if evidence is None:
-            continue
-        source = normalize_source_pattern(
-            source_pattern(evidence.collector_id, evidence.locator.value)
-        )
-        if source:
-            observed_sources[evidence.fact_type] = [source]
-    if not observed_sources:
-        return
-
-    def merge_contracts(existing_payload: dict) -> dict:
-        contracts = [
-            dict(row)
-            for row in existing_payload.get("contracts", [])
-            if isinstance(row, dict)
-        ]
-        contracts_by_field = {
-            str(row.get("canonical_field") or ""): row for row in contracts
-        }
-        for canonical_field, sources in observed_sources.items():
-            contract = contracts_by_field.get(canonical_field)
-            if contract is None:
-                selected_source = sources[0]
-                contract = {
-                    "id": str(uuid.uuid4()),
-                    "template_id": str(template.id),
-                    "surface": surface,
-                    "canonical_field": canonical_field,
-                    "candidates": [],
-                    "latest_values": [],
-                    "success_count": 0,
-                    "rejection_count": 0,
-                    "resolver_rule": EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
-                    "selected_source": selected_source,
-                    "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
-                    "selection_history": [
-                        {
-                            "selected_source": selected_source,
-                            "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
-                        }
-                    ],
-                    "status": EXTRACTION_MEMORY_STATUS_ACTIVE,
-                }
-                contracts.append(contract)
-                contracts_by_field[canonical_field] = contract
-            _merge_observed_sources(contract, sources)
-        return {"contracts": contracts}
-
-    await upsert_recipe(
-        session,
-        template=template,
-        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
-        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
-        payload={"contracts": []},
-        merge_payload=merge_contracts,
-    )
-
-
-async def _record_sentinel_observations(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    url_result_id: int,
-    current_domain: str,
-    current_surface: str,
-    current_route_pattern: str,
-    result: ExtractionResult,
-) -> None:
-    for observation in result.sentinel_observations:
-        claimed_template_id = _uuid_or_none(observation.template_id)
-        template_id = await _sentinel_template_in_scope(
-            session,
-            template_id=claimed_template_id,
-            domain=current_domain,
-            surface=current_surface,
-            route_pattern=current_route_pattern,
-        )
-        session.add(
-            ExtractionObservation(
-                template_id=template_id,
-                run_id=run_id,
-                url_result_id=url_result_id,
-                verdict=observation.state,
-                payload={
-                    "kind": SENTINEL_OBSERVATION_KIND,
-                    **observation.model_dump(mode="json"),
-                },
-            )
-        )
-        if observation.state == "critical_drift" and template_id is not None:
-            await _suspend_confirmed_critical_drift_template(
-                session,
-                template_id=template_id,
-                run_id=run_id,
-                url_result_id=url_result_id,
-            )
-        if observation.state in RECIPE_REPAIR_REVIEW_STATES:
-            _enqueue_recipe_repair(
-                session,
-                template_id=template_id,
-                run_id=run_id,
-                url_result_id=url_result_id,
-                current_surface=current_surface,
-                current_route_pattern=current_route_pattern,
-                result=result,
-                observation=observation.model_dump(mode="json"),
-            )
-
-
-def _enqueue_recipe_repair(
-    session: AsyncSession,
-    *,
-    template_id: uuid.UUID | None,
-    run_id: int,
-    url_result_id: int,
-    current_surface: str,
-    current_route_pattern: str,
-    result: ExtractionResult,
-    observation: dict[str, object],
-) -> None:
-    cost_per_page = float(result.metrics.universal_model_cost_usd or 0.0)
-    cost_per_1000 = float(
-        result.metrics.universal_model_cost_per_1000_pages or cost_per_page * 1000
-    )
-    session.add(
-        ExtractionObservation(
-            template_id=template_id,
-            run_id=run_id,
-            url_result_id=url_result_id,
-            verdict=RECIPE_REPAIR_QUEUE_VERDICT,
-            payload={
-                "kind": RECIPE_REPAIR_QUEUE_KIND,
-                "surface": current_surface,
-                "route_pattern": current_route_pattern,
-                "sentinel_state": observation.get("state"),
-                "disagreement_classes": observation.get("disagreement_classes", []),
-                "fallback_published": bool(result.records),
-                "fallback_verdict": result.verdict,
-                "estimated_cost_savings_at_stake": {
-                    "currency": "USD",
-                    "per_page": cost_per_page,
-                    "per_1000_pages": cost_per_1000,
-                    "basis": "observed_model_fallback_cost",
-                },
-                "next_action": "compile_multi_sample_repair_candidate",
-            },
-        )
-    )
-
-
-async def _sentinel_template_in_scope(
-    session: AsyncSession,
-    *,
-    template_id: uuid.UUID | None,
-    domain: str,
-    surface: str,
-    route_pattern: str,
-) -> uuid.UUID | None:
-    if template_id is None:
-        return None
-    return (
-        await session.execute(
-            select(ExtractionTemplate.id).where(
-                ExtractionTemplate.id == template_id,
-                ExtractionTemplate.domain == domain,
-                ExtractionTemplate.surface == surface,
-                ExtractionTemplate.route_pattern == route_pattern,
-            )
-        )
-    ).scalar_one_or_none()
-
-
-async def _suspend_confirmed_critical_drift_template(
-    session: AsyncSession,
-    *,
-    template_id: uuid.UUID,
-    run_id: int,
-    url_result_id: int,
-) -> None:
-    with session.no_autoflush:
-        template = (
-            await session.execute(
-                select(ExtractionTemplate)
-                .where(ExtractionTemplate.id == template_id)
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-    if template is None or template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED:
-        return
-    await session.flush()
-    confirmed_count = (
-        await session.execute(
-            select(func.count())
-            .select_from(ExtractionObservation)
-            .where(
-                ExtractionObservation.template_id == template_id,
-                ExtractionObservation.verdict == "critical_drift",
-                ExtractionObservation.payload["kind"].as_string()
-                == SENTINEL_OBSERVATION_KIND,
-            )
-        )
-    ).scalar_one()
-    if confirmed_count < SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD:
-        return
-    template.status = EXTRACTION_MEMORY_STATUS_SUSPENDED
-    session.add(
-        ExtractionObservation(
-            template_id=template_id,
-            run_id=run_id,
-            url_result_id=url_result_id,
-            verdict=EXTRACTION_MEMORY_STATUS_SUSPENDED,
-            payload={
-                "kind": SENTINEL_SUSPENSION_KIND,
-                "template_id": str(template_id),
-                "confirmed_critical_drift_count": confirmed_count,
-                "next_action": "route_future_traffic_to_generic_until_recipe_is_restored",
-            },
-        )
+        compiled=compiled,
+        sample_url=url,
+        failure_code=execution.failure_code,
+        run_id=run_id,
+        url_result_id=url_result_id,
     )
 
 
