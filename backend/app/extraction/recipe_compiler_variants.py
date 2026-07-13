@@ -425,4 +425,3 @@ def _variant_field_binding(request, groups, evidence, field, root_groups):
             ),
         )
     )
-

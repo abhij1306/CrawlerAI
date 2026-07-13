@@ -395,5 +395,3 @@ def _page_identity_binding(
                 transform=f"slug_words:{index}:{lengths}",
             )
     return None
-
-
