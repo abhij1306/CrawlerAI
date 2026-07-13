@@ -8,7 +8,11 @@ import pytest
 from app.core.config.evaluation import EXTRACTION_V3_MAX_INPUT_TOKENS
 from eval.representation import audit_sample_report
 from app.extraction.documents import HtmlDocument
-from app.extraction.representation import build_flat_map, build_scoped_flat_map, ground
+from app.extraction.representation.flat_map import (
+    build_flat_map,
+    build_scoped_flat_map,
+    ground,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]

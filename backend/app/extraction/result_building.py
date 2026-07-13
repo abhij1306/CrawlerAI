@@ -1,615 +1,327 @@
+"""Recipe extraction result assembly."""
+
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Iterable
-from typing import Any, Literal
 
-from app.core.config.extraction_rules._detail import (
-    DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
-    DETAIL_SHELL_TITLE_FLAG,
-    DETAIL_SHELL_TITLE_KEYS,
+from pydantic import ValidationError
+
+from app.core.config.extraction_rules import DETAIL_SHELL_TITLE_KEYS
+from app.core.extraction_memory.recipe_contracts import (
+    DiscoveryResult,
+    ExtractionRecipe,
+    RecipeCandidate,
+    RecipeExecutionResult,
+    RecipeFailureCode,
 )
-from app.core.config import field_mappings
-from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
-from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
-from app.core.records.field_policy import canonical_fields_for_surface
-from app.core.records.detail_outcome import normalized_detail_outcome
-from app.core.shared.text_coerce import slug_tokens
+from app.core.shared.ids import stable_id
 from app.extraction.contracts import (
-    Decision,
-    EvidenceDisposition,
+    CommerceDetailRecord,
+    DiagnosticSummary,
     EntityGraph,
     Evidence,
+    ExecutionManifestContext,
+    ExtractionMetrics,
     ExtractionRequest,
-    FieldEvidenceState,
+    ExtractionResult,
+    FailureClassification,
     Finding,
-    PublicationProjection,
-    PublicRecord,
-    ResolutionResult,
-    RetryRequest,
-    SelectedFact,
+    StageOutcome,
     TargetSelection,
+    Verdict,
 )
-from app.extraction.entities import EntitySet
-from app.extraction.listing_records import accepted_network_listing_subject_count
-from app.core.shared.ids import stable_id
-from app.extraction.surfaces import SurfaceSpec, listing_schema
+from app.extraction.model_runtime import ModelRecipeProposalResult
+from app.extraction.publication import publish_recipe_execution
+from app.extraction.result_policy import retry_request
+from app.extraction.surfaces import Surface
+from app.extraction.result_policy import assess, review_required
+from app.observability.extraction_diagnostics import (
+    _discovery_collector_outcomes,
+    _execution_diagnostics,
+    _failure_diagnostics,
+    _failure_field_states,
+    _failure_message,
+    _failure_taxonomy,
+    _recipe_reader_outcomes,
+    capture_outcome,
+    field_states,
+    integrity,
+    metrics,
+    trust_state,
+)
 
-FieldStateName = Literal[
-    "captured_and_resolved",
-    "captured_but_rejected",
-    "captured_conflicting",
-    "capture_incomplete",
-    "collector_missed",
-    "join_failed",
-    "interaction_required",
-    "source_unavailable",
-    "not_present_in_captured_sources",
-    "output_divergent",
-    "not_captured",
-    "captured_published",
-    "captured_suppressed",
-    "captured_unowned",
-    "not_present_in_source",
-    "not_requested",
-]
-
-
-def field_state(
-    *,
-    field: str,
-    state: FieldStateName,
-    evidence_ids: Iterable[str] = (),
-    reason_codes: Iterable[str] = (),
-    entity_id: str | None = None,
-) -> FieldEvidenceState:
-    return FieldEvidenceState(
-        entity_id=entity_id,
-        field=field,
-        state=state,
-        evidence_ids=tuple(dict.fromkeys(evidence_ids)),
-        reason_codes=tuple(dict.fromkeys(code for code in reason_codes if code)),
-    )
+# Stable private aliases retained for focused contract tests.
+_review_required = review_required
+_trust_state = trust_state
 
 
-def decisions(resolution: Any) -> tuple[Decision, ...]:
-    if isinstance(resolution, ResolutionResult):
-        return resolution.decisions
-    return tuple(resolution or ())
-
-
-def selected_facts(
-    decision_rows: tuple[Decision, ...], evidence: tuple[Evidence, ...]
-) -> tuple[SelectedFact, ...]:
-    """Build direct resolved truth. Inheritance remains derived truth."""
-
-    evidence_by_id = {row.evidence_id: row for row in evidence}
-    facts: list[SelectedFact] = []
-    for decision in decision_rows:
-        if (
-            decision.status != "resolved"
-            or len(decision.accepted_evidence_ids) != 1
-            or decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
-        ):
-            continue
-        accepted = evidence_by_id.get(decision.accepted_evidence_ids[0])
-        if accepted is None:
-            continue
-        facts.append(
-            SelectedFact(
-                selected_fact_id=stable_id("selected", decision.decision_id),
-                decision_id=decision.decision_id,
-                entity_id=decision.entity_id,
-                fact_type=decision.fact_type,
-                value=accepted.value,
-                evidence_ids=decision.accepted_evidence_ids,
-                rule_id=decision.rule_id,
-            )
-        )
-    return tuple(facts)
-
-
-def assert_resolution_accounting(
-    evidence: tuple[Evidence, ...],
-    decisions: tuple[Decision, ...],
-    selected_rows: tuple[SelectedFact, ...],
-    dispositions: tuple[EvidenceDisposition, ...],
-) -> None:
-    """Fail closed when resolution accounting stops being exact."""
-
-    evidence_ids = [row.evidence_id for row in evidence]
-    disposition_ids = [row.evidence_id for row in dispositions]
-    if Counter(evidence_ids) != Counter(disposition_ids):
-        raise RuntimeError("every evidence row must have exactly one disposition")
-    evidence_by_id = {row.evidence_id: row for row in evidence}
-    decisions_by_id = {row.decision_id: row for row in decisions}
-    for selected in selected_rows:
-        decision = decisions_by_id.get(selected.decision_id)
-        if decision is None:
-            raise RuntimeError("selected fact references a missing decision")
-        if selected.evidence_ids != decision.accepted_evidence_ids:
-            raise RuntimeError(
-                "selected fact evidence does not match accepted evidence"
-            )
-        if len(selected.evidence_ids) != 1:
-            raise RuntimeError(
-                "selected facts must represent one direct evidence value"
-            )
-        accepted = evidence_by_id.get(selected.evidence_ids[0])
-        if accepted is None:
-            raise RuntimeError("selected fact references missing evidence")
-        if selected.value != accepted.value:
-            raise RuntimeError("selected fact value diverges from accepted evidence")
-
-
-def evidence_dispositions(
-    evidence: tuple[Evidence, ...],
-    decision_rows: tuple[Decision, ...],
-    selected_rows: tuple[SelectedFact, ...],
-    target: TargetSelection | None = None,
-) -> tuple[EvidenceDisposition, ...]:
-    """Assign exactly one terminal accounting state to every evidence row."""
-
-    selected_by_evidence = {
-        evidence_id: row for row in selected_rows for evidence_id in row.evidence_ids
-    }
-    accepted_by_evidence: dict[str, Decision] = {}
-    rejected_by_evidence: dict[str, tuple[Decision, str]] = {}
-    for decision in decision_rows:
-        for evidence_id in decision.accepted_evidence_ids:
-            accepted_by_evidence.setdefault(evidence_id, decision)
-        for rejected in decision.rejected:
-            rejected_by_evidence.setdefault(
-                rejected.evidence_id, (decision, rejected.reason)
-            )
-    return tuple(
-        _evidence_disposition(
-            row,
-            accepted_by_evidence.get(row.evidence_id),
-            rejected_by_evidence.get(row.evidence_id),
-            selected_by_evidence.get(row.evidence_id),
-            target,
-        )
-        for row in evidence
-    )
-
-
-def _evidence_disposition(
-    evidence: Evidence,
-    accepted: Decision | None,
-    rejected: tuple[Decision, str] | None,
-    selected: SelectedFact | None,
-    target: TargetSelection | None,
-) -> EvidenceDisposition:
-    if accepted is not None:
-        return EvidenceDisposition(
-            evidence_id=evidence.evidence_id,
-            entity_id=accepted.entity_id,
-            status="conflicted" if accepted.status == "conflicted" else "accepted",
-            reason_code=accepted.rule_id,
-            decision_id=accepted.decision_id,
-            selected_fact_id=selected.selected_fact_id if selected else None,
-        )
-    if rejected is not None:
-        decision, reason = rejected
-        invalid = reason not in {"lower_confidence", "stable_tiebreak"}
-        return EvidenceDisposition(
-            evidence_id=evidence.evidence_id,
-            entity_id=decision.entity_id,
-            status="rejected_invalid" if invalid else "rejected_lower_rank",
-            reason_code=reason,
-            decision_id=decision.decision_id,
-        )
-    if target is not None and target.status in {"ambiguous", "missing"}:
-        return EvidenceDisposition(
-            evidence_id=evidence.evidence_id,
-            entity_id=evidence.subject_id,
-            status="unowned",
-            reason_code=f"target_{target.status}",
-        )
-    if (
-        target is not None
-        and target.status == "resolved"
-        and target.root_entity_ids
-        and evidence.subject_id
-        and evidence.subject_id not in set(target.root_entity_ids)
-    ):
-        return EvidenceDisposition(
-            evidence_id=evidence.evidence_id,
-            entity_id=evidence.subject_id,
-            status="outside_selected_target",
-            reason_code="outside_selected_target",
-        )
-    return EvidenceDisposition(
-        evidence_id=evidence.evidence_id,
-        status="diagnostic_only",
-        reason_code="not_considered_by_current_resolver",
-    )
-
-
-def projection_field_states(
-    projection: PublicationProjection,
-    evidence: tuple[Evidence, ...],
-    dispositions: tuple[EvidenceDisposition, ...],
+def execution_result(
     request: ExtractionRequest,
-    findings: tuple[Finding, ...] = (),
-) -> tuple[FieldEvidenceState, ...]:
-    """Derive field state from evidence and publication policy, never records."""
+    recipe: ExtractionRecipe,
+    execution: RecipeExecutionResult,
+    *,
+    candidate: RecipeCandidate | None,
+    template: dict[str, object] | None,
+    stages: tuple[StageOutcome, ...],
+    model: ModelRecipeProposalResult | None,
+    discovery: DiscoveryResult | None = None,
+) -> ExtractionResult:
+    published = _publish_execution(request, recipe, execution, discovery)
+    if isinstance(published, RecipeExecutionResult):
+        return failed_result(
+            request,
+            execution=published,
+            discovery=None,
+            template=template,
+            stages=stages,
+            model=model,
+        )
+    records, findings = published
+    retry_records = records
+    records, terminal_outcome = _terminal_records(request, records, findings)
+    target, graph = _target_graph(records)
+    states = field_states(request, records, execution)
+    verdict = _execution_verdict(request, target, records, findings, terminal_outcome)
+    retry = retry_request(verdict, retry_records, request)
+    review = review_required(
+        request,
+        verdict=verdict,
+        findings=findings,
+        field_states=states,
+        retry=retry,
+    )
+    collectors = _discovery_collector_outcomes(discovery) + _recipe_reader_outcomes(
+        recipe, execution
+    )
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        records=records,
+        graph=graph,
+        target=target,
+        findings=findings,
+        field_states=states,
+        transport_outcome=terminal_outcome,
+        data_integrity=integrity(verdict),
+        verdict=verdict,
+        retry_request=retry,
+        metrics=metrics(
+            records,
+            graph,
+            verdict,
+            findings=findings,
+            model=model,
+            collector_count=len(collectors),
+        ),
+        collector_outcomes=collectors,
+        stage_outcomes=stages,
+        manifest_context=request.manifest_context,
+        diagnostics=_execution_diagnostics(
+            request, records, findings, verdict, review, candidate, stages, model
+        ),
+        recipe_candidate=candidate,
+        recipe_execution=execution,
+    )
 
-    entries_by_field: dict[str, list] = {}
-    variant_entries_by_field: dict[str, list] = {}
-    for entry in projection.entries:
-        if entry.path.startswith("asset[") and entry.path.endswith(".url"):
-            entries_by_field.setdefault("image_url", []).append(entry)
-        elif entry.path.startswith("variant["):
-            # Variant-scoped commercial facts are summarized separately under
-            # ``variants.*``; they must never mark the public parent field
-            # (``record.*``) as published. Flattening both to the same field name
-            # is the observability defect behind results 68/90, where a published
-            # variant price marked page-level ``price`` as ``captured_published``
-            # even though ``record.price`` was absent.
-            variant_entries_by_field.setdefault(
-                entry.path.rsplit(".", 1)[-1], []
-            ).append(entry)
-        else:
-            entries_by_field.setdefault(entry.path.rsplit(".", 1)[-1], []).append(entry)
-    requested = {
-        "image_url" if field == "image" else field for field in request.requested_fields
-    }
-    surface_fields = {
-        "url" if field == "canonical_url" else field
-        for field in canonical_fields_for_surface(request.surface.value)
-    }
-    contract_required = set(
-        field_mappings.SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ())
+
+def failed_result(
+    request: ExtractionRequest,
+    *,
+    execution: RecipeExecutionResult | None,
+    discovery: DiscoveryResult | None,
+    template: dict[str, object] | None,
+    stages: tuple[StageOutcome, ...],
+    model: ModelRecipeProposalResult | None,
+) -> ExtractionResult:
+    code = _failure_code(execution, discovery)
+    terminal_outcome = capture_outcome(request, (), ())
+    verdict = _failure_verdict(request, discovery, terminal_outcome)
+    taxonomy = _failure_taxonomy(code, request.surface)
+    target = _failure_target(discovery)
+    states = _failure_field_states(request, terminal_outcome)
+    retry = retry_request(
+        verdict, _failure_retry_records(request, terminal_outcome), request
     )
-    disposition_by_id = {row.evidence_id: row for row in dispositions}
-    join_failed_evidence_ids = {
-        evidence_id
-        for finding in findings
-        if finding.rule_id == CHILD_JOIN_FAILED_RULE_ID
-        for evidence_id in finding.evidence_ids
-    }
-    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
-        "source_capabilities"
+    manifest = _manifest_context(request, template)
+    collectors = _discovery_collector_outcomes(discovery)
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        records=(),
+        target=target,
+        field_states=states,
+        verdict=verdict,
+        transport_outcome=terminal_outcome,
+        data_integrity=integrity(verdict),
+        retry_request=retry,
+        metrics=metrics(
+            (), EntityGraph(), verdict, model=model, collector_count=len(collectors)
+        ),
+        collector_outcomes=collectors,
+        stage_outcomes=stages,
+        manifest_context=manifest,
+        failure_classifications=(
+            FailureClassification(
+                code=taxonomy,
+                message=_failure_message(execution, discovery),
+            ),
+        ),
+        diagnostics=_failure_diagnostics(
+            taxonomy, terminal_outcome, template, stages, model
+        ),
+        recipe_execution=execution,
     )
-    unavailable_families = set(
-        source_capabilities.get("affected_field_families", ())
-        if isinstance(source_capabilities, dict)
-        else ()
+
+
+def blocked_result(
+    request: ExtractionRequest,
+    evidence: tuple[Evidence, ...],
+    collector_outcomes,
+) -> ExtractionResult:
+    finding = Finding(
+        finding_id=stable_id("finding", request.capture.bundle_id, "blocked"),
+        rule_id="ACQUISITION_BLOCKED",
+        severity="critical",
+        scope="artifact",
+        entity_ids=(),
+        evidence_ids=tuple(row.evidence_id for row in evidence),
+        message="Acquisition was blocked before extraction.",
+        blocking=True,
     )
-    detail_outcome = (
-        str(source_capabilities.get("detail_outcome") or "").strip()
-        if isinstance(source_capabilities, dict)
-        else ""
-    ) or normalized_detail_outcome(
-        http_status=request.capture.http_status,
-        blocked=bool(request.capture.blocked),
-        acquisition_outcome=request.capture.acquisition_outcome,
+    failure = FailureClassification(
+        code="insufficient_input_bundle",
+        message="Input bundle was blocked before extraction.",
+        finding_ids=(finding.finding_id,),
+        evidence_ids=finding.evidence_ids,
     )
-    terminal_unavailable = (
-        request.surface.value == "ecommerce_detail"
-        and detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    collectors = tuple(collector_outcomes)
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        records=(),
+        evidence=evidence,
+        findings=(finding,),
+        verdict="blocked",
+        transport_outcome="blocked",
+        data_integrity="blocked",
+        metrics=ExtractionMetrics(collector_count=len(collectors), verdict="blocked"),
+        collector_outcomes=collectors,
+        stage_outcomes=(StageOutcome(stage="blocked", outcome="failed"),),
+        manifest_context=request.manifest_context,
+        failure_classifications=(failure,),
+        diagnostics=DiagnosticSummary(
+            decision_path=("blocked",),
+            extractor_tier="blocked",
+            trust_state="blocked",
+            failure_codes=("insufficient_input_bundle",),
+        ),
     )
-    fact_by_field = {
-        **field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
-        "title": "job.title"
-        if request.surface.value.startswith("job_")
-        else "product.title",
-        "url": "job.url" if request.surface.value.startswith("job_") else "product.url",
-        "company": "job.company",
-        "location": "job.location",
-        "apply_url": "job.apply_url",
-        "job_id": "job.id",
-        "job_type": "job.type",
-        "posted_date": "job.posted_date",
-        "image_url": "asset.image_url",
-    }
-    for fact_type in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.values():
-        field = fact_type.rsplit(".", 1)[-1]
-        fact_by_field.setdefault(field, fact_type)
-    field_by_fact = {
-        fact_type: field for field, fact_type in fact_by_field.items() if fact_type
-    }
-    evidence_fields = {
-        field_by_fact[row.fact_type]
-        for row in evidence
-        if row.fact_type in field_by_fact
-    }
-    fields = tuple(
-        sorted(
-            surface_fields
-            | contract_required
-            | requested
-            | set(entries_by_field)
-            | evidence_fields
-        )
-    )
-    states: list[FieldEvidenceState] = []
-    for field in fields:
-        state: FieldStateName
-        entries = entries_by_field.get(field, [])
-        variant_entity_ids = tuple(getattr(projection, "variant_entity_ids", ()) or ())
-        evidence_ids = tuple(
-            dict.fromkeys(
-                evidence_id for entry in entries for evidence_id in entry.evidence_ids
-            )
-        )
-        if terminal_unavailable and (
-            field in requested or field in contract_required or field in surface_fields
-        ):
-            state = "source_unavailable"
-        elif field == "variants" and variant_entity_ids:
-            state = "captured_published"
-        elif any(entry.disposition == "publish" for entry in entries):
-            state = "captured_published"
-        elif any(entry.disposition == "suppress" for entry in entries):
-            state = "captured_suppressed"
-        elif any(entry.disposition == "review" for entry in entries):
-            state = "captured_conflicting"
-        else:
-            fact_type = fact_by_field.get(field, field)
-            candidates = tuple(row for row in evidence if row.fact_type == fact_type)
-            evidence_ids = tuple(row.evidence_id for row in candidates)
-            candidate_dispositions = tuple(
-                disposition_by_id[row.evidence_id]
-                for row in candidates
-                if row.evidence_id in disposition_by_id
-            )
-            if field in unavailable_families or (
-                field == "image_url" and "images" in unavailable_families
-            ):
-                state = "source_unavailable"
-            elif any(row.evidence_id in join_failed_evidence_ids for row in candidates):
-                state = "join_failed"
-            elif any(row.status == "unowned" for row in candidate_dispositions):
-                state = "captured_unowned"
-            elif any(row.status == "conflicted" for row in candidate_dispositions):
-                state = "captured_conflicting"
-            elif candidates:
-                state = "captured_but_rejected"
-            elif field in requested or field in contract_required:
-                state = "not_present_in_captured_sources"
-            else:
-                state = "not_requested"
-        disposition_reason_codes = tuple(
-            row.reason_code
-            for evidence_id in evidence_ids
-            if (row := disposition_by_id.get(evidence_id)) is not None
-            and row.reason_code
-        )
-        state_reason_codes = (
-            ("product_data_source_unavailable",)
-            if state == "source_unavailable"
+
+
+def _publish_execution(request, recipe, execution, discovery):
+    try:
+        records, findings = publish_recipe_execution(request, recipe, execution)
+        discovered = (
+            tuple(Finding.model_validate(row) for row in discovery.finding_diagnostics)
+            if discovery is not None
             else ()
         )
-        states.append(
-            field_state(
-                field=field,
-                state=state,
-                evidence_ids=evidence_ids,
-                reason_codes=(
-                    *(entry.reason_code for entry in entries if entry.reason_code),
-                    *(code for code in disposition_reason_codes if code),
-                    *state_reason_codes,
-                ),
-            )
+        return records, _merge_findings(discovered, findings)
+    except (TypeError, ValueError, ValidationError) as exc:
+        return execution.model_copy(
+            update={
+                "records": (),
+                "failure_code": "recipe_value_validation_failed",
+                "detail": str(exc),
+            }
         )
-    for field in sorted(variant_entries_by_field):
-        variant_entries = variant_entries_by_field[field]
-        variant_state: FieldStateName
-        if any(entry.disposition == "publish" for entry in variant_entries):
-            variant_state = "captured_published"
-        elif any(entry.disposition == "suppress" for entry in variant_entries):
-            variant_state = "captured_suppressed"
-        elif any(entry.disposition == "review" for entry in variant_entries):
-            variant_state = "captured_conflicting"
-        else:
-            continue
-        states.append(
-            field_state(
-                field=f"variants.{field}",
-                state=variant_state,
-                evidence_ids=(
-                    evidence_id
-                    for entry in variant_entries
-                    for evidence_id in entry.evidence_ids
-                ),
-                reason_codes=tuple(
-                    entry.reason_code for entry in variant_entries if entry.reason_code
-                ),
-            )
-        )
-    return tuple(states)
 
 
-def retry_request(
-    verdict: str,
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-    evidence: tuple[Evidence, ...] = (),
-) -> RetryRequest | None:
-    shell_detected = any(is_shell_record(record) for record in records) or any(
-        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
-    )
-    if verdict == "error" and shell_detected:
-        return RetryRequest(
-            required=not request.capture.browser_attempted,
-            reason="http_shell",
-            required_artifacts=("rendered_html",),
-        )
-    listing_retry: tuple[
-        Literal["empty_extraction", "listing_network_missing"], tuple[str, ...]
-    ] = (
-        ("empty_extraction", ("rendered_html",)),
-        ("listing_network_missing", ("rendered_html", "network_payloads")),
-    )[request.capture.browser_attempted]
-    if (
-        listing_schema(request.surface) is not None
-        and verdict == "empty"
-        and not records
-        and any(
-            (
-                not request.capture.browser_attempted,
-                accepted_network_listing_subject_count(evidence) < 2,
-            )
-        )
-    ):
-        return RetryRequest(
-            required=True,
-            reason=listing_retry[0],
-            required_artifacts=listing_retry[1],
-        )
-    if (
-        request.surface.value == "ecommerce_detail"
-        and not request.capture.browser_attempted
-        and (
-            (
-                (
-                    _explicit_variant_dom_cues(evidence)
-                    or _captured_variant_dom_cues(request)
-                )
-                and _variant_controls_incomplete(records, evidence)
-            )
-            or (
-                "variants" in request.requested_fields
-                and _variants_missing_or_incomplete(records)
-            )
-        )
-    ):
-        return RetryRequest(
-            required=True,
-            reason="explicit_variants_missing",
-            required_artifacts=("rendered_html", "network_payloads"),
-        )
-    requested_core_fields = {
-        "image_url" if field == "image" else field
-        for field in request.requested_fields
-        if field in field_mappings.ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS
-    }
-    if (
-        request.surface.value == "ecommerce_detail"
-        and verdict in {"error", "partial", "review"}
-        and not request.capture.browser_attempted
-        and (not request.requested_fields or requested_core_fields or not records)
-    ):
-        record = records[0] if records else PublicRecord()
-        target_core_fields = requested_core_fields or set(
-            field_mappings.SURFACE_BROWSER_RETRY_TARGETS.get("ecommerce_detail", ())
-        )
-        missing_core_fields = tuple(
-            field
-            for field in target_core_fields
-            if record.get(field) in (None, "", [], {}, ())
-        )
-        if missing_core_fields or not records:
-            return RetryRequest(
-                required=True,
-                reason="dynamic_content_missing",
-                required_artifacts=("rendered_html", "network_payloads"),
-            )
-    return None
+def _terminal_records(request, records, findings):
+    terminal_outcome = capture_outcome(request, findings, records)
+    if request.surface is Surface.ECOMMERCE_DETAIL and terminal_outcome in {
+        "not_found",
+        "semantic_shell",
+    }:
+        return (), terminal_outcome
+    return records, terminal_outcome
 
 
-def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
-    return any(
-        row.collector_id == "dom" and row.fact_type.startswith("option.")
-        for row in evidence
-    )
-
-
-def _captured_variant_dom_cues(request: ExtractionRequest) -> bool:
-    artifact = next(
-        (
-            row
-            for row in request.capture.artifacts
-            if row.artifact_type in {"rendered_html", "http_html"}
-        ),
-        None,
-    )
-    if artifact is None:
-        return False
-    document = request.artifact_reader.document_store.html(artifact.artifact_id)
-    return any(
-        len(select.css("option")) > 1
-        and any(
-            token
-            in " ".join(
-                (
-                    select.attribute("name") or "",
-                    select.attribute("id") or "",
-                    select.parent().content_text() if select.parent() else "",
-                )
-            ).casefold()
-            for token in ("size", "color", "colour")
-        )
-        for select in document.css("select")
-    )
-
-
-def _variants_missing_or_incomplete(records: tuple[PublicRecord, ...]) -> bool:
-    variants = tuple(records[0].get("variants") or ()) if records else ()
-    return not variants or any(
-        not isinstance(variant, dict)
-        or all(
-            variant.get(field) in (None, "", [], {}, ())
-            for field in ("variant_id", "sku", "size", "color", "style")
-        )
-        for variant in variants
-    )
-
-
-def _variant_controls_incomplete(
-    records: tuple[PublicRecord, ...], evidence: tuple[Evidence, ...]
-) -> bool:
-    variants = tuple(records[0].get("variants") or ()) if records else ()
-    axes = {
-        row.fact_type.removeprefix("option.")
-        for row in evidence
-        if row.collector_id == "dom" and row.fact_type.startswith("option.")
-    }
-    if not variants:
-        return True
-    return any(
-        any(variant.get(axis) in (None, "", [], {}, ()) for variant in variants)
-        for axis in axes
-    )
-
-
-def is_shell_record(record: PublicRecord | None) -> bool:
-    title = " ".join(slug_tokens(record.get("title"))) if record else ""
-    return bool(title and title in DETAIL_SHELL_TITLE_KEYS)
-
-
-def entity_graph(
-    graph_state: Any,
-    evidence: tuple[Evidence, ...],
-    spec: SurfaceSpec,
-) -> EntityGraph:
-    if isinstance(graph_state, EntitySet):
-        return EntityGraph(
-            root_entity_ids=tuple(
-                product.entity_id for product in graph_state.products
-            ),
-            entity_counts={
-                "product": len(graph_state.products),
-                "variant": len(graph_state.variants),
-                "offer": len(graph_state.offers),
-                "asset": len(graph_state.assets),
-                "option": sum(
-                    len(axis.values)
-                    for catalog in graph_state.option_catalogs
-                    for axis in catalog.axes
-                ),
-            },
-        )
-    roots = tuple(graph_state or ())
-    return EntityGraph(
+def _target_graph(records):
+    roots = tuple(str(record.get("_subject_id") or "") for record in records)
+    target = TargetSelection(
+        status="resolved" if records else "missing",
         root_entity_ids=roots,
-        entity_counts={
-            spec.root_entity: len(roots),
-            "evidence_subject": len(
-                {row.subject_id for row in evidence if row.subject_id}
-            ),
-        },
+        selected_root_entity_id=roots[0] if roots else None,
+    )
+    return target, EntityGraph(
+        root_entity_ids=roots, entity_counts={"record": len(records)}
+    )
+
+
+def _execution_verdict(request, target, records, findings, terminal_outcome):
+    if terminal_outcome in {"not_found", "semantic_shell"}:
+        return "error"
+    return assess(request, target, records, findings)
+
+
+def _merge_findings(*groups: tuple[Finding, ...]) -> tuple[Finding, ...]:
+    merged: list[Finding] = []
+    seen: set[str] = set()
+    for finding in (row for group in groups for row in group):
+        key = finding.model_dump_json()
+        if key not in seen:
+            seen.add(key)
+            merged.append(finding)
+    return tuple(merged)
+
+
+def _failure_code(execution, discovery) -> RecipeFailureCode:
+    if execution and execution.failure_code:
+        return execution.failure_code
+    if discovery and discovery.failure_code:
+        return discovery.failure_code
+    return "recipe_binding_not_found"
+
+
+def _failure_verdict(request, discovery, terminal_outcome) -> Verdict:
+    if discovery is not None and discovery.detail == "wrong surface discovery target":
+        return "wrong_surface"
+    if request.capture.acquisition_outcome == "error" or terminal_outcome in {
+        "not_found",
+        "semantic_shell",
+    }:
+        return "error"
+    return "empty"
+
+
+def _failure_target(discovery):
+    detail = discovery.detail if discovery is not None else None
+    statuses = {
+        "wrong surface discovery target": "wrong_surface",
+        "ambiguous discovery target": "ambiguous",
+    }
+    return TargetSelection(status=statuses.get(detail, "missing"))
+
+
+def _failure_retry_records(request, terminal_outcome):
+    if terminal_outcome != "semantic_shell":
+        return ()
+    return (
+        CommerceDetailRecord(
+            url=request.capture.final_url,
+            title=next(iter(DETAIL_SHELL_TITLE_KEYS)),
+        ),
+    )
+
+
+def _manifest_context(
+    request: ExtractionRequest, template: dict[str, object] | None
+) -> ExecutionManifestContext:
+    if template is None:
+        return request.manifest_context
+    return request.manifest_context.model_copy(
+        update={
+            "template_id": str(template.get("template_id") or "") or None,
+            "compiled_recipe_id": str(template.get("compiled_recipe_id") or "") or None,
+        }
     )

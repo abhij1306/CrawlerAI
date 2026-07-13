@@ -4,10 +4,7 @@ import asyncio
 from string import Template
 from typing import Any
 
-from app.connectors.llm.config_service import (
-    load_prompt_file,
-    resolve_provider_api_key,
-)
+from app.connectors.llm.config_service import load_prompt_file, resolve_provider_api_key
 from app.connectors.llm.payloads import parse_payload, validate_task_payload
 from app.connectors.llm.prompt_rendering import (
     enforce_token_limit,
@@ -51,8 +48,10 @@ class HostedGeneralizedExtractionAdapter:
             self._call_provider(page, timeout_ms=timeout_ms)
         )
         if str(raw or "").startswith(ERROR_PREFIX):
-            category = classify_error(str(raw))
-            raise RuntimeError(f"provider_error:{category}")
+            error = RuntimeError(f"provider_error:{classify_error(str(raw))}")
+            setattr(error, "input_tokens", input_tokens)
+            setattr(error, "output_tokens", output_tokens)
+            raise error
         payload = parse_payload(raw, response_type="object")
         validated, error = validate_task_payload(
             GENERALIZED_EXTRACTION_LLM_TASK,

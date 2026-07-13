@@ -78,6 +78,23 @@ class CompetitorConfig:
     domains: tuple[str, ...]
 
 
+def _competitor_configs(config: dict[str, Any]) -> tuple[CompetitorConfig, ...]:
+    return tuple(
+        CompetitorConfig(
+            name=str(item.get("name") or ""),
+            aliases=tuple(
+                str(alias)
+                for alias in ([item.get("name"), *(item.get("aliases") or [])])
+                if alias
+            ),
+            domains=tuple(
+                str(domain) for domain in (item.get("domains") or []) if domain
+            ),
+        )
+        for item in (config.get("competitors") or [])
+    )
+
+
 @dataclass(frozen=True)
 class ScoringConfig:
     brand_name: str
@@ -95,21 +112,9 @@ class ScoringConfig:
     def from_project(cls, config: dict[str, Any]) -> "ScoringConfig":
         brand_name = str(config.get("brand_name") or "")
         aliases = [brand_name, *(config.get("brand_aliases") or [])]
-        competitors = tuple(
-            CompetitorConfig(
-                name=str(item.get("name") or ""),
-                aliases=tuple(
-                    str(a)
-                    for a in ([item.get("name"), *(item.get("aliases") or [])])
-                    if a
-                ),
-                domains=tuple(str(d) for d in (item.get("domains") or []) if d),
-            )
-            for item in (config.get("competitors") or [])
-        )
         return cls(
             brand_name=brand_name,
-            brand_aliases=tuple(a for a in aliases if a),
+            brand_aliases=tuple(alias for alias in aliases if alias),
             owned_domains=tuple(config.get("owned_domains") or []),
             unintended_domains=tuple(config.get("unintended_domains") or []),
             country_code=str(config.get("country_code") or ""),
@@ -117,7 +122,7 @@ class ScoringConfig:
             benchmark_mode=str(config.get("benchmark_mode") or ""),
             provider=str(config.get("provider") or ""),
             model=str(config.get("model") or ""),
-            competitors=competitors,
+            competitors=_competitor_configs(config),
         )
 
 
@@ -236,16 +241,35 @@ def score_execution(
 ) -> dict[str, Any]:
     """Per-execution deterministic score (proposal §13.2)."""
     normalized_answer = normalize_alias(answer_text)
-
-    # Brand in answer
     brand_mentioned = _entity_alias_present(
         config.brand_aliases, answer_text, normalized_answer
     )
-    brand_first_offset = _first_offset(config.brand_aliases, normalized_answer)
-
-    # Brand / competitor injection into generated search queries
     query_text = " ".join(str(event.get("query") or "") for event in search_events)
-    query_blob = normalize_alias(query_text)
+    prompt = _prompt_signals(config, prompt_text, query_text, query_text_available)
+    competitors = _competitor_signals(
+        config,
+        answer_text,
+        normalized_answer,
+        query_text,
+        normalize_alias(query_text),
+        prompt["prompt_competitors"],
+        query_text_available,
+    )
+    citation = _citation_signals(citations, config)
+    return {
+        "search_used": bool(search_used),
+        "search_query_count": len(search_events),
+        "search_query_text_available": query_text_available,
+        "brand_mentioned": brand_mentioned,
+        "brand_first_offset": _first_offset(config.brand_aliases, normalized_answer),
+        **prompt,
+        **citation,
+        **competitors,
+        "fanout_features": _fanout_features(search_events),
+    }
+
+
+def _prompt_signals(config, prompt_text, query_text, query_text_available):
     normalized_prompt = normalize_alias(prompt_text)
     prompt_contains_brand = _entity_alias_present(
         config.brand_aliases, prompt_text, normalized_prompt
@@ -255,72 +279,87 @@ def score_execution(
         for competitor in config.competitors
         if _entity_alias_present(competitor.aliases, prompt_text, normalized_prompt)
     ]
-    if prompt_contains_brand and prompt_competitors:
-        prompt_class = "comparison_branded"
-    elif prompt_contains_brand:
-        prompt_class = "branded"
-    elif prompt_competitors:
-        prompt_class = "mixed"
-    else:
-        prompt_class = "non_branded"
+    return {
+        "brand_injected_in_search": _brand_injected(
+            config, query_text, prompt_contains_brand, query_text_available
+        ),
+        "prompt_contains_brand": prompt_contains_brand,
+        "prompt_contains_competitor": bool(prompt_competitors),
+        "prompt_competitors": prompt_competitors,
+        "prompt_class": _prompt_class(prompt_contains_brand, prompt_competitors),
+    }
 
-    brand_injected = (
-        (
-            not prompt_contains_brand
-            and _entity_alias_present(config.brand_aliases, query_text, query_blob)
-        )
-        if query_text_available
-        else None
+
+def _brand_injected(config, query_text, prompt_contains_brand, available):
+    if not available:
+        return None
+    return not prompt_contains_brand and _entity_alias_present(
+        config.brand_aliases, query_text, normalize_alias(query_text)
     )
 
-    competitors_mentioned: list[str] = []
-    competitors_injected: list[str] = []
+
+def _prompt_class(prompt_contains_brand, prompt_competitors):
+    if prompt_contains_brand and prompt_competitors:
+        return "comparison_branded"
+    if prompt_contains_brand:
+        return "branded"
+    if prompt_competitors:
+        return "mixed"
+    return "non_branded"
+
+
+def _competitor_signals(
+    config,
+    answer_text,
+    normalized_answer,
+    query_text,
+    query_blob,
+    prompt_competitors,
+    query_text_available,
+):
+    mentioned: list[str] = []
+    injected: list[str] = []
     for competitor in config.competitors:
         if _entity_alias_present(competitor.aliases, answer_text, normalized_answer):
-            competitors_mentioned.append(competitor.name)
-        if query_text_available and (
-            competitor.name not in prompt_competitors
-            and _entity_alias_present(competitor.aliases, query_text, query_blob)
-        ):
-            competitors_injected.append(competitor.name)
+            mentioned.append(competitor.name)
+        if query_text_available and competitor.name not in prompt_competitors:
+            if _entity_alias_present(competitor.aliases, query_text, query_blob):
+                injected.append(competitor.name)
+    return {
+        "competitors_mentioned": mentioned,
+        "competitors_injected_in_search": injected,
+    }
 
-    # Citations
-    classified = [classify_citation(c, config) for c in citations]
-    owned_count = sum(1 for c in classified if c["is_owned"])
-    unintended_cited = any(c["is_unintended"] for c in classified)
-    competitor_domains_cited = sorted(
-        {c["matched_competitor"] for c in classified if c["matched_competitor"]}
+
+def _citation_signals(citations, config):
+    classified = [classify_citation(citation, config) for citation in citations]
+    owned_count = sum(1 for citation in classified if citation["is_owned"])
+    competitor_domains = sorted(
+        {
+            citation["matched_competitor"]
+            for citation in classified
+            if citation["matched_competitor"]
+        }
     )
+    return {
+        "owned_domain_cited": owned_count > 0,
+        "owned_citation_count": owned_count,
+        "unintended_domain_cited": any(
+            citation["is_unintended"] for citation in classified
+        ),
+        "citation_count": len(classified),
+        "competitor_domains_cited": competitor_domains,
+    }
 
-    # Fanout features across all queries
-    fanout_features = sorted(
+
+def _fanout_features(search_events):
+    return sorted(
         {
             feature
             for event in search_events
             for feature in classify_fanout(str(event.get("query") or ""))
         }
     )
-
-    return {
-        "search_used": bool(search_used),
-        "search_query_count": len(search_events),
-        "search_query_text_available": query_text_available,
-        "brand_mentioned": brand_mentioned,
-        "brand_first_offset": brand_first_offset,
-        "brand_injected_in_search": brand_injected,
-        "prompt_contains_brand": prompt_contains_brand,
-        "prompt_contains_competitor": bool(prompt_competitors),
-        "prompt_competitors": prompt_competitors,
-        "prompt_class": prompt_class,
-        "owned_domain_cited": owned_count > 0,
-        "owned_citation_count": owned_count,
-        "unintended_domain_cited": unintended_cited,
-        "citation_count": len(classified),
-        "competitors_mentioned": competitors_mentioned,
-        "competitors_injected_in_search": competitors_injected,
-        "competitor_domains_cited": competitor_domains_cited,
-        "fanout_features": fanout_features,
-    }
 
 
 def _rate(numerator: int, denominator: int) -> float:
@@ -332,143 +371,162 @@ def aggregate_run(
 ) -> dict[str, Any]:
     """Run-level aggregates (proposal §13.4 + §13.5 stability)."""
     completed = [
-        e for e in executions if (e.get("score") and e.get("status") == "completed")
+        execution
+        for execution in executions
+        if execution.get("score") and execution.get("status") == "completed"
     ]
+    scores = [execution["score"] for execution in completed]
     total = len(completed)
-    scores = [e["score"] for e in completed]
-
-    mention = sum(1 for s in scores if s.get("brand_mentioned"))
-    owned = sum(1 for s in scores if s.get("owned_domain_cited"))
-    mention_and_owned = sum(
-        1 for s in scores if s.get("brand_mentioned") and s.get("owned_domain_cited")
-    )
-    search_used = sum(1 for s in scores if s.get("search_used"))
-    non_branded_scores = [s for s in scores if s.get("prompt_class") == "non_branded"]
-    query_text_scores = [
-        s for s in non_branded_scores if s.get("search_query_text_available", True)
-    ]
-    all_query_text_scores = [
-        s for s in scores if s.get("search_query_text_available", True)
-    ]
-    brand_injected = sum(
-        1 for s in query_text_scores if s.get("brand_injected_in_search")
-    )
-    competitor_injected = sum(
-        1 for s in scores if s.get("competitors_injected_in_search")
-    )
-    unintended = sum(1 for s in scores if s.get("unintended_domain_cited"))
-    total_queries = sum(int(s.get("search_query_count") or 0) for s in scores)
-
-    # Citation metrics use separate denominators. Annotation share counts inline
-    # annotations; execution rate counts answers; URL share deduplicates URLs.
-    domain_counter: Counter[str] = Counter()
-    domain_executions: Counter[str] = Counter()
-    domain_prompts: dict[str, set[int]] = {}
-    unique_urls_by_domain: dict[str, set[str]] = {}
-    for e in completed:
-        execution_domains: set[str] = set()
-        for citation in e.get("citations") or []:
-            domain = citation_domain(citation)
-            if domain:
-                domain_counter[domain] += 1
-                execution_domains.add(domain)
-                domain_prompts.setdefault(domain, set()).add(
-                    int(e.get("prompt_index", 0))
-                )
-                url = str(
-                    citation.get("resolved_url")
-                    or citation.get("redirect_url")
-                    or citation.get("url")
-                    or ""
-                )
-                if url:
-                    unique_urls_by_domain.setdefault(domain, set()).add(url)
-        domain_executions.update(execution_domains)
-    total_citations = sum(domain_counter.values())
-    top_domains = domain_counter.most_common(25)
-    citation_share = {
-        domain: _rate(count, total_citations) for domain, count in top_domains
-    }
-    shown = sum(count for _, count in top_domains)
-    if total_citations > shown:
-        citation_share["Other"] = _rate(total_citations - shown, total_citations)
-    unique_url_total = (
-        len(set().union(*unique_urls_by_domain.values()))
-        if unique_urls_by_domain
-        else 0
-    )
-    distinct_prompt_count = len({int(e.get("prompt_index", 0)) for e in completed})
-    domain_execution_rate = {
-        domain: _rate(domain_executions[domain], total) for domain, _ in top_domains
-    }
-    domain_unique_url_share = {
-        domain: _rate(len(unique_urls_by_domain.get(domain, set())), unique_url_total)
-        for domain, _ in top_domains
-    }
-    domain_prompt_coverage = {
-        domain: _rate(len(domain_prompts.get(domain, set())), distinct_prompt_count)
-        for domain, _ in top_domains
-    }
-
-    # Competitor mention/citation rates
-    competitor_names = [c.name for c in config.competitors]
-    competitor_mention_rate = {
-        name: _rate(
-            sum(1 for s in scores if name in (s.get("competitors_mentioned") or [])),
-            total,
-        )
-        for name in competitor_names
-    }
-    competitor_citation_rate = {
-        name: _rate(
-            sum(1 for s in scores if name in (s.get("competitor_domains_cited") or [])),
-            total,
-        )
-        for name in competitor_names
-    }
-
-    # Per-prompt repetition stability (§13.5)
-    per_prompt = _per_prompt_stability(completed)
-
-    # Token usage across completed executions (from the provider ``usage`` block,
-    # already snapshotted into provider_metadata). Purely observational.
+    headline = _headline_aggregates(scores, total)
+    citation = _citation_aggregates(completed, total)
+    competitors = _competitor_aggregates(scores, config, total)
     token_usage = _aggregate_token_usage(completed)
-    cost = _aggregate_cost(completed, token_usage, config)
-
     return {
         "total_completed": total,
+        **headline,
+        **citation,
+        **competitors,
+        "prompt_class_counts": dict(
+            Counter(score.get("prompt_class", "unknown") for score in scores)
+        ),
+        "per_prompt": _per_prompt_stability(completed),
+        "token_usage": token_usage,
+        "cost": _aggregate_cost(completed, token_usage, config),
+    }
+
+
+def _headline_aggregates(scores, total):
+    mention = sum(bool(score.get("brand_mentioned")) for score in scores)
+    owned = sum(bool(score.get("owned_domain_cited")) for score in scores)
+    both = sum(
+        bool(score.get("brand_mentioned") and score.get("owned_domain_cited"))
+        for score in scores
+    )
+    non_branded = [
+        score for score in scores if score.get("prompt_class") == "non_branded"
+    ]
+    query_scores = [
+        score for score in non_branded if score.get("search_query_text_available", True)
+    ]
+    all_query_scores = [
+        score for score in scores if score.get("search_query_text_available", True)
+    ]
+    total_queries = sum(int(score.get("search_query_count") or 0) for score in scores)
+    return {
         "brand_mention_rate": _rate(mention, total),
         "owned_citation_rate": _rate(owned, total),
-        "mention_to_owned_citation_conversion": _rate(mention_and_owned, mention),
-        "brand_fanout_injection_rate": (
-            _rate(brand_injected, len(query_text_scores)) if query_text_scores else None
+        "mention_to_owned_citation_conversion": _rate(both, mention),
+        "brand_fanout_injection_rate": _optional_rate(
+            sum(bool(score.get("brand_injected_in_search")) for score in query_scores),
+            len(query_scores),
         ),
-        "search_query_text_coverage_rate": _rate(
-            sum(1 for s in scores if s.get("search_query_text_available", True)), total
+        "search_query_text_coverage_rate": _rate(len(all_query_scores), total),
+        "competitor_fanout_injection_rate": _optional_rate(
+            sum(
+                bool(score.get("competitors_injected_in_search"))
+                for score in all_query_scores
+            ),
+            len(all_query_scores),
         ),
-        "competitor_fanout_injection_rate": (
-            _rate(competitor_injected, len(all_query_text_scores))
-            if all_query_text_scores
-            else None
+        "search_use_rate": _rate(
+            sum(bool(score.get("search_used")) for score in scores), total
         ),
-        "search_use_rate": _rate(search_used, total),
-        "avg_queries_per_execution": (
-            round(total_queries / total, 2) if total else 0.0
+        "avg_queries_per_execution": round(total_queries / total, 2) if total else 0.0,
+        "unintended_domain_citation_rate": _rate(
+            sum(bool(score.get("unintended_domain_cited")) for score in scores), total
         ),
-        "unintended_domain_citation_rate": _rate(unintended, total),
-        "citation_share_by_domain": citation_share,
-        "citation_annotation_share_by_domain": citation_share,
-        "domain_execution_citation_rate": domain_execution_rate,
-        "domain_unique_url_share": domain_unique_url_share,
-        "domain_prompt_coverage": domain_prompt_coverage,
-        "prompt_class_counts": dict(
-            Counter(s.get("prompt_class", "unknown") for s in scores)
-        ),
-        "competitor_mention_rate": competitor_mention_rate,
-        "competitor_citation_rate": competitor_citation_rate,
-        "per_prompt": per_prompt,
-        "token_usage": token_usage,
-        "cost": cost,
+    }
+
+
+def _optional_rate(numerator, denominator):
+    return _rate(numerator, denominator) if denominator else None
+
+
+def _citation_aggregates(completed, total):
+    counter, executions, prompts, urls = _citation_domain_counts(completed)
+    top = counter.most_common(25)
+    total_citations = sum(counter.values())
+    annotation_share = _top_domain_share(top, total_citations)
+    distinct_prompts = len({int(row.get("prompt_index", 0)) for row in completed})
+    unique_url_total = len(set().union(*urls.values())) if urls else 0
+    return {
+        "citation_share_by_domain": annotation_share,
+        "citation_annotation_share_by_domain": annotation_share,
+        "domain_execution_citation_rate": {
+            domain: _rate(executions[domain], total) for domain, _count in top
+        },
+        "domain_unique_url_share": {
+            domain: _rate(len(urls.get(domain, set())), unique_url_total)
+            for domain, _count in top
+        },
+        "domain_prompt_coverage": {
+            domain: _rate(len(prompts.get(domain, set())), distinct_prompts)
+            for domain, _count in top
+        },
+    }
+
+
+def _citation_domain_counts(completed):
+    counter: Counter[str] = Counter()
+    executions: Counter[str] = Counter()
+    prompts: dict[str, set[int]] = {}
+    urls: dict[str, set[str]] = {}
+    for execution in completed:
+        seen: set[str] = set()
+        for citation in execution.get("citations") or []:
+            domain = citation_domain(citation)
+            if not domain:
+                continue
+            counter[domain] += 1
+            seen.add(domain)
+            prompts.setdefault(domain, set()).add(int(execution.get("prompt_index", 0)))
+            url = _citation_url(citation)
+            if url:
+                urls.setdefault(domain, set()).add(url)
+        executions.update(seen)
+    return counter, executions, prompts, urls
+
+
+def _citation_url(citation):
+    return str(
+        citation.get("resolved_url")
+        or citation.get("redirect_url")
+        or citation.get("url")
+        or ""
+    )
+
+
+def _top_domain_share(top, total_citations):
+    share = {domain: _rate(count, total_citations) for domain, count in top}
+    shown = sum(count for _domain, count in top)
+    if total_citations > shown:
+        share["Other"] = _rate(total_citations - shown, total_citations)
+    return share
+
+
+def _competitor_aggregates(scores, config, total):
+    names = [competitor.name for competitor in config.competitors]
+    return {
+        "competitor_mention_rate": {
+            name: _rate(
+                sum(
+                    name in (score.get("competitors_mentioned") or [])
+                    for score in scores
+                ),
+                total,
+            )
+            for name in names
+        },
+        "competitor_citation_rate": {
+            name: _rate(
+                sum(
+                    name in (score.get("competitor_domains_cited") or [])
+                    for score in scores
+                ),
+                total,
+            )
+            for name in names
+        },
     }
 
 

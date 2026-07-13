@@ -254,7 +254,11 @@ def _recipe_section(extraction_result: ExtractionResult) -> dict[str, object]:
             else None
         ),
         "discovery_stages": [
-            {"stage": row.stage, "outcome": row.outcome, "detail": None}
+            {
+                "stage": row.stage,
+                "outcome": row.outcome,
+                "detail": _preview(row.detail) if row.detail else None,
+            }
             for row in stages
             if row.stage
             in {

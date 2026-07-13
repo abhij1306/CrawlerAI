@@ -23,7 +23,10 @@ from app.crawl.pipeline import record_extraction_stage
 from app.core.shared.url_utils import structured_extensionless_image_url
 from app.extraction import Surface, extract
 from app.extraction.collectors._helpers import evidence
-from app.extraction.engine import _assess, _blocked_result
+from app.extraction.result_building import (
+    assess as _assess,
+    blocked_result as _blocked_result,
+)
 from app.extraction.contracts import (
     CommerceDetailRecord,
     EntityHint,

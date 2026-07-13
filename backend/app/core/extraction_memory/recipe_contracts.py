@@ -146,6 +146,7 @@ class DiscoveryResult(FrozenRecipeModel):
     failure_code: RecipeFailureCode | None = None
     detail: str | None = None
     collector_diagnostics: tuple[dict[str, Any], ...] = ()
+    finding_diagnostics: tuple[dict[str, Any], ...] = ()
 
     @model_validator(mode="after")
     def candidate_or_failure(self) -> DiscoveryResult:

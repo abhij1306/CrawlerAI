@@ -15,7 +15,7 @@ import pytest
 
 from app.extraction import Surface, extract
 from app.extraction.contracts import Finding
-from app.extraction.engine import _review_required
+from app.extraction.result_building import _review_required
 from app.extraction.entities import EntitySet, OfferEntity
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.validation import _validate_offers
@@ -433,6 +433,17 @@ def test_genuine_size_axis_is_preserved() -> None:
     )
     assert result.records[0]["title"] == "Trail Shoe"
     assert not result.records[0].get("variants")
+    axis_findings = [
+        finding
+        for finding in result.findings
+        if finding.rule_id == "EXPECTED_VARIANT_AXIS_MISSING"
+    ]
+    assert len(axis_findings) == 1
+    metadata = axis_findings[0].metadata
+    assert metadata["axis"] == "size"
+    assert set(metadata["expected_values"]) == {"9", "10", "11"}
+    assert metadata["variant_count"] == 0
+    assert metadata["missing_variant_count"] == 0
 
 
 # --- Slice G: shell / redirect terminal outcomes (§5.3/§5.4) --------------

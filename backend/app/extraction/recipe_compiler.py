@@ -6,6 +6,10 @@ import re
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from app.core.config.extraction_price_rules import (
+    CURRENCY_DECIMAL_PLACES,
+    DEFAULT_DECIMAL_PLACES,
+)
 from app.core.extraction_memory.recipe_contracts import (
     DiscoveryResult,
     ExtractionRecipe,
@@ -24,11 +28,11 @@ from app.extraction.contracts import (
 )
 from app.extraction.surfaces import Surface
 
+from app.extraction.recipe_compiler_dom import _dom_path_to_css
 from app.extraction.recipe_compiler_grounding import (
     _all_bindings,
     _binding,
     _detail_root,
-    _dom_path_to_css,
     _entry_evidence,
     _failure,
     _field,
@@ -121,6 +125,9 @@ def compile_recipe_candidate(
             grounded_paths=paths,
         ),
         collector_diagnostics=diagnostics,
+        finding_diagnostics=tuple(
+            row.model_dump(mode="json") for row in resolution.findings
+        ),
     )
 
 
@@ -192,106 +199,19 @@ def _detail_recipe(
     fields: dict[str, tuple[RecipeBinding, ...]] = {}
     identity: tuple[RecipeBinding, ...] = ()
     artifact_id = ""
+    currency = _selected_currency(entries)
     for entry in entries:
-        if entry.path.startswith("variant["):
+        compiled = _detail_entry_binding(request, entry, evidence, fields)
+        if compiled is None:
             continue
-        field = _field(entry.path)
-        if entry.path.startswith("asset[") and entry.path.endswith(".url"):
-            field = (
-                "additional_images"
-                if entry.rule_id == "PRODUCT_ASSET_ADDITIONAL"
-                else "image_url"
-            )
-        row = _entry_evidence(entry, evidence)
-        if not field or row is None:
-            continue
-        binding = (
-            _page_identity_binding(request, row, entry.value)
-            if field == "brand"
-            and entry.rule_id
-            in {"page_identity", "brand_from_product_url", "brand_from_title_host"}
-            else _binding(row, field=field, scope="record.root", request=request)
-        )
-        if field == "currency" and entry.rule_id == "currency_from_page_url_hint":
-            binding = RecipeBinding(
-                binding_id="field.currency",
-                source="url_component",
-                path="final_url",
-                scope="document",
-                field="currency",
-                transform="currency_from_page_url",
-            )
-        elif field == "currency" and entry.rule_id == "currency_from_price_symbol":
-            price_binding = _binding(
-                row, field="price", scope="record.root", request=request
-            )
-            binding = (
-                price_binding.model_copy(
-                    update={
-                        "field": "currency",
-                        "unit": None,
-                        "transform": "currency_from_price_symbol",
-                    }
-                )
-                if price_binding
-                else None
-            )
-        if (
-            binding
-            and field == "brand"
-            and str(entry.value).isupper()
-            and binding.transform
-            and binding.transform.startswith(("slug_words:", "host_words:"))
-        ):
-            binding = binding.model_copy(
-                update={"transform": f"uppercase_{binding.transform}"}
-            )
-        if binding is None:
-            continue
-        binding = binding.model_copy(
-            update={
-                "binding_id": (
-                    f"field.{field}.{len(fields.get(field, ()))}"
-                    if field == "additional_images"
-                    else f"field.{field}"
-                ),
-                "field": field,
-                "rule_id": entry.rule_id,
-                "unit": (
-                    "minor"
-                    if field in {"price", "original_price"}
-                    and entry.rule_id
-                    in {"explicit_minor_unit_price", "corroborated_price_scale"}
-                    else binding.unit
-                ),
-                "cardinality": (
-                    "many" if field == "additional_images" else binding.cardinality
-                ),
-            }
-        )
+        field, row, binding = compiled
+        binding = _configured_detail_binding(binding, entry, field, currency, fields)
         artifact_id = artifact_id or row.artifact_id
-        if field == "additional_images":
-            fields[field] = (*fields.get(field, ()), binding)
-        else:
-            fields.setdefault(field, (binding,))
+        _store_detail_binding(fields, field, binding)
         if field in {"url", "apply_url"}:
-            identity_row = _detail_identity_evidence(request, row, evidence.values())
-            identity_binding = _binding(
-                identity_row,
-                field=field,
-                scope="record.root",
-                request=request,
-            )
-            if identity_binding is None:
-                continue
             identity = (
-                identity_binding.model_copy(
-                    update={
-                        "binding_id": "record.identity.url",
-                        "compare_to": ("request.final_url" if field == "url" else None),
-                        "required": True,
-                    }
-                ),
+                _detail_identity_binding(request, row, evidence.values(), field)
+                or identity
             )
     required = _required_fields(request.surface)
     if not identity or not all(field in fields for field in required):
@@ -309,6 +229,138 @@ def _detail_recipe(
         fields,
         required,
         entities=entities,
+    )
+
+
+def _selected_currency(entries: tuple[PublicationEntry, ...]) -> str:
+    return next(
+        (
+            str(entry.value or "").strip().upper()
+            for entry in entries
+            if _field(entry.path) == "currency"
+        ),
+        "",
+    )
+
+
+def _detail_entry_binding(request, entry, evidence, fields):
+    if entry.path.startswith("variant["):
+        return None
+    field = _detail_entry_field(entry)
+    row = _entry_evidence(entry, evidence)
+    if not field or row is None:
+        return None
+    binding = _special_detail_binding(request, entry, row, field)
+    if binding is None:
+        return None
+    if (
+        field == "brand"
+        and str(entry.value).isupper()
+        and binding.transform
+        and binding.transform.startswith("slug_words:")
+    ):
+        binding = binding.model_copy(
+            update={"transform": f"uppercase_{binding.transform}"}
+        )
+    return field, row, binding
+
+
+def _detail_entry_field(entry: PublicationEntry) -> str:
+    if entry.path.startswith("asset[") and entry.path.endswith(".url"):
+        return (
+            "additional_images"
+            if entry.rule_id == "PRODUCT_ASSET_ADDITIONAL"
+            else "image_url"
+        )
+    return _field(entry.path)
+
+
+def _special_detail_binding(request, entry, row, field):
+    if field == "currency" and entry.rule_id == "currency_from_page_url_hint":
+        return RecipeBinding(
+            binding_id="field.currency",
+            source="url_component",
+            path="final_url",
+            scope="document",
+            field="currency",
+            transform="currency_from_page_url",
+        )
+    if field == "currency" and entry.rule_id == "currency_from_price_symbol":
+        price = _binding(row, field="price", scope="record.root", request=request)
+        return (
+            price.model_copy(
+                update={
+                    "field": "currency",
+                    "unit": None,
+                    "transform": "currency_from_price_symbol",
+                }
+            )
+            if price
+            else None
+        )
+    if field == "brand" and entry.rule_id in {
+        "page_identity",
+        "brand_from_product_url",
+        "brand_from_title_host",
+    }:
+        return _page_identity_binding(request, row, entry.value)
+    return _binding(row, field=field, scope="record.root", request=request)
+
+
+def _configured_detail_binding(binding, entry, field, currency, fields):
+    unit = binding.unit
+    if (
+        unit == "minor"
+        and CURRENCY_DECIMAL_PLACES.get(currency, DEFAULT_DECIMAL_PLACES) == 0
+    ):
+        unit = "major"
+    elif field in {"price", "original_price"} and entry.rule_id in {
+        "explicit_minor_unit_price",
+        "corroborated_price_scale",
+    }:
+        unit = "minor"
+    return binding.model_copy(
+        update={
+            "binding_id": (
+                f"field.{field}.{len(fields.get(field, ()))}"
+                if field == "additional_images"
+                else f"field.{field}"
+            ),
+            "field": field,
+            "rule_id": entry.rule_id,
+            "unit": unit,
+            "cardinality": (
+                "many" if field == "additional_images" else binding.cardinality
+            ),
+        }
+    )
+
+
+def _store_detail_binding(fields, field, binding) -> None:
+    if field == "additional_images":
+        fields[field] = (*fields.get(field, ()), binding)
+    else:
+        fields.setdefault(field, (binding,))
+
+
+def _detail_identity_binding(request, selected, rows, field):
+    identity_row = _detail_identity_evidence(request, selected, rows)
+    binding = _binding(
+        identity_row,
+        field=field,
+        scope="record.root",
+        request=request,
+    )
+    if binding is None:
+        return ()
+    return (
+        binding.model_copy(
+            update={
+                "binding_id": "record.identity.url",
+                "compare_to": "request.final_url" if field == "url" else None,
+                "required": True,
+            }
+        ),
     )
 
 

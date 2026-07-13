@@ -10,11 +10,11 @@ from typing import Any
 
 from app.acquisition.browser_capture import (
     BrowserNetworkCapture,
-    capture_browser_screenshot,
     classify_network_endpoint,
     read_network_payload_body,
     should_capture_network_payload,
 )
+from app.acquisition.browser_screenshot import capture_browser_screenshot
 from app.acquisition.browser_detail import expand_detail_content_if_needed
 from app.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE,

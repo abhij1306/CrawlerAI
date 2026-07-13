@@ -367,6 +367,31 @@ def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards()
     )
 
 
+def test_ecommerce_listing_uses_one_artifact_when_capture_sources_overlap() -> None:
+    html = """
+    <main>
+      <article class="product-card">
+        <a href="/p/trail-shoe" title="Trail Shoe">Trail Shoe</a>
+        <span class="price">$99.00</span>
+      </article>
+      <article class="product-card">
+        <a href="/p/day-pack" title="Day Pack">Day Pack</a>
+        <span class="price">$79.00</span>
+      </article>
+    </main>
+    """
+    result = _extract(
+        "ecommerce_listing",
+        html,
+        "https://shop.test/category/shoes",
+        max_records=5,
+        artifacts={"listing_visual_html": html},
+    )
+
+    assert result.verdict == "success"
+    assert {row["title"] for row in result.records} == {"Trail Shoe", "Day Pack"}
+
+
 def test_ecommerce_listing_accepts_same_site_subdomain_detail_url() -> None:
     result = _extract(
         "ecommerce_listing",

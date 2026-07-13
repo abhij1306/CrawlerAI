@@ -21,6 +21,7 @@ from app.core.extraction_memory.recipe_contracts import (
 )
 from app.extraction.contracts import ExtractionResult, StageOutcome
 from app.observability.diagnose import build_diagnosis
+from tests.ast_helpers import collect_import_modules
 
 pytestmark = pytest.mark.unit
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
@@ -159,15 +160,7 @@ def test_execution_result_is_internal_values_and_binding_outcomes() -> None:
 
 def test_recipe_contract_owner_has_no_runtime_or_publication_imports() -> None:
     tree = ast.parse(CONTRACT_PATH.read_text(encoding="utf-8"))
-    imports = {
-        module
-        for node in ast.walk(tree)
-        for module in (
-            ([node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
-            if not isinstance(node, ast.Import)
-            else [alias.name for alias in node.names]
-        )
-    }
+    imports = collect_import_modules(tree)
 
     assert not any(
         name.startswith(

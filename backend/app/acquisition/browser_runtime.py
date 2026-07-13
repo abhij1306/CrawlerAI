@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 
 from app.acquisition.browser_capture import (
-    capture_browser_screenshot,
     classify_network_endpoint,
     read_network_payload_body,
     should_capture_network_payload,
 )
+from app.acquisition.browser_screenshot import capture_browser_screenshot
 from app.acquisition.browser_diagnostics import (
     build_browser_diagnostics_contract,
     build_failed_browser_diagnostics,

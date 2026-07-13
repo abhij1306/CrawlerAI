@@ -13,6 +13,7 @@ from app.core.extraction_memory.recipe_contracts import (
 from app.core.extraction_memory.recipe_executor import execute_recipe
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
+from tests.ast_helpers import collect_import_modules
 
 
 def _recipe(*, product_id: str = "P-RED") -> ExtractionRecipe:
@@ -320,15 +321,7 @@ def test_executor_has_no_discovery_model_resolver_or_storage_imports() -> None:
         / "recipe_executor.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    imports = {
-        module
-        for node in ast.walk(tree)
-        for module in (
-            ([node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
-            if not isinstance(node, ast.Import)
-            else [alias.name for alias in node.names]
-        )
-    }
+    imports = collect_import_modules(tree)
 
     assert not any(
         name.startswith(

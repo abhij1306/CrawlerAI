@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.config.evaluation import EXTRACTION_V3_MAX_INPUT_TOKENS
 from app.extraction.documents import HtmlDocument
-from app.extraction.representation import build_scoped_flat_map
+from app.extraction.representation.flat_map import build_scoped_flat_map
 
 from eval.corpus import DEFAULT_RUN_DIR
 

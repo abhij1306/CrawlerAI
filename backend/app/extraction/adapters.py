@@ -1,15 +1,11 @@
-"""Four surface adapters behind the common Harvest → Resolve → Publish API."""
+"""Four surface discovery adapters behind one harvest and resolve contract."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, cast
 
-from app.core.extraction_memory.contract_runtime import (
-    contract_preferences,
-    resolved_contract_outcomes,
-)
-from app.core.extraction_memory.templates import fingerprint_from_parts
+from app.core.shared.ids import stable_id
 from app.extraction.contracts import (
     CollectorOutcome,
     Decision,
@@ -22,7 +18,6 @@ from app.extraction.contracts import (
     TargetSelection,
 )
 from app.extraction.entities import EntitySet, build_entities
-from app.core.shared.ids import stable_id
 from app.extraction.jobs import (
     collect_job_detail,
     resolve_job_detail,
@@ -39,12 +34,6 @@ from app.extraction.publication import (
     job_listing_projection,
 )
 from app.extraction.resolution import resolve as resolve_ecommerce_detail
-from app.extraction.result_building import (
-    assert_resolution_accounting,
-    entity_graph,
-    evidence_dispositions,
-    projection_field_states,
-)
 from app.extraction.surfaces import Surface
 from app.extraction.targeting import (
     scoped_graph,
@@ -134,106 +123,74 @@ def _resolve_detail(
 ) -> ResolutionEnvelope:
     evidence = harvest.evidence
     graph_state = build_entities(request.capture, evidence)
-    spec = _surface_spec(request)
-    target = select_commerce_target(graph_state, evidence, request, spec)
-    graph = scoped_graph(graph_state, target)
+    graph = scoped_graph(
+        graph_state,
+        target := select_commerce_target(
+            graph_state, evidence, request, _surface_spec(request)
+        ),
+    )
     findings = validate_ecommerce_detail(evidence, graph, request.requested_fields)
-    preferences: dict[str, tuple[str, ...]] = {}
-    fingerprint = ""
-    if request.runtime_snapshot:
-        fingerprint = fingerprint_from_parts(
-            request.capture.final_url or request.capture.requested_url,
-            request.surface.value,
-            evidence,
-            harvest.collector_outcomes,
-        )
-        preferences = contract_preferences(
-            snapshot=dict(request.runtime_snapshot),
-            fingerprint=fingerprint,
-            surface=request.surface.value,
-            url=request.capture.final_url or request.capture.requested_url,
-            evidence=evidence,
-            requested_fields=frozenset(request.requested_fields),
-            user_controlled_fields=frozenset(request.user_controlled_fields),
-        )
     resolution = resolve_ecommerce_detail(
         evidence,
         cast(EntitySet, graph),
         findings,
-        contract_preferences=preferences,
     )
-    projection, selected = commerce_detail_projection(resolution, evidence)
-    outcomes = (
-        resolved_contract_outcomes(
-            snapshot=dict(request.runtime_snapshot),
-            fingerprint=fingerprint,
-            surface=request.surface.value,
-            url=request.capture.final_url or request.capture.requested_url,
-            evidence=evidence,
-            resolution=resolution,
-            requested_fields=frozenset(request.requested_fields),
-            user_controlled_fields=frozenset(request.user_controlled_fields),
-        )
-        if request.runtime_snapshot
-        else ()
-    )
-    return _envelope(
-        request,
-        harvest,
-        graph_state=graph_state,
+    projection, _selected = commerce_detail_projection(resolution, evidence)
+    return ResolutionEnvelope(
+        surface=request.surface,
         target=target,
-        decisions=resolution.decisions,
-        selected=selected,
-        derived=resolution.derived_facts,
         findings=findings,
-        projection=projection,
-        contract_outcomes=outcomes,
+        publication=projection,
     )
 
 
 def _resolve_listing(
     request: ExtractionRequest, harvest: HarvestResult
 ) -> ResolutionEnvelope:
-    spec = _surface_spec(request)
-    graph_state = _subject_graph(harvest.evidence)
-    target = select_subject_targets(graph_state, harvest.evidence, request, spec)
+    target = select_subject_targets(
+        _subject_graph(harvest.evidence),
+        harvest.evidence,
+        request,
+        _surface_spec(request),
+    )
     selected_subjects = set(target.root_entity_ids)
-    rows = [row for row in harvest.evidence if row.subject_id in selected_subjects]
-    decisions = tuple(resolve_ecommerce_listing(rows))
+    decisions = tuple(
+        resolve_ecommerce_listing(
+            [row for row in harvest.evidence if row.subject_id in selected_subjects]
+        )
+    )
     findings = _incomplete_record_findings(
         target.root_entity_ids,
         decisions,
         required={"product.title", "product.url"},
         rule_id="INCOMPLETE_COMMERCE_LISTING_CARD",
     )
-    projection, selected = commerce_listing_projection(
+    projection, _selected = commerce_listing_projection(
         decisions, harvest.evidence, max_records=request.max_records
     )
-    return _envelope(
-        request,
-        harvest,
-        graph_state=graph_state,
+    return ResolutionEnvelope(
+        surface=request.surface,
         target=target,
-        decisions=decisions,
-        selected=selected,
         findings=findings,
-        projection=projection,
+        publication=projection,
     )
 
 
 def _resolve_job_detail_adapter(
     request: ExtractionRequest, harvest: HarvestResult
 ) -> ResolutionEnvelope:
-    spec = _surface_spec(request)
-    graph_state = _subject_graph(harvest.evidence)
-    target = select_subject_targets(graph_state, harvest.evidence, request, spec)
+    target = select_subject_targets(
+        _subject_graph(harvest.evidence),
+        harvest.evidence,
+        request,
+        _surface_spec(request),
+    )
     findings = wrong_surface_findings_for_job_detail(
         request.capture, request.artifact_reader
     )
     if findings:
         return ResolutionEnvelope(
             surface=request.surface,
-            graph=entity_graph(EntitySet(), harvest.evidence, spec),
             target=TargetSelection(status="wrong_surface"),
             findings=findings,
             publication=JobDetailProjection(record_entity_id=""),
@@ -255,87 +212,55 @@ def _resolve_job_detail_adapter(
             ),
         )
     entity_id = target.selected_root_entity_id
-    rows = [row for row in harvest.evidence if row.subject_id == entity_id]
-    decisions = tuple(resolve_job_detail(rows)) if entity_id else ()
-    projection, selected = job_detail_projection(
+    decisions = (
+        tuple(
+            resolve_job_detail(
+                [row for row in harvest.evidence if row.subject_id == entity_id]
+            )
+        )
+        if entity_id
+        else ()
+    )
+    projection, _selected = job_detail_projection(
         decisions, harvest.evidence, target_entity_id=entity_id
     )
-    return _envelope(
-        request,
-        harvest,
-        graph_state=graph_state,
+    return ResolutionEnvelope(
+        surface=request.surface,
         target=target,
-        decisions=decisions,
-        selected=selected,
         findings=findings,
-        projection=projection,
+        publication=projection,
     )
 
 
 def _resolve_job_listing_adapter(
     request: ExtractionRequest, harvest: HarvestResult
 ) -> ResolutionEnvelope:
-    spec = _surface_spec(request)
-    graph_state = _subject_graph(harvest.evidence)
-    target = select_subject_targets(graph_state, harvest.evidence, request, spec)
+    target = select_subject_targets(
+        _subject_graph(harvest.evidence),
+        harvest.evidence,
+        request,
+        _surface_spec(request),
+    )
     selected_subjects = set(target.root_entity_ids)
-    rows = [row for row in harvest.evidence if row.subject_id in selected_subjects]
-    decisions = tuple(resolve_job_listing(rows))
+    decisions = tuple(
+        resolve_job_listing(
+            [row for row in harvest.evidence if row.subject_id in selected_subjects]
+        )
+    )
     findings = _incomplete_record_findings(
         target.root_entity_ids,
         decisions,
         required={"job.title", "job.url"},
         rule_id="INCOMPLETE_JOB_LISTING_CARD",
     )
-    projection, selected = job_listing_projection(
+    projection, _selected = job_listing_projection(
         decisions, harvest.evidence, max_records=request.max_records
     )
-    return _envelope(
-        request,
-        harvest,
-        graph_state=graph_state,
-        target=target,
-        decisions=decisions,
-        selected=selected,
-        findings=findings,
-        projection=projection,
-    )
-
-
-def _envelope(
-    request: ExtractionRequest,
-    harvest: HarvestResult,
-    *,
-    graph_state,
-    target,
-    decisions: tuple[Decision, ...],
-    selected,
-    findings: tuple[Finding, ...],
-    projection,
-    derived=(),
-    contract_outcomes=(),
-) -> ResolutionEnvelope:
-    dispositions = evidence_dispositions(
-        harvest.evidence,
-        decisions,
-        selected,
-        target,
-    )
-    assert_resolution_accounting(harvest.evidence, decisions, selected, dispositions)
     return ResolutionEnvelope(
         surface=request.surface,
-        graph=entity_graph(graph_state, harvest.evidence, _surface_spec(request)),
         target=target,
-        decisions=decisions,
-        selected_facts=selected,
-        derived_facts=derived,
-        evidence_dispositions=dispositions,
         findings=findings,
-        field_states=projection_field_states(
-            projection, harvest.evidence, dispositions, request, findings
-        ),
         publication=projection,
-        contract_outcomes=contract_outcomes,
     )
 
 
@@ -412,20 +337,12 @@ def _surface_spec(request: ExtractionRequest):
 
 
 _ADAPTERS = {
-    Surface.ECOMMERCE_DETAIL: SurfaceAdapter(
-        harvest=_harvest_detail,
-        resolve=_resolve_detail,
-    ),
-    Surface.ECOMMERCE_LISTING: SurfaceAdapter(
-        harvest=_harvest_listing,
-        resolve=_resolve_listing,
-    ),
+    Surface.ECOMMERCE_DETAIL: SurfaceAdapter(_harvest_detail, _resolve_detail),
+    Surface.ECOMMERCE_LISTING: SurfaceAdapter(_harvest_listing, _resolve_listing),
     Surface.JOB_DETAIL: SurfaceAdapter(
-        harvest=_harvest_job_detail,
-        resolve=_resolve_job_detail_adapter,
+        _harvest_job_detail, _resolve_job_detail_adapter
     ),
     Surface.JOB_LISTING: SurfaceAdapter(
-        harvest=_harvest_job_listing,
-        resolve=_resolve_job_listing_adapter,
+        _harvest_job_listing, _resolve_job_listing_adapter
     ),
 }

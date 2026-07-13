@@ -4,23 +4,37 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from app.core.config import field_mappings
 from app.core.config.variant_policy import NON_PUBLIC_VARIANT_IDENTITY_FIELDS
+from app.core.extraction_memory.recipe_contracts import (
+    ExtractionRecipe,
+    RecipeExecutionResult,
+)
 from app.extraction.contracts import (
     CanonicalizationTrace,
     CommerceDetailProjection,
     CommerceListingProjection,
+    CommerceDetailRecord,
+    CommerceListingRecord,
+    CommerceVariantRecord,
+    ExtractionRequest,
+    Finding,
     Evidence,
     JobDetailProjection,
+    JobDetailRecord,
+    JobListingRecord,
     JobListingProjection,
     PublicationEntry,
+    PublicRecord,
     ResolutionResult,
     SelectedFact,
 )
-from app.extraction.result_building import selected_facts as resolved_selected_facts
+from app.core.shared.ids import stable_id
 from app.core.shared.url_utils import public_asset_delivery_url
+from app.extraction.surfaces import Surface
+from app.extraction.validation import validate_selected_contract_fields
 
 PUBLIC_FACT_TO_FIELD = {
     field_mappings.PRODUCT_URL_FACT_TYPE: "url",
@@ -73,6 +87,29 @@ _JOB_LISTING_FIELDS = {
 _PATH = re.compile(r"^(record|variant|asset)(?:\[([^]]+)])?\.(.+)$")
 
 
+def _selected_facts(
+    decisions: tuple,
+    evidence: tuple[Evidence, ...],
+) -> tuple[SelectedFact, ...]:
+    evidence_by_id = {row.evidence_id: row for row in evidence}
+    return tuple(
+        SelectedFact(
+            selected_fact_id=stable_id("selected", decision.decision_id),
+            decision_id=decision.decision_id,
+            entity_id=decision.entity_id,
+            fact_type=decision.fact_type,
+            value=accepted.value,
+            evidence_ids=decision.accepted_evidence_ids,
+            rule_id=decision.rule_id,
+        )
+        for decision in decisions
+        if decision.status == "resolved"
+        and len(decision.accepted_evidence_ids) == 1
+        and (accepted := evidence_by_id.get(decision.accepted_evidence_ids[0]))
+        is not None
+    )
+
+
 def commerce_detail_projection(
     resolution: ResolutionResult,
     evidence: Sequence[Evidence],
@@ -91,7 +128,7 @@ def commerce_detail_projection(
         )
         if value
     }
-    selected_facts = resolved_selected_facts(resolution.decisions, tuple(evidence))
+    selected_facts = _selected_facts(resolution.decisions, tuple(evidence))
     selected_by_decision = {row.decision_id: row for row in selected_facts}
     selected_by_entity_fact = {
         (row.entity_id, row.fact_type): row for row in selected_facts
@@ -355,7 +392,7 @@ def job_detail_projection(
     *,
     target_entity_id: str | None,
 ) -> tuple[JobDetailProjection, tuple[SelectedFact, ...]]:
-    selected = resolved_selected_facts(tuple(decisions), tuple(evidence))
+    selected = _selected_facts(tuple(decisions), tuple(evidence))
     evidence_by_id = {item.evidence_id: item for item in evidence}
     entries = tuple(
         PublicationEntry(
@@ -389,7 +426,7 @@ def _many_record_projection(
     required_fields: set[str],
     max_records: int,
 ):
-    selected = resolved_selected_facts(tuple(decisions), tuple(evidence))
+    selected = _selected_facts(tuple(decisions), tuple(evidence))
     evidence_by_id = {row.evidence_id: row for row in evidence}
     by_entity: dict[str, list[SelectedFact]] = {}
     for row in selected:
@@ -483,3 +520,148 @@ def _publication_disposition(
     ):
         return "suppress", "price_unresolved"
     return "publish", None
+
+
+_MODEL_BY_SURFACE = {
+    Surface.ECOMMERCE_DETAIL: CommerceDetailRecord,
+    Surface.ECOMMERCE_LISTING: CommerceListingRecord,
+    Surface.JOB_DETAIL: JobDetailRecord,
+    Surface.JOB_LISTING: JobListingRecord,
+}
+
+
+def publish_recipe_execution(
+    request: ExtractionRequest,
+    recipe: ExtractionRecipe,
+    execution: RecipeExecutionResult,
+) -> tuple[tuple[PublicRecord, ...], tuple[Finding, ...]]:
+    """Project authorized executor values. No discovery or semantic repair."""
+
+    model: Any = _MODEL_BY_SURFACE[request.surface]
+    field_sources = _field_sources(recipe, execution)
+    records: list[PublicRecord] = []
+    for index, raw in enumerate(execution.records[: request.max_records]):
+        lineage = _lineage(recipe, execution, record_index=index)
+        payload = _public_payload(model, raw)
+        variant_lineage: list[dict[str, object]] = []
+        if model is CommerceDetailRecord:
+            variant_rows = sorted(
+                (dict(row) for row in raw.get("variants", ()) if isinstance(row, dict)),
+                key=lambda row: tuple(
+                    str(row.get(field) or "")
+                    for field in ("variant_id", "sku", "color", "size")
+                ),
+            )
+            variant_records: list[CommerceVariantRecord] = []
+            for row in variant_rows:
+                row_lineage = row.pop("_binding_lineage", {})
+                variant_records.append(CommerceVariantRecord.model_validate(row))
+                variant_lineage.append(dict(row_lineage))
+            variants = tuple(variant_records)
+            payload["variants"] = variants
+            payload["variant_count"] = len(variants)
+            if isinstance(raw.get("additional_images"), (list, tuple)):
+                payload["additional_images"] = tuple(raw["additional_images"])
+        subject_id = stable_id(
+            "recipe-record", request.capture.bundle_id, execution.recipe_id, index
+        )
+        if variant_lineage:
+            lineage["variants"] = variant_lineage
+        payload.update(
+            {
+                "_subject_id": subject_id,
+                "_record_key": subject_id,
+                "_lineage": lineage,
+                "_field_sources": field_sources,
+            }
+        )
+        records.append(model.model_validate(payload))
+    result = tuple(records)
+    findings = (
+        validate_selected_contract_fields(
+            result,
+            request.requested_fields,
+        )
+        if request.surface is Surface.ECOMMERCE_DETAIL
+        else ()
+    )
+    return result, findings
+
+
+def _public_payload(model, raw: dict[str, object]) -> dict[str, object]:
+    allowed = set(model.model_fields)
+    return {key: value for key, value in raw.items() if key in allowed}
+
+
+def _lineage(
+    recipe: ExtractionRecipe,
+    execution: RecipeExecutionResult,
+    *,
+    record_index: int = 0,
+) -> dict[str, object]:
+    bindings = {
+        binding.binding_id: binding
+        for binding in (
+            recipe.record_root,
+            *recipe.identity,
+            *sum(recipe.fields.values(), ()),
+        )
+    }
+    public_fields = {
+        binding.field for binding in sum(recipe.fields.values(), ()) if binding.field
+    }
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for outcome in execution.outcomes:
+        if outcome.status != "resolved" or not outcome.source_path:
+            continue
+        binding = bindings.get(outcome.binding_id)
+        field = binding.field if binding is not None else None
+        if outcome.binding_id.startswith("record.identity."):
+            field = outcome.binding_id.rsplit(".", 1)[-1]
+            if field in public_fields:
+                continue
+        if not field or ("." in field and not outcome.binding_id.startswith("field.")):
+            continue
+        grouped.setdefault(field, []).append(
+            {
+                "recipe_id": execution.recipe_id,
+                "binding_id": outcome.binding_id,
+                "source_path": outcome.source_path,
+                "rule_id": binding.rule_id if binding else None,
+                "derived_fact_id": stable_id(
+                    "recipe-fact", execution.recipe_id, outcome.binding_id
+                ),
+            }
+        )
+    listing = recipe.scope.surface.endswith("_listing")
+    return {
+        field: rows[min(record_index, len(rows) - 1)]
+        if listing or len(rows) == 1
+        else rows
+        for field, rows in grouped.items()
+    }
+
+
+def _field_sources(
+    recipe: ExtractionRecipe, execution: RecipeExecutionResult
+) -> dict[str, list[str]]:
+    bindings = {
+        binding.binding_id: binding
+        for binding in (
+            *recipe.identity,
+            *sum(recipe.fields.values(), ()),
+        )
+    }
+    sources: dict[str, set[str]] = {}
+    for outcome in execution.outcomes:
+        if outcome.status != "resolved":
+            continue
+        binding = bindings.get(outcome.binding_id)
+        if binding is None or not binding.collector_id:
+            continue
+        field = binding.field
+        if field is None and outcome.binding_id.startswith("record.identity."):
+            field = outcome.binding_id.rsplit(".", 1)[-1]
+        if field:
+            sources.setdefault(field, set()).add(binding.collector_id)
+    return {field: sorted(values) for field, values in sources.items()}

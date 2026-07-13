@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from app.extraction.documents import HtmlDocument
-from app.extraction.representation import build_scoped_flat_map, ground
+from app.extraction.representation.flat_map import (
+    build_scoped_flat_map,
+    ground,
+)
 
 from eval.corpus import (
     DEFAULT_AUDIT_PATH,

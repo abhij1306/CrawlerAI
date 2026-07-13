@@ -1,6 +1,6 @@
 # ruff: noqa: F403, F405
 from tests.unit.extraction_pipeline_test_support import *
-from app.extraction.engine import _trust_state
+from app.extraction.result_building import _trust_state
 
 
 def test_active_provider_shell_without_product_identity_is_blocked() -> None:

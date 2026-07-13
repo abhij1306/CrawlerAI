@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-import json
-import re
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from app.core.domain_utils import normalize_domain
-from app.core.config.extraction_rules import DETAIL_IMAGE_SRCSET_ATTRS
-from app.core.config.locale_format_rules import locale_hint_from_page_url, parse_money
 from app.core.extraction_memory.recipe_contracts import (
     DiscoveryResult,
     ExtractionRecipe,
@@ -22,9 +18,8 @@ from app.core.shared.ids import stable_id
 from app.core.extraction_memory.recipe_artifacts import read_recipe_json_artifact
 from app.core.records.normalizers import normalize_value
 from app.core.records.normalizers import normalize_decimal_price
-from app.core.shared.field_coerce_price import extract_currency_code
 from app.core.shared.text_coerce import clean_text, strip_html_tags
-from app.core.shared.url_utils import largest_srcset_url, public_asset_delivery_url
+from app.core.shared.url_utils import public_asset_delivery_url
 from app.extraction.contracts import (
     Evidence,
     ExtractionRequest,
@@ -91,54 +86,11 @@ def _binding(
     source = _source(row)
     if source is None:
         return None
-    path = row.locator.value
-    artifact_id = row.artifact_id
-    transform = "canonical"
-    binding_scope = scope if source.startswith("dom_") else "document"
-    attribute = _attribute(field) if source == "dom_attribute" else None
-    if row.locator.kind in {"dom_path", "css_selector"} and request:
-        grounded_dom = _ground_detail_dom(request, row, field)
-        if grounded_dom is None:
-            return None
-        path, attribute, artifact_id, transform = grounded_dom
-        source = "dom_attribute" if attribute else "dom_text"
-        binding_scope = "document"
-    elif (
-        row.locator.kind
-        in {
-            "json_pointer",
-            "network_json_pointer",
-            "script_path",
-        }
-        and request
-    ):
-        grounded_path = _grounded_json_path(request, row, field)
-        if grounded_path is None:
-            transformed = _grounded_json_transform(request, row, field)
-            if transformed is None:
-                return None
-            grounded_path, transform = transformed
-        else:
-            transform = (
-                _grounded_value_transform(request, row, field, grounded_path)
-                or _selected_representation_transform(row)
-                or transform
-            )
-        path = grounded_path
-    elif source == "url_component" and path == "url":
-        path = "final_url"
-    if source == "url_component" and field == "title":
-        transform = "semantic_url_title"
-    if source == "url_component" and field == "sku" and request:
-        selected = str(row.value or "")
-        source_url = request.capture.final_url
-        start = source_url.casefold().find(selected.casefold())
-        if selected and start >= 0:
-            transform = (
-                f"selected_slice_upper:{start}:{len(selected)}"
-                if selected.isupper()
-                else f"selected_slice:{start}:{len(selected)}"
-            )
+    state = _grounded_binding_state(row, field, scope, request, source)
+    if state is None:
+        return None
+    source, path, attribute, artifact_id, transform, binding_scope = state
+    transform = _url_binding_transform(request, row, field, source, path, transform)
     return RecipeBinding(
         binding_id=f"field.{field}",
         source=source,
@@ -152,6 +104,68 @@ def _binding(
         unit=_binding_unit(row, field),
         required=field in {"url", "title"},
     )
+
+
+def _grounded_binding_state(row, field, scope, request, source):
+    path = row.locator.value
+    if source == "url_component" and path == "url":
+        path = "final_url"
+    state = (
+        source,
+        path,
+        _attribute(field) if source == "dom_attribute" else None,
+        row.artifact_id,
+        "canonical",
+        scope if source.startswith("dom_") else "document",
+    )
+    if request is None:
+        return state
+    if row.locator.kind in {"dom_path", "css_selector"}:
+        from app.extraction.recipe_compiler_dom import _ground_detail_dom
+
+        grounded = _ground_detail_dom(request, row, field)
+        if grounded is None:
+            return None
+        path, attribute, artifact_id, transform = grounded
+        return (
+            "dom_attribute" if attribute else "dom_text",
+            path,
+            attribute,
+            artifact_id,
+            transform,
+            "document",
+        )
+    if row.locator.kind in {"json_pointer", "network_json_pointer", "script_path"}:
+        grounded = _grounded_json_path(request, row, field)
+        transform = None
+        if grounded is None:
+            transformed = _grounded_json_transform(request, row, field)
+            if transformed is None:
+                return None
+            grounded, transform = transformed
+        transform = (
+            transform
+            or _grounded_value_transform(request, row, field, grounded)
+            or _selected_representation_transform(row)
+            or "canonical"
+        )
+        return source, grounded, state[2], row.artifact_id, transform, "document"
+    return state
+
+
+def _url_binding_transform(request, row, field, source, path, transform):
+    if source != "url_component":
+        return transform
+    if field == "title":
+        return "semantic_url_title"
+    if field != "sku" or request is None:
+        return transform
+    selected = str(row.value or "")
+    start = request.capture.final_url.casefold().find(selected.casefold())
+    if not selected or start < 0:
+        return transform
+    prefix = "selected_slice_upper" if selected.isupper() else "selected_slice"
+    return f"{prefix}:{start}:{len(selected)}"
 
 
 def _source(row: Evidence):
@@ -184,14 +198,25 @@ def _entry_evidence(
         for evidence_id in entry.evidence_ids
         if evidence_id in evidence
     ]
+    field = _field(entry.path)
     expected = " ".join(str(entry.value or "").split()).casefold()
-    row = next(
-        (
-            candidate
-            for candidate in rows
-            if " ".join(str(candidate.value or "").split()).casefold() == expected
-        ),
-        rows[0] if rows else None,
+    expected_price = _decimal_price(entry.value) if "price" in field else None
+    row = (
+        rows[0]
+        if rows
+        and entry.rule_id in {"explicit_minor_unit_price", "corroborated_price_scale"}
+        else next(
+            (
+                candidate
+                for candidate in rows
+                if " ".join(str(candidate.value or "").split()).casefold() == expected
+                or (
+                    expected_price is not None
+                    and _decimal_price(candidate.value) == expected_price
+                )
+            ),
+            rows[0] if rows else None,
+        )
     )
     return (
         row.model_copy(
@@ -207,6 +232,15 @@ def _entry_evidence(
         if row is not None
         else None
     )
+
+
+def _decimal_price(value: object) -> Decimal | None:
+    normalized = normalize_decimal_price(value)
+    raw = normalized if normalized is not None else str(value).replace(",", "")
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _field(path: str) -> str:
@@ -244,48 +278,48 @@ def _grounded_json_path(
     payload = read_recipe_json_artifact(request, row.artifact_id)
     if payload is None:
         return None
-    source_value = row.metadata.get("recipe_source_value", row.value)
-    target = _comparable_value(request, field, source_value)
-    candidates = [
+    target = _comparable_value(
+        request, field, row.metadata.get("recipe_source_value", row.value)
+    )
+    candidates = _matching_json_paths(request, payload, field, target)
+    if not candidates:
+        candidates = _fallback_json_paths(request, payload, row, field, target)
+    return _ranked_json_path(candidates, row.locator.value)
+
+
+def _matching_json_paths(request, payload, field, target):
+    return [
         node.pointer
         for node in walk_json(payload)
         if not isinstance(node.value, (dict, list))
         and _comparable_value(request, field, node.value) == target
     ]
-    if not candidates:
-        if field in {"url", "apply_url"}:
-            selected_url = str(row.value or "")
-            candidates = [
-                node.pointer
-                for node in walk_json(payload)
-                if not isinstance(node.value, (dict, list))
-                and len(str(node.value or "")) >= 4
-                and str(node.value) in selected_url
-            ]
-            if candidates:
-                hint_parts = row.locator.value.casefold().strip("/").split("/")
-                return max(
-                    candidates,
-                    key=lambda path: sum(
-                        left == right
-                        for left, right in zip(
-                            hint_parts,
-                            path.casefold().strip("/").split("/"),
-                            strict=False,
-                        )
-                    ),
-                )
-        if field != "color":
-            return None
-        candidates = [
+
+
+def _fallback_json_paths(request, payload, row, field, target):
+    if field in {"url", "apply_url"}:
+        selected_url = str(row.value or "")
+        return [
+            node.pointer
+            for node in walk_json(payload)
+            if not isinstance(node.value, (dict, list))
+            and len(str(node.value or "")) >= 4
+            and str(node.value) in selected_url
+        ]
+    if field == "color":
+        return [
             node.pointer
             for node in walk_json(payload)
             if isinstance(node.value, str)
             and _query_value(node.value, "shade") == target
         ]
-        if not candidates:
-            return None
-    hint_parts = row.locator.value.casefold().strip("/").split("/")
+    return []
+
+
+def _ranked_json_path(candidates, locator_hint):
+    if not candidates:
+        return None
+    hint_parts = locator_hint.casefold().strip("/").split("/")
     hint = set(hint_parts)
     return max(
         candidates,
@@ -311,30 +345,58 @@ def _grounded_json_transform(
     if payload is None:
         return None
     target = _comparable_value(request, field, row.value)
-    if field == "location":
-        for node in walk_json(payload):
-            if not isinstance(node.value, dict):
-                continue
-            parts = [
-                str(node.value.get(key) or "").strip()
-                for key in ("addressLocality", "addressRegion", "addressCountry")
-                if str(node.value.get(key) or "").strip()
-            ]
-            if parts and _comparable_value(request, field, ", ".join(parts)) == target:
-                return node.pointer, "job_location"
+    if field == "brand" and (result := _brand_json_transform(payload, target)):
+        return result
+    if field == "location" and (
+        result := _location_json_transform(request, payload, field, target)
+    ):
+        return result
+    return _text_json_transform(payload, row, target)
+
+
+def _brand_json_transform(payload, target):
+    leaf = next(
+        (
+            node
+            for node in walk_json(payload)
+            if isinstance(node.value, str)
+            and node.value.rsplit("/", 1)[-1].casefold() == target
+        ),
+        None,
+    )
+    return (leaf.pointer, "brand_path_leaf") if leaf is not None else None
+
+
+def _location_json_transform(request, payload, field, target):
+    for node in walk_json(payload):
+        if not isinstance(node.value, dict):
+            continue
+        parts = [
+            str(node.value.get(key) or "").strip()
+            for key in ("addressLocality", "addressRegion", "addressCountry")
+            if str(node.value.get(key) or "").strip()
+        ]
+        if parts and _comparable_value(request, field, ", ".join(parts)) == target:
+            return node.pointer, "job_location"
+    return None
+
+
+def _text_json_transform(payload, row, target):
+    from app.extraction.recipe_compiler_dom import _derived_text_transform
+
     for node in walk_json(payload):
         if not isinstance(node.value, str):
             continue
-        if node.value.strip("'\"").casefold() == target:
+        stripped = node.value.strip("'\"")
+        if stripped.casefold() == target:
             selected = str(row.value).strip()
-            return node.pointer, (
+            transform = (
                 "casefold"
-                if selected == selected.casefold()
-                and node.value.strip("'\"") != selected
+                if selected == selected.casefold() and stripped != selected
                 else "strip_quotes"
             )
-        transform = _derived_text_transform(node.value, target)
-        if transform:
+            return node.pointer, transform
+        if transform := _derived_text_transform(node.value, target):
             return node.pointer, transform
     return None
 
@@ -359,207 +421,6 @@ def _comparable_value(request: ExtractionRequest, field: str, value: object) -> 
     if field in {"image_url", "additional_images"}:
         normalized = public_asset_delivery_url(normalized)
     return " ".join(str(normalized or "").split()).casefold()
-
-
-def _ground_detail_dom(
-    request: ExtractionRequest, row: Evidence, field: str
-) -> tuple[str, str | None, str, str] | None:
-    artifact_id = row.artifact_id
-    known_artifacts = {item.artifact_id for item in request.capture.artifacts}
-    if artifact_id not in known_artifacts:
-        artifact_id = ""
-    try:
-        if not artifact_id:
-            raise KeyError(row.artifact_id)
-        document = request.artifact_reader.document_store.html(artifact_id)
-    except (KeyError, ValueError):
-        artifact = next(
-            (
-                item
-                for item in request.capture.artifacts
-                if item.artifact_type in {"rendered_html", "http_html"}
-            ),
-            None,
-        )
-        if artifact is None:
-            return None
-        artifact_id = artifact.artifact_id
-        document = request.artifact_reader.document_store.html(artifact_id)
-    target = _comparable_value(request, field, row.value)
-    located = (
-        document.css_first(row.locator.value)
-        if row.locator.kind == "css_selector"
-        else next(
-            (
-                node
-                for node in document.css("*")
-                if node.dom_path() == row.locator.value
-            ),
-            None,
-        )
-    )
-    if located is not None:
-        text = located.content_text()
-        if (
-            field in {"price", "original_price"}
-            and (
-                parsed := parse_money(
-                    text,
-                    locale_hint=locale_hint_from_page_url(request.capture.final_url),
-                )
-            )
-            is not None
-            and _comparable_value(request, field, parsed) == target
-        ):
-            return _dom_path_to_css(located.dom_path()), None, artifact_id, "dom_price"
-        if (
-            field == "currency"
-            and (currency := extract_currency_code(text))
-            and _comparable_value(request, field, currency) == target
-        ):
-            return (
-                _dom_path_to_css(located.dom_path()),
-                None,
-                artifact_id,
-                "dom_currency",
-            )
-        if _comparable_value(request, field, text) == target:
-            return _dom_path_to_css(located.dom_path()), None, artifact_id, "canonical"
-    for item in document.css("*"):
-        for attribute, raw_value in item.attributes().items():
-            if field == "color" and attribute in {"href", "value", "data-url"}:
-                query = parse_qs(
-                    urlsplit(urljoin(request.capture.final_url, raw_value)).query
-                )
-                name = next(
-                    (
-                        key
-                        for key, values in query.items()
-                        if values
-                        and _comparable_value(request, field, values[0]) == target
-                    ),
-                    None,
-                )
-                if name:
-                    return (
-                        _dom_path_to_css(item.dom_path()),
-                        attribute,
-                        artifact_id,
-                        f"query_param:{name}",
-                    )
-            if field == "availability" and attribute == "data-json":
-                try:
-                    state = json.loads(raw_value)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    continue
-                selectable = (
-                    state.get("selectable") if isinstance(state, dict) else None
-                )
-                normalized = (
-                    "out_of_stock"
-                    if selectable in {False, 0, "0", "false", "False"}
-                    else "in_stock"
-                    if selectable in {True, 1, "1", "true", "True"}
-                    else None
-                )
-                if _comparable_value(request, field, normalized) == target:
-                    return (
-                        _dom_path_to_css(item.dom_path()),
-                        attribute,
-                        artifact_id,
-                        "attribute_json_availability",
-                    )
-    for attribute in ("content", "title", "alt", "href", "src", "data-brand"):
-        node = next(
-            (
-                item
-                for item in document.css(f"[{attribute}]")
-                if _comparable_value(request, field, item.attribute(attribute))
-                == target
-            ),
-            None,
-        )
-        if node is not None:
-            return (
-                _dom_path_to_css(node.dom_path()),
-                attribute,
-                artifact_id,
-                "canonical",
-            )
-        transformed_node = next(
-            (
-                (item, transform)
-                for item in document.css(f"[{attribute}]")
-                if (
-                    transform := _derived_text_transform(
-                        item.attribute(attribute) or "", target
-                    )
-                )
-            ),
-            None,
-        )
-        if transformed_node is not None:
-            item, transform = transformed_node
-            return _dom_path_to_css(item.dom_path()), attribute, artifact_id, transform
-    for item in document.css("*"):
-        for attribute, value in item.attributes().items():
-            transform = "canonical"
-            if attribute in DETAIL_IMAGE_SRCSET_ATTRS:
-                value = largest_srcset_url(value)
-                transform = "largest_srcset"
-            if _comparable_value(request, field, value) == target:
-                return (
-                    _dom_path_to_css(item.dom_path()),
-                    attribute,
-                    artifact_id,
-                    transform,
-                )
-    candidates = [
-        node
-        for node in document.css("body *")
-        if _comparable_value(request, field, node.content_text()) == target
-    ]
-    if candidates:
-        node = max(candidates, key=lambda item: item.dom_path().count("/"))
-        return _dom_path_to_css(node.dom_path()), None, artifact_id, "canonical"
-    for node in document.css("body *"):
-        derived_transform = _derived_text_transform(node.content_text(), target)
-        if derived_transform:
-            return (
-                _dom_path_to_css(node.dom_path()),
-                None,
-                artifact_id,
-                derived_transform,
-            )
-    return None
-
-
-def _derived_text_transform(value: str, target: str) -> str | None:
-    text = " ".join(value.split())
-    if ":" in text and text.partition(":")[2].strip().casefold() == target:
-        return "after_colon"
-    registered = re.match(r"^(.+?®)(?:\s|$)", text)
-    if registered and registered.group(1).casefold() == target:
-        return "registered_prefix"
-    first = text.split(" ", 1)[0].strip("'\"") if text else ""
-    if first.casefold() == target:
-        return "first_token"
-    stripped = re.sub(r"^[^A-Za-z0-9]+", "", text).strip()
-    if stripped.casefold() == target:
-        return "strip_leading_symbols"
-    start = text.casefold().find(target)
-    if target and start >= 0:
-        return f"substring:{start}:{len(target)}"
-    last = text.rsplit(" ", 1)[-1].strip("'\"") if text else ""
-    if last.casefold() == target:
-        return "last_token"
-    target_words = target.split()
-    source_words = text.casefold().split()
-    if target_words and source_words[: len(target_words)] == target_words:
-        return f"prefix_words:{len(target_words)}"
-    if text.rsplit("/", 1)[-1].casefold() == target:
-        return "path_leaf_title"
-    return None
 
 
 def _selected_representation_transform(row: Evidence) -> str | None:
@@ -604,6 +465,8 @@ def _grounded_value_transform(
         )
         if name:
             return f"query_param:{name}"
+    from app.extraction.recipe_compiler_dom import _derived_text_transform
+
     return _derived_text_transform(source, _comparable_value(request, field, row.value))
 
 
@@ -643,33 +506,6 @@ def _relative_pointer(root: str, absolute: str) -> str:
     ):
         return ""
     return "/" + "/".join(parts[len(root_parts) :])
-
-
-def _dom_pattern(paths: list[str]) -> str:
-    parts = [
-        [part for part in path.strip("/").split("/") if not part.startswith("#")]
-        for path in paths
-    ]
-    if len({len(path) for path in parts}) != 1:
-        return ""
-    result: list[str] = []
-    for values in zip(*parts, strict=True):
-        tags = [value.split("[", 1)[0] for value in values]
-        if len(set(tags)) != 1:
-            return ""
-        indexes = [value.removeprefix(tags[0]).strip("[]") for value in values]
-        result.append(
-            tags[0] if len(set(indexes)) > 1 else f"{tags[0]}:nth-of-type({indexes[0]})"
-        )
-    return " > ".join(result)
-
-
-def _dom_path_to_css(path: str) -> str:
-    return _dom_pattern([path])
-
-
-def _relative_css(root: str, absolute: str) -> str:
-    return absolute.removeprefix(root).removeprefix(" > ") or "."
 
 
 def _all_bindings(recipe: ExtractionRecipe) -> tuple[RecipeBinding, ...]:

@@ -17,16 +17,15 @@ from app.extraction.contracts import (
 )
 from app.extraction.json_walk import walk_json
 
+from app.extraction.recipe_compiler_dom import _dom_pattern, _relative_css
 from app.extraction.recipe_compiler_grounding import (
     _attribute,
     _comparable_value,
-    _dom_pattern,
     _entry_evidence,
     _field,
     _grounded_json_path,
     _pointer_pattern,
     _recipe,
-    _relative_css,
     _relative_pointer,
     _required_fields,
     _source,
@@ -45,9 +44,7 @@ def _listing_recipe(
     if not complete:
         return None
     url_rows = _listing_field_rows(complete, "url")
-    root = _repeated_root(
-        request, url_rows, title_rows=_listing_field_rows(complete, "title")
-    )
+    root = _repeated_root(request, url_rows, title_rows=_listing_field_rows(complete, "title"))
     if root is None:
         return None
     fields = _listing_bindings(request, complete, root)
@@ -68,19 +65,21 @@ def _complete_listing_groups(entries, evidence, required):
         row = _entry_evidence(entry, evidence)
         if field and row is not None:
             groups[entry.entity_id].append((field, row))
-    return {
+    complete = {
         entity_id: rows
         for entity_id, rows in groups.items()
         if set(required) <= {field for field, _row in rows}
     }
+    by_artifact = defaultdict(dict)
+    for entity_id, rows in complete.items():
+        artifact_ids = {row.artifact_id for _field_name, row in rows}
+        if len(artifact_ids) == 1:
+            by_artifact[next(iter(artifact_ids))][entity_id] = rows
+    return max(by_artifact.values(), key=len, default={})
 
 
 def _listing_field_rows(complete, field: str) -> list[Evidence]:
-    rows = [
-        next(row for name, row in rows if name == field)
-        for rows in complete.values()
-        if any(name == field for name, _row in rows)
-    ]
+    rows = [next(row for name, row in rows if name == field) for rows in complete.values() if any(name == field for name, _row in rows)]
     return sorted(rows, key=_listing_row_order)
 
 

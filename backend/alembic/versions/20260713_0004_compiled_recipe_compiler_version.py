@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
+from sqlalchemy import text
 
 revision: str = "20260713_0004"
 down_revision: str | None = "20260711_0003"
@@ -33,6 +34,27 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    duplicate = (
+        op.get_bind()
+        .execute(
+            text(
+                """
+            SELECT recipe_id, checksum, COUNT(*) AS duplicate_count
+            FROM compiled_extraction_recipes
+            GROUP BY recipe_id, checksum
+            HAVING COUNT(*) > 1
+            LIMIT 1
+            """
+            )
+        )
+        .first()
+    )
+    if duplicate is not None:
+        raise RuntimeError(
+            "Cannot downgrade compiled recipe cache identity while duplicate "
+            f"(recipe_id, checksum) rows exist: recipe_id={duplicate.recipe_id}, "
+            f"checksum={duplicate.checksum}, count={duplicate.duplicate_count}"
+        )
     op.drop_index(
         "uq_compiled_extraction_recipes_checksum",
         table_name="compiled_extraction_recipes",

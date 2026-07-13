@@ -216,6 +216,7 @@ class BrowserAcquisitionResultBuilder:
             traversal_result=payload.traversal_result,
             analysis=payload.html_analysis,
             readiness_probes=payload.readiness_probes,
+            readiness_required="listing" in str(payload.surface or "").lower(),
         )
         if outcome == "challenge_page" and not blocked:
             blocked = True

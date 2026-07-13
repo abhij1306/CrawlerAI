@@ -618,6 +618,7 @@ def classify_browser_outcome(
     traversal_result: Any = None,
     analysis: HtmlAnalysis | None = None,
     readiness_probes: list[dict[str, object]] | None = None,
+    readiness_required: bool = False,
 ) -> str:
     if blocked or bool(getattr(block_classification, "blocked", False)):
         return "challenge_page"
@@ -627,6 +628,10 @@ def classify_browser_outcome(
         and not any(bool(probe.get("is_ready")) for probe in readiness_probes)
     ):
         return "challenge_page"
+    if readiness_required and readiness_probes and not any(
+        bool(probe.get("is_ready")) for probe in readiness_probes
+    ):
+        return "low_content_shell"
     low_content_shell = looks_like_low_content_shell(
         html,
         html_bytes=html_bytes,

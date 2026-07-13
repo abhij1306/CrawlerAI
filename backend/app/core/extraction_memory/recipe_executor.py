@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-import json
 import re
 from typing import Any, Literal
-from urllib.parse import parse_qs, urljoin, urlsplit
 
 from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_rules import (
-    LISTING_MARKET_LOCALE_GENDER_SEGMENTS,
-    LISTING_MARKET_LOCALE_PRODUCT_PREFIX,
-    LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS,
     LISTING_TITLE_CTA_TITLES,
     LISTING_UTILITY_TITLE_PATTERNS,
     LISTING_VISUAL_PRICE_REGEX_PATTERN,
@@ -27,19 +21,10 @@ from app.core.extraction_memory.recipe_contracts import (
     RecipeFailureCode,
 )
 from app.core.extraction_memory.recipe_artifacts import read_recipe_json_artifact
-from app.core.records.normalizers import normalize_decimal_price, normalize_value
+from app.core.extraction_memory.recipe_transforms import transform_value, url_component
 from app.core.records.url_identity import (
-    detail_title_from_url,
     detail_url_resource_identity,
 )
-from app.core.config.locale_format_rules import (
-    currency_hint_from_page_url,
-    locale_hint_from_page_url,
-    parse_money,
-)
-from app.core.shared.field_coerce_price import extract_currency_code
-from app.core.shared.text_coerce import clean_text, strip_html_tags
-from app.core.shared.url_utils import largest_srcset_url, public_asset_delivery_url
 from app.extraction.contracts import ArtifactRef, ExtractionRequest
 from app.extraction.documents import HtmlDocument, HtmlNode
 
@@ -103,40 +88,11 @@ def _record(
     _apply_joins(recipe.entities, entities, outcomes)
     record: dict[str, Any] = dict(identity)
     for field, bindings in recipe.fields.items():
-        values: list[_Value] = []
-        collect_many = any(binding.cardinality == "many" for binding in bindings)
-        for binding in bindings:
-            scopes = _binding_scopes(binding, root, entities)
-            binding_values: list[_Value] = []
-            for scope in scopes:
-                binding_values.extend(
-                    _read(request, binding, scope, outcomes, allow_missing=True)
-                )
-            if binding_values:
-                values.extend(binding_values)
-                if not collect_many:
-                    break
-        values = [row for row in values if not _is_excluded(row, excluded)]
+        values, collect_many = _record_field_values(
+            request, bindings, root, entities, outcomes, excluded
+        )
         if values:
-            if collect_many:
-                flattened = [
-                    item
-                    for value in values
-                    for item in (
-                        value.value
-                        if isinstance(value.value, (list, tuple))
-                        else (value.value,)
-                    )
-                ]
-                record[field] = list(dict.fromkeys(map(repr, flattened)))
-                marker_values = {repr(item): item for item in flattened}
-                record[field] = [marker_values[marker] for marker in record[field]]
-            else:
-                record[field] = (
-                    values[0].value
-                    if len(values) == 1
-                    else [value.value for value in values]
-                )
+            record[field] = _published_field_value(values, collect_many)
         elif field in recipe.required:
             raise _RecipeError(
                 "recipe_required_field_missing", f"required field missing: {field}"
@@ -146,6 +102,38 @@ def _record(
             "recipe_identity_mismatch", "record identity not established"
         )
     return record
+
+
+def _record_field_values(
+    request, bindings, root, entities, outcomes, excluded
+) -> tuple[list[_Value], bool]:
+    values: list[_Value] = []
+    collect_many = any(binding.cardinality == "many" for binding in bindings)
+    for binding in bindings:
+        binding_values = [
+            value
+            for scope in _binding_scopes(binding, root, entities)
+            for value in _read(request, binding, scope, outcomes, allow_missing=True)
+        ]
+        if binding_values:
+            values.extend(binding_values)
+            if not collect_many:
+                break
+    return [row for row in values if not _is_excluded(row, excluded)], collect_many
+
+
+def _published_field_value(values: list[_Value], collect_many: bool) -> Any:
+    if not collect_many:
+        return values[0].value if len(values) == 1 else [row.value for row in values]
+    flattened = [
+        item
+        for row in values
+        for item in (
+            row.value if isinstance(row.value, (list, tuple)) else (row.value,)
+        )
+    ]
+    unique = {repr(item): item for item in flattened}
+    return list(unique.values())
 
 
 def _identity(
@@ -190,56 +178,65 @@ def _entity_values(
     root: _Value,
     outcomes: list[BindingOutcome],
 ) -> list[_Value]:
+    del name
     scope = root if spec.root.scope == "record.root" else None
     values = _read(request, spec.root, scope, outcomes, allow_missing=True)
-    if spec.identity or spec.fields:
-        identified: list[_Value] = []
-        for value in values:
-            payload: dict[str, Any] = {}
-            lineage: dict[str, dict[str, object]] = {}
-            for binding in spec.identity:
-                rows = _read(
-                    request,
-                    binding,
-                    None if binding.scope == "document" else value,
-                    outcomes,
-                    allow_missing=True,
-                )
-                if rows:
-                    output_field = (
-                        binding.field or binding.binding_id.rsplit(".", 1)[-1]
-                    )
-                    payload[output_field] = rows[0].value
-                    lineage[output_field] = _binding_lineage(binding, rows[0])
-            for field, bindings in spec.fields.items():
-                for binding in bindings:
-                    rows = _read(
-                        request,
-                        binding,
-                        None if binding.scope == "document" else value,
-                        outcomes,
-                        allow_missing=True,
-                    )
-                    if rows:
-                        payload[field] = (
-                            [row.value for row in rows]
-                            if binding.cardinality == "many"
-                            else rows[0].value
-                        )
-                        lineage[field] = _binding_lineage(binding, rows[0])
-                        break
-            if spec.identity and not any(
-                payload.get(binding.field or binding.binding_id.rsplit(".", 1)[-1])
-                for binding in spec.identity
-            ):
-                continue
-            if lineage:
-                payload["_binding_lineage"] = lineage
+    if not (spec.identity or spec.fields):
+        return values
+    identified: list[_Value] = []
+    for value in values:
+        payload = _entity_payload(request, spec, value, outcomes)
+        if payload is not None:
             identified.append(
                 _Value(payload or value.value, value.source_path, value.node)
             )
-        values = identified
-    return values
+    return identified
+
+
+def _entity_payload(request, spec, value, outcomes) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {}
+    lineage: dict[str, dict[str, object]] = {}
+    for binding in spec.identity:
+        rows = _entity_binding_values(request, binding, value, outcomes)
+        if rows:
+            field = binding.field or binding.binding_id.rsplit(".", 1)[-1]
+            payload[field] = rows[0].value
+            lineage[field] = _binding_lineage(binding, rows[0])
+    for field, bindings in spec.fields.items():
+        resolved = _first_entity_field(request, bindings, value, outcomes)
+        if resolved is not None:
+            binding, rows = resolved
+            payload[field] = (
+                [row.value for row in rows]
+                if binding.cardinality == "many"
+                else rows[0].value
+            )
+            lineage[field] = _binding_lineage(binding, rows[0])
+    if spec.identity and not _has_entity_identity(payload, spec.identity):
+        return None
+    if lineage:
+        payload["_binding_lineage"] = lineage
+    return payload
+
+
+def _entity_binding_values(request, binding, value, outcomes):
+    scope = None if binding.scope == "document" else value
+    return _read(request, binding, scope, outcomes, allow_missing=True)
+
+
+def _first_entity_field(request, bindings, value, outcomes):
+    for binding in bindings:
+        rows = _entity_binding_values(request, binding, value, outcomes)
+        if rows:
+            return binding, rows
+    return None
+
+
+def _has_entity_identity(payload, bindings) -> bool:
+    return any(
+        payload.get(binding.field or binding.binding_id.rsplit(".", 1)[-1])
+        for binding in bindings
+    )
 
 
 def _binding_lineage(binding: RecipeBinding, value: _Value) -> dict[str, object]:
@@ -308,7 +305,7 @@ def _read(
     values = _raw_values(request, binding, scope, root=root)
     transformed_values: list[_Value] = []
     for row in values:
-        value = _transform(request, row.value, binding)
+        value = transform_value(request, row.value, binding)
         if value in (None, "", [], {}):
             continue
         transformed_values.append(_Value(value, row.source_path, row.node))
@@ -343,104 +340,111 @@ def _raw_values(
     root: bool,
 ) -> list[_Value]:
     if binding.source in {"dom_text", "dom_attribute"}:
-        base: HtmlDocument | HtmlNode
-        if scope is not None and scope.node is not None:
-            base = scope.node
-        else:
-            artifact = _artifact(request, binding, html=True)
-            if artifact is None:
-                return []
-            base = request.artifact_reader.document_store.html(artifact.artifact_id)
-        nodes = (
-            [base]
-            if binding.path == "." and isinstance(base, HtmlNode)
-            else list(base.safe_css(binding.path))
-        )
-        if binding.sense == "price_text" and not binding.attribute:
-            nodes = [
-                node
-                for node in nodes
-                if re.search(
-                    LISTING_VISUAL_PRICE_REGEX_PATTERN,
-                    node.attribute(binding.attribute or "") or node.content_text(),
-                    re.IGNORECASE,
-                )
-            ]
-        if binding.sense == "listing_title":
-            nodes = [
-                node
-                for node in nodes
-                if _valid_listing_title(
-                    node.attribute(binding.attribute or "") or node.content_text()
-                )
-            ]
-        if root:
-            return [
-                _Value(node, f"{node.artifact_id}:{binding.path}", node)
-                for node in nodes
-            ]
-        return [
-            _Value(
-                node.attribute(binding.attribute or "")
-                if binding.source == "dom_attribute"
-                else node.content_text(),
-                f"{node.artifact_id}:{binding.path}",
-                node,
-            )
-            for node in nodes
-        ]
+        return _dom_values(request, binding, scope, root=root)
     if binding.source == "url_component":
         return [
             _Value(
-                _url_component(request.capture.final_url, binding.path),
+                url_component(request.capture.final_url, binding.path),
                 f"url:{binding.path}",
             )
         ]
     if binding.source == "artifact_text":
-        artifact = _artifact(request, binding)
-        return (
-            [
-                _Value(
-                    request.artifact_reader.read_text(artifact),
-                    f"{artifact.artifact_id}:text",
-                )
-            ]
-            if artifact is not None
-            else []
-        )
-    payload = (
-        scope.value
-        if scope is not None and (scope.node is None or binding.field == "variants")
-        else None
+        return _artifact_text_values(request, binding)
+    return _json_values(request, binding, scope)
+
+
+def _dom_values(request, binding, scope, *, root: bool) -> list[_Value]:
+    base = _dom_base(request, binding, scope)
+    if base is None:
+        return []
+    nodes = (
+        [base]
+        if binding.path == "." and isinstance(base, HtmlNode)
+        else list(base.safe_css(binding.path))
     )
-    artifact = _artifact(request, binding)
-    if (
-        payload is None
-        and binding.source == "script_path"
-        and (
-            artifact is None or artifact.artifact_type in {"rendered_html", "http_html"}
+    nodes = _filtered_dom_nodes(nodes, binding)
+    if root:
+        return [
+            _Value(node, f"{node.artifact_id}:{binding.path}", node) for node in nodes
+        ]
+    return [
+        _Value(
+            node.attribute(binding.attribute or "")
+            if binding.source == "dom_attribute"
+            else node.content_text(),
+            f"{node.artifact_id}:{binding.path}",
+            node,
         )
-    ):
-        payload = read_recipe_json_artifact(request, binding.artifact)
-        if payload is None:
-            return []
-        prefix = str(binding.artifact)
-    elif payload is None:
-        if artifact is None:
-            payload = read_recipe_json_artifact(request, binding.artifact)
-            if payload is None:
-                return []
-            prefix = str(binding.artifact)
-        else:
-            payload = request.artifact_reader.read_json(artifact)
-            prefix = artifact.artifact_id
-    else:
-        assert scope is not None
-        prefix = scope.source_path
+        for node in nodes
+    ]
+
+
+def _dom_base(request, binding, scope) -> HtmlDocument | HtmlNode | None:
+    if scope is not None and scope.node is not None:
+        return scope.node
+    artifact = _artifact(request, binding, html=True)
+    if artifact is None:
+        return None
+    return request.artifact_reader.document_store.html(artifact.artifact_id)
+
+
+def _filtered_dom_nodes(nodes, binding):
+    if binding.sense == "price_text" and not binding.attribute:
+        return [
+            node
+            for node in nodes
+            if re.search(
+                LISTING_VISUAL_PRICE_REGEX_PATTERN,
+                node.attribute(binding.attribute or "") or node.content_text(),
+                re.IGNORECASE,
+            )
+        ]
+    if binding.sense == "listing_title":
+        return [
+            node
+            for node in nodes
+            if _valid_listing_title(
+                node.attribute(binding.attribute or "") or node.content_text()
+            )
+        ]
+    return nodes
+
+
+def _artifact_text_values(request, binding) -> list[_Value]:
+    artifact = _artifact(request, binding)
+    if artifact is None:
+        return []
+    return [
+        _Value(
+            request.artifact_reader.read_text(artifact),
+            f"{artifact.artifact_id}:text",
+        )
+    ]
+
+
+def _json_values(request, binding, scope) -> list[_Value]:
+    payload, prefix = _json_payload(request, binding, scope)
+    if payload is None:
+        return []
     return [
         _Value(value, f"{prefix}:{binding.path}")
         for value in _walk_path(payload, binding.path)
     ]
+
+
+def _json_payload(request, binding, scope):
+    if scope is not None and (scope.node is None or binding.field == "variants"):
+        return scope.value, scope.source_path
+    artifact = _artifact(request, binding)
+    if binding.source == "script_path" and (
+        artifact is None or artifact.artifact_type in {"rendered_html", "http_html"}
+    ):
+        payload = read_recipe_json_artifact(request, binding.artifact)
+        return payload, str(binding.artifact)
+    if artifact is None:
+        payload = read_recipe_json_artifact(request, binding.artifact)
+        return payload, str(binding.artifact)
+    return request.artifact_reader.read_json(artifact), artifact.artifact_id
 
 
 def _artifact(
@@ -575,175 +579,6 @@ def _expected_value(request: ExtractionRequest, compare_to: str | None) -> Any:
     return None
 
 
-def _transform(request: ExtractionRequest, value: Any, binding: RecipeBinding) -> Any:
-    if binding.transform == "identity":
-        return value
-    if binding.transform == "after_colon" and isinstance(value, str):
-        value = value.partition(":")[2].strip()
-    elif binding.transform == "registered_prefix" and isinstance(value, str):
-        match = re.match(r"^(.+?®)(?:\s|$)", value.strip())
-        value = match.group(1) if match else None
-    elif binding.transform == "first_token" and isinstance(value, str):
-        value = value.strip().split(" ", 1)[0].strip("'\"")
-    elif binding.transform == "last_token" and isinstance(value, str):
-        value = value.strip().rsplit(" ", 1)[-1].strip("'\"")
-    elif binding.transform == "strip_quotes" and isinstance(value, str):
-        value = value.strip("'\"")
-    elif binding.transform == "strip_leading_symbols" and isinstance(value, str):
-        value = re.sub(r"^[^A-Za-z0-9]+", "", value).strip()
-    elif binding.transform == "restore_market_locale" and isinstance(value, str):
-        value = _restore_market_locale(request.capture.final_url, value)
-    elif binding.transform == "largest_srcset" and isinstance(value, str):
-        value = largest_srcset_url(value)
-    elif binding.transform == "semantic_url_title" and isinstance(value, str):
-        value = detail_title_from_url(value)
-    elif binding.transform == "dom_price":
-        value = parse_money(
-            value,
-            locale_hint=locale_hint_from_page_url(request.capture.final_url),
-        )
-    elif binding.transform == "dom_currency":
-        value = extract_currency_code(value)
-    elif binding.transform == "casefold" and isinstance(value, str):
-        value = value.strip("'\"").casefold()
-    elif binding.transform == "path_leaf_title" and isinstance(value, str):
-        value = value.rsplit("/", 1)[-1].title()
-    elif binding.transform == "currency_from_page_url":
-        value = currency_hint_from_page_url(request.capture.final_url)
-    elif binding.transform == "currency_from_price_symbol":
-        value = extract_currency_code(value)
-    elif binding.transform == "availability_from_stock_quantity":
-        try:
-            value = "in_stock" if Decimal(str(value)) > 0 else "out_of_stock"
-        except (InvalidOperation, ValueError):
-            value = None
-    elif binding.transform == "job_location" and isinstance(value, dict):
-        value = ", ".join(
-            str(value.get(key) or "").strip()
-            for key in ("addressLocality", "addressRegion", "addressCountry")
-            if str(value.get(key) or "").strip()
-        )
-    elif binding.transform and binding.transform.startswith("value_url_template:"):
-        template = binding.transform.partition(":")[2]
-        value = template.replace("{value}", str(value))
-    elif binding.transform == "attribute_json_availability" and isinstance(value, str):
-        try:
-            state = json.loads(value)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return None
-        selectable = state.get("selectable") if isinstance(state, dict) else None
-        value = (
-            "out_of_stock"
-            if selectable in {False, 0, "0", "false", "False"}
-            else "in_stock"
-            if selectable in {True, 1, "1", "true", "True"}
-            else None
-        )
-    elif binding.transform and binding.transform.startswith("prefix_words:"):
-        count = int(binding.transform.rsplit(":", 1)[1])
-        value = " ".join(str(value).split()[:count])
-    elif binding.transform and binding.transform.startswith("host_words:"):
-        lengths = [int(item) for item in binding.transform.partition(":")[2].split(",")]
-        ignored = {
-            "",
-            "www",
-            "shop",
-            "store",
-            "us",
-            "usa",
-            "uk",
-            "in",
-            "com",
-            "co",
-            "net",
-            "org",
-        }
-        labels = [
-            label for label in str(value).casefold().split(".") if label not in ignored
-        ]
-        compact = re.sub(r"[^a-z0-9]", "", max(labels, key=len) if labels else "")
-        for suffix in ("beauty", "cosmetics", "official", "online", "shop", "store"):
-            if compact.endswith(suffix):
-                compact = compact[: -len(suffix)]
-                break
-        pieces = []
-        offset = 0
-        for segment_length in lengths:
-            pieces.append(compact[offset : offset + segment_length])
-            offset += segment_length
-        value = " ".join(piece.title() for piece in pieces)
-    elif binding.transform and binding.transform.startswith("uppercase_host_words:"):
-        lengths = [int(item) for item in binding.transform.rsplit(":", 1)[1].split(",")]
-        host = urlsplit(str(value)).hostname or str(value)
-        compact = re.sub(r"[^a-z0-9]", "", host.casefold().split(".")[0])
-        pieces = []
-        offset = 0
-        for segment_length in lengths:
-            pieces.append(compact[offset : offset + segment_length])
-            offset += segment_length
-        value = " ".join(pieces).upper()
-    elif binding.transform and binding.transform.startswith("slug_words:"):
-        _name, start, raw_lengths = binding.transform.split(":", 2)
-        words = re.findall(r"[a-z0-9]+", str(value).casefold())
-        index = int(start)
-        count = len(raw_lengths.split(","))
-        value = " ".join(word.title() for word in words[index : index + count])
-    elif binding.transform and binding.transform.startswith("uppercase_slug_words:"):
-        _name, start, raw_lengths = binding.transform.split(":", 2)
-        words = re.findall(r"[a-z0-9]+", str(value).casefold())
-        index = int(start)
-        count = len(raw_lengths.split(","))
-        value = " ".join(words[index : index + count]).upper()
-    elif binding.transform and binding.transform.startswith("selected_slice:"):
-        _name, start, length = binding.transform.split(":", 2)
-        value = str(value)[int(start) : int(start) + int(length)]
-    elif binding.transform and binding.transform.startswith("selected_slice_upper:"):
-        _name, start, length = binding.transform.split(":", 2)
-        value = str(value)[int(start) : int(start) + int(length)].upper()
-    elif binding.transform and binding.transform.startswith("substring:"):
-        _name, start, length = binding.transform.split(":", 2)
-        value = str(value)[int(start) : int(start) + int(length)]
-    if binding.transform and binding.transform.startswith("query_param:"):
-        if not isinstance(value, str):
-            return None
-        name = binding.transform.partition(":")[2]
-        values = parse_qs(urlsplit(value).query).get(name, ())
-        value = values[0] if values else None
-    if binding.field in {
-        "url",
-        "apply_url",
-        "image_url",
-        "additional_images",
-    } and isinstance(value, str):
-        value = urljoin(request.capture.final_url, value)
-    if binding.field in {"image_url", "additional_images"}:
-        value = public_asset_delivery_url(value)
-    if binding.field == "additional_images" and isinstance(value, str):
-        return value
-    if binding.field == "variants":
-        return value
-    if binding.field in {"title", "brand", "description"}:
-        value = clean_text(strip_html_tags(value))
-    if binding.field in {"variant_id", "sku", "gtin"} and value is not None:
-        value = str(value).strip()
-    if binding.unit == "minor" and binding.field and "price" in binding.field:
-        normalized = normalize_decimal_price(value, interpret_integral_as_cents=True)
-        try:
-            return f"{Decimal(str(normalized)).quantize(Decimal('0.01')):f}"
-        except (InvalidOperation, ValueError):
-            return normalized
-    if binding.unit == "major" and binding.field and "price" in binding.field:
-        try:
-            return f"{Decimal(str(value).replace(',', '')).quantize(Decimal('0.01')):f}"
-        except (InvalidOperation, ValueError):
-            return normalize_decimal_price(value)
-    if binding.field == "currency" and isinstance(value, str):
-        return value.strip().upper()
-    if binding.transform or binding.field:
-        return normalize_value(binding.field or "", value)
-    return value
-
-
 def _member(value: _Value, field: str) -> Any:
     return value.value.get(field) if isinstance(value.value, dict) else None
 
@@ -756,49 +591,3 @@ def _identity_value(field: str | None, value: Any) -> str:
     if field in {"url", "apply_url"}:
         return detail_url_resource_identity(str(value or ""))
     return _comparable(value)
-
-
-def _url_component(url: str, component: str) -> str | None:
-    parsed = urlsplit(url)
-    if component == "final_url":
-        return url
-    if component == "path":
-        return parsed.path
-    if component == "host":
-        return parsed.hostname
-    if component.startswith("query."):
-        return next(
-            iter(parse_qs(parsed.query).get(component.removeprefix("query."), [])), None
-        )
-    return None
-
-
-def _restore_market_locale(page_url: str, href: str) -> str:
-    product_url = urljoin(page_url, href)
-    page = urlsplit(page_url)
-    product = urlsplit(product_url)
-    if normalize_domain(page_url) != normalize_domain(product_url):
-        return product_url
-    page_parts = tuple(part for part in page.path.split("/") if part)
-    product_parts = tuple(part for part in product.path.split("/") if part)
-    category_index = next(
-        (
-            index
-            for index, part in enumerate(page_parts)
-            if part.casefold() in LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS
-        ),
-        None,
-    )
-    if category_index is None:
-        return product_url
-    prefix = page_parts[:category_index]
-    if not prefix or product_parts[: len(prefix)] == prefix or not product_parts:
-        return product_url
-    first = product_parts[0].casefold()
-    if first == LISTING_MARKET_LOCALE_PRODUCT_PREFIX:
-        parts = (*prefix, *product_parts)
-    elif first in LISTING_MARKET_LOCALE_GENDER_SEGMENTS:
-        parts = (*prefix, LISTING_MARKET_LOCALE_PRODUCT_PREFIX, *product_parts)
-    else:
-        return product_url
-    return product._replace(path="/" + "/".join(parts)).geturl()

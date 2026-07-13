@@ -13,6 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.config.extraction_memory import (
+    EXTRACTION_LABEL_KIND_GROUNDED_CORRECTION,
+)
 from app.evaluation.llm_repair import (
     GroundedRepairBatch,
     GroundedRepairContractError,
@@ -136,6 +139,17 @@ async def test_grounded_repair_passes_replay_but_never_activates(
 
     # No legacy correction row is written before recipe-v2 compilation.
     assert result["correction_id"] is None
+    correction = (
+        await db_session.execute(
+            select(ExtractionOperatorLabel).where(
+                ExtractionOperatorLabel.label_kind
+                == EXTRACTION_LABEL_KIND_GROUNDED_CORRECTION,
+                ExtractionOperatorLabel.source_run_id == run.id,
+                ExtractionOperatorLabel.template_id == template.id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert correction is None
 
 
 @pytest.mark.asyncio

@@ -200,6 +200,20 @@ def test_active_perimeterx_shell_without_ready_probe_is_not_usable_content() -> 
 
 
 @pytest.mark.unit
+def test_unready_listing_capture_is_not_usable_content() -> None:
+    html = "<html><body><main><h1>Careers</h1><p>Explore our teams and opportunities.</p></main></body></html>"
+
+    outcome = classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode()),
+        blocked=False,
+        readiness_probes=[{"is_ready": False, "listing_card_count": 0}],
+        readiness_required=True,
+    )
+
+    assert outcome == "low_content_shell"
+
+
 def test_active_provider_metadata_without_probe_does_not_override_usable_page() -> None:
     html = """
     <html><head><script type="application/ld+json">

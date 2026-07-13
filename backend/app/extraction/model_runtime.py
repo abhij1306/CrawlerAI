@@ -34,8 +34,8 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
-from app.extraction.representation import build_scoped_flat_map, ground
-from app.extraction.representation.flat_map import FlatMap
+from app.extraction.representation.flat_map import FlatMap, build_scoped_flat_map, ground
+from app.extraction.surfaces import surface_spec
 
 ModelRuntimeOutcome = Literal[
     "disabled",
@@ -168,11 +168,14 @@ class ModelRecipeProposalResult:
         object.__setattr__(self, "terminal_state", state)
 
 
-def run_model_recipe_proposals(
-    request: ExtractionRequest,
-    adapter: RuntimeModelAdapter | None,
-) -> ModelRecipeProposalResult:
+def run_model_recipe_proposals(request: ExtractionRequest, adapter: RuntimeModelAdapter | None) -> ModelRecipeProposalResult:
     """Return only capture-grounded paths; never model field values."""
+    if surface_spec(request.surface).cardinality == "many":
+        return ModelRecipeProposalResult(
+            outcome="disabled",
+            detail="listing model fallback lacks repeated-record attribute grounding",
+            terminal_state="not_eligible",
+        )
     artifact, disabled_reason = _approved_artifact(request)
     if artifact is None:
         return ModelRecipeProposalResult(outcome="disabled", detail=disabled_reason)
@@ -228,11 +231,12 @@ def run_model_recipe_proposals(
         )
     except Exception as exc:  # model service must degrade without breaking extraction
         return ModelRecipeProposalResult(
-            outcome="failed",
-            artifact=artifact,
+            outcome="failed", artifact=artifact,
             representation_built=True,
             invoked=True,
             latency_ms=(perf_counter() - started) * 1_000,
+            input_tokens=int(getattr(exc, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(exc, "output_tokens", 0) or 0),
             failure_code="model_service_failure",
             detail=_model_failure_detail(exc),
         )

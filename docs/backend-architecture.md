@@ -216,6 +216,7 @@ Primary files:
 - `acquisition/policy.py`
 - `acquisition/runtime.py`
 - `acquisition/browser_capture.py`
+- `acquisition/browser_screenshot.py`
 - `acquisition/browser_runtime.py`
 - `acquisition/browser_pool.py`
 - `acquisition/browser_page_flow.py`

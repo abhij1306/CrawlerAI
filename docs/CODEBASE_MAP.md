@@ -121,7 +121,8 @@ Flow:
 | `acquisition/browser_pool.py` | Shared Playwright pool, context lifecycle, browser binary/proxy launch |
 | `acquisition/browser_background_tasks.py` | Observed popup, eviction, and bounded browser-close task lifecycle |
 | `acquisition/browser_fetch_support.py` | Browser fetch result, diagnostics, and page event assembly helpers |
-| `acquisition/browser_capture.py` | Screenshots, bounded network response capture, and sanitized read-only GraphQL request metadata |
+| `acquisition/browser_capture.py` | Bounded network response capture and sanitized read-only GraphQL request metadata |
+| `acquisition/browser_screenshot.py` | Best-effort temporary browser screenshot capture; no artifact publication ownership |
 | `acquisition/browser_diagnostics.py` | Browser engine labels, profile diagnostics, and failed-fetch diagnostic contracts |
 | `acquisition/browser_identity.py` | Browser fingerprint generation |
 | `acquisition/browser_interstitial.py` | Location-interstitial detection and safe dismissal |
@@ -165,9 +166,13 @@ Canonical config owner:
 | `eval/*` | Extraction V3 offline eval CLI, commerce-detail corpus registry, label proposals, scoring, and frozen baseline reports |
 | `core/extraction_memory/recipe_contracts.py` | Storage-free executable recipe, candidate, binding, and typed failure contracts |
 | `core/extraction_memory/recipe_executor.py` | Mechanical capture reader for active and candidate recipes; never discovers, publishes, or persists |
+| `core/extraction_memory/recipe_transforms.py` | Bounded mechanical value-transform dispatch used only by recipe execution |
 | `extraction/engine.py` | Frozen recipe-first orchestration: active execute, bounded discovery compile, optional model proposals, shared publication |
 | `extraction/recipe_compiler*.py` | Deterministic and model-assisted recipe compilation from grounded capture artifacts; never constructs public records |
-| `extraction/recipe_publication.py` | Shared recipe execution validation and public-record publication firewall |
+| `extraction/publication.py` | Shared projection serialization plus recipe execution validation and public-record publication firewall |
+| `extraction/result_building.py` | Typed `ExtractionResult` assembly; no discovery or persistence |
+| `extraction/result_policy.py` | Verdict, review, retry, and terminal-shell policy for extraction results |
+| `extraction/representation/flat_map.py` | Scoped compact representation and grounding used by proposal-only model assistance |
 | `extraction/model_runtime.py` | Opt-in, budgeted, grounded binding-proposal adapter; no model value publication |
 | `evaluation/grounded_corrections.py` | Recipe-v2 representative replay and explicit candidate activation only |
 | `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |
@@ -287,6 +292,7 @@ Canonical config owners:
 | `persistence/url_result_artifacts.py` | **Single** per-URL artifact writer: `page.html` + `record.json` + `diagnose.json` under `runs/{run_id}/results/{url_result_id}/` |
 | `persistence/artifacts.py` | `ArtifactRepository` byte store backing the writer |
 | `observability/diagnose.py` | Builds the self-contained, bounded per-URL `diagnose.json` |
+| `observability/extraction_diagnostics.py` | Observe-only causal stages, field states, coverage, metrics, and diagnostic summaries consumed by extraction result assembly |
 | `observability/run_report.py` | Run-complete callback folding diagnoses into deterministic `report.json` |
 | `pipeline/persistence.py` | persistence owner shared with Bucket 2 |
 

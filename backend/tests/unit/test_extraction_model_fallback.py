@@ -40,7 +40,7 @@ def _approved_snapshot() -> dict[str, object]:
             "timeout_ms": 1000,
             "max_memory_mb": 128.0,
             "max_cost_per_page_usd": 0.01,
-            "supported_surfaces": ["ecommerce_listing"],
+            "supported_surfaces": ["ecommerce_listing", "ecommerce_detail"],
         },
     }
 
@@ -49,9 +49,10 @@ def _request(
     html: str,
     *,
     runtime_snapshot: dict[str, object] | None = None,
+    surface: Surface = Surface.ECOMMERCE_LISTING,
 ):
     request = fixture_request_from_inputs(
-        Surface.ECOMMERCE_LISTING,
+        surface,
         html,
         "https://shop.test/category/shoes",
         max_records=5,
@@ -70,7 +71,10 @@ class ProviderErrorAdapter:
     adapter_id = "fixture-runtime-adapter"
 
     def predict(self, *args, **kwargs) -> NoReturn:
-        raise RuntimeError("provider_error:timeout")
+        error = RuntimeError("provider_error:timeout")
+        setattr(error, "input_tokens", 8128)
+        setattr(error, "output_tokens", 0)
+        raise error
 
 
 def test_source_value_normalization_preserves_zero_like_values() -> None:
@@ -109,15 +113,32 @@ def test_run_setting_disables_approved_model_without_invocation() -> None:
     assert result.metrics.universal_model_invocation_count == 0
 
 
-def test_runtime_preserves_safe_provider_error_category() -> None:
+def test_listing_model_fallback_is_not_invoked_without_repeated_record_grounding() -> None:
     result = run_model_recipe_proposals(
         _request("<main>Trail Shoe</main>", runtime_snapshot=_approved_snapshot()),
+        MustNotRunAdapter(),
+    )
+
+    assert result.invoked is False
+    assert result.terminal_state == "not_eligible"
+    assert result.detail == "listing model fallback lacks repeated-record attribute grounding"
+
+
+def test_runtime_preserves_safe_provider_error_category() -> None:
+    result = run_model_recipe_proposals(
+        _request(
+            "<main>Trail Shoe</main>",
+            runtime_snapshot=_approved_snapshot(),
+            surface=Surface.ECOMMERCE_DETAIL,
+        ),
         ProviderErrorAdapter(),
     )
 
     assert result.invoked is True
     assert result.terminal_state == "provider_error"
     assert result.detail == "provider_error:timeout"
+    assert result.input_tokens == 8128
+    assert result.output_tokens == 0
 
 
 def test_generalized_budget_config_has_required_runtime_controls() -> None:

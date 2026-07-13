@@ -4,11 +4,9 @@ import asyncio
 import hashlib
 import json
 import logging
-import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from patchright.async_api import (
@@ -16,7 +14,6 @@ from patchright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
-from app.core.config import settings
 from app.acquisition.browser_background_tasks import (
     register_eviction_cleanup_task,
 )
@@ -712,30 +709,6 @@ async def read_network_payload_body(
     return NetworkPayloadReadResult(body=body_bytes, outcome="read")
 
 
-async def capture_browser_screenshot(page: Any) -> str:
-    """Capture a browser screenshot to a temporary PNG file and return its path.
-
-    The returned `temp_path` lives under `temp_dir`
-    (`settings.artifacts_dir/tmp/browser_screenshots`). The caller owns that file
-    and must delete it after use. If that lifecycle becomes hard to manage,
-    consider returning PNG bytes instead or adding a periodic cleanup sweep for
-    `settings.artifacts_dir/tmp/browser_screenshots`.
-    """
-    temp_dir = Path(settings.artifacts_dir) / "tmp" / "browser_screenshots"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        temp_path = temp_dir / f"browser-screenshot-{uuid.uuid4().hex}.png"
-        await page.screenshot(path=temp_path, full_page=True, type="png")
-        if temp_path.is_file() and temp_path.stat().st_size > 0:
-            return str(temp_path)
-    except Exception:
-        logger.debug("Browser screenshot capture failed", exc_info=True)
-    if temp_path is not None:
-        temp_path.unlink(missing_ok=True)
-    return ""
-
-
 def coerce_content_length(headers: dict[str, object] | Any) -> int | None:
     if not headers:
         return None
@@ -804,7 +777,6 @@ def _network_payload_byte_budget(
 __all__ = [
     "BrowserNetworkCapture",
     "BrowserNetworkCaptureSummary",
-    "capture_browser_screenshot",
     "classify_network_endpoint",
     "coerce_content_length",
     "has_chunked_transfer_encoding",

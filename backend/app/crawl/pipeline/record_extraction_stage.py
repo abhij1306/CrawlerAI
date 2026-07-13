@@ -46,20 +46,6 @@ __all__ = (
 logger = logging.getLogger(__name__)
 
 
-class _ObservedModelAdapter:
-    def __init__(self, delegate, on_start) -> None:
-        self._delegate = delegate
-        self._on_start = on_start
-
-    @property
-    def adapter_id(self) -> str:
-        return self._delegate.adapter_id
-
-    def predict(self, page, artifact, *, timeout_ms: int):
-        self._on_start()
-        return self._delegate.predict(page, artifact, timeout_ms=timeout_ms)
-
-
 def extract_records_for_acquisition_result(
     acquisition_result,
     surface: str,
@@ -147,29 +133,6 @@ async def _record_model_cost_log(
     )
 
 
-def _observed_model_adapter(
-    context: _URLProcessingContext,
-    runtime_snapshot: dict[str, object],
-):
-    adapter = _model_adapter(context, runtime_snapshot)
-    if adapter is None:
-        return None
-    loop = asyncio.get_running_loop()
-
-    def _on_start() -> None:
-        loop.call_soon_threadsafe(
-            lambda: asyncio.create_task(
-                _log_pipeline_event(
-                    context,
-                    "info",
-                    "Generalized model invocation started",
-                )
-            )
-        )
-
-    return _ObservedModelAdapter(adapter, _on_start)
-
-
 def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:
     from app.crawl.pipeline import extraction_loop
 
@@ -217,7 +180,7 @@ async def _run_record_extraction(
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
     runtime_snapshot = await _load_runtime_snapshot(context)
-    model_adapter = _observed_model_adapter(context, runtime_snapshot)
+    model_adapter = _model_adapter(context, runtime_snapshot)
     await context.session.commit()
     extract_records_impl = getattr(
         extraction_loop,
@@ -331,7 +294,7 @@ async def _extract_records_from_preserved_browser_html(
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
     runtime_snapshot = await _load_runtime_snapshot(context)
-    model_adapter = _observed_model_adapter(context, runtime_snapshot)
+    model_adapter = _model_adapter(context, runtime_snapshot)
     try:
         fallback_result = await asyncio.to_thread(
             extract_impl,

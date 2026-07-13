@@ -188,56 +188,64 @@ def should_escalate_to_browser(
     surface: str | None = None,
     runtime_policy: Mapping[str, Any] | None = None,
 ) -> bool:
-    non_retryable_http_status = is_non_retryable_http_status(result.status_code)
-    if result.blocked or is_retryable_http_status(result.status_code):
-        return True
-    if is_browser_recoverable_http_status(result.status_code, surface=surface):
-        return True
-    if non_retryable_http_status:
-        return False
-    resolved_policy = (
-        runtime_policy
-        if runtime_policy is not None
-        else resolve_platform_runtime_policy(
-            result.final_url or result.url,
-            result.html,
-            surface=surface,
-        )
+    status_decision = _status_escalation_decision(result, surface)
+    if status_decision is not None:
+        return status_decision
+    resolved_policy = runtime_policy or resolve_platform_runtime_policy(
+        result.final_url or result.url,
+        result.html,
+        surface=surface,
     )
     escalation_policy = resolved_policy.get("http_browser_escalation")
     if not isinstance(escalation_policy, Mapping):
         escalation_policy = {}
     analysis = analyze_html(result.html)
-    content_signals = analyze_extractable_content(
+    signals = analyze_extractable_content(
         result.html,
         analysis=analysis,
         url=result.final_url or result.url,
         status_code=result.status_code,
         surface=surface or "",
     )
-    has_detail_signals = content_signals.detail
-    has_listing_signals = content_signals.listing
+    return _content_requires_browser(signals, escalation_policy, surface)
+
+
+def _status_escalation_decision(
+    result: PageFetchResult, surface: str | None
+) -> bool | None:
+    if result.blocked or is_retryable_http_status(result.status_code):
+        return True
+    if is_browser_recoverable_http_status(result.status_code, surface=surface):
+        return True
+    if is_non_retryable_http_status(result.status_code):
+        return False
+    return None
+
+
+def _content_requires_browser(signals, policy, surface) -> bool:
     if (
         surface == "ecommerce_detail"
-        and content_signals.js_shell
-        and not content_signals.meaningful_detail
+        and signals.js_shell
+        and not signals.meaningful_detail
     ):
         return True
-    if (
-        bool(escalation_policy.get("js_shell_without_detail_signals", True))
-        and content_signals.js_shell
-        and not has_detail_signals
-    ):
-        return True
-    if (
-        bool(escalation_policy.get("listing_shell_without_listing_signals"))
-        and not has_listing_signals
-        and content_signals.listing_shell
-    ):
-        return True
-    if bool(escalation_policy.get("missing_detail_signals")) and not has_detail_signals:
-        return True
-    return False
+    checks = (
+        (
+            "js_shell_without_detail_signals",
+            True,
+            signals.js_shell and not signals.detail,
+        ),
+        (
+            "listing_shell_without_listing_signals",
+            False,
+            signals.listing_shell and not signals.listing,
+        ),
+        ("missing_detail_signals", False, not signals.detail),
+    )
+    return any(
+        bool(policy.get(name, default)) and condition
+        for name, default, condition in checks
+    )
 
 
 async def is_blocked_html_async(html: str, status_code: int) -> bool:
