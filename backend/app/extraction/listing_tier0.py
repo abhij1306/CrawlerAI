@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, cast
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from app.core.config.cascade import (
     CASCADE_DOM_LISTING_CONFIDENCE,
     CASCADE_STRUCTURED_LISTING_CONFIDENCE,
 )
-from app.core.config.extraction_recipes import ECOMMERCE_LISTING_HTML_ARTIFACT_IDS
+from app.core.config.extraction_recipes import LISTING_HTML_ARTIFACT_IDS
 from app.core.shared.ids import stable_id
 from app.extraction.collectors._helpers import evidence, loads_jsonish, text_value
 from app.extraction.contracts import (
@@ -23,11 +24,23 @@ from app.extraction.contracts import (
 from app.extraction.documents import HtmlDocument
 from app.extraction.listing_records import (
     RecordBoundary,
+    RecordSignal,
     _link_identity,
+    _schema_wants_visual_signal,
     discover_listing_records,
+    record_key_attributes_for_schema,
+    record_signal_for_schema,
 )
 from app.extraction.listing import collect_ecommerce_listing
+from app.extraction.jobs import collect_job_listing
 from app.extraction.surfaces import ListingSchema, Surface, listing_schema
+from app.core.config.extraction_rules import (
+    JOB_LISTING_DETAIL_ROOT_MARKERS,
+    JOB_LISTING_HUB_TERMINAL_SUFFIXES,
+    JOB_LISTING_HUB_TITLE_PREFIXES,
+    JOB_LISTING_HUB_TITLE_SUFFIXES,
+    JOB_POSTING_PATH_MARKERS,
+)
 
 _ID_KEY = "@" + "id"
 _STRUCTURED_CONFIDENCE = CASCADE_STRUCTURED_LISTING_CONFIDENCE
@@ -58,7 +71,7 @@ def collect_structured_listing(
     schema = listing_schema(surface)
     if schema is None:
         return []
-    for artifact_id in ECOMMERCE_LISTING_HTML_ARTIFACT_IDS:
+    for artifact_id in LISTING_HTML_ARTIFACT_IDS:
         if not reader.exists(artifact_id):
             continue
         doc = reader.document_store.html(artifact_id)
@@ -83,34 +96,86 @@ def collect_dom_listing(
     listing. The tier *ordering* (this floor runs last, after structured and
     network) is owned by ``app.extraction.cascade``, not by this module.
     """
-    # DOM floor for commerce reuses the card collector, which carries the full
-    # title/price/image admissibility rules (badge skipping, utility-label
-    # rejection, market-locale URL restoration) the minimal generic floor lacks.
-    # TODO(job-listing slice): replace surface branch with schema-driven record
-    # signal so the DOM floor selects its record-mapper from the ListingSchema
-    # instead of an ``if surface is Surface.X`` check. The cascade seam
-    # (app.extraction.cascade) stays branch-free; this reuse is scoped to the
-    # commerce slice and owned by the DOM-floor module until jobs land.
-    if surface is Surface.ECOMMERCE_LISTING:
-        # Commerce defers its DOM floor entirely to the legacy card collector,
-        # which owns the full admissibility contract (single-record listings,
-        # badge skipping, utility-label rejection, market-locale URL restore).
-        # Returning its result verbatim keeps behaviour identical to the legacy
-        # ``_harvest_listing`` path when no structured / network source exists.
-        return list(collect_ecommerce_listing(bundle, reader))
+    # The DOM floor selects its record-mapper from the ``ListingSchema`` lens,
+    # not from a ``surface ==`` identity check: a schema whose record signals are
+    # *visual* (image/price — commerce) reuses the legacy card collector, which
+    # owns the full admissibility contract (single-record listings, badge
+    # skipping, utility-label rejection, market-locale URL restore). A non-visual
+    # schema (jobs) uses the schema-driven generic discovery so JS-rendered
+    # boards are covered with no image/price requirement. The cascade seam
+    # (app.extraction.cascade) stays branch-free; this capability switch is owned
+    # by the DOM-floor module.
     schema = listing_schema(surface)
     if schema is None:
         return []
-    for artifact_id in ECOMMERCE_LISTING_HTML_ARTIFACT_IDS:
+    if _schema_wants_visual_signal(schema):
+        # Commerce defers its DOM floor entirely to the legacy card collector.
+        # Returning its result verbatim keeps behaviour identical to the legacy
+        # ``_harvest_listing`` path when no structured / network source exists.
+        return list(collect_ecommerce_listing(bundle, reader))
+    return _schema_dom_listing(bundle, reader, schema=schema)
+
+
+def _schema_dom_listing(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    *,
+    schema: ListingSchema,
+) -> list[Evidence]:
+    """Generic, schema-driven DOM floor for non-visual (job) listings.
+
+    Runs the selector-free ``discover_listing_records`` with the schema's record
+    signal / off-host allowance / record-key attributes across the shared HTML
+    artifact set (so a JS-rendered board is covered), emitting title + url
+    evidence per record. When the repetition-gated generic floor finds nothing
+    (a single-posting board, or a shape only the legacy CSS cards match), it
+    falls back to the legacy ``collect_job_listing`` collector so behaviour is at
+    least as strong as today's path.
+    """
+    record_signal = record_signal_for_schema(schema)
+    key_attributes = record_key_attributes_for_schema(schema)
+    for artifact_id in LISTING_HTML_ARTIFACT_IDS:
         if not reader.exists(artifact_id):
             continue
         doc = reader.document_store.html(artifact_id)
         rows = _dom_floor_evidence(
-            bundle, doc, page_url=bundle.final_url, schema=schema
+            bundle,
+            doc,
+            page_url=bundle.final_url,
+            schema=schema,
+            record_signal=record_signal,
+            key_attributes=key_attributes,
         )
         if rows:
             return rows
-    return []
+    return list(collect_job_listing(bundle, reader))
+
+
+def _is_hub_or_nav_title(title: str, url: str) -> bool:
+    """True when a candidate is a listing-of-listings hub or nav link, not a job.
+
+    Rejects category/hub chips ("Remote Jobs", "Engineering Careers") and hub
+    URLs (``/engineering-jobs``, ``/careers``) so the job floor keeps only real
+    postings. A URL carrying a positive posting-path marker (``/careers/123``,
+    ``/positions/123``) is always a real posting and is never rejected. All
+    markers are config tables (``app.core.config.extraction_rules``), never
+    inline literals.
+    """
+    normalized = " ".join(str(title or "").split()).casefold()
+    path = urlparse(url).path.casefold().rstrip("/")
+    terminal = path.rsplit("/", 1)[-1] if path else ""
+    # Positive posting-path markers win outright: a real posting URL is a job.
+    if any(marker in f"{path}/" for marker in JOB_POSTING_PATH_MARKERS):
+        return False
+    if normalized.endswith(JOB_LISTING_HUB_TITLE_SUFFIXES):
+        return True
+    if normalized.startswith(JOB_LISTING_HUB_TITLE_PREFIXES) and (
+        len(re.findall(r"\w+", normalized)) <= 3
+    ):
+        return True
+    if terminal.endswith(JOB_LISTING_HUB_TERMINAL_SUFFIXES):
+        return True
+    return bool(terminal) and terminal in JOB_LISTING_DETAIL_ROOT_MARKERS
 
 
 def _dom_floor_evidence(
@@ -119,14 +184,22 @@ def _dom_floor_evidence(
     *,
     page_url: str,
     schema: ListingSchema,
+    record_signal: RecordSignal | None = None,
+    key_attributes: tuple[str, ...] = (),
 ) -> list[Evidence]:
-    boundaries = discover_listing_records(doc, page_url=page_url)
+    boundaries = discover_listing_records(
+        doc,
+        page_url=page_url,
+        record_signal=record_signal,
+        off_host_allowed=schema.off_host_records_allowed,
+        record_key_attributes=key_attributes,
+    )
     if not boundaries:
         return []
     rows: list[Evidence] = []
     for boundary in boundaries:
         title, path = _boundary_title(boundary, page_url=page_url)
-        if not title:
+        if not title or _is_hub_or_nav_title(title, boundary.url):
             return []
         subject_id = stable_id(
             "subject",
@@ -135,18 +208,22 @@ def _dom_floor_evidence(
             schema.root_entity,
             boundary.index,
         )
-        rows.extend(
-            (
-                _dom_row(
-                    bundle,
-                    doc.artifact_id,
-                    subject_id,
-                    schema.title_fact,
-                    title,
-                    path,
-                    schema=schema,
-                    url=boundary.url,
-                ),
+        rows.append(
+            _dom_row(
+                bundle,
+                doc.artifact_id,
+                subject_id,
+                schema.title_fact,
+                title,
+                path,
+                schema=schema,
+                url=boundary.url,
+            )
+        )
+        # Anchor-less JS-onclick cards carry no detail URL; emit the url fact
+        # only when the boundary resolved to a real link (anchor grids).
+        if boundary.url:
+            rows.append(
                 _dom_row(
                     bundle,
                     doc.artifact_id,
@@ -156,9 +233,8 @@ def _dom_floor_evidence(
                     boundary.node.dom_path(),
                     schema=schema,
                     url=boundary.url,
-                ),
+                )
             )
-        )
     return rows
 
 
@@ -170,6 +246,16 @@ def _boundary_title(boundary: RecordBoundary, *, page_url: str) -> tuple[str, st
         value = text_value(anchor.attribute("title") or anchor.content_text())
         if value and len(value) >= 2:
             return value, anchor.dom_path()
+    # Anchor-less (JS-onclick) card: no matching detail ``<a href>`` inside the
+    # record, so the title comes from the most prominent heading text in the
+    # record subtree. Runs whenever the anchor scan produced nothing (an
+    # anchor-less card still carries a recovered detail URL on the boundary).
+    for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        heading = boundary.node.css_first(tag)
+        if heading is not None:
+            value = text_value(heading.content_text())
+            if value and len(value) >= 2:
+                return value, heading.dom_path()
     return "", ""
 
 
@@ -218,8 +304,18 @@ def _structured_evidence(
 ) -> list[Evidence] | None:
     # A singleton is admissible only on this structured path. The JSON-LD or
     # microdata join must corroborate the same boundary; DOM-only discovery
-    # remains repetition-gated.
-    boundaries = discover_listing_records(doc, page_url=page_url, allow_singleton=True)
+    # remains repetition-gated. Discovery runs through the SAME schema-driven
+    # seam as the DOM floor so a job listing's non-visual record signal,
+    # off-host allowance, and record-key attributes apply here too (a lone
+    # off-host Lever anchor corroborated by JobPosting JSON-LD must ground).
+    boundaries = discover_listing_records(
+        doc,
+        page_url=page_url,
+        allow_singleton=True,
+        record_signal=record_signal_for_schema(schema),
+        off_host_allowed=schema.off_host_records_allowed,
+        record_key_attributes=record_key_attributes_for_schema(schema),
+    )
     if not boundaries:
         return None
     grounded = ground_boundaries(

@@ -15,6 +15,8 @@ from app.core.records.divergence import (
     compare_records_to_projection,
 )
 from app.extraction.contracts import (
+    ArtifactReader,
+    CaptureBundle,
     CollectorOutcome,
     CommerceDetailProjection,
     CommerceListingProjection,
@@ -40,8 +42,12 @@ from app.extraction.jobs import (
     resolve_job_detail,
     resolve_job_listing,
     wrong_surface_findings_for_job_detail,
+    wrong_surface_findings_for_job_listing,
 )
-from app.core.config.cascade import CASCADE_ECOMMERCE_LISTING_ENABLED
+from app.core.config.cascade import (
+    CASCADE_ECOMMERCE_LISTING_ENABLED,
+    CASCADE_JOB_LISTING_ENABLED,
+)
 from app.extraction.cascade import run_listing_cascade
 from app.extraction.listing import (
     collect_ecommerce_listing,
@@ -154,27 +160,41 @@ def _request_locale_hint(request: ExtractionRequest) -> str | None:
     return context.locale or context.country
 
 
-def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
-    schema = (
-        listing_schema(Surface.ECOMMERCE_LISTING)
-        if CASCADE_ECOMMERCE_LISTING_ENABLED
-        else None
-    )
+def _harvest_listing_surface(
+    request: ExtractionRequest,
+    surface: Surface,
+    *,
+    enabled: bool,
+    legacy_collector: Callable[[CaptureBundle, ArtifactReader], object],
+) -> HarvestResult:
+    """Shared listing harvest: cascade when enabled, legacy collector otherwise.
+
+    Flag-ON path routes the surface through the SAME deterministic cascade
+    (structured -> network -> DOM) and carries the per-floor diagnostics
+    (including skipped/no_match floors) through verbatim. Flag-OFF path defers
+    to the surface's legacy card collector unchanged. ``enabled`` is resolved by
+    the caller from the module-level flag so tests can monkeypatch it.
+    """
+    schema = listing_schema(surface) if enabled else None
     if schema is not None:
-        # Flag-ON cascade path: carry the cascade's per-floor diagnostics
-        # (structured -> network -> DOM, including skipped/no_match floors)
-        # through verbatim instead of re-deriving outcomes from the winning
-        # evidence alone.
         result = run_listing_cascade(request, request.artifact_reader, schema)
         return _harvest_from_rows(
-            Surface.ECOMMERCE_LISTING,
+            surface,
             result.evidence,
             collector_outcomes=result.collector_outcomes,
         )
-    # Flag-OFF legacy path: unchanged from today's behaviour.
     return _harvest_from_rows(
+        surface,
+        tuple(legacy_collector(request.capture, request.artifact_reader)),
+    )
+
+
+def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
+    return _harvest_listing_surface(
+        request,
         Surface.ECOMMERCE_LISTING,
-        tuple(collect_ecommerce_listing(request.capture, request.artifact_reader)),
+        enabled=CASCADE_ECOMMERCE_LISTING_ENABLED,
+        legacy_collector=collect_ecommerce_listing,
     )
 
 
@@ -186,9 +206,11 @@ def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
 
 
 def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:
-    return _harvest_from_rows(
+    return _harvest_listing_surface(
+        request,
         Surface.JOB_LISTING,
-        tuple(collect_job_listing(request.capture, request.artifact_reader)),
+        enabled=CASCADE_JOB_LISTING_ENABLED,
+        legacy_collector=collect_job_listing,
     )
 
 
@@ -370,11 +392,16 @@ def _resolve_job_listing_adapter(
     selected_subjects = set(target.root_entity_ids)
     rows = [row for row in harvest.evidence if row.subject_id in selected_subjects]
     decisions = tuple(resolve_job_listing(rows))
-    findings = _incomplete_record_findings(
-        target.root_entity_ids,
-        decisions,
-        required={"job.title", "job.url"},
-        rule_id="INCOMPLETE_JOB_LISTING_CARD",
+    findings = (
+        *wrong_surface_findings_for_job_listing(
+            request.capture, request.artifact_reader
+        ),
+        *_incomplete_record_findings(
+            target.root_entity_ids,
+            decisions,
+            required={"job.title", "job.url"},
+            rule_id="INCOMPLETE_JOB_LISTING_CARD",
+        ),
     )
     projection, selected = job_listing_projection(
         decisions, harvest.evidence, max_records=request.max_records

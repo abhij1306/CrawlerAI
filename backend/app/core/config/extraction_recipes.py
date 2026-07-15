@@ -31,11 +31,17 @@ ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS = frozenset({"article", "li"})
 ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID = "rendered_listing_fragments"
 ECOMMERCE_LISTING_VISUAL_ARTIFACT_ID = "listing_visual_elements"
 ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID = "listing_visual_html"
-ECOMMERCE_LISTING_HTML_ARTIFACT_IDS = (
+# Shared HTML-artifact set every listing surface reads: the base rendered
+# document plus the rendered listing fragments and visual-element HTML captured
+# for JS-rendered boards. Commerce and jobs both read this so a JS-rendered
+# listing (whose records only appear after render) is covered on both surfaces.
+LISTING_HTML_ARTIFACT_IDS = (
     "html",
     ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
     ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
 )
+# Back-compat alias: existing commerce imports keep working unchanged.
+ECOMMERCE_LISTING_HTML_ARTIFACT_IDS = LISTING_HTML_ARTIFACT_IDS
 
 ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "[data-testid*='title' i]",

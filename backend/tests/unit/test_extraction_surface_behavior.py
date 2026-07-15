@@ -153,6 +153,89 @@ def test_job_listing_greenhouse_table_rows_materialize() -> None:
     assert result.records[0]["location"] == "Remote"
 
 
+def test_job_listing_rendered_fragment_does_not_fail_detection() -> None:
+    # The top-level html is an empty JS shell; the board only materializes in
+    # the rendered listing-fragment artifact. Slice 2 routes job listings
+    # through the shared cascade reading the full listing artifact set, so this
+    # must yield records rather than the ``listing_detection_failed`` verdict.
+    from app.core.config.extraction_recipes import (
+        ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+    )
+    from app.persistence.publish.verdict import VERDICT_LISTING_FAILED
+
+    fragment = """
+    <div class="grid">
+      <div class="job"><a href="/careers/positions/301">Platform Engineer</a>
+        <span class="location">Remote - US</span></div>
+      <div class="job"><a href="/careers/positions/302">Product Designer</a>
+        <span class="location">Austin</span></div>
+    </div>
+    """
+    result = _extract(
+        "job_listing",
+        "<html><body><div id='root'></div></body></html>",
+        "https://jobs.test/careers",
+        max_records=5,
+        artifacts={ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID: [fragment]},
+    )
+    assert result.verdict != VERDICT_LISTING_FAILED
+    assert {row["title"] for row in result.records} == {
+        "Platform Engineer",
+        "Product Designer",
+    }
+
+
+def test_job_listing_anchorless_onclick_cards_publish_records() -> None:
+    # Anchor-less JS cards (no <a href>) whose onclick names the detail URL must
+    # publish real job records end-to-end: the recovered url satisfies the
+    # adapter's required {job.title, job.url}, so the verdict is success rather
+    # than an INCOMPLETE_JOB_LISTING_CARD empty.
+    result = _extract(
+        "job_listing",
+        """
+        <ul class="list">
+          <li class="card" data-job-id="901" onclick="location.href='/careers/positions/901'">
+            <h3>Backend Engineer</h3><p>Remote - US</p></li>
+          <li class="card" data-job-id="902" onclick="location.href='/careers/positions/902'">
+            <h3>Frontend Engineer</h3><p>New York</p></li>
+          <li class="card" data-job-id="903" onclick="location.href='/careers/positions/903'">
+            <h3>Data Scientist role</h3><p>Berlin</p></li>
+        </ul>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+    assert result.verdict == "success"
+    assert {row["title"] for row in result.records} == {
+        "Backend Engineer",
+        "Frontend Engineer",
+        "Data Scientist role",
+    }
+    assert {row["url"] for row in result.records} == {
+        "https://jobs.test/careers/positions/901",
+        "https://jobs.test/careers/positions/902",
+        "https://jobs.test/careers/positions/903",
+    }
+
+
+def test_job_listing_department_tiles_do_not_publish() -> None:
+    # id-only department tiles with no navigation affordance are not postings:
+    # the job floor must not fabricate url-less records.
+    result = _extract(
+        "job_listing",
+        """
+        <section class="departments">
+          <div id="dept-eng" data-testid="dept"><h3>Engineering</h3><p>Many open roles</p></div>
+          <div id="dept-design" data-testid="dept"><h3>Design</h3><p>Many open roles</p></div>
+          <div id="dept-sales" data-testid="dept"><h3>Sales</h3><p>Many open roles</p></div>
+        </section>
+        """,
+        "https://jobs.test/careers",
+        max_records=5,
+    )
+    assert list(result.records) == []
+
+
 def test_parent_mixed_variant_prices_publish_explicit_range_semantics() -> None:
     result = _extract(
         "ecommerce_detail",

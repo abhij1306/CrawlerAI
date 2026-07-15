@@ -36,16 +36,36 @@ from urllib.parse import unquote, urljoin, urlparse
 
 from app.core.config.cascade import (
     CASCADE_LISTING_MIN_REPEATED_RECORDS,
+    CASCADE_LISTING_ONCLICK_URL_PATTERN,
     CASCADE_LISTING_PRICE_SIGNAL_PATTERN,
+    CASCADE_LISTING_RECORD_KEY_ATTRIBUTES,
+    CASCADE_LISTING_RECORD_MIN_TEXT_TOKENS,
+    CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES,
+    CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
+    CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES,
 )
 from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import listing_url_is_structural
 from app.extraction.documents import HtmlDocument, HtmlNode
+from app.extraction.surfaces import ListingSchema
 
 # The default (commerce) price signal: a currency symbol or code in the
 # container's text marks a product record apart from a bare nav link. The
 # pattern lives in ``app.core.config.cascade`` (config owns tunable patterns).
 _PRICE_SIGNAL = re.compile(CASCADE_LISTING_PRICE_SIGNAL_PATTERN, re.I)
+_ONCLICK_URL = re.compile(CASCADE_LISTING_ONCLICK_URL_PATTERN)
+
+
+def _has_min_text_tokens(node: HtmlNode) -> bool:
+    """True when a node's text carries at least the configured word floor.
+
+    Shared token-count floor used by both the non-visual (job) record signal
+    and the anchor-less richness check, so the threshold is applied once.
+    """
+    return (
+        len(re.findall(r"\w+", node.content_text()))
+        >= CASCADE_LISTING_RECORD_MIN_TEXT_TOKENS
+    )
 
 
 def _is_visually_hidden(node: HtmlNode) -> bool:
@@ -77,6 +97,57 @@ def _is_content_rich(node: HtmlNode) -> bool:
     if _PRICE_SIGNAL.search(text):
         return True
     return bool(len(node.css("a[href]")) == 1 and len(re.findall(r"\w+", text)) >= 3)
+
+
+def _is_text_record(node: HtmlNode) -> bool:
+    """A non-visual (job) record signal: a text-bearing detail link, no price/image.
+
+    De-commerces discovery: a job card has no ``<img>``/price but does carry a
+    detail link (already filtered to a real posting URL by ``_product_anchors``)
+    and enough descriptive text (title + location/company) to be a real posting
+    rather than a bare nav chip. Site-independent — never consults class names.
+    """
+    if not node.css("a[href]"):
+        return False
+    return _has_min_text_tokens(node)
+
+
+def _schema_wants_visual_signal(schema: ListingSchema) -> bool:
+    """True when a schema's record signals are visual (image/price) — commerce.
+
+    Declarative: reads ``ListingSchema.record_signal_facts`` and asks whether any
+    is an image/price fact (suffix table in config). Commerce
+    (``asset.image_url`` / ``offer.price``) is visual; jobs
+    (``job.location`` / ``job.company`` / ``job.apply_url``) are not.
+    """
+    return any(
+        fact.endswith(CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES)
+        for fact in schema.record_signal_facts
+    )
+
+
+def record_signal_for_schema(schema: ListingSchema | None) -> RecordSignal | None:
+    """Build the record-signal callable a schema implies, or ``None`` for default.
+
+    Returns ``None`` for the commerce (visual) schema so discovery keeps its
+    default image-or-price ``_is_content_rich`` signal; returns the non-visual
+    text-and-detail-link signal for job listings. This is the single schema →
+    signal seam so no caller re-forks on ``surface ==``.
+    """
+    if schema is None or _schema_wants_visual_signal(schema):
+        return None
+    return _is_text_record
+
+
+def record_key_attributes_for_schema(schema: ListingSchema | None) -> tuple[str, ...]:
+    """Record-local identity attributes for anchor-less discovery, by schema.
+
+    Only non-visual (job) schemas admit anchor-less JS-onclick cards, so commerce
+    gets an empty tuple and its anchor-gated behaviour is unchanged.
+    """
+    if schema is None or _schema_wants_visual_signal(schema):
+        return ()
+    return CASCADE_LISTING_RECORD_KEY_ATTRIBUTES
 
 
 def _link_identity(url: str) -> str:
@@ -144,6 +215,8 @@ def discover_listing_records(
     page_url: str,
     allow_singleton: bool = False,
     record_signal: RecordSignal | None = None,
+    off_host_allowed: bool = False,
+    record_key_attributes: tuple[str, ...] = (),
 ) -> tuple[RecordBoundary, ...]:
     """Return the page's product records by structural repetition.
 
@@ -153,6 +226,12 @@ def discover_listing_records(
     ``record_signal`` decides whether a candidate container is content-rich
     enough to be a record. It defaults to the commerce image-or-price signal;
     a later schema-driven slice supplies a different one for job listings.
+
+    ``off_host_allowed`` (job listings) lets the singleton path accept a
+    consistent foreign host (an off-host ATS apply link); commerce leaves it
+    False so a singleton must be same-site. ``record_key_attributes`` (job
+    listings) admits anchor-less JS-onclick cards keyed on a stable data-*/id
+    token; empty for commerce so anchor-gated behaviour is unchanged.
     """
     signal = record_signal or _is_content_rich
     # The word-count text-card fallback below is a commerce-era relaxation that
@@ -161,7 +240,11 @@ def discover_listing_records(
     allow_text_card_fallback = record_signal is None
     anchors = _product_anchors(doc, page_url=page_url)
     if not anchors:
-        return ()
+        return _anchorless_records(
+            doc,
+            page_url=page_url,
+            record_key_attributes=record_key_attributes,
+        )
 
     # Top-down grid detection. For every product anchor, register the pair
     # (parent, the parent's direct child on the path to the anchor). The record
@@ -191,6 +274,7 @@ def discover_listing_records(
         allow_singleton=allow_singleton,
         record_signal=signal,
         allow_text_card_fallback=allow_text_card_fallback,
+        off_host_allowed=off_host_allowed,
     )
     if not kept:
         return ()
@@ -293,6 +377,7 @@ def _best_grid_children(
     allow_singleton: bool = False,
     record_signal: RecordSignal,
     allow_text_card_fallback: bool = True,
+    off_host_allowed: bool = False,
 ) -> list[_Container]:
     """Pick the grid whose direct children are the product record set.
 
@@ -321,11 +406,18 @@ def _best_grid_children(
         scored.append((len(rich), homogeneity, rich))
 
     if not scored and allow_singleton:
+        # A structured-corroborated singleton must still anchor to a consistent
+        # host. Commerce (off_host_allowed=False) keeps the strict same-site
+        # requirement; job listings (off_host_allowed=True) accept a foreign ATS
+        # host (Greenhouse/Lever/Bullhorn apply link) because a real posting
+        # often links off-site. Threaded from the schema's off_host flag — not a
+        # ``surface ==`` branch.
         singletons = [
             child
             for grid in grids.values()
             for child in grid.children()
-            if record_signal(child.node) and same_site(page_url, child.url)
+            if record_signal(child.node)
+            and (off_host_allowed or same_site(page_url, child.url))
         ]
         singletons.sort(key=lambda item: item.order)
         return singletons[:1]
@@ -345,6 +437,113 @@ def _consistent_record_host(children: list[_Container], *, page_url: str) -> boo
     page_host = (urlparse(page_url).hostname or "").casefold()
     hosts = {(urlparse(child.url).hostname or "").casefold() for child in children}
     return bool(hosts) and (hosts == {page_host} or len(hosts) == 1)
+
+
+def _record_local_key(node: HtmlNode, key_attributes: tuple[str, ...]) -> str:
+    """Stable per-record identity from a data-*/id token, or "" when absent.
+
+    Used only for anchor-less discovery (JS-onclick cards with no ``<a href>``).
+    The attribute list is schema/config-supplied so this never hardcodes a
+    site-specific attribute.
+    """
+    for attribute in key_attributes:
+        value = (node.attribute(attribute) or "").strip()
+        if value:
+            return f"{attribute}={value.casefold()}"
+    return ""
+
+
+def _recover_record_url(node: HtmlNode, *, page_url: str) -> str:
+    """Recover an anchor-less card's detail URL from its navigation affordance.
+
+    An anchor-less JS card navigates via a handler or a data-* URL payload
+    rather than an ``<a href>``. This recovers that target so the card can
+    publish a real detail URL: a direct URL attribute (``data-href`` etc.) or a
+    quoted path/URL embedded in an ``onclick`` handler, on the card itself or on
+    a descendant. Returns an absolute URL, or "" when no navigation target
+    exists — in which case the card is NOT a record (it is a bare tile). Never
+    consults class names or per-site routes.
+    """
+    candidates = (node, *node.css("*"))
+    for candidate in candidates:
+        for attribute in CASCADE_LISTING_RECORD_URL_ATTRIBUTES:
+            value = (candidate.attribute(attribute) or "").strip()
+            if value:
+                return urljoin(page_url, value)
+    for candidate in candidates:
+        for attribute in CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES:
+            handler = candidate.attribute(attribute) or ""
+            match = _ONCLICK_URL.search(handler)
+            if match:
+                return urljoin(page_url, match.group(1))
+    return ""
+
+
+def _anchorless_records(
+    doc: HtmlDocument,
+    *,
+    page_url: str,
+    record_key_attributes: tuple[str, ...],
+) -> tuple[RecordBoundary, ...]:
+    """Admit repeated anchor-less JS-onclick cards keyed on a record-local token.
+
+    Only runs when no ``<a href>`` product anchor was found AND the schema
+    supplies ``record_key_attributes`` (jobs). A card qualifies only when a real
+    detail URL can be recovered from its navigation affordance (a data-* URL
+    payload or an ``onclick`` handler target) AND that URL is not a structural
+    hub/category link — a bare id/data-testid tile with no navigation target (a
+    department/category tile) is NOT a record and is dropped. The surviving
+    cards must share a parent, carry a distinct record-local key, repeat at
+    least ``_MIN_REPEATED_RECORDS`` times, be text-rich, and be structurally
+    homogeneous. Commerce passes an empty attribute tuple, so this path is inert
+    for commerce and cannot destabilise its anchor grids.
+    """
+    if not record_key_attributes:
+        return ()
+    grids: dict[int, list[_Container]] = defaultdict(list)
+    seen_keys: set[str] = set()
+    order = 0
+    for node in doc.css("*"):
+        key = _record_local_key(node, record_key_attributes)
+        if not key or key in seen_keys or _is_visually_hidden(node):
+            continue
+        parent = node.parent()
+        if parent is None or parent.tag() in {"html", "head", "body"}:
+            continue
+        if any(
+            ancestor.tag() in {"header", "footer", "nav"}
+            for ancestor in node.ancestors()
+        ):
+            continue
+        # A record must expose a recoverable, non-structural detail URL. A tile
+        # with only a generic id and no navigation affordance is not a posting.
+        url = _recover_record_url(node, page_url=page_url)
+        if not url or listing_url_is_structural(url):
+            continue
+        seen_keys.add(key)
+        grids[parent.identity()].append(
+            _Container(node=node, url=url, identity=_link_identity(url), order=order)
+        )
+        order += 1
+
+    best: list[_Container] = []
+    for members in grids.values():
+        rich = [item for item in members if _has_min_text_tokens(item.node)]
+        if len(rich) < _MIN_REPEATED_RECORDS:
+            continue
+        if _homogeneity_score(rich) < _MIN_REPEATED_RECORDS:
+            continue
+        if len(rich) > len(best):
+            best = rich
+    if not best:
+        return ()
+    best.sort(key=lambda item: item.order)
+    return tuple(
+        RecordBoundary(
+            node=item.node, url=item.url, identity=item.identity, index=index
+        )
+        for index, item in enumerate(best)
+    )
 
 
 def _homogeneity_score(children: list[_Container]) -> int:

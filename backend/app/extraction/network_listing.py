@@ -111,7 +111,10 @@ def _record_fields(
             continue
         if fact_type == schema.url_fact:
             text = urljoin(page_url, text)
-            if not _same_host(page_url, text):
+            # Commerce keeps its URLs same-host; a schema that allows off-host
+            # records (jobs -> off-host ATS apply links) admits a direct foreign
+            # URL. Schema-driven, never a surface-string check.
+            if not schema.off_host_records_allowed and not _same_host(page_url, text):
                 continue
         fields[fact_type] = text
     if schema.url_fact not in fields:

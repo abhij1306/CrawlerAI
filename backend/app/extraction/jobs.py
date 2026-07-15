@@ -15,6 +15,7 @@ from app.core.config.extraction_recipes import (
     JOB_LISTING_LOCATION_SELECTORS,
     JOB_LISTING_TITLE_SELECTORS,
     JOB_LISTING_URL_SELECTORS,
+    LISTING_HTML_ARTIFACT_IDS,
 )
 from app.extraction.collectors._helpers import (
     evidence,
@@ -38,24 +39,64 @@ from app.core.shared.ids import stable_id
 from app.extraction.surfaces import Surface
 
 
-def wrong_surface_findings_for_job_detail(
+def _wrong_surface_findings(
     bundle: CaptureBundle,
     reader: ArtifactReader,
+    *,
+    finding_suffix: str,
+    message: str,
 ) -> tuple[Finding, ...]:
+    """Blocking wrong-surface finding when a job page carries product schema.
+
+    Shared by the job_detail and job_listing guards: when the page carries
+    product schema and no JobPosting schema, the surface was mis-selected as a
+    job page over a commerce page. ``finding_suffix`` keeps the two callers'
+    finding ids distinct; ``message`` names the mis-selected surface.
+    """
     doc = reader.document_store.html("html")
     if not _has_wrong_surface_product_schema(doc):
         return ()
     return (
         Finding(
-            finding_id=stable_id("finding", bundle.bundle_id, "wrong_surface_content"),
+            finding_id=stable_id("finding", bundle.bundle_id, finding_suffix),
             rule_id="WRONG_SURFACE_CONTENT",
             severity="high",
             scope="page",
             entity_ids=(),
             evidence_ids=(),
-            message="Selected job_detail but page contains product schema.",
+            message=message,
             blocking=True,
         ),
+    )
+
+
+def wrong_surface_findings_for_job_detail(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+) -> tuple[Finding, ...]:
+    return _wrong_surface_findings(
+        bundle,
+        reader,
+        finding_suffix="wrong_surface_content",
+        message="Selected job_detail but page contains product schema.",
+    )
+
+
+def wrong_surface_findings_for_job_listing(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+) -> tuple[Finding, ...]:
+    """Reject a job_listing page whose structured content is a product listing.
+
+    Mirrors ``wrong_surface_findings_for_job_detail``: when the page carries
+    product schema and no JobPosting schema, it is a commerce listing selected
+    as jobs — a blocking wrong-surface finding, not an empty job listing.
+    """
+    return _wrong_surface_findings(
+        bundle,
+        reader,
+        finding_suffix="wrong_surface_content_listing",
+        message="Selected job_listing but page contains product schema.",
     )
 
 
@@ -76,8 +117,20 @@ def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Ev
 def collect_job_listing(
     bundle: CaptureBundle, reader: ArtifactReader
 ) -> list[Evidence]:
-    doc = reader.document_store.html("html")
-    return _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
+    # Read the shared LISTING HTML-artifact set (base document plus rendered
+    # listing fragments / visual-element HTML) so JS-rendered job boards, whose
+    # cards only appear after render, are covered — not just the raw "html".
+    # The first artifact that yields cards wins, matching the DOM-floor's
+    # first-non-empty-artifact contract.
+    rows: list[Evidence] = []
+    for artifact_id in LISTING_HTML_ARTIFACT_IDS:
+        if not reader.exists(artifact_id):
+            continue
+        doc = reader.document_store.html(artifact_id)
+        rows = _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
+        if rows:
+            return rows
+    return rows
 
 
 def _collect_job_listing_evidence(
@@ -104,6 +157,7 @@ def _collect_job_listing_evidence(
                 subject_id=subject_id,
                 card_selector=selector,
                 card_index=index,
+                artifact_id=doc.artifact_id,
             )
             rows.extend(card_rows)
     return rows
@@ -117,6 +171,7 @@ def _job_listing_card_evidence(
     subject_id: str,
     card_selector: str,
     card_index: int,
+    artifact_id: str = "html",
 ) -> list[Evidence]:
     title = _first_node_text(card, JOB_LISTING_TITLE_SELECTORS)
     url = _first_node_attr(card, JOB_LISTING_URL_SELECTORS, "href")
@@ -135,7 +190,7 @@ def _job_listing_card_evidence(
         rows.append(
             _job_evidence(
                 bundle,
-                artifact_id="html",
+                artifact_id=artifact_id,
                 collector_id="job_listing_css",
                 fact_type=fact_type,
                 value=value,
