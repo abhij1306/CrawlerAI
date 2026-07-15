@@ -41,6 +41,8 @@ from app.extraction.jobs import (
     resolve_job_listing,
     wrong_surface_findings_for_job_detail,
 )
+from app.core.config.cascade import CASCADE_ECOMMERCE_LISTING_ENABLED
+from app.extraction.cascade import run_listing_cascade
 from app.extraction.listing import (
     collect_ecommerce_listing,
     resolve_ecommerce_listing,
@@ -65,7 +67,7 @@ from app.extraction.result_building import (
     evidence_dispositions,
     projection_field_states,
 )
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
 from app.extraction.targeting import (
     scoped_graph,
     select_commerce_target,
@@ -153,6 +155,23 @@ def _request_locale_hint(request: ExtractionRequest) -> str | None:
 
 
 def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
+    schema = (
+        listing_schema(Surface.ECOMMERCE_LISTING)
+        if CASCADE_ECOMMERCE_LISTING_ENABLED
+        else None
+    )
+    if schema is not None:
+        # Flag-ON cascade path: carry the cascade's per-floor diagnostics
+        # (structured -> network -> DOM, including skipped/no_match floors)
+        # through verbatim instead of re-deriving outcomes from the winning
+        # evidence alone.
+        result = run_listing_cascade(request, request.artifact_reader, schema)
+        return _harvest_from_rows(
+            Surface.ECOMMERCE_LISTING,
+            result.evidence,
+            collector_outcomes=result.collector_outcomes,
+        )
+    # Flag-OFF legacy path: unchanged from today's behaviour.
     return _harvest_from_rows(
         Surface.ECOMMERCE_LISTING,
         tuple(collect_ecommerce_listing(request.capture, request.artifact_reader)),
@@ -173,21 +192,28 @@ def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:
     )
 
 
-def _harvest_from_rows(surface: Surface, rows: tuple[Evidence, ...]) -> HarvestResult:
-    counts: dict[str, int] = {}
-    for row in rows:
-        counts[row.collector_id] = counts.get(row.collector_id, 0) + 1
-    return HarvestResult(
-        surface=surface,
-        evidence=rows,
-        collector_outcomes=tuple(
+def _harvest_from_rows(
+    surface: Surface,
+    rows: tuple[Evidence, ...],
+    *,
+    collector_outcomes: tuple[CollectorOutcome, ...] | None = None,
+) -> HarvestResult:
+    if collector_outcomes is None:
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row.collector_id] = counts.get(row.collector_id, 0) + 1
+        collector_outcomes = tuple(
             CollectorOutcome(
                 collector_id=collector_id,
                 outcome="produced_evidence",
                 evidence_count=count,
             )
             for collector_id, count in sorted(counts.items())
-        ),
+        )
+    return HarvestResult(
+        surface=surface,
+        evidence=rows,
+        collector_outcomes=collector_outcomes,
         admitted_source_objects=len({row.subject_id for row in rows}),
     )
 
