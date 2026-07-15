@@ -5,6 +5,7 @@ from typing import Any, Literal, Mapping, Protocol, get_args, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
 from app.core.config import field_mappings
+from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
@@ -489,9 +490,13 @@ class CapabilityRequest(FrozenModel):
         "empty_extraction",
         "explicit_variants_missing",
         "http_shell",
+        "listing_boundaries_missing",
+        "network_floor_missing",
     ]
     required_artifacts: tuple[str, ...] = ()
-    max_attempts: int = Field(default=1, ge=1, le=1)
+    max_attempts: int = Field(
+        default=1, ge=1, le=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    )
 
 
 RetryRequest = CapabilityRequest

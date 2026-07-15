@@ -10,7 +10,6 @@ from ._common import *
 from ._common import _STATIC_EXPORTS
 from ._images import *
 from ._detail import *
-from ._jobs import *
 from ._detail_sections import *
 from ._variants import *
 from ._variant_options import *

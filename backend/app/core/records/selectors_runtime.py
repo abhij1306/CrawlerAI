@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.extraction_rules import (
+from app.core.config.selector_runtime import (
     SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings

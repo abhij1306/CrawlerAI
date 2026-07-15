@@ -12,6 +12,29 @@ from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 logger = logging.getLogger(__name__)
 
+_NON_VISIBLE_TAGS = {"script", "style", "noscript"}
+
+
+def _collapsed_visible_text(root: LexborNode) -> str:
+    # Whitespace-collapsed text under ``root``, skipping text inside
+    # script/style/noscript so CSS/JS source never leaks into scraped text.
+    pieces: list[str] = []
+    for node in root.traverse(include_text=True):
+        if not node.is_text_node:
+            continue
+        parent = node.parent
+        hidden = False
+        while parent is not None:
+            if str(parent.tag or "").lower() in _NON_VISIBLE_TAGS:
+                hidden = True
+                break
+            parent = parent.parent
+        if not hidden:
+            text = str(node.text() or "").strip()
+            if text:
+                pieces.append(text)
+    return " ".join(" ".join(pieces).split())
+
 
 @dataclass(frozen=True)
 class HtmlNode:
@@ -50,6 +73,22 @@ class HtmlNode:
             child = child.next
         return " ".join(" ".join(pieces).split())
 
+    def content_text(self) -> str:
+        # Like text(), but excludes text inside script/style/noscript. Inline
+        # <style>/<script> blocks otherwise leak CSS/JS source (e.g. a selector
+        # string) into scraped titles. Shares the walk with visible_text().
+        return _collapsed_visible_text(self.node)
+
+    def child_elements(self) -> tuple[HtmlNode, ...]:
+        # Direct element children (no text/comment nodes), in document order.
+        return tuple(
+            HtmlNode(self.artifact_id, child)
+            for child in self.node.iter()
+            if not child.is_text_node
+            and str(child.tag or "")
+            and not str(child.tag).startswith("-")
+        )
+
     def tag(self) -> str:
         return str(self.node.tag or "").lower()
 
@@ -85,13 +124,14 @@ class HtmlNode:
             parent = current.parent
             index = 1
             if parent is not None:
+                # Selectolax returns a fresh wrapper per access, so nodes must be
+                # compared by mem_id (address), never `is`. parent.iter() yields
+                # the direct children in document order.
+                current_id = int(current.mem_id)
                 for sibling in parent.iter():
-                    if sibling is current:
+                    if int(sibling.mem_id) == current_id:
                         break
-                    if (
-                        sibling.parent is parent
-                        and str(sibling.tag or "").lower() == tag
-                    ):
+                    if str(sibling.tag or "").lower() == tag:
                         index += 1
             parts.append(f"{tag}[{index}]")
             current = parent
@@ -186,22 +226,7 @@ class HtmlDocument:
         root = self._parser.body or self._parser.root
         if root is None:
             return ""
-        pieces: list[str] = []
-        for node in root.traverse(include_text=True):
-            if not node.is_text_node:
-                continue
-            parent = node.parent
-            hidden = False
-            while parent is not None:
-                if str(parent.tag or "").lower() in {"script", "style", "noscript"}:
-                    hidden = True
-                    break
-                parent = parent.parent
-            if not hidden:
-                text = str(node.text() or "").strip()
-                if text:
-                    pieces.append(text)
-        return " ".join(" ".join(pieces).split())
+        return _collapsed_visible_text(root)
 
     def html(self) -> str:
         return self._html

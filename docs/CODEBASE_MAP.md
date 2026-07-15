@@ -167,82 +167,31 @@ Canonical config owner:
 | `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |
 | `evaluation/model_harness.py` | offline evidence-only candidate adapter with model/deployment/artifact identity; cannot emit public records |
 | `evaluation/benchmark.py`, `evaluation/benchmarks/*` | `universal_model_benchmark.v2`: exact candidate/case checks, per-partition metrics, fail-closed decision, and committed Phase-4 NO-GO artifact |
-| `crawl_engine.py` | Extraction facade and routing |
-| `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
-| `listing_extractor.py` | Listing-page extraction |
-| `extraction/jobs.py` | Job collection, wrong-surface checks, and deterministic job detail/listing resolution |
-| `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
-| `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
-| `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |
-| `app/extraction/resolution/` | Single owner package for product/variant consensus, inherited offers, ranking, price-unit derivation, assets, and traceable semantic transforms |
-| `app/extraction/validation.py` | Single owner for missing evidence, incomplete offers, and currency-contradiction findings |
+| `extraction/engine.py` | Common extraction orchestration across surfaces: the Harvest → Resolve → Publish flow, timing, and review-finding wiring |
+| `extraction/adapters.py` | The four surface adapters (ecommerce listing/detail, job listing/detail) behind the common Harvest → Resolve → Publish API, with contract-preference and divergence wiring |
+| `extraction/surfaces.py` | `Surface` enum, `SurfaceSpec`/`ListingSchema` definitions, and surface parsing/lookup helpers |
+| `extraction/contracts.py` | Frozen pydantic extraction contracts: request/capture bundles, `Evidence`, `Decision`, records, and publication projections |
+| `extraction/entities.py` | Product/variant/offer/asset entity models and `EntitySet` construction from evidence, including primary product-root selection |
+| `extraction/targeting.py` | Commerce/subject target selection and scoped entity-graph derivation for a requested URL |
+| `extraction/documents.py` | Selectolax-backed HTML/JSON document parsing: `HtmlNode`, `HtmlDocument`, `HtmlAnalysis`, `JsonDocument`, and the `DocumentStore` |
+| `extraction/pipeline.py` | Ecommerce detail collection/harvest orchestration plus ambiguous-DOM-price and brand-conflict flagging |
+| `extraction/listing.py` | Ecommerce listing evidence collection, listing-card evidence, product-link resolution, and listing resolution |
+| `extraction/jobs.py` | Job collection, wrong-surface checks, JSON-LD/DOM job evidence, and deterministic job detail/listing resolution |
+| `extraction/collectors/dom.py` | DOM evidence collector: product-root/brand node detection and CSS-recipe evidence |
+| `extraction/collectors/js_state.py` | JS-state evidence collector, structured harvest results, budget outcomes, and evidence prioritization |
+| `extraction/collectors/jsonld.py` | JSON-LD evidence collector: product/offer/variant payload detection and standalone-variant handling |
+| `extraction/collectors/metadata.py` | Microdata, Open Graph, and network payload evidence collectors |
+| `extraction/collectors/url.py` | URL evidence collector: query-selected variant and detail-URL signals |
+| `extraction/collectors/_helpers.py` | Shared collector helpers: evidence construction, HTML doc access, and brand-role validation |
+| `extraction/resolution/` | Resolver package: product/variant consensus, inherited offers, evidence ranking (`ranking.py`), price-unit derivation (`price_units.py`), and product-asset resolution (`assets.py`) |
+| `extraction/validation.py` | Missing-evidence, incomplete-offer, shell-title, description, and variant/currency-contradiction findings |
+| `extraction/result_building.py` | Decision/selected-fact accounting, evidence dispositions, per-field and projection field states, and data-integrity status |
+| `extraction/publication.py` | Resolver-authorized publication projections, atomic-field/collection authorization, and deterministic serializers |
+| `extraction/field_states.py` | Field evidence-state naming and derivation from evidence dispositions |
+| `extraction/json_walk.py` | JSON pointer/traversal primitives (`JsonNode`, `walk_json`) shared by structured collectors and resolution |
+| `extraction/replay.py` | Fixture/bundle construction from stored acquisition/memory artifacts and the `MemoryArtifactReader` used for replay harnesses |
 | `app/core/config/locale_format_rules.py` | Locale/market normalization policy: money separators, generic URL currency inference, currency symbols, and GTIN check digits |
 | `app/core/config/extraction_rules/` | Availability enum/token policy and generic extraction rule tables |
-| `extract/detail/images/dedupe.py`, `dom/image_extraction.py` | Product asset collection and canonical asset-identity dedupe |
-| `js_state/state_normalizer/` | JS state facade plus focused ecommerce payload, variant, identity, and product mapping modules |
-| `js_state/job_mapper.py` | Configured job-detail JS-state mapping and reusable state-path traversal |
-| `js_state/helpers.py` | Shared JS-state variant selection, availability, stock, price, and compact-row helpers |
-| `js_state/variant_options.py` | JS-state variant axis, option-value, and display-label normalization |
-| `network_payload_mapper.py` | Network payload to field mapping |
-| `shared/field_coerce.py` | Canonical field coercion dispatch and public-record shaping |
-| `shared/field_coerce_price.py` | Price, currency, and shared-price comparison coercion |
-| `shared/field_coerce_text.py` | Brand, identity, SKU, barcode, gender, and category text coercion |
-| `shared/field_coerce_url.py` | URL/image URL coercion and tracking cleanup exports |
-| `field_url_normalization.py` | Tracking URL cleanup and query stripping |
-| `dom/content_extractability.py` | Visible text/link/image extractability checks used by selector extraction |
-| `dom/query.py` | Safe BeautifulSoup selector/find/text/traversal primitives shared by DOM extraction modules |
-| `dom/selector_engine.py` | DOM selector extraction, image URL ranking, and selector result assembly |
-| `dom/xpath_service.py` | XPath syntax validation, conversion, absolute XPath building, and selector value extraction |
-| `dom/image_extraction.py` | DOM image URL scoring, dedupe, low-resolution upgrade, and page image extraction |
-| `dom/section_extraction.py` | DOM label/value pairs, semantic heading sections, materials sections, and feature rows |
-| `app/extraction/publication.py` | Resolver-authorized publication projections and deterministic serializers |
-| `field_value_*.py` | Per-field normalization helpers |
-| `field_policy.py` | Field eligibility by surface |
-| `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
-| `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
-| `extract/structured_listing_handler.py` | Structured JSON-LD listing record extraction and typed/untyped listing payload gating |
-| `extract/network_listing_mapper.py` | Network listing rows and network-to-listing price/brand/currency backfill |
-| `extract/record_overlay.py` | Primary-wins record overlay helper shared by JS-state, network, structured, and listing merges |
-| `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
-| `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
-| `extract/detail/assembly/candidate_collection.py` | Detail candidate admission, evidence-backed arbitration, and field evidence summaries |
-| `extract/detail/assembly/dom_section_targets.py` | Detail DOM context selection and section target field discovery |
-| `extract/detail/assembly/dom_fallbacks.py` | DOM fallback field assembly for detail records |
-| `extract/detail/variants/dom_coercion.py` | DOM variant axis and option-value coercion helpers |
-| `extract/detail/variants/dom_extraction.py` | DOM variant row extraction, expansion, and backfill |
-| `extract/detail/identity/structured_pruning.py` | Structured detail payload relevance and variant-leaf pruning |
-| `extract/detail/assembly/dom_completion.py` | DOM completion gates and DOM variant collection decisions |
-| `app/extraction/publication.py` | Projection-authorized record serialization and URL canonicalization |
-| `extract/detail/assembly/record_assembly.py` | Detail record build/extract orchestration and detail rejection/failure reasons |
-| `extract/detail/variants/dom_options.py` | DOM variant option availability, URL, image, and selected-state helpers |
-| `extract/detail/images/dedupe.py` | Primary/additional detail image merge and dedupe helper |
-| `extract/detail/variants/numbered_options.py` | DOM-axis hydration for raw numbered option variant rows |
-| `extract/detail/assembly/raw_signals.py` | Raw detail breadcrumb category and deterministic gender signal helpers |
-| `extract/detail/identity/core.py` | Detail/listing URL identity, redirect identity, and requested-detail matching |
-| `extract/detail/identity/jsonld_identity.py` | JSON-LD identity helpers and duplicate product heading pruning |
-| `extract/detail/identity/model_codes.py` | Detail model-number/code compatibility and token extraction |
-| `extract/detail/price/core.py` | Detail price, currency reconciliation, visible PDP price backfill, and magnitude repair |
-| `extract/detail/assembly/final_cleanup.py` | Ecommerce detail final cleanup orchestrator |
-| `extract/detail/assembly/record_sanitization.py` | Detail placeholder, identity scalar, category, materials, and title cleanup |
-| `extract/detail/price/money_repair.py` | Detail price precision, discount, original-price, and variant price repair |
-| `extract/detail/variants/pruning.py` | Detail variant row sanitization and parent-record variant scalar pruning |
-| `extract/detail/images/cleanup.py` | Final detail image cleanup, family matching, and parent image backfill |
-| `extract/detail/identity/shell_filter.py` | Site-shell and utility-page detail rejection helpers |
-| `extract/detail/variants/state_targets.py` | JS-state target maps for DOM variant URL/id enrichment |
-| `extract/detail/text/sanitizer.py` | Detail long-text pollution filters, fulfillment copy cleanup, and low-signal scalar checks |
-| `extract/detail/text/materials.py` | Materials-specific parsing and cleanup |
-| `extract/detail/assembly/title_scorer.py` | Detail title promotion and shell-title scoring |
-| `extract/variant_axis.py` | Variant axis key/display normalization and semantic axis-label gates |
-| `extract/variant_option_value.py` | Variant option-value noise, UI-noise, color, and quantity-run gates |
-| `extract/variant_choice_traversal.py` | Variant DOM choice traversal, group-name inference, and per-Soup cue-result caching |
-| `extract/variant_identity_merge.py` | Variant axis splitting, identity, row richness, row merge, and size alias collapse |
-| `extract/variant_dom_cues.py` | Variant DOM cue, scoped node-selection, sibling-signal helpers, and per-Soup selector caches |
-| `extract/variant_dom_provenance.py` | DOM variant provenance capture for validator input |
-| `extract/variant_group_validator.py` | Evidence-based DOM variant group admission and rejection logging |
-| `extract/variant_normalization/*` | Stage-keyed variant record normalization, cleanup, backfill, and public flattening contract |
-| `extract/variant_structural_pruning.py` | Structural variant row pruning for non-DOM/raw variant records |
-| `extract/variant_value_guards.py` | Variant value and URL quality gates shared by DOM validation and normalization |
-| `extract/*` | Other extraction helpers |
 
 Canonical config owners:
 

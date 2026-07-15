@@ -74,7 +74,7 @@ UrlVerdict = Literal[
     "blocked",
     "error",
     "wrong_surface",
-    "listing_failed",
+    "listing_detection_failed",
 ]
 
 __all__ = [

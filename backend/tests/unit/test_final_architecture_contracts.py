@@ -12,6 +12,7 @@ from app.acquisition.contracts import (
     AttemptSpec,
 )
 from app.crawl.contracts import RunSummary, UrlResult
+from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.extraction.contracts import CapabilityRequest, FailureTaxonomy
 from app.persistence.contracts import ArtifactReference
 
@@ -55,12 +56,20 @@ def test_acquisition_result_requires_selected_attempt_to_exist() -> None:
         )
 
 
-def test_capability_request_is_bounded_to_one_escalation() -> None:
+def test_capability_request_is_bounded_to_configured_cap() -> None:
+    # A multi-rung ladder is allowed up to the configured cap (default 2:
+    # one initial attempt plus one escalation), but no further.
+    accepted = CapabilityRequest(
+        reason="explicit_variants_missing",
+        required_artifacts=("rendered_html",),
+        max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP,
+    )
+    assert accepted.max_attempts == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
     with pytest.raises(ValidationError, match="max_attempts"):
         CapabilityRequest(
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html",),
-            max_attempts=2,
+            max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP + 1,
         )
 
 
