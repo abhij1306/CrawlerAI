@@ -13,6 +13,7 @@ from app.core.listing_cards import (
     card_rejection_reason,
     derive_card_selectors,
     select_listing_cards,
+    select_listing_cards_with_diagnostics,
     stable_card_identity,
     unique_card_count,
 )
@@ -38,6 +39,27 @@ def cards_from_html(
         page_url=page_url,
         limit=limit,
     )
+
+
+def card_diagnostics_from_html(
+    html: str,
+    *,
+    page_url: str,
+    surface: str,
+) -> dict[str, object]:
+    if not str(html or "").strip():
+        return {
+            "card_count": 0,
+            "admitted_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {},
+            "rejection_samples": [],
+        }
+    return select_listing_cards_with_diagnostics(
+        LexborHTMLParser(str(html)),
+        surface=listing_surface_spec(surface),
+        page_url=page_url,
+    ).diagnostics.as_dict()
 
 
 def card_identities_from_html(html: str, *, page_url: str, surface: str) -> tuple[str, ...]:
@@ -89,6 +111,7 @@ async def count_listing_cards(page: Any, *, surface: str, allow_heuristic: bool 
 __all__ = [
     "ListingCard",
     "card_fragments_from_html",
+    "card_diagnostics_from_html",
     "card_identities_from_html",
     "card_is_admitted",
     "card_quality_score",

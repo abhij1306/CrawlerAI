@@ -65,7 +65,7 @@ async def load_record_artifacts(
 
     Record provenance (``data``/``raw_data``/``discovered_data``/``source_trace``)
     is authoritative in the DB columns. The canonical branch reads them straight
-    off the row and loads ``page.html`` by fixed name from the result-root path
+    off the row and loads ``source.html`` by fixed name from the result-root path
     stored in ``CrawlUrlResult.manifest_uri``. Records without a URL result fall
     back to the legacy on-disk HTML path.
     """
@@ -127,7 +127,7 @@ async def load_canonical_record_views(
 
 
 def _read_result_html(repository: ArtifactRepository, result_root: str) -> str:
-    uri = (Path(result_root) / "page.html").as_posix()
+    uri = (Path(result_root) / "source.html").as_posix()
     try:
         return repository.read_text(uri)
     except (OSError, ValueError):

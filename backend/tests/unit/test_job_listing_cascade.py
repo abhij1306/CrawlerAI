@@ -14,7 +14,10 @@ import pytest
 
 from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+    LISTING_HTML_ARTIFACT_IDS,
 )
+from app.acquisition.listing_cards import count_cards_from_html
+from app.acquisition.browser_readiness import probe_browser_readiness
 from app.extraction import adapters
 from app.extraction.adapters import _harvest_job_listing
 from app.extraction.cascade import LISTING_FLOOR_ORDER, run_listing_cascade
@@ -150,6 +153,38 @@ def test_job_listing_reads_rendered_artifact_set_not_only_html() -> None:
         "Site Reliability Engineer",
     }
     _no_model(collectors)
+
+
+@pytest.mark.asyncio
+async def test_rendered_job_listing_count_readiness_and_extract_agree() -> None:
+    assert ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID in LISTING_HTML_ARTIFACT_IDS
+    admitted = count_cards_from_html(
+        _RENDERED_FRAGMENT,
+        page_url=PAGE,
+        surface=Surface.JOB_LISTING.value,
+    )
+    page = type("Page", (), {"url": PAGE, "locator": lambda self, selector: self})()
+
+    async def count() -> int:
+        return 0
+
+    page.count = count
+    readiness = await probe_browser_readiness(
+        page,
+        url=PAGE,
+        surface=Surface.JOB_LISTING.value,
+        html=_RENDERED_FRAGMENT,
+    )
+    result = _run(
+        _JS_SHELL_HTML,
+        artifacts={ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID: [_RENDERED_FRAGMENT]},
+    )
+    extracted = len(
+        {row.subject_id for row in result.evidence if row.fact_type == "job.title"}
+    )
+
+    assert readiness["is_ready"] is True
+    assert readiness["listing_card_count"] == admitted == extracted == 3
 
 
 def test_anchorless_onclick_cards_publish_recovered_url() -> None:

@@ -621,6 +621,15 @@ def build_browser_diagnostics(
         ),
         "low_content_reason": low_content_reason,
         "readiness_probes": readiness_probes,
+        "listing_discovery": next(
+            (
+                dict(probe)
+                for probe in reversed(readiness_probes)
+                if isinstance(probe, dict)
+                and isinstance(probe.get("listing_card_diagnostics"), dict)
+            ),
+            {},
+        ),
         "network_payload_count": capture_summary.network_payload_count,
         "malformed_network_payloads": capture_summary.malformed_network_payloads,
         "network_payload_read_failures": capture_summary.network_payload_read_failures,
@@ -694,6 +703,8 @@ def _ready_probe_supports_fast_finalize(
     for probe in readiness_probes:
         if not isinstance(probe, dict) or not bool(probe.get("is_ready")):
             continue
+        if probe.get("readiness_terminal_state") == "ready_empty":
+            return True
         visible_text_length = _object_int(probe.get("visible_text_length"))
         if visible_text_length < min_visible_text:
             continue

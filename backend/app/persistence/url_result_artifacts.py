@@ -3,8 +3,8 @@
 One writer, exactly three files per URL result under
 ``runs/{run_id}/results/{url_result_id}/``:
 
-- ``page.html`` — the acquired HTML, written once.
-- ``record.json`` — the public record(s) (shape unchanged from the records API).
+- ``source.html`` — the acquired HTML, written once.
+- ``result.json`` — the public record(s) (shape unchanged from the records API).
 - ``diagnose.json`` — self-contained, bounded root-cause artifact (see
   :mod:`app.observability.diagnose`).
 
@@ -41,6 +41,7 @@ def publish_url_result_artifacts(
     acquisition_result: Any,
     extraction_result: Any,
     record_count: int,
+    verdict: str | None = None,
     record_provenance: Sequence[Mapping[str, object]] = (),
     root_dir: Path | None = None,
 ) -> PublishedUrlArtifacts:
@@ -51,7 +52,7 @@ def publish_url_result_artifacts(
         repository,
         run_id=run_id,
         url_result_id=url_result_id,
-        name="page.html",
+        name="source.html",
         content=html,
     )
 
@@ -60,7 +61,7 @@ def publish_url_result_artifacts(
         repository,
         run_id=run_id,
         url_result_id=url_result_id,
-        name="record.json",
+        name="result.json",
         payload={"records": records, "record_count": int(record_count or 0)},
     )
 
@@ -76,6 +77,8 @@ def publish_url_result_artifacts(
             extraction_result=extraction_result,
             rejected_public_fields=rejected_public_fields,
             variant_drops=variant_drops,
+            record_count=record_count,
+            listing_verdict=verdict,
         ),
     )
 
@@ -216,6 +219,8 @@ def _shrink_diagnose_payload(
     }
     shrunk["truncated"] = truncated
     shrink_steps = (
+        ("discovery.network.provenance", 5),
+        ("discovery.rejection_samples", 3),
         ("evidence_dispositions.examples", 50),
         ("findings", 50),
         ("fields", 50),
@@ -228,6 +233,8 @@ def _shrink_diagnose_payload(
         ("findings", 0),
         ("fields", 0),
         ("variants.dropped", 0),
+        ("discovery.network.provenance", 0),
+        ("discovery.rejection_samples", 0),
     )
     for path, item_limit in shrink_steps:
         if len(_json_bytes(shrunk)) <= limit:
@@ -240,6 +247,7 @@ def _shrink_diagnose_payload(
         "verdict": shrunk.get("verdict"),
         "data_integrity": shrunk.get("data_integrity"),
         "metrics": shrunk.get("metrics"),
+        "discovery": shrunk.get("discovery"),
         "truncated": truncated,
     }
 

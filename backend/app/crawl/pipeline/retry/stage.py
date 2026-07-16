@@ -11,6 +11,7 @@ from app.acquisition.acquirer import (
     PageEvidence,
     acquire as _acquire,
 )
+from app.acquisition.contracts import EscalationAttemptDiagnostics
 from app.acquisition.browser_runtime import build_failed_browser_diagnostics
 from app.acquisition.policy import AcquisitionPolicy
 from app.crawl.profile import (
@@ -202,7 +203,29 @@ async def _acquire_browser_retry_result(
 
         acquire_impl = getattr(extraction_loop, "acquire", acquire)
         context.browser_escalation_count += 1
-        return await acquire_impl(request)
+        browser_result = await acquire_impl(request)
+        attempt = EscalationAttemptDiagnostics(
+            rung=context.browser_escalation_count,
+            attempt=context.browser_escalation_count,
+            max_attempts=max(1, max_attempts),
+            reason=retry_reason,
+            required_artifacts=tuple(required_artifacts),
+            capture_network=request.policy.capture_network,
+        ).model_dump(mode="json")
+        attempts = getattr(context, "escalation_attempts", None)
+        if not isinstance(attempts, list):
+            attempts = []
+            setattr(context, "escalation_attempts", attempts)
+        attempts.append(attempt)
+        diagnostics = dict(browser_result.acquisition_diagnostics or {})
+        diagnostics["escalation"] = {
+            "rung": context.browser_escalation_count,
+            "attempt": context.browser_escalation_count,
+            "max_attempts": max(1, max_attempts),
+            "capability_requests": list(attempts),
+        }
+        browser_result.acquisition_diagnostics = diagnostics
+        return browser_result
     except asyncio.CancelledError:
         raise
     except Exception as exc:

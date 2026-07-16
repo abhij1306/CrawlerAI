@@ -265,4 +265,15 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
         CAPTURE_NETWORK_ALL_SMALL_JSON,
     ]
     assert fetched.acquisition_result.network_payloads[0]["body"] == payload
+    escalation = fetched.acquisition_result.acquisition_diagnostics["escalation"]
+    assert escalation["rung"] == 2
+    assert escalation["attempt"] == 2
+    assert escalation["max_attempts"] == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    assert escalation["capability_requests"][-1]["required_artifacts"] == [
+        "rendered_html",
+        "network_payloads",
+    ]
+    assert escalation["capability_requests"][-1]["capture_network"] == (
+        CAPTURE_NETWORK_ALL_SMALL_JSON
+    )
     assert result.verdict == "success"

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
@@ -20,6 +21,8 @@ from app.core.config.cascade import (
     CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES,
     CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
     CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES,
+    CASCADE_READINESS_REJECTION_REASON_LIMIT,
+    CASCADE_READINESS_REJECTION_SAMPLE_LIMIT,
 )
 from app.core.config.extraction_recipes import (
     LISTING_CARD_SELECTORS_BY_ROOT_ENTITY,
@@ -54,6 +57,78 @@ class ListingCard:
     url: str
     url_node: Any
     quality_score: int
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardRejectionSample:
+    reason: str
+    selector: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"reason": self.reason, "selector": self.selector}
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardDiagnostics:
+    """Bounded discovery accounting shared by readiness and diagnose.v3."""
+
+    card_count: int = 0
+    admitted_count: int = 0
+    rejected_count: int = 0
+    rejection_reasons: tuple[tuple[str, int], ...] = ()
+    rejection_samples: tuple[ListingCardRejectionSample, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "card_count": self.card_count,
+            "admitted_count": self.admitted_count,
+            "rejected_count": self.rejected_count,
+            "rejection_reasons": dict(self.rejection_reasons),
+            "rejection_samples": [row.as_dict() for row in self.rejection_samples],
+        }
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "ListingCardDiagnostics":
+        if not isinstance(value, dict):
+            return cls()
+        raw_reasons = value.get("rejection_reasons")
+        reasons = (
+            tuple(
+                (str(reason), max(0, int(count)))
+                for reason, count in list(raw_reasons.items())[
+                    :CASCADE_READINESS_REJECTION_REASON_LIMIT
+                ]
+                if str(reason).strip()
+            )
+            if isinstance(raw_reasons, dict)
+            else ()
+        )
+        raw_samples = value.get("rejection_samples")
+        samples = tuple(
+            ListingCardRejectionSample(
+                reason=str(row.get("reason") or "")[:64],
+                selector=str(row.get("selector") or "")[:120],
+            )
+            for row in (
+                list(raw_samples)[:CASCADE_READINESS_REJECTION_SAMPLE_LIMIT]
+                if isinstance(raw_samples, list)
+                else []
+            )
+            if isinstance(row, dict) and str(row.get("reason") or "").strip()
+        )
+        return cls(
+            card_count=max(0, int(value.get("card_count") or 0)),
+            admitted_count=max(0, int(value.get("admitted_count") or 0)),
+            rejected_count=max(0, int(value.get("rejected_count") or 0)),
+            rejection_reasons=reasons,
+            rejection_samples=samples,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardSelection:
+    cards: tuple[ListingCard, ...]
+    diagnostics: ListingCardDiagnostics
 
 
 def _root_entity(surface: object) -> str:
@@ -411,9 +486,36 @@ def select_listing_cards(
 ) -> tuple[ListingCard, ...]:
     """Select admitted, identity-unique cards in selector/document order."""
 
+    return select_listing_cards_with_diagnostics(
+        document,
+        surface=surface,
+        page_url=page_url,
+        limit=limit,
+    ).cards
+
+
+def select_listing_cards_with_diagnostics(
+    document: Any,
+    *,
+    surface: object,
+    page_url: str,
+    limit: int | None = None,
+) -> ListingCardSelection:
+    """Select cards and account for every unique candidate exactly once."""
+
     selected: list[ListingCard] = []
     seen_nodes: set[str] = set()
     seen_identities: set[str] = set()
+    rejected = Counter[str]()
+    samples: list[ListingCardRejectionSample] = []
+
+    def reject(reason: str, selector: str) -> None:
+        rejected[reason] += 1
+        if len(samples) < CASCADE_READINESS_REJECTION_SAMPLE_LIMIT:
+            samples.append(
+                ListingCardRejectionSample(reason=reason, selector=selector[:120])
+            )
+
     for selector in derive_card_selectors(surface):
         for index, node in enumerate(_css(document, selector)):
             node_key = _node_key(node)
@@ -424,6 +526,7 @@ def select_listing_cards(
                 node, surface=surface, page_url=page_url, selector=selector
             )
             if reason is not None:
+                reject(reason, selector)
                 continue
             url_node, url = canonical_record_url(
                 node, surface=surface, page_url=page_url
@@ -432,6 +535,7 @@ def select_listing_cards(
                 node, surface=surface, page_url=page_url
             )
             if identity in seen_identities:
+                reject("duplicate_identity", selector)
                 continue
             seen_identities.add(identity)
             selected.append(
@@ -448,8 +552,30 @@ def select_listing_cards(
                 )
             )
             if limit is not None and len(selected) >= max(0, int(limit)):
-                return tuple(selected)
-    return tuple(selected)
+                return _card_selection(selected, rejected, samples)
+    return _card_selection(selected, rejected, samples)
+
+
+def _card_selection(
+    selected: list[ListingCard],
+    rejected: Counter[str],
+    samples: list[ListingCardRejectionSample],
+) -> ListingCardSelection:
+    reasons = tuple(
+        sorted(rejected.items(), key=lambda item: (-item[1], item[0]))[
+            :CASCADE_READINESS_REJECTION_REASON_LIMIT
+        ]
+    )
+    return ListingCardSelection(
+        cards=tuple(selected),
+        diagnostics=ListingCardDiagnostics(
+            card_count=len(selected),
+            admitted_count=len(selected),
+            rejected_count=sum(rejected.values()),
+            rejection_reasons=reasons,
+            rejection_samples=tuple(samples),
+        ),
+    )
 
 
 def unique_card_count(cards: Any) -> int:
@@ -466,6 +592,9 @@ def unique_card_count(cards: Any) -> int:
 
 __all__ = [
     "ListingCard",
+    "ListingCardDiagnostics",
+    "ListingCardRejectionSample",
+    "ListingCardSelection",
     "card_is_admitted",
     "card_quality_score",
     "card_rejection_reason",
@@ -473,6 +602,7 @@ __all__ = [
     "canonicalize_identity_url",
     "derive_card_selectors",
     "select_listing_cards",
+    "select_listing_cards_with_diagnostics",
     "stable_card_identity",
     "stable_url_identity",
     "unique_card_count",

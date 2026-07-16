@@ -75,3 +75,14 @@ class AcquisitionResult(FrozenModel):
         ):
             raise ValueError("selected_attempt_id must identify an attempt result")
         return self
+
+
+class EscalationAttemptDiagnostics(FrozenModel):
+    """One bounded capability request made by the extraction retry ladder."""
+
+    rung: int = Field(ge=1)
+    attempt: int = Field(ge=1)
+    max_attempts: int = Field(ge=1)
+    reason: str = Field(min_length=1)
+    required_artifacts: tuple[str, ...] = ()
+    capture_network: str | None = None

@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.acquisition.dom_runtime import get_page_html
-from app.acquisition.listing_cards import count_listing_cards
+from app.acquisition.listing_cards import card_diagnostics_from_html
 from app.core.config.extraction_rules import (
     ACTION_BUY_NOW,
     BROWSER_DETAIL_READINESS_HINTS,
@@ -29,6 +29,7 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.shared.field_coerce import clean_text, coerce_int as _coerce_int
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
+from app.extraction.surfaces import surface_spec
 
 
 _STRUCTURED_SHELL_TOKENS = (
@@ -331,6 +332,8 @@ async def wait_for_listing_readiness(
             "platform": str(override.get("platform") or ""),
             "max_wait_ms": max_wait_ms,
             "status": "timed_out",
+            "terminal_state": "timed_out",
+            "is_ready": False,
             "attempted_selectors": selectors,
             "failures": [f"{combined_selector}:{type(exc).__name__}"],
         }
@@ -345,6 +348,8 @@ async def wait_for_listing_readiness(
         "max_wait_ms": max_wait_ms,
         "matched_selector": matched_selector or combined_selector,
         "status": "matched",
+        "terminal_state": "observing",
+        "is_ready": False,
     }
 
 
@@ -363,8 +368,9 @@ async def probe_browser_readiness(
     if analysis is None:
         raise RuntimeError("browser readiness analysis was not produced")
     visible_text_length = len(analysis.normalized_text)
-    is_detail = "detail" in surface
-    is_listing = "listing" in surface
+    spec = surface_spec(surface)
+    is_detail = spec.cardinality == "one"
+    is_listing = spec.cardinality == "many"
     has_shell_token = any(
         token in analysis.lowered_html for token in _STRUCTURED_SHELL_TOKENS
     )
@@ -388,8 +394,17 @@ async def probe_browser_readiness(
     )
     listing_card_count = 0
     matched_listing_selectors = 0
+    listing_card_diagnostics: dict[str, object] = {}
+    readiness_terminal_state = "observing"
+    ready_empty = False
+    shell_detected = False
     if is_listing:
-        listing_card_count = await count_listing_cards(page, surface=surface)
+        listing_card_diagnostics = card_diagnostics_from_html(
+            html_text or "",
+            page_url=str(getattr(page, "url", "") or url),
+            surface=surface,
+        )
+        listing_card_count = int(listing_card_diagnostics.get("card_count") or 0)
         raw_override_selectors = (
             listing_override.get("selectors")
             if isinstance(listing_override, dict)
@@ -421,10 +436,26 @@ async def probe_browser_readiness(
             or (detail_like and has_identity and enough_text)
         )
     elif is_listing:
-        is_ready = bool(
-            listing_card_count >= int(crawler_runtime_settings.listing_min_items)
-            or matched_listing_selectors > 0
+        normalized_visible_text = analysis.normalized_text.casefold()
+        no_results_detected = any(
+            re.search(pattern, normalized_visible_text, re.I)
+            for pattern in spec.readiness_no_results_patterns
         )
+        shell_detected = any(
+            re.search(pattern, normalized_visible_text, re.I)
+            for pattern in spec.readiness_shell_patterns
+        )
+        repeated_cards = listing_card_count >= max(
+            1, int(spec.readiness_min_repeated_records)
+        )
+        ready_empty = bool(not repeated_cards and no_results_detected)
+        is_ready = bool(repeated_cards or ready_empty)
+        if repeated_cards:
+            readiness_terminal_state = "ready"
+        elif ready_empty:
+            readiness_terminal_state = "ready_empty"
+        elif shell_detected:
+            readiness_terminal_state = "shell_rejected"
     else:
         is_ready = visible_text_length >= int(
             crawler_runtime_settings.browser_readiness_visible_text_min
@@ -440,6 +471,10 @@ async def probe_browser_readiness(
         "detail_title_matches_url": detail_title_matches_url,
         "listing_card_count": listing_card_count,
         "matched_listing_selectors": matched_listing_selectors,
+        "listing_card_diagnostics": listing_card_diagnostics,
+        "readiness_terminal_state": readiness_terminal_state,
+        "ready_empty": ready_empty,
+        "shell_detected": shell_detected,
         "h1_present": analysis.h1_present,
     }
 

@@ -108,6 +108,7 @@ JOB_DETAIL_APPLY_SELECTORS: tuple[str, ...] = (
 JOB_LISTING_CARD_SELECTORS: tuple[str, ...] = (
     "[data-job-id]",
     "[data-testid*='job' i]",
+    "[class~='job' i]",
     "[class*='job-card' i]",
     "[class*='job-item' i]",
     "[class*='job-post' i]",
