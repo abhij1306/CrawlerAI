@@ -11,10 +11,10 @@ from typing import Any, Callable
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.selectors import (
     ANCHOR_SELECTOR,
-    CARD_SELECTORS,
     CLOUDFLARE_TURNSTILE_SELECTORS,
     LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
 )
+from app.acquisition.listing_cards import selectors_for_surface
 
 logger = logging.getLogger(__name__)
 
@@ -811,11 +811,4 @@ async def capture_rendered_listing_fragments(
 
 
 def _listing_capture_selectors(surface: str) -> list[str]:
-    group = (
-        "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
-    )
-    selectors: object = (
-        CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
-    )
-    rows = selectors if isinstance(selectors, list) else []
-    return [str(selector).strip() for selector in rows if str(selector).strip()]
+    return list(selectors_for_surface(surface))

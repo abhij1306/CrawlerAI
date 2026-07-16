@@ -32,7 +32,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 
 from app.core.config.cascade import (
     CASCADE_LISTING_MIN_REPEATED_RECORDS,
@@ -46,6 +46,7 @@ from app.core.config.cascade import (
 )
 from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import listing_url_is_structural
+from app.core.listing_cards import stable_url_identity
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.extraction.surfaces import ListingSchema
 
@@ -161,12 +162,7 @@ def _link_identity(url: str) -> str:
     homogeneity discriminate products from noise. Returns "" for links with no
     meaningful path (site root) so they can't seed a record.
     """
-    parsed = urlparse(str(url or "").strip())
-    host = str(parsed.hostname or "").casefold().strip(".")
-    path = unquote(parsed.path).casefold().rstrip("/")
-    if not host or not path or path == "":
-        return ""
-    return f"{host}{path}"
+    return stable_url_identity(url)
 
 
 # A group of structurally-identical sibling subtrees must appear at least this

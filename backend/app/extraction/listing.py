@@ -5,16 +5,14 @@ from typing import Literal
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from app.core.config.extraction_recipes import (
-    ECOMMERCE_LISTING_CARD_SELECTORS,
-    ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS,
     ECOMMERCE_LISTING_HTML_ARTIFACT_IDS,
     ECOMMERCE_LISTING_IMAGE_SELECTORS,
     ECOMMERCE_LISTING_PRICE_SELECTORS,
-    ECOMMERCE_LISTING_SCOPE_SELECTORS,
     ECOMMERCE_LISTING_TITLE_ATTRIBUTES,
     ECOMMERCE_LISTING_TITLE_SELECTORS,
     ECOMMERCE_LISTING_URL_SELECTORS,
 )
+from app.core.listing_cards import select_listing_cards
 from app.core.config.extraction_rules import (
     CURRENCY_SYMBOL_MAP,
     LISTING_VISUAL_PRICE_REGEX_PATTERN,
@@ -41,7 +39,7 @@ from app.extraction.contracts import (
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
 from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import (
     listing_detail_like_path,
@@ -74,37 +72,26 @@ def _collect_listing_evidence(
     bundle: CaptureBundle, doc: HtmlDocument, *, page_url: str
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    seen_cards: set[str] = set()
-    scopes = tuple(
-        node
-        for selector in ECOMMERCE_LISTING_SCOPE_SELECTORS
-        for node in doc.safe_css(selector)
-    ) or (doc,)
-    for selector in ECOMMERCE_LISTING_CARD_SELECTORS:
-        for scope in scopes:
-            for index, card in enumerate(scope.safe_css(selector)):
-                if card.is_hidden():
-                    continue
-                card_key = card.html()
-                if card_key in seen_cards:
-                    continue
-                seen_cards.add(card_key)
-                subject_id = stable_id(
-                    "subject",
-                    bundle.bundle_id,
-                    doc.artifact_id,
-                    "product",
-                    len(seen_cards),
-                )
-                card_rows = _card_evidence(
-                    bundle,
-                    card,
-                    page_url=page_url,
-                    subject_id=subject_id,
-                    card_selector=selector,
-                    card_index=index,
-                )
-                rows.extend(card_rows)
+    schema = listing_schema(Surface.ECOMMERCE_LISTING)
+    if schema is None:
+        return rows
+    for position, candidate in enumerate(
+        select_listing_cards(doc, surface=schema, page_url=page_url), start=1
+    ):
+        subject_id = stable_id(
+            "subject", bundle.bundle_id, doc.artifact_id, "product", position
+        )
+        rows.extend(
+            _card_evidence(
+                bundle,
+                candidate.node,
+                page_url=page_url,
+                subject_id=subject_id,
+                card_selector=candidate.selector,
+                card_index=candidate.selector_index,
+                strong_card=candidate.quality_score >= 3,
+            )
+        )
     return rows
 
 
@@ -116,14 +103,10 @@ def _card_evidence(
     subject_id: str,
     card_selector: str,
     card_index: int,
+    strong_card: bool,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
     selector_price = _first_price(card)
-    strong_card = (
-        card_selector not in ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS
-        or selector_price is not None
-        or _node_has_image(card)
-    )
     price = selector_price or _first_price(card, allow_text_scan=strong_card)
     product_link, product_url = _listing_product_link(
         card, page_url=page_url, strong_card=strong_card

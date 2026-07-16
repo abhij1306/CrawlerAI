@@ -10,13 +10,13 @@ from app.core.config.extraction_recipes import (
     JOB_DETAIL_DESCRIPTION_SELECTORS,
     JOB_DETAIL_LOCATION_SELECTORS,
     JOB_DETAIL_TITLE_SELECTORS,
-    JOB_LISTING_CARD_SELECTORS,
     JOB_LISTING_COMPANY_SELECTORS,
     JOB_LISTING_LOCATION_SELECTORS,
     JOB_LISTING_TITLE_SELECTORS,
     JOB_LISTING_URL_SELECTORS,
     LISTING_HTML_ARTIFACT_IDS,
 )
+from app.core.listing_cards import select_listing_cards
 from app.extraction.collectors._helpers import (
     evidence,
     html_doc,
@@ -37,7 +37,7 @@ from app.extraction.contracts import (
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
 
 
 def _wrong_surface_findings(
@@ -208,26 +208,24 @@ def _collect_job_listing_evidence(
     page_url: str,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    seen_cards: set[str] = set()
-    for selector in JOB_LISTING_CARD_SELECTORS:
-        for index, card in enumerate(doc.css(selector)):
-            if card.is_hidden():
-                continue
-            card_key = card.html()
-            if card_key in seen_cards:
-                continue
-            seen_cards.add(card_key)
-            subject_id = stable_id("subject", bundle.bundle_id, "job", len(seen_cards))
-            card_rows = _job_listing_card_evidence(
+    schema = listing_schema(Surface.JOB_LISTING)
+    if schema is None:
+        return rows
+    for position, candidate in enumerate(
+        select_listing_cards(doc, surface=schema, page_url=page_url), start=1
+    ):
+        subject_id = stable_id("subject", bundle.bundle_id, "job", position)
+        rows.extend(
+            _job_listing_card_evidence(
                 bundle,
-                card,
+                candidate.node,
                 page_url=page_url,
                 subject_id=subject_id,
-                card_selector=selector,
-                card_index=index,
+                card_selector=candidate.selector,
+                card_index=candidate.selector_index,
                 artifact_id=doc.artifact_id,
             )
-            rows.extend(card_rows)
+        )
     return rows
 
 
