@@ -5,6 +5,12 @@
 **Last pushed checkpoint when this doc was written:** `442c791`
 **Author context:** continuation of the selective rearchitecture (Phase 0 → Slice 1 commerce listing → Slice 2 job listing → Slice 3 commerce detail → **LEARN-ONCE** → Slice 4 job detail/escalation → acquisition ladder).
 
+> **SUPERSEDED FOR STATUS (2026-07-16):** The single consolidated handoff is now
+> `docs/plans/rearchitecture/SLICE-4-HANDOFF.md`. Trust that file for current
+> finding status. This document is retained for its background/goal/design
+> narrative; its per-finding status table below has been updated to match, but
+> `SLICE-4-HANDOFF.md` is authoritative.
+
 This document exists so any future agent (or human) can resume without re-auditing from scratch. Keep it updated as findings are closed.
 
 ---
@@ -46,20 +52,20 @@ Add a "learn once, replay forever" extraction tier:
 ### CRITICAL
 1. **Learned recipes never reached real runs** — `create_release_snapshot`/`build_release_payload` emitted `release.v1` and `compile_recipe_layers` dropped `EXECUTABLE` recipes, while `select_active_recipe` requires `release.v2`; learned snapshots had `run_id=None` and were never attached. **STATUS: FIXED** (`93b0621`), proven by real-run replay test (`921c33c`). Confirmed empirically by the testing agent against real Postgres.
 2. **Frozen release mutated at load** — `load_release_payload` overlaid current template suspension onto stored snapshots, changing in-flight runs. **STATUS: FIXED** (`93b0621`) — stored payload returned unchanged; suspension applied only when building future snapshots.
-3. **Replay bypasses resolver/publication authority** — `engine._replay_active_recipe` passes executor dicts straight to `publish_recipe_execution`, which constructs public records + derived IDs directly, bypassing resolver ownership/evidence admission. **STATUS: IN PROGRESS — scaffold only.** `recipe_evidence.py` (converts executor record values → normal `Evidence` with real `SourceLocator`/provenance/subject ids) and `RECIPE_FIELD_FACT_TYPES_BY_SURFACE` exist but are **not wired**. Remaining work: route recipe evidence through the normal `_execute_attempt` (adapter `resolve`→`publish`), and **rebuild variants / additional_images / offer / asset lineage as evidence** (today `publish_recipe_execution` reconstructs those explicitly — a naive switch silently drops commerce sub-records). Then delete/retire `publish_recipe_execution` and update `test_publication_is_the_only_typed_record_producer` (its comment at test_extraction_architecture.py:585 documents the old delegation).
+3. **Replay bypasses resolver/publication authority.** **STATUS: FIXED + WIRED** (`7266a85`). `engine._replay_active_recipe` now routes through `recipe_execution_evidence(request, recipe, execution)` (engine.py:495) → normal `Evidence` → adapter resolve/publish. `publish_recipe_execution` is deleted (grep confirms zero references in `app/` and `tests/`).
 
-### HIGH (all OPEN)
-4. **`job_listing` compiler emits `apply_url` but `JobListingRecord` requires `url`** → publication fails. Fix: surface-owned identity mapping (listing identity = `url`; detail may use `apply_url`).
-5. **Learning runs before browser retry; can call compiler twice per URL.** `record_extraction_stage` calls `_maybe_learn_once` before `retry_extraction_request_with_browser`. Fix: learn only after the final deterministic/browser attempt; carry a per-URL "learning attempted" latch across retries.
-6. **HTTP-only capture consumes a model call but can't produce an executable recipe** (compiler accepts `http_html`, emits a recipe requiring `rendered_dom`). Fix: don't call the model until the rendered artifact the recipe will use exists (or persist the actual capture type compiled against).
-7. **Listing recipes accept singleton record roots** (executor requires ≥1, not the configured min of 2). Fix: enforce `CASCADE_LISTING_MIN_REPEATED_RECORDS` at compile **and** every replay.
-8. **URL/image bindings discard the grounded model path** and broaden to `a[href]`/`img[src]`, which can select nav/logo/js links and turn scalar fields into lists. Fix: anchor to the exact accepted flat-map node (or an explicitly related child); require scalar identity cardinality; validate HTTP(S)/origin.
-9. **Grounding validates against the full-page flat map, not the scoped/capped map shown to the model.** Fix: validate only against the exact prompt entries; derived roots must anchor to an accepted entry.
-10. **Template-newness is race-prone; does not guarantee one model call.** Concurrent URLs/runs can both see "no recipe" and both call the model. Fix: durable transactional claim/lease keyed by `(domain, surface, route_pattern)`, recheck durable recipe before inference.
-11. **Drift inferred from final emptiness, not the replay outcome** (blocked/wrong-surface/publication-validation all counted as drift). Fix: preserve the typed replay failure in `ExtractionResult`; increment drift only for explicit grounding-related recipe failure codes.
-12. **Drift failures neither consecutive nor concurrency-safe; success never resets.** Fix: reset counter after successful replay; update under `FOR UPDATE`/atomic conditional.
+### HIGH
+4. **`job_listing` compiler emitted `apply_url` but `JobListingRecord` requires `url`.** **STATUS: FIXED** (`e47f0db`). Identity keyed on `is_listing` in `_identity_field` (listing = `url`).
+5. **Learning runs before browser retry; can call compiler twice per URL.** **STATUS: OPEN — deferred to Slice 4** (SLICE-4-HANDOFF.md §4). Fix: learn only after the final attempt; per-URL "learning attempted" latch.
+6. **HTTP-only capture consumes a model call but can't produce an executable recipe.** **STATUS: OPEN — deferred to Slice 4.** Fix: don't call the model until the rendered artifact exists.
+7. **Listing recipes accept singleton record roots.** **STATUS: OPEN — deferred to Slice 4.** Fix: enforce `CASCADE_LISTING_MIN_REPEATED_RECORDS` at compile and every replay.
+8. **URL/image bindings discarded the grounded model path** and broadened to `a[href]`/`img[src]`. **STATUS: FIXED** (`e47f0db`). `_attribute_binding` anchors to the exact grounded path; values stay scalar.
+9. **Grounding validates against the full-page flat map, not the scoped/capped map.** **STATUS: OPEN — deferred to Slice 4.**
+10. **Template-newness is race-prone; does not guarantee one model call.** **STATUS: OPEN — deferred to Slice 4.** Fix: durable transactional claim/lease keyed by `(domain, surface, route_pattern)`.
+11. **Drift inferred from final emptiness, not the replay outcome.** **STATUS: FIXED** (`e47f0db`). Precise gate `_recipe_fields_suppressed`: drift = a grounded field suppressed in the published record; optional-contract-field partiality is not drift.
+12. **Drift failures neither consecutive nor concurrency-safe; success never resets.** **STATUS: OPEN — deferred to Slice 4.** Fix: reset counter after success; update under `FOR UPDATE`/atomic.
 
-### MEDIUM (all OPEN)
+### MEDIUM (all OPEN — deferred to Slice 4)
 13. **Any domain/surface operator label disables auto-suspension** (ignores route/template/field/action). Fix: scope exemption to the exact recipe/template + explicit operator ownership/action.
 14. **"One model call" allows provider retries** (`call_provider_with_retry` may issue `max_retries+1` requests). Fix: `max_retries=0` for LEARN-ONCE; add a production-client test.
 15. **Detached executable snapshots (`run_id=None`) accumulate without a consumer.** Fix as part of the unified-release fix: stop creating detached snapshots (or add explicit activation + retention).
