@@ -21,12 +21,12 @@ from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
-    EXTRACTION_EXECUTABLE_RELEASE_VERSION,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_EXECUTABLE,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
     EXTRACTION_RECIPE_LAYER_ORDER,
+    EXTRACTION_RECIPE_OWNERSHIP_LABEL_KINDS,
     EXTRACTION_RELEASE_VERSION,
     SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
     SENTINEL_OBSERVATION_KIND,
@@ -338,19 +338,64 @@ async def build_release_payload(
         compiled_recipe = compile_recipe_layers(recipes)
         contracts = list(cast(list[dict], compiled_recipe["contracts"]))
         selector_rules = list(cast(list[dict], compiled_recipe["selector_rules"]))
-        template_rows.append(
-            {
-                "template_id": str(template.id),
-                "fingerprint": template.fingerprint,
-                "surface": template.surface,
-                "route_pattern": template.route_pattern,
-                "status": template.status,
-                "contracts": contracts,
-                "selector_rules": selector_rules,
-                "compiled_recipe": compiled_recipe,
-            }
-        )
-    return {"domain": domain, "surface": surface, "templates": template_rows}
+        row: dict[str, object] = {
+            "template_id": str(template.id),
+            "fingerprint": template.fingerprint,
+            "surface": template.surface,
+            "route_pattern": template.route_pattern,
+            "status": template.status,
+            "contracts": contracts,
+            "selector_rules": selector_rules,
+            "compiled_recipe": compiled_recipe,
+        }
+        executable = _executable_recipe_block(recipes)
+        if executable is not None:
+            row["executable_recipe"] = executable["recipe"]
+            row["confidence"] = executable["confidence"]
+        template_rows.append(row)
+    return {
+        "schema_version": EXTRACTION_RELEASE_VERSION,
+        "domain": domain,
+        "surface": surface,
+        "templates": template_rows,
+    }
+
+
+def _executable_recipe_block(
+    recipes: list[ExtractionRecipe],
+) -> dict[str, object] | None:
+    """Pick the most-confident active executable recipe for one template.
+
+    Executable recipes live on their own recipe layer/kind; the caller embeds the
+    winner under ``executable_recipe`` so recipe replay never mixes with the
+    selector/contract ``compiled_recipe`` block. Confidence lives in the payload
+    (``_confidence``); ties keep the higher recipe version.
+    """
+
+    executable = [
+        recipe
+        for recipe in recipes
+        if recipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE
+        and isinstance(recipe.payload, dict)
+    ]
+    if not executable:
+        return None
+    winner = max(
+        executable,
+        key=lambda recipe: (
+            float(dict(recipe.payload).get("_confidence") or 0.0),
+            recipe.version,
+        ),
+    )
+    compiled = {
+        key: value
+        for key, value in dict(winner.payload).items()
+        if not str(key).startswith("_")
+    }
+    return {
+        "recipe": compiled,
+        "confidence": float(dict(winner.payload).get("_confidence") or 0.0),
+    }
 
 
 def selector_rules_from_release(
@@ -469,90 +514,77 @@ async def persist_learned_recipe(
     return template, recipe
 
 
-async def build_executable_release_payload(
-    session: AsyncSession, *, domain: str, surface: str
-) -> dict[str, object]:
-    """Assemble a ``release.v2`` executable-recipe payload for replay.
+async def _locked_active_executable_recipe(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    route_pattern: str,
+) -> tuple[ExtractionTemplate, ExtractionRecipe] | None:
+    """Row-lock the active template + executable recipe for a scope.
 
-    Shaped for ``select_active_recipe``: a top-level ``schema_version`` and
-    ``surface`` plus template rows carrying the compiled ``extraction_recipe.v2``
-    payload under ``compiled_recipe``.
+    ``SELECT ... FOR UPDATE`` serializes concurrent drift/success updates so the
+    consecutive-failure counter can never be lost to a read-modify-write race.
     """
 
-    normalized_domain = str(domain or "").strip().lower()
-    templates = list(
-        (
-            await session.execute(
-                select(ExtractionTemplate).where(
-                    ExtractionTemplate.domain == normalized_domain,
-                    ExtractionTemplate.surface == surface,
-                    ExtractionTemplate.status.in_(
-                        (
-                            EXTRACTION_MEMORY_STATUS_ACTIVE,
-                            EXTRACTION_MEMORY_STATUS_TRUSTED,
-                        )
-                    ),
-                )
+    template = (
+        await session.execute(
+            select(ExtractionTemplate)
+            .where(
+                ExtractionTemplate.domain == normalize_domain(domain),
+                ExtractionTemplate.surface == surface,
+                ExtractionTemplate.route_pattern == route_pattern,
+                ExtractionTemplate.status.in_(
+                    (
+                        EXTRACTION_MEMORY_STATUS_ACTIVE,
+                        EXTRACTION_MEMORY_STATUS_TRUSTED,
+                    )
+                ),
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if template is None:
+        return None
+    recipe = (
+        await session.execute(
+            select(ExtractionRecipe)
+            .where(
+                ExtractionRecipe.template_id == template.id,
+                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
+                ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if recipe is None:
+        return None
+    return template, recipe
+
+
+async def _recipe_is_operator_owned(
+    session: AsyncSession, *, template_id: uuid.UUID
+) -> bool:
+    """True when an operator explicitly owns THIS template's recipe.
+
+    Ownership is scoped to the exact ``template_id`` and to explicit ownership /
+    override label kinds — a generic domain/surface field-feedback label does not
+    exempt a learned recipe from drift self-heal.
+    """
+
+    return (
+        await session.execute(
+            select(func.count())
+            .select_from(ExtractionOperatorLabel)
+            .where(
+                ExtractionOperatorLabel.template_id == template_id,
+                ExtractionOperatorLabel.label_kind.in_(
+                    EXTRACTION_RECIPE_OWNERSHIP_LABEL_KINDS
+                ),
             )
         )
-        .scalars()
-        .all()
-    )
-    template_rows: list[dict[str, object]] = []
-    for template in templates:
-        recipe = (
-            await session.execute(
-                select(ExtractionRecipe).where(
-                    ExtractionRecipe.template_id == template.id,
-                    ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
-                    ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
-                    ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
-                )
-            )
-        ).scalar_one_or_none()
-        if recipe is None:
-            continue
-        compiled_recipe = {
-            key: value
-            for key, value in dict(recipe.payload).items()
-            if not str(key).startswith("_")
-        }
-        template_rows.append(
-            {
-                "template_id": str(template.id),
-                "fingerprint": template.fingerprint,
-                "surface": template.surface,
-                "route_pattern": template.route_pattern,
-                "status": template.status,
-                "confidence": float(dict(recipe.payload).get("_confidence") or 0.0),
-                "compiled_recipe": compiled_recipe,
-            }
-        )
-    return {
-        "schema_version": EXTRACTION_EXECUTABLE_RELEASE_VERSION,
-        "domain": domain,
-        "surface": surface,
-        "templates": template_rows,
-    }
-
-
-async def create_executable_release_snapshot(
-    session: AsyncSession, *, run_id: int | None, domain: str, surface: str
-) -> ExtractionReleaseSnapshot:
-    """Freeze the current executable recipes into a ``release.v2`` snapshot."""
-
-    row = ExtractionReleaseSnapshot(
-        run_id=run_id,
-        domain=domain,
-        surface=surface,
-        release_version=EXTRACTION_EXECUTABLE_RELEASE_VERSION,
-        payload=await build_executable_release_payload(
-            session, domain=domain, surface=surface
-        ),
-    )
-    session.add(row)
-    await session.flush()
-    return row
+    ).scalar_one() > 0
 
 
 async def note_recipe_drift_failure(
@@ -563,49 +595,29 @@ async def note_recipe_drift_failure(
     route_pattern: str,
     threshold: int,
 ) -> bool:
-    """Count a LEARN-ONCE recipe drift and self-heal once it is confirmed stale.
+    """Count a CONSECUTIVE LEARN-ONCE recipe drift and self-heal when confirmed.
 
     Mirrors ``crawl/profile/acquisition_contract.note_acquisition_contract_failure``:
-    each empty replay for a template that already owns an executable recipe
-    increments a ``stale_after_failures`` counter stored in the recipe payload
-    (no new column). Once the counter reaches ``threshold`` the recipe is
+    each confirmed recipe-execution drift for a template that owns an executable
+    recipe increments a consecutive ``_stale_after_failures`` counter in the
+    recipe payload (no new column). A successful replay resets it (see
+    ``reset_recipe_drift``). Once the counter reaches ``threshold`` the recipe is
     suspended so future traffic falls through to the floors and can re-learn.
-    Operator decisions outrank auto-learned recipes: if an operator label owns
-    this ``(domain, surface)`` scope the recipe is never auto-suspended.
+
+    Concurrency-safe: the template + recipe rows are locked ``FOR UPDATE`` for the
+    duration of the read-modify-write. Operator decisions outrank auto-learned
+    recipes: an explicit operator ownership label on THIS exact template exempts
+    it from auto-suspension.
 
     Returns ``True`` when the recipe was suspended by this call.
     """
 
-    normalized_domain = normalize_domain(domain)
-    template = (
-        await session.execute(
-            select(ExtractionTemplate).where(
-                ExtractionTemplate.domain == normalized_domain,
-                ExtractionTemplate.surface == surface,
-                ExtractionTemplate.route_pattern == route_pattern,
-                ExtractionTemplate.status.in_(
-                    (
-                        EXTRACTION_MEMORY_STATUS_ACTIVE,
-                        EXTRACTION_MEMORY_STATUS_TRUSTED,
-                    )
-                ),
-            )
-        )
-    ).scalar_one_or_none()
-    if template is None:
+    locked = await _locked_active_executable_recipe(
+        session, domain=domain, surface=surface, route_pattern=route_pattern
+    )
+    if locked is None:
         return False
-    recipe = (
-        await session.execute(
-            select(ExtractionRecipe).where(
-                ExtractionRecipe.template_id == template.id,
-                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
-                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
-                ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
-            )
-        )
-    ).scalar_one_or_none()
-    if recipe is None:
-        return False
+    template, recipe = locked
 
     payload = dict(recipe.payload or {})
     stale_value = payload.get("_stale_after_failures")
@@ -613,17 +625,7 @@ async def note_recipe_drift_failure(
     failure_count = int(stale.get("failure_count") or 0) + 1
     should_suspend = failure_count >= max(1, int(threshold or 1))
 
-    operator_owned = (
-        await session.execute(
-            select(func.count())
-            .select_from(ExtractionOperatorLabel)
-            .where(
-                ExtractionOperatorLabel.domain == normalized_domain,
-                ExtractionOperatorLabel.surface == surface,
-            )
-        )
-    ).scalar_one() > 0
-    if operator_owned:
+    if await _recipe_is_operator_owned(session, template_id=template.id):
         should_suspend = False
 
     payload["_stale_after_failures"] = {
@@ -636,6 +638,34 @@ async def note_recipe_drift_failure(
         template.status = EXTRACTION_MEMORY_STATUS_SUSPENDED
     await session.flush()
     return should_suspend
+
+
+async def reset_recipe_drift(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    route_pattern: str,
+) -> None:
+    """Reset the consecutive drift counter after a successful recipe replay.
+
+    Because drift is counted consecutively, any grounded replay clears the
+    counter so a recipe that mostly works is never suspended by scattered,
+    non-consecutive misses. Concurrency-safe via the same row lock.
+    """
+
+    locked = await _locked_active_executable_recipe(
+        session, domain=domain, surface=surface, route_pattern=route_pattern
+    )
+    if locked is None:
+        return
+    _template, recipe = locked
+    payload = dict(recipe.payload or {})
+    if not payload.get("_stale_after_failures"):
+        return
+    payload["_stale_after_failures"] = {"failure_count": 0, "stale": False}
+    recipe.payload = payload
+    await session.flush()
 
 
 async def active_release_snapshot_for_run(
@@ -705,41 +735,12 @@ async def load_release_payload(
     row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
     if row is None:
         return {}
-    payload = deepcopy(row.payload)
-    await _overlay_suspended_templates(session, payload)
-    return payload
-
-
-async def _overlay_suspended_templates(
-    session: AsyncSession, payload: dict[str, object]
-) -> None:
-    templates = payload.get("templates")
-    if not isinstance(templates, list):
-        return
-    ids = [
-        uuid.UUID(str(row.get("template_id")))
-        for row in templates
-        if isinstance(row, dict) and _uuid_or_none(row.get("template_id")) is not None
-    ]
-    if not ids:
-        return
-    result = await session.execute(
-        select(ExtractionTemplate.id, ExtractionTemplate.status).where(
-            ExtractionTemplate.id.in_(ids)
-        )
-    )
-    statuses: dict[uuid.UUID, str] = {
-        template_id: status for template_id, status in result
-    }
-    for row in templates:
-        if not isinstance(row, dict):
-            continue
-        template_id = _uuid_or_none(row.get("template_id"))
-        if template_id is None:
-            continue
-        if statuses.get(template_id) == EXTRACTION_MEMORY_STATUS_SUSPENDED:
-            row["status"] = EXTRACTION_MEMORY_STATUS_SUSPENDED
-            row["sentinel_suspended"] = True
+    # CRITICAL 2: a persisted release snapshot is frozen. Return the stored
+    # payload unchanged so in-flight runs keep replaying the exact recipes they
+    # were created with. Current template/recipe suspension status is applied
+    # only while BUILDING a future snapshot (see ``build_release_payload``,
+    # which filters to active/trusted templates and active recipes).
+    return deepcopy(row.payload)
 
 
 async def record_extraction_result(

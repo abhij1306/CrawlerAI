@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.config import field_mappings
 from app.core.config.extraction_memory import (
-    EXTRACTION_EXECUTABLE_RELEASE_VERSION,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
+    EXTRACTION_RELEASE_VERSION,
 )
 from app.core.extraction_memory.templates import (
     normalize_route,
@@ -259,9 +259,16 @@ def select_active_recipe(
     url: str,
     template_signature: str = "",
 ) -> dict[str, Any] | None:
-    """Select one executable-recipe release entry before discovery runs."""
+    """Select one executable-recipe release entry before discovery runs.
+
+    Reads the unified frozen release payload produced by ``build_release_payload``
+    (``schema_version == EXTRACTION_RELEASE_VERSION``). A template participates in
+    recipe replay only when it carries an ``executable_recipe`` block — the
+    ``extraction_recipe.v2`` payload — kept distinct from the selector/contract
+    ``compiled_recipe`` block that drives the deterministic floors.
+    """
     if (
-        snapshot.get("schema_version") != EXTRACTION_EXECUTABLE_RELEASE_VERSION
+        snapshot.get("schema_version") != EXTRACTION_RELEASE_VERSION
         or snapshot.get("surface") != surface
     ):
         return None
@@ -270,8 +277,9 @@ def select_active_recipe(
         row
         for row in snapshot.get("templates", ())
         if isinstance(row, dict)
-        and isinstance(row.get("compiled_recipe"), dict)
+        and isinstance(row.get("executable_recipe"), dict)
         and str(row.get("status") or "active") != EXTRACTION_MEMORY_STATUS_SUSPENDED
+        and not bool(row.get("sentinel_suspended"))
     ]
     if template_signature:
         exact = next(

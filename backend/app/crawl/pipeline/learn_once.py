@@ -32,7 +32,6 @@ from app.core.shared.ids import stable_id
 from app.extraction.contracts import ExtractionRequest, ExtractionResult
 from app.extraction.surfaces import listing_schema, parse_surface, surface_spec
 from app.persistence.extraction_memory import (
-    create_executable_release_snapshot,
     note_recipe_drift_failure,
     persist_learned_recipe,
 )
@@ -149,12 +148,8 @@ async def learn_recipe_after_extraction(
         confidence=_LEARNED_RECIPE_CONFIDENCE,
         run_id=run_id,
     )
-    await create_executable_release_snapshot(
-        session,
-        run_id=None,
-        domain=domain,
-        surface=surface_value,
-    )
+    # No detached snapshot: the persisted recipe flows into the next run's
+    # unified release payload via ``build_release_payload`` at run creation.
     return True
 
 
@@ -167,27 +162,20 @@ async def note_recipe_drift_after_replay(
     """Record a drift failure for an existing recipe whose replay found nothing.
 
     Self-heal mirrors ``acquisition_contract``: once drift is confirmed past
-    ``CASCADE_RECIPE_STALE_FAILURE_THRESHOLD`` the recipe is suspended and a
-    fresh ``release.v2`` snapshot is frozen so future crawls fall through to the
-    floors (and can re-learn). Returns ``True`` when the recipe was suspended.
+    ``CASCADE_RECIPE_STALE_FAILURE_THRESHOLD`` the recipe (and its template) are
+    suspended so future crawls fall through to the floors (and can re-learn).
+    The suspended status is picked up by the next run's unified release payload.
+    Returns ``True`` when the recipe was suspended.
     """
 
     surface_value = request.surface.value
     url = request.capture.final_url or request.capture.requested_url
     domain = normalize_domain(url)
     route_pattern = normalize_route(url, surface_value)
-    suspended = await note_recipe_drift_failure(
+    return await note_recipe_drift_failure(
         session,
         domain=domain,
         surface=surface_value,
         route_pattern=route_pattern,
         threshold=CASCADE_RECIPE_STALE_FAILURE_THRESHOLD,
     )
-    if suspended:
-        await create_executable_release_snapshot(
-            session,
-            run_id=None,
-            domain=domain,
-            surface=surface_value,
-        )
-    return suspended

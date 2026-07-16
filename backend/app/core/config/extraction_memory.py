@@ -31,16 +31,24 @@ EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS = ("success", "partial", "review")
 EXTRACTION_LABEL_KIND_FIELD_FEEDBACK = "field_feedback"
 EXTRACTION_LABEL_KIND_GROUNDED_CORRECTION = "grounded_correction"
 EXTRACTION_LABEL_KIND_REVIEW_PROMOTION = "review_promotion"
+EXTRACTION_LABEL_KIND_RECIPE_OVERRIDE = "recipe_override"
+# Operator label kinds that constitute explicit ownership of a specific
+# template's recipe. Only these — scoped to the exact ``template_id`` — exempt a
+# learned recipe from auto-suspension on drift; a generic domain/surface label
+# is not enough.
+EXTRACTION_RECIPE_OWNERSHIP_LABEL_KINDS = (
+    EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+    EXTRACTION_LABEL_KIND_RECIPE_OVERRIDE,
+)
 EXTRACTION_CORRECTION_STATUS_REPLAY_PASSED = "replay_passed"
 EXTRACTION_CORRECTION_STATUS_REPLAY_FAILED = "replay_failed"
 EXTRACTION_CORRECTION_STATUS_ACTIVATED = "activated"
 EXTRACTION_COMPILER_VERSION = "recipe.v1"
-EXTRACTION_RELEASE_VERSION = "release.v1"
-# Executable recipe release payloads carry compiled ``extraction_recipe.v2``
-# entries and are selected by ``select_active_recipe`` for the LEARN-ONCE
-# runtime. Kept distinct from the selector-rule ``release.v1`` payload so the
-# recipe replay path never picks up legacy selector-only snapshots.
-EXTRACTION_EXECUTABLE_RELEASE_VERSION = "release.v2"
+# One versioned release payload per run. It carries selector/contract recipes
+# AND executable ``extraction_recipe.v2`` recipes so a single frozen snapshot
+# drives both the deterministic floors and LEARN-ONCE recipe replay. Bumped from
+# ``release.v1`` when executable recipes were folded into the unified payload.
+EXTRACTION_RELEASE_VERSION = "release.v2"
 EXTRACTION_MANIFEST_VERSION = "manifest.v1"
 SENTINEL_DETERMINISTIC_CHALLENGER_ENABLED = True
 SENTINEL_DEFAULT_SAMPLE_RATE = 0.05
