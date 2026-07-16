@@ -573,6 +573,170 @@ async def test_concurrent_claims_compile_exactly_once(
     assert recipe_count == 1
 
 
+# --- Finding 6: exactly-once holds even when the compile yields NO recipe -----
+
+# Grounds to a DOM path that does not exist, so the compiler abstains
+# (``candidate is None``) and NOTHING executable is persisted.
+_NO_CANDIDATE_RESPONSE = (
+    '{"record_root": "", "fields": {'
+    '"title": "/html[1]/body[1]/main[1]/h9[7]", '
+    '"price": "/html[1]/body[1]/main[1]/span[9]"}}'
+)
+
+
+async def _run_learn_no_candidate(session, calls, *, delay: float = 0.0):
+    import asyncio
+
+    from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
+    from app.extraction.contracts import ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    async def _client(system_prompt: str, user_prompt: str) -> str:
+        calls.append(1)
+        if delay:
+            await asyncio.sleep(delay)
+        return _NO_CANDIDATE_RESPONSE
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        _DETAIL_HTML,
+        _CLAIM_URL,
+        requested_fields=("title", "price"),
+    )
+    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    learned = await learn_recipe_after_extraction(
+        session,
+        request=request,
+        result=empty,
+        run_id=None,
+        llm_enabled=True,
+        is_new_template=True,
+        model_client=_client,
+    )
+    if learned:
+        await session.commit()
+    else:
+        await session.rollback()
+    return learned
+
+
+@pytest.mark.asyncio
+async def test_no_candidate_compile_stays_exactly_once_sequential(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 6 (sequential): the first attempt compiles but the model grounds
+    # nothing, so no executable recipe is persisted. A durable PROVISIONAL
+    # attempt marker is written under the lock, so a second attempt for the same
+    # scope (within the TTL) fails closed WITHOUT calling the model again.
+    from sqlalchemy import func, select
+
+    from app.models.extraction_memory import ExtractionRecipe
+
+    calls: list[int] = []
+    assert await _run_learn_no_candidate(db_session, calls) is False
+    assert await _run_learn_no_candidate(db_session, calls) is False
+    # The model was invoked exactly once even though nothing was learned.
+    assert calls == [1]
+
+    # Exactly one (PROVISIONAL marker) row exists; none is ACTIVE.
+    recipe_count = await db_session.scalar(
+        select(func.count()).select_from(ExtractionRecipe)
+    )
+    assert recipe_count == 1
+    active_count = await db_session.scalar(
+        select(func.count())
+        .select_from(ExtractionRecipe)
+        .where(ExtractionRecipe.status == "active")
+    )
+    assert active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_no_candidate_compile_stays_exactly_once_concurrent(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 6 (true concurrency): two workers race the claim on independent
+    # sessions; the winner's compile yields NO recipe. Because the durable
+    # attempt marker is committed under the lock BEFORE the model call, the
+    # loser sees it and fails closed — the compiler runs EXACTLY ONCE.
+    import asyncio
+
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models.extraction_memory import ExtractionRecipe
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    calls: list[int] = []
+
+    async def _worker() -> bool:
+        async with session_factory() as session:
+            return await _run_learn_no_candidate(session, calls, delay=0.05)
+
+    results = await asyncio.gather(_worker(), _worker())
+
+    # Neither worker learned (no grounded recipe), but the model was called once.
+    assert results == [False, False]
+    assert calls == [1]
+
+    # Exactly one PROVISIONAL marker row; nothing ACTIVE leaked into the release.
+    recipe_count = await db_session.scalar(
+        select(func.count()).select_from(ExtractionRecipe)
+    )
+    assert recipe_count == 1
+    active_count = await db_session.scalar(
+        select(func.count())
+        .select_from(ExtractionRecipe)
+        .where(ExtractionRecipe.status == "active")
+    )
+    assert active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_stale_attempt_marker_is_reclaimable(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 6 (TTL): a crashed first attempt leaves a marker that ages out. A
+    # later attempt past the TTL re-claims the scope and can learn — an
+    # abandoned attempt never permanently blocks a template.
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func, select
+
+    from app.core.config.cascade import CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS
+    from app.models.extraction_memory import ExtractionRecipe
+
+    calls: list[int] = []
+    # First attempt grounds nothing -> leaves a PROVISIONAL marker.
+    assert await _run_learn_no_candidate(db_session, calls) is False
+    assert calls == [1]
+
+    # Backdate the marker beyond the TTL to simulate an abandoned attempt.
+    marker = await db_session.scalar(select(ExtractionRecipe))
+    assert marker is not None
+    stale_at = datetime.now(UTC) - timedelta(
+        seconds=CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS + 60
+    )
+    payload = dict(marker.payload or {})
+    payload["_learn_attempt"] = {"run_id": None, "claimed_at": stale_at.isoformat()}
+    marker.payload = payload
+    await db_session.commit()
+
+    # A grounded second attempt now re-claims and learns.
+    grounded_calls: list[int] = []
+    assert await _run_learn(db_session, grounded_calls) is True
+    assert grounded_calls == [1]
+
+    active_count = await db_session.scalar(
+        select(func.count())
+        .select_from(ExtractionRecipe)
+        .where(ExtractionRecipe.status == "active")
+    )
+    assert active_count == 1
+
+
 # --- Finding 12: production reset caller clears drift on a grounded replay ----
 
 

@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import uuid
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
@@ -22,6 +23,7 @@ from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
+    EXTRACTION_MEMORY_STATUS_PROVISIONAL,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_EXECUTABLE,
     EXTRACTION_RECIPE_KIND_SELECTORS,
@@ -34,6 +36,10 @@ from app.core.config.extraction_memory import (
     SENTINEL_SUSPENSION_KIND,
 )
 from app.core.domain_utils import normalize_domain
+from app.core.config.cascade import (
+    CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS,
+    CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS,
+)
 from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.extraction_memory.templates import (
     extract_tech_signals,
@@ -534,6 +540,12 @@ async def persist_learned_recipe(
         payload=payload,
         merge_payload=merge_payload,
     )
+    # Finding 6: the claim seam may have pre-created this row as a PROVISIONAL
+    # learn-attempt marker. A grounded compile promotes it to ACTIVE so it enters
+    # the release payload (release payloads only surface ACTIVE executables).
+    if recipe.status != EXTRACTION_MEMORY_STATUS_ACTIVE:
+        recipe.status = EXTRACTION_MEMORY_STATUS_ACTIVE
+        await session.flush()
     return template, recipe
 
 
@@ -605,6 +617,32 @@ class LearnOnceClaim:
     fingerprint: str
 
 
+def _learn_attempt_is_fresh(payload: dict | None) -> bool:
+    """True when a PROVISIONAL learn-attempt marker is still within its TTL.
+
+    A fresh marker means another worker is mid-attempt (or just finished one):
+    fail closed. A marker older than ``CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS``
+    is treated as abandoned (crashed worker) so a later run can re-attempt —
+    an interrupted compile never permanently blocks a template (finding 6).
+    """
+
+    marker = (payload or {}).get("_learn_attempt")
+    if not isinstance(marker, dict):
+        return False
+    claimed_at = marker.get("claimed_at")
+    if not isinstance(claimed_at, str):
+        # Malformed/absent timestamp: treat as fresh so we never race a peer.
+        return True
+    try:
+        claimed = datetime.fromisoformat(claimed_at)
+    except ValueError:
+        return True
+    if claimed.tzinfo is None:
+        claimed = claimed.replace(tzinfo=UTC)
+    age = datetime.now(UTC) - claimed
+    return age < timedelta(seconds=CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS)
+
+
 async def claim_learn_once_template(
     session: AsyncSession,
     *,
@@ -622,15 +660,31 @@ async def claim_learn_once_template(
     racing two writes. This turns that best-effort check into a strict,
     transactional guarantee of exactly one compile per new template.
 
-    The template row is ``SELECT ... FOR UPDATE`` locked and its active
-    executable recipe re-checked under the lock. When an active recipe already
-    exists (learned by a prior run or by the worker that won this row lock),
-    ``None`` is returned and the caller must skip learning (honest no-learn).
-    Otherwise a :class:`LearnOnceClaim` is returned; the caller runs the single
-    model call and persists **inside the same transaction**. A second concurrent
-    worker BLOCKS on the same row's ``FOR UPDATE``; when it acquires the lock the
-    winner has already persisted, so its re-check sees the recipe and it skips —
-    the model is called exactly once per scope.
+    Finding 6: "exactly one model call" must hold even when the winning worker's
+    compile yields NO grounded recipe (no candidate / ungrounded / provider
+    error) and therefore persists nothing executable. So the claim writes a
+    durable PROVISIONAL learn-attempt marker on the executable-recipe row UNDER
+    the template lock and **commits it (releasing the lock) BEFORE the model
+    call**. A concurrent worker then blocks on the template insert until that
+    commit, re-checks under the lock, sees the fresh marker, and fails closed —
+    even though the first worker's compile ultimately wrote no recipe. On a
+    successful compile ``persist_learned_recipe`` promotes the same row to
+    ACTIVE (release payloads only surface ACTIVE executable recipes, so a bare
+    marker never leaks into replay). A marker older than the attempt TTL is an
+    abandoned/crashed attempt and is re-claimable so learning never wedges.
+
+    Finding 7 (lock duration): the previous design held the row lock across the
+    provider-config lookup AND the LLM call, so a stuck lock could park a pooled
+    DB connection for the whole model round-trip. This seam now (a) bounds the
+    lock wait with a ``SET LOCAL lock_timeout`` so a worker that cannot acquire
+    the lock quickly fails closed instead of hanging a connection, and (b)
+    commits the marker before returning so the lock is NOT held across the model
+    call at all — the durable marker, not a long-held row lock, enforces
+    exactly-once.
+
+    Returns a :class:`LearnOnceClaim` when this worker owns the single compile;
+    ``None`` when the scope is already learned or another attempt is in flight
+    (honest no-learn — the caller must skip learning and never error the crawl).
     """
 
     # Ensure the template row exists so there is a row to lock. ``ensure_template``
@@ -644,31 +698,74 @@ async def claim_learn_once_template(
         tech_signals=tech_signals,
         run_id=run_id,
     )
-    # Lock the template row for the duration of the caller's transaction. A racing
-    # worker for the same scope blocks here until the winner commits/rolls back.
-    locked = (
+    # Finding 7: cap how long we wait for the template row lock. A racing worker
+    # that cannot acquire it within the bound raises ``lock_not_available``; we
+    # fail closed (skip learning) rather than block a pooled connection.
+    try:
         await session.execute(
-            select(ExtractionTemplate)
-            .where(ExtractionTemplate.id == template.id)
-            .with_for_update()
+            text(f"SET LOCAL lock_timeout = '{CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS}ms'")
         )
-    ).scalar_one()
-    # Re-check under the lock: if an executable recipe already exists for this
-    # scope the compile was already done — fail closed (no model call).
-    existing = (
-        await session.execute(
-            select(ExtractionRecipe.id)
-            .where(
-                ExtractionRecipe.template_id == locked.id,
-                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
-                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
-                ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
+        locked = (
+            await session.execute(
+                select(ExtractionTemplate)
+                .where(ExtractionTemplate.id == template.id)
+                .with_for_update()
             )
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
+        ).scalar_one()
+        # Re-check the executable-recipe row under the lock.
+        existing = (
+            await session.execute(
+                select(ExtractionRecipe)
+                .where(
+                    ExtractionRecipe.template_id == locked.id,
+                    ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                    ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+    except OperationalError:
+        # Lock wait exceeded ``lock_timeout`` — a peer holds the row. Fail closed.
+        await session.rollback()
         return None
+
+    if existing is not None:
+        if existing.status == EXTRACTION_MEMORY_STATUS_ACTIVE:
+            # Already learned (this scope has a live recipe): honest no-learn.
+            await session.commit()
+            return None
+        if _learn_attempt_is_fresh(existing.payload):
+            # A peer's attempt is in flight (marker within TTL): fail closed.
+            await session.commit()
+            return None
+        # Stale marker from an abandoned attempt: re-claim by refreshing it.
+        payload = dict(existing.payload or {})
+        payload["_learn_attempt"] = {
+            "run_id": run_id,
+            "claimed_at": datetime.now(UTC).isoformat(),
+        }
+        existing.payload = payload
+        existing.status = EXTRACTION_MEMORY_STATUS_PROVISIONAL
+    else:
+        # First claimant for this scope: write the durable PROVISIONAL marker.
+        session.add(
+            ExtractionRecipe(
+                template_id=locked.id,
+                layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                kind=EXTRACTION_RECIPE_KIND_EXECUTABLE,
+                payload={
+                    "_learn_attempt": {
+                        "run_id": run_id,
+                        "claimed_at": datetime.now(UTC).isoformat(),
+                    }
+                },
+                status=EXTRACTION_MEMORY_STATUS_PROVISIONAL,
+            )
+        )
+    # Commit the marker so it is durable and the row lock is released BEFORE the
+    # model call (findings 6 + 7). A concurrent worker blocked on the template
+    # insert now sees the committed marker and fails closed.
+    await session.commit()
     return LearnOnceClaim(
         template=locked,
         domain=normalize_domain(domain),

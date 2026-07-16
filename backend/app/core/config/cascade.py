@@ -102,6 +102,21 @@ CASCADE_RECIPE_SCOPE_KEY: Final[tuple[str, str, str]] = (
 # acquisition-contract self-heal loop rather than inventing a new mechanism.
 CASCADE_RECIPE_STALE_FAILURE_THRESHOLD: Final[int] = 3
 
+# TTL (seconds) for a durable LEARN-ONCE attempt marker (finding 6). Once a
+# worker claims a template scope it writes an attempt marker so concurrent
+# workers fail closed even if the compile yields no recipe. If that worker
+# crashes before persisting, the marker becomes stale after this window and a
+# later run may re-attempt learning — an abandoned attempt never permanently
+# blocks a template. Sized well above one model call yet short enough that a
+# crashed attempt re-opens within a subsequent crawl.
+CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS: Final[int] = 900
+
+# Bounded ``lock_timeout`` (milliseconds) for the LEARN-ONCE claim transaction
+# (finding 7). The claim acquires a template row ``FOR UPDATE``; capping the
+# lock wait means a worker that cannot acquire the lock quickly fails closed
+# (skips learning) rather than parking a pooled DB connection indefinitely.
+CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS: Final[int] = 5000
+
 # --- LEARN-ONCE compiler configuration -------------------------------------
 
 # Per-surface allow-list for the LEARN-ONCE tier. Only surfaces named here may
@@ -294,6 +309,8 @@ __all__ = [
     "CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL",
     "CASCADE_RECIPE_SCOPE_KEY",
     "CASCADE_RECIPE_STALE_FAILURE_THRESHOLD",
+    "CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS",
+    "CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS",
     "CASCADE_LEARN_ONCE_SURFACES",
     "CASCADE_RECIPE_COMPILER_MAX_FLAT_MAP_ENTRIES",
     "CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS",

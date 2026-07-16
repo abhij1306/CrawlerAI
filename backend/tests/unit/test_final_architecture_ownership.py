@@ -38,7 +38,7 @@ OVERSIZED_MODULE_DEBT = {
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 961,
+    "persistence/extraction_memory.py": 1157,
     "schemas/crawl.py": 747,
 }
 COMPLEX_FUNCTION_DEBT = {
@@ -161,7 +161,7 @@ PACKAGE_LOC_BUDGETS = {
     # LEARN-ONCE recipe tier adds the pure recipe primitives, compiler, evidence
     # bridge, and persistence release/drift logic under core/. Bumped once to
     # seat the new tier; the eval-gated cleanup slice consolidates it back down.
-    "core": 20_118,
+    "core": 20_133,
     "enrichment": 2_245,
     "connectors": 2_767,
     "intelligence": 3_659,
@@ -177,7 +177,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_522
+TOTAL_APP_LOC_BUDGET = 85_627
 
 
 def test_production_package_loc_budgets() -> None:
