@@ -134,6 +134,7 @@ def build_diagnosis(
         "data_integrity": extraction_result.data_integrity,
         "manifest": _manifest_context(extraction_result).model_dump(mode="json"),
         "diagnostics": _diagnostic_summary(extraction_result).model_dump(mode="json"),
+        "recipe": _recipe_section(extraction_result),
         "failure_classifications": [
             row.model_dump(mode="json")
             for row in _failure_classifications(extraction_result)
@@ -209,6 +210,56 @@ def _manifest_context(extraction_result: object) -> ExecutionManifestContext:
 def _diagnostic_summary(extraction_result: object) -> DiagnosticSummary:
     value = getattr(extraction_result, "diagnostics", None)
     return value if isinstance(value, DiagnosticSummary) else DiagnosticSummary()
+
+
+def _recipe_section(extraction_result: ExtractionResult) -> dict[str, object]:
+    """Expose the one recipe path that caused this result without raw values."""
+
+    execution = getattr(extraction_result, "recipe_execution", None)
+    stages, _ = _bounded(
+        getattr(extraction_result, "stage_outcomes", ()), _STAGES_LIMIT
+    )
+    return {
+        "selected": any(
+            row.stage == "recipe_select" and row.outcome == "ran" for row in stages
+        ),
+        "execution": (
+            {
+                "recipe_id": execution.recipe_id,
+                "failure_code": execution.failure_code,
+                "detail": _preview(execution.detail) if execution.detail else None,
+                "record_count": len(execution.records),
+                "binding_outcomes": [
+                    {
+                        "binding_id": outcome.binding_id,
+                        "status": outcome.status,
+                        "source_path": outcome.source_path,
+                        "detail": _preview(outcome.detail) if outcome.detail else None,
+                    }
+                    for outcome in execution.outcomes
+                ],
+            }
+            if execution is not None
+            else None
+        ),
+        "discovery_stages": [
+            {
+                "stage": row.stage,
+                "outcome": row.outcome,
+                "detail": _preview(row.detail) if row.detail else None,
+            }
+            for row in stages
+            if row.stage
+            in {
+                "recipe_select",
+                "recipe_discovery",
+                "model_recipe_compile",
+                "recipe_execute",
+                "candidate_recipe_execute",
+                "model_recipe_proposal",
+            }
+        ],
+    }
 
 
 def _failure_classifications(

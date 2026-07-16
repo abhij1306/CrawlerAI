@@ -1587,3 +1587,327 @@ def test_jsonld_schema_online_only_availability_is_sellable() -> None:
         row.fact_type == "offer.availability" and "invalid_availability" in row.flags
         for row in result.evidence
     )
+
+
+# --- Slice 3: commerce detail cascade (structured floor -> DOM) --------------
+
+import json  # noqa: E402
+
+from app.extraction import adapters, cascade  # noqa: E402
+from app.extraction.contracts import CollectorOutcome  # noqa: E402
+from app.extraction.surfaces import surface_spec  # noqa: E402
+
+# A commerce-detail fixture that exercises BOTH floors: a structured JSON-LD
+# product block (structured source floor) plus a rendered DOM body (DOM floor).
+_DETAIL_HTML = """
+<html>
+<head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Trail Runner",
+  "brand": {"@type": "Brand", "name": "Invoro"},
+  "sku": "TR-9",
+  "url": "https://shop.test/products/trail-runner",
+  "image": ["https://shop.test/i/trail-runner.jpg"],
+  "offers": {
+    "@type": "Offer",
+    "price": "149",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock"
+  }
+}
+</script>
+</head>
+<body><main><h1>Trail Runner</h1><span class="price">$149</span></main></body>
+</html>
+"""
+_DETAIL_URL = "https://shop.test/products/trail-runner"
+
+# Adversarial fixture with NO structured evidence at all: the structured floor
+# must yield nothing and the DOM floor must carry the record on its own.
+_DOM_ONLY_DETAIL_HTML = """
+<html>
+<body><main>
+<h1>Canyon Pack</h1>
+<span class="price">$88</span>
+<img src="https://shop.test/i/canyon.jpg" alt="Canyon Pack">
+</main></body>
+</html>
+"""
+_DOM_ONLY_URL = "https://shop.test/products/canyon-pack"
+
+
+def _detail_result(html: str = _DETAIL_HTML, url: str = _DETAIL_URL):
+    return _extract("ecommerce_detail", html, url)
+
+
+def test_commerce_detail_cascade_publishes_structured_record() -> None:
+    record = _detail_result().records[0]
+    assert record["title"] == "Trail Runner"
+    assert record["price"] == "149.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+
+
+def test_commerce_detail_structured_floor_runs_before_dom_floor() -> None:
+    """Structured-source collectors must precede the DOM collector.
+
+    Proven via the harvest ``collector_outcomes`` ordering, with
+    ``stage_outcomes`` confirming the deterministic harvest-first pipeline.
+    """
+    result = _detail_result()
+    order = [row.collector_id for row in result.collector_outcomes]
+    assert "jsonld" in order and "dom" in order
+    structured_ids = {"jsonld", "opengraph", "microdata", "js_state", "network"}
+    last_structured = max(
+        index for index, cid in enumerate(order) if cid in structured_ids
+    )
+    assert last_structured < order.index("dom")
+    stages = [row.stage for row in result.stage_outcomes]
+    assert stages[0] == "harvest"
+    assert stages.index("harvest") < stages.index("resolve") < stages.index("publish")
+
+
+def test_detail_cascade_seam_orders_floors() -> None:
+    """Direct seam contract: the cascade itself owns structured->DOM order.
+
+    Exercises ``run_detail_cascade`` without the adapter, asserting the seam
+    (not ``pipeline``) sequences the structured floor collectors ahead of the
+    DOM floor, that its declared ``DETAIL_FLOOR_ORDER`` matches, and that the
+    trailing url identity is present.
+    """
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL, _DETAIL_HTML, _DETAIL_URL
+    )
+    spec = surface_spec(Surface.ECOMMERCE_DETAIL)
+    harvest = cascade.run_detail_cascade(request, request.artifact_reader, spec)
+
+    assert cascade.DETAIL_FLOOR_ORDER == ("structured", "dom")
+    order = [row.collector_id for row in harvest.collector_outcomes]
+    structured_ids = {"jsonld", "opengraph", "microdata", "js_state", "network"}
+    last_structured = max(
+        index for index, cid in enumerate(order) if cid in structured_ids
+    )
+    assert last_structured < order.index("dom")
+    assert order.index("dom") < order.index("url")
+
+
+def test_detail_cascade_seam_rejects_listing_spec() -> None:
+    """The cardinality guard rejects a ``many``-record listing spec."""
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL, _DETAIL_HTML, _DETAIL_URL
+    )
+    with pytest.raises(ValueError, match="one-record surface"):
+        cascade.run_detail_cascade(
+            request, request.artifact_reader, surface_spec(Surface.ECOMMERCE_LISTING)
+        )
+
+
+def test_detail_cascade_seam_supports_both_one_record_surfaces() -> None:
+    """Slice 4 registers the job_detail profile alongside ecommerce_detail.
+
+    Both one-record surfaces now have a spec-driven collector profile, so both
+    are in ``DETAIL_SUPPORTED_SURFACES`` and route through the seam without any
+    ``surface ==`` branch.
+    """
+    assert Surface.ECOMMERCE_DETAIL in cascade.DETAIL_SUPPORTED_SURFACES
+    assert Surface.JOB_DETAIL in cascade.DETAIL_SUPPORTED_SURFACES
+
+
+def test_detail_cascade_seam_rejects_unsupported_one_record_surface(
+    monkeypatch,
+) -> None:
+    """A one-record surface with no registered profile fails honestly.
+
+    A surface absent from ``_DETAIL_SURFACE_PROFILES`` has no collector profile;
+    routing it through another surface's collectors would falsely emit that
+    surface's facts, so the seam rejects it rather than returning wrong-surface
+    evidence. Exercised by monkeypatching job_detail out of the profile table.
+    """
+    monkeypatch.setattr(
+        cascade,
+        "_DETAIL_SURFACE_PROFILES",
+        {Surface.ECOMMERCE_DETAIL: cascade._DETAIL_FLOOR_REGISTRY},
+    )
+    job_request = fixture_request_from_inputs(
+        Surface.JOB_DETAIL, "<main><h1>Engineer</h1></main>", "https://jobs.test/e"
+    )
+    with pytest.raises(ValueError, match="no detail collector profile"):
+        cascade.run_detail_cascade(
+            job_request, job_request.artifact_reader, surface_spec(Surface.JOB_DETAIL)
+        )
+
+
+def test_detail_cascade_invokes_registry_floors_in_order(monkeypatch) -> None:
+    """Orchestration proof: the seam drives the registry floors, not legacy.
+
+    Instruments the profile's floor factories AND the shared
+    ``run_detail_collectors`` primitive, then asserts the seam calls each floor
+    factory and runs its collectors exactly once, in the declared
+    structured->DOM order, and aggregates every floor's evidence. This fails if
+    the implementation delegates to the legacy single-pass harvest (which would
+    call neither the per-floor factories nor ``run_detail_collectors`` once per
+    floor) instead of orchestrating the registry.
+    """
+    factory_calls: list[str] = []
+    collector_batches: list[tuple[str, ...]] = []
+
+    def _structured_probe():
+        factory_calls.append("structured")
+        return ("STRUCTURED_A", "STRUCTURED_B")
+
+    def _dom_probe():
+        factory_calls.append("dom")
+        return ("DOM_A",)
+
+    real_run = cascade.run_detail_collectors
+
+    def _instrumented_run(
+        collectors, bundle, reader, *, requested_fields=(), allowed_facts=None
+    ):
+        collector_batches.append(tuple(collectors))
+        # Probe sentinels flow through here; emit one outcome per collector so
+        # aggregation order is observable. Evidence stays empty (HarvestResult
+        # only needs valid Evidence rows, which the outcomes stand in for here).
+        outcomes = tuple(
+            CollectorOutcome(
+                collector_id=name, outcome="produced_evidence", evidence_count=1
+            )
+            for name in collectors
+        )
+        return (), outcomes, len(collectors)
+
+    monkeypatch.setattr(
+        cascade,
+        "_DETAIL_SURFACE_PROFILES",
+        {Surface.ECOMMERCE_DETAIL: (("structured", _structured_probe), ("dom", _dom_probe))},
+    )
+    monkeypatch.setattr(cascade, "run_detail_collectors", _instrumented_run)
+    monkeypatch.setattr(
+        cascade,
+        "detail_recipe_requested_evidence",
+        lambda *a, **k: ((), (), 0),
+    )
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL, _DETAIL_HTML, _DETAIL_URL
+    )
+    harvest = cascade.run_detail_cascade(
+        request, request.artifact_reader, surface_spec(Surface.ECOMMERCE_DETAIL)
+    )
+
+    # Factories invoked once each, structured before DOM.
+    assert factory_calls == ["structured", "dom"]
+    # Each floor's collector group ran through the shared primitive, in order.
+    assert collector_batches == [
+        ("STRUCTURED_A", "STRUCTURED_B"),
+        ("DOM_A",),
+    ]
+    # Aggregation preserves floor order across all floors.
+    assert [row.collector_id for row in harvest.collector_outcomes] == [
+        "STRUCTURED_A",
+        "STRUCTURED_B",
+        "DOM_A",
+    ]
+    assert harvest.admitted_source_objects == 3
+    assert real_run  # sanity: the real primitive is still importable/unchanged
+
+
+def test_detail_flag_on_dispatches_to_cascade(monkeypatch) -> None:
+    """Flag ON must invoke ``run_detail_cascade`` and NOT the legacy harvest."""
+    calls: list[str] = []
+    real_cascade = adapters.run_detail_cascade
+    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", True)
+    monkeypatch.setattr(
+        adapters,
+        "run_detail_cascade",
+        lambda *a, **k: (calls.append("cascade"), real_cascade(*a, **k))[1],
+    )
+    monkeypatch.setattr(
+        adapters,
+        "harvest_ecommerce_detail",
+        lambda *a, **k: pytest.fail("legacy harvest must not run when flag is ON"),
+    )
+    result = _detail_result()
+    assert calls == ["cascade"]
+    assert result.records[0]["title"] == "Trail Runner"
+
+
+def test_detail_flag_off_dispatches_to_legacy(monkeypatch) -> None:
+    """Flag OFF must invoke the legacy harvest and NOT the cascade seam."""
+    calls: list[str] = []
+    real_legacy = adapters.harvest_ecommerce_detail
+    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", False)
+    monkeypatch.setattr(
+        adapters,
+        "harvest_ecommerce_detail",
+        lambda *a, **k: (calls.append("legacy"), real_legacy(*a, **k))[1],
+    )
+    monkeypatch.setattr(
+        adapters,
+        "run_detail_cascade",
+        lambda *a, **k: pytest.fail("cascade must not run when flag is OFF"),
+    )
+    result = _detail_result()
+    assert calls == ["legacy"]
+    assert result.records[0]["title"] == "Trail Runner"
+
+
+def _detail_snapshot(result):
+    return {
+        "records": [
+            record.model_dump(mode="json", exclude_none=True)
+            for record in result.records
+        ],
+        "collector_outcomes": [
+            row.model_dump(mode="json") for row in result.collector_outcomes
+        ],
+        "stage_outcomes": [
+            row.model_dump(mode="json") for row in result.stage_outcomes
+        ],
+        "evidence": [row.model_dump(mode="json") for row in result.evidence],
+        "verdict": result.verdict,
+        "data_integrity": result.data_integrity,
+    }
+
+
+@pytest.mark.parametrize(
+    "html,url",
+    [
+        (_DETAIL_HTML, _DETAIL_URL),
+        (_DOM_ONLY_DETAIL_HTML, _DOM_ONLY_URL),
+    ],
+)
+def test_commerce_detail_flag_on_off_are_byte_identical(
+    monkeypatch, html, url
+) -> None:
+    """Flag ON (cascade) and OFF (legacy) publish byte-identical output.
+
+    Covers both a structured-rich fixture and an adversarial DOM-only fixture
+    (empty structured floor) so parity is proven when each floor carries the
+    record. Compares records, per-collector outcomes, stages, and evidence.
+    """
+    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", True)
+    on_snapshot = _detail_snapshot(_detail_result(html, url))
+
+    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", False)
+    off_snapshot = _detail_snapshot(_detail_result(html, url))
+
+    assert json.dumps(on_snapshot, sort_keys=True) == json.dumps(
+        off_snapshot, sort_keys=True
+    )
+
+
+def test_dom_only_detail_cascade_carries_record_without_structured() -> None:
+    """Adversarial DOM-only capture: structured floor empty, DOM floor holds."""
+    monkeypatch_free = _detail_result(_DOM_ONLY_DETAIL_HTML, _DOM_ONLY_URL)
+    by_id = {
+        row.collector_id: row.outcome
+        for row in monkeypatch_free.collector_outcomes
+    }
+    assert by_id.get("jsonld") == "no_match"
+    assert by_id.get("dom") == "produced_evidence"
+    assert monkeypatch_free.records
+    assert monkeypatch_free.records[0]["title"] == "Canyon Pack"

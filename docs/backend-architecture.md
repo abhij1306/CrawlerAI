@@ -284,7 +284,7 @@ Current live behavior:
 - blocked-page detection is evidence-based: anti-bot vendor markers alone do not block a page, but challenge-specific signals such as CAPTCHA-delivery elements and corroborating blocker text do
 - browser outcomes now distinguish challenge pages, low-content terminal shells, and explicit navigation/page-closed failures instead of collapsing them into generic browser HTML
 - listing traversal now captures bounded per-step listing snapshots for extraction instead of concatenating full rendered DOMs across page turns, and diagnostics expose traversal fragment count plus traversal HTML bytes
-- traversal, browser artifact capture, and listing extraction now share the same canonical listing-fragment selector/scoring owner in `extract/listing_card_fragments.py`; traversal is orchestration, not a separate listing-card pipeline
+- traversal, browser artifact capture, and listing extraction share listing-card selector/scoring through `extraction/listing.py` and the listing selector banks in `extraction/collectors/*`; traversal is orchestration, not a separate listing-card pipeline
 - listing-card counting now falls back to the shared heuristic when configured selectors miss a real grid, and the shared ecommerce selector set accepts case-variant `productCard`-style class names instead of requiring a single casing convention
 - traversal-enabled browser fetches now retain both traversal-composed HTML and the full rendered HTML so the pipeline can retry extraction once when traversal fragments produce zero records
 - browser block classification now preserves usable listing/detail content when vendor markers and challenge widgets coexist with clear extractable signals, instead of forcing a blocked verdict from anti-bot evidence alone
@@ -319,29 +319,24 @@ Current live behavior:
 
 ### 6.4 Extraction
 
-Primary files:
+Primary files (flat `app/extraction/` package):
 
-- `crawl_engine.py`
-- `detail_extractor.py`
-- `extract/detail/assembly/tiers.py`
-- `extract/contracts.py`
-- `extract/detail/resolution.py`
-- `extract/detail/validation.py`
-- `extract/detail/images/dedupe.py`
-- `listing_extractor.py`
-- `extract/structured_listing_handler.py`
-- `extract/network_listing_mapper.py`
-- `extract/field_candidates/*`
-- `structured_sources.py`
-- `js_state/state_normalizer/`
-- `js_state/job_mapper.py`
-- `js_state/helpers.py`
-- `network_payload_mapper.py`
-- `field_value_*`
-- `field_url_normalization.py`
-- `app/extraction/publication.py`
-- `extract/variant_normalization/`
-- `extract/*`
+- `extraction/engine.py` — common Harvest → Resolve → Publish orchestration
+- `extraction/adapters.py` — the four surface adapters behind the common API
+- `extraction/surfaces.py` — `Surface` enum, surface specs, and listing schemas
+- `extraction/contracts.py` — frozen extraction contracts, evidence, records, and projections
+- `extraction/entities.py` — product/variant/offer/asset entities and `EntitySet`
+- `extraction/targeting.py` — commerce/subject target selection and scoped graphs
+- `extraction/documents.py` — HTML/JSON document parsing and the `DocumentStore`
+- `extraction/pipeline.py` — ecommerce detail collection/harvest and price/brand conflict flagging
+- `extraction/listing.py` — ecommerce listing collection and resolution
+- `extraction/jobs.py` — job collection, wrong-surface checks, and job detail/listing resolution
+- `extraction/collectors/*` — DOM, JS-state, JSON-LD, metadata (microdata/OG/network), and URL evidence collectors
+- `extraction/resolution/` — product/variant consensus, ranking, price-unit derivation, and asset resolution
+- `extraction/validation.py` — missing-evidence, incomplete-offer, and contradiction findings
+- `extraction/result_building.py` — decision accounting, evidence dispositions, and field states
+- `extraction/publication.py` — resolver-authorized publication projections and serializers
+- `extraction/field_states.py`, `extraction/json_walk.py`, `extraction/model_runtime.py`, `extraction/sentinel.py`, `extraction/replay.py` — field-state derivation, JSON traversal primitives, evaluation-gated model fallback, Sentinel challenger comparison, and replay/fixture construction
 
 Responsibilities:
 
@@ -364,14 +359,14 @@ Important implemented features:
 - ecommerce detail title selection now ranks structured sources ahead of raw DOM headings, rejects noisy DOM `<h1>/<title>` values such as promo or generic-results text, and only promotes fallback titles when the replacement source is materially stronger
 - ecommerce detail extraction now drops low-signal site-shell records when the surviving title still resolves to site-brand chrome and no real product anchors survive, preventing stale SPA/detail misses from being persisted as false product successes
 - ecommerce-detail extraction now threads the originally requested PDP URL through Resolve and the authorized publication projection so same-site utility redirects can either preserve the requested product identity when the product metadata still matches or drop the row entirely when the utility page is carrying mismatched stale product data
-- detail tier execution lives in `extract/detail/assembly/tiers.py`; all detail insertion paths write through one sourced-candidate boundary into `CandidateSet`, which owns source, tier, index, and evidence ID; the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and finalization transitions
+- detail harvest/resolve sequencing lives in `extraction/pipeline.py` and `extraction/resolution/`; all detail evidence flows through one sourced-`Evidence` boundary carrying source, collector, and evidence ID, with authoritative -> structured -> JS state -> DOM ordering, DOM skip decisions, and finalization owned by the pipeline and resolver
 - detail materializes once before the DOM skip decision and once after DOM collection; parallel candidate-source/evidence arrays and their alignment repair pass are deleted
 - incomplete variant offers and parent/variant currency contradictions remain visible as validation findings instead of silent rewrites; public `record.data` stays flat while evidence summaries live in source trace/review
 - source capability diagnostics distinguish terminal shells from successful PDP observations; HTTP error bodies, challenge/low-content browser shells, and URL-title-only placeholders mark affected product fields as source-unavailable and prevent title/url-only public success rows
 - detail extraction now has a DOM variant fallback for `ecommerce_detail` pages when structured data and JS state leave variant axes empty
-- listing candidate quality lives in `extract/listing_candidate_ranking.py`; listing extraction now delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to that owner
+- listing candidate quality lives in `extraction/listing.py` with shared evidence ranking in `extraction/resolution/ranking.py`; listing extraction delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to those owners
 - extraction config is split by concept: `field_mappings.py` owns schemas/aliases/field-name primitives, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns variant axes and flat transport fields, `extraction_price_rules.py` owns price selectors/JSON-LD price fields/currency-price thresholds, and `public_record_policy.py` owns public persisted/exported record policy
-- variant record normalization has its own owner in `extract/variant_normalization/`; `detail_extractor.py` extracts candidates and delegates final variant axis/value cleanup
+- variant record normalization is owned by `extraction/resolution/`; `extraction/pipeline.py` harvests variant evidence and delegates final variant axis/value cleanup to the resolver
 - DOM variant recovery now recognizes radio/checkbox-based size and color groups, associates labels via `for`/parent label structure, and carries stock-derived availability (`0 Left`, `17 Left`, etc.) into `variants` and `selected_variant`
 - JS-state ecommerce-detail mapping now scores candidate product payloads so richer nested PDP nodes beat shallow landing/navigation shells, and generic direct-axis variant keys such as `condition`, `grade`, `storage`, and `memory` are normalized without adapter-specific branches
 - DOM listing extraction no longer accepts the first non-empty candidate set; it now ranks structured, DOM, and browser-captured rendered-card candidates by record quality and keeps visual elements as a last-resort fallback only

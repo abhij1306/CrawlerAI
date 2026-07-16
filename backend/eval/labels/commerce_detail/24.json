@@ -1,0 +1,121 @@
+{
+  "fields": {
+    "availability": "InStock",
+    "brand": null,
+    "category": "Home>Men>Shoes",
+    "color": "Cloud White / Core White / Green",
+    "currency": "USD",
+    "description": "Customers praise exceptional comfort and true-to-size fit ideal for daily wear\nReviewers highlight timeless minimalist design that pairs with practically any outfit\nMost commend durable, well-made materials and long-term value as a best purchase\nMany receive frequent compliments on the clean white aesthetic and elegant style\nA few note shoes crease easily or run slightly large; minor isolated concerns",
+    "gtin": null,
+    "images": [
+      "https://assets.adidas.com/videos/h_840,c_fill,f_auto,q_auto,fl_lossy,so_1,g_auto/ee8a6977a73b48bdb5ec2713d7c6a289_d98c/Stan_Smith_Shoes_White_M20324_video.jpg",
+      "https://assets.adidas.com/images/h_840,f_auto,q_auto,fl_lossy,c_fill,g_auto/7bc16c0933f849a1bbeba3470047af60_9366/Stan_Smith_Shoes_White_M20324_02_standard_hover.jpg",
+      "https://assets.adidas.com/images/h_840,f_auto,q_auto,fl_lossy,c_fill,g_auto/8279e1e982284860b38da3470047ab6d_9366/Stan_Smith_Shoes_White_M20324_03_standard.jpg",
+      "https://assets.adidas.com/images/h_840,f_auto,q_auto,fl_lossy,c_fill,g_auto/69721f2e7c934d909168a80e00818569_9366/Stan_Smith_Shoes_White_M20324_01_standard.jpg",
+      "https://brand.assets.adidas.com/image/upload/f_auto,q_auto:best,fl_lossy/H24857_stan_smith_fw26_originals_fw26_launch_pdp_banner_split_d_1d43a80842.jpg"
+    ],
+    "mpn": null,
+    "price": "100.00",
+    "sale_price": null,
+    "sku": "M20324",
+    "title": "Stan Smith Shoes"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "operator_correction": "Brand absent on page; Zyte review-adjective variants replaced with visible color/size options.",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 24,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+  "variants": [
+    {
+      "color": "Cloud White / Core White / Green"
+    },
+    {
+      "availability": "InStock",
+      "size": "4"
+    },
+    {
+      "availability": "InStock",
+      "size": "4.5"
+    },
+    {
+      "availability": "InStock",
+      "size": "5"
+    },
+    {
+      "availability": "InStock",
+      "size": "5.5"
+    },
+    {
+      "availability": "InStock",
+      "size": "6"
+    },
+    {
+      "availability": "InStock",
+      "size": "6.5"
+    },
+    {
+      "availability": "InStock",
+      "size": "7"
+    },
+    {
+      "availability": "InStock",
+      "size": "7.5"
+    },
+    {
+      "availability": "InStock",
+      "size": "8"
+    },
+    {
+      "availability": "InStock",
+      "size": "8.5"
+    },
+    {
+      "availability": "InStock",
+      "size": "9"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "9.5"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "10"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "10.5"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "11"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "11.5"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "12"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "12.5"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "13"
+    },
+    {
+      "availability": "OutOfStock",
+      "size": "13.5"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

@@ -21,7 +21,16 @@ from app.core.config.extraction_rules import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
-from app.core.extraction_memory.contract_runtime import match_template
+from app.core.extraction_memory.contract_runtime import (
+    match_template,
+    select_active_recipe,
+)
+from app.core.extraction_memory.recipe_contracts import (
+    ExtractionRecipe,
+    RecipeExecutionResult,
+)
+from app.core.extraction_memory.recipe_evidence import recipe_execution_evidence
+from app.core.extraction_memory.recipe_executor import execute_recipe
 from app.core.extraction_memory.templates import normalize_route
 from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.ids import stable_id
@@ -32,6 +41,7 @@ from app.extraction.contracts import (
     EntityGraph,
     Evidence,
     ExecutionManifestContext,
+    ExtractionMetrics,
     ExtractionRequest,
     ExtractionResult,
     FailureClassification,
@@ -90,6 +100,9 @@ def extract(
 ) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
+    recipe_replay = _replay_active_recipe(request)
+    if recipe_replay is not None:
+        return recipe_replay
     adapter = adapter_for(request.surface)
     compiled_template = _compiled_recipe_template(request)
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic"
@@ -134,7 +147,6 @@ def extract(
         stage_outcomes.extend(attempt.stage_outcomes)
         extractor_tier = "deterministic"
 
-    model_fallback: ModelFallbackResult | None = None
     if extractor_tier == "recipe" and attempt.records:
         sentinel_observations = _sentinel_observations(
             request,
@@ -151,38 +163,35 @@ def extract(
                     detail=observation.state,
                 )
             )
-    if _needs_contract_fallback(attempt.verdict):
-        model_fallback = run_model_fallback(request, model_adapter)
-        model_outcome = _model_collector_outcome(model_fallback)
-        stage_outcomes.append(
-            StageOutcome(
-                stage="model_fallback",
-                outcome=model_outcome.outcome,
-                detail=model_outcome.detail,
-            )
-        )
-        attempt = replace(
-            attempt,
-            harvest=attempt.harvest.model_copy(
-                update={
-                    "collector_outcomes": (
-                        *attempt.harvest.collector_outcomes,
-                        model_outcome,
-                    )
-                }
-            ),
-        )
-        if model_fallback.evidence:
-            model_harvest = attempt.harvest.model_copy(
-                update={
-                    "evidence": (*attempt.harvest.evidence, *model_fallback.evidence),
-                }
-            )
-            attempt = _execute_attempt(
-                request, adapter, model_harvest, stage_prefix="model_"
-            )
-            stage_outcomes.extend(attempt.stage_outcomes)
-            extractor_tier = "ml"
+
+    return _build_result(
+        request,
+        attempt,
+        stage_outcomes=tuple(stage_outcomes),
+        extractor_tier=extractor_tier,
+        manifest_template=compiled_template,
+        sentinel_observations=sentinel_observations,
+    )
+
+
+def _build_result(
+    request: ExtractionRequest,
+    attempt: _ExtractionAttempt,
+    *,
+    stage_outcomes: tuple[StageOutcome, ...],
+    extractor_tier: Literal["deterministic", "recipe", "ml"],
+    manifest_template: dict[str, object] | None,
+    model_fallback: ModelFallbackResult | None = None,
+    sentinel_observations: tuple[SentinelObservation, ...] = (),
+    recipe_execution: RecipeExecutionResult | None = None,
+) -> ExtractionResult:
+    """Assemble the ExtractionResult from a resolved attempt.
+
+    Shared by the deterministic/model path and by LEARN-ONCE recipe replay, so
+    recipe replay flows through the SAME resolve -> publish authority and result
+    shape as deterministic evidence (CRITICAL 3): the only recipe-specific inputs
+    are ``extractor_tier="recipe"`` and ``recipe_execution``.
+    """
 
     harvest = attempt.harvest
     resolution = attempt.resolution
@@ -228,31 +237,7 @@ def extract(
         publish_duration_ms=attempt.publish_duration_ms,
     )
     if model_fallback is not None:
-        extraction_metrics = extraction_metrics.model_copy(
-            update={
-                "universal_representation_build_count": int(
-                    model_fallback.representation_built
-                ),
-                "universal_model_invocation_count": int(model_fallback.invoked),
-                "universal_model_latency_ms": model_fallback.latency_ms,
-                "universal_model_service_failure_count": int(
-                    model_fallback.failure_code == "model_service_failure"
-                ),
-                "universal_model_ungrounded_rejection_count": (
-                    model_fallback.ungrounded_rejection_count
-                ),
-                "universal_model_ungrounded_rejection_rate": (
-                    model_fallback.ungrounded_rejection_count
-                    / model_fallback.prediction_count
-                    if model_fallback.prediction_count
-                    else 0.0
-                ),
-                "universal_model_cost_usd": model_fallback.cost_usd,
-                "universal_model_cost_per_1000_pages": (
-                    model_fallback.cost_usd * 1_000
-                ),
-            }
-        )
+        extraction_metrics = _model_fallback_metrics(extraction_metrics, model_fallback)
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -273,16 +258,17 @@ def extract(
         retry_request=retry,
         metrics=extraction_metrics,
         collector_outcomes=harvest.collector_outcomes,
-        stage_outcomes=tuple(stage_outcomes),
+        stage_outcomes=stage_outcomes,
         contract_outcomes=resolution.contract_outcomes,
         sentinel_observations=sentinel_observations,
-        manifest_context=_manifest_context(request, compiled_template),
+        manifest_context=_manifest_context(request, manifest_template),
         failure_classifications=failures,
+        recipe_execution=recipe_execution,
         diagnostics=_diagnostic_summary(
             verdict=verdict,
             records=records,
             evidence=harvest.evidence,
-            stage_outcomes=tuple(stage_outcomes),
+            stage_outcomes=stage_outcomes,
             field_states=field_states,
             findings=findings,
             failures=failures,
@@ -291,6 +277,34 @@ def extract(
             model_fallback=model_fallback,
             sentinel_observations=sentinel_observations,
         ),
+    )
+
+
+def _model_fallback_metrics(
+    extraction_metrics: ExtractionMetrics, model_fallback: ModelFallbackResult
+) -> ExtractionMetrics:
+    return extraction_metrics.model_copy(
+        update={
+            "universal_representation_build_count": int(
+                model_fallback.representation_built
+            ),
+            "universal_model_invocation_count": int(model_fallback.invoked),
+            "universal_model_latency_ms": model_fallback.latency_ms,
+            "universal_model_service_failure_count": int(
+                model_fallback.failure_code == "model_service_failure"
+            ),
+            "universal_model_ungrounded_rejection_count": (
+                model_fallback.ungrounded_rejection_count
+            ),
+            "universal_model_ungrounded_rejection_rate": (
+                model_fallback.ungrounded_rejection_count
+                / model_fallback.prediction_count
+                if model_fallback.prediction_count
+                else 0.0
+            ),
+            "universal_model_cost_usd": model_fallback.cost_usd,
+            "universal_model_cost_per_1000_pages": (model_fallback.cost_usd * 1_000),
+        }
     )
 
 
@@ -374,9 +388,26 @@ def _execute_attempt(
     )
 
 
-def _needs_contract_fallback(verdict: Verdict) -> bool:
-    # Review is usable output and does not require model fallback.
-    return verdict in {"empty", "partial"}
+def _recipe_fields_suppressed(
+    execution: RecipeExecutionResult, records: tuple[PublicRecord, ...]
+) -> bool:
+    """True when publication dropped a field the recipe grounded on this page.
+
+    Recipe replay only LOCATES evidence; publication decides what survives (a
+    price is suppressed when currency is unresolved). A grounded field missing
+    from the published record means the recipe-tier result is materially
+    degraded (drift). Fields the recipe never grounded reflect the page, not
+    degradation, so they are ignored.
+    """
+
+    empty = (None, "", [], {}, ())
+    published = records[0] if records else None
+    return any(
+        value not in empty
+        and (published is None or published.get(field) in empty)
+        for grounded in execution.records
+        for field, value in grounded.items()
+    )
 
 
 def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
@@ -385,6 +416,82 @@ def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
         outcome=("skipped" if result.outcome == "disabled" else result.outcome),
         evidence_count=len(result.evidence),
         detail=result.detail,
+    )
+
+
+def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None:
+    """Surface-agnostic recipe replay: execute a matching compiled recipe.
+
+    Returns a fully published recipe-tier result when a stored recipe grounds
+    on this page. Drift (no matching recipe or grounding fails) returns ``None``
+    so the caller falls through to the deterministic floors.
+    """
+
+    snapshot = dict(request.runtime_snapshot) if request.runtime_snapshot else {}
+    template = select_active_recipe(
+        snapshot,
+        surface=request.surface.value,
+        url=request.capture.final_url or request.capture.requested_url,
+        template_signature=str(snapshot.get("_template_signature") or ""),
+    )
+    if template is None:
+        return None
+    # Executable recipes live under their own key in the unified release payload,
+    # kept distinct from the selector/contract ``compiled_recipe`` block.
+    executable_recipe = template.get("executable_recipe")
+    if not isinstance(executable_recipe, dict):
+        return None
+    try:
+        recipe = ExtractionRecipe.model_validate(executable_recipe)
+    except (TypeError, ValueError):
+        return None
+    execution = execute_recipe(request, recipe)
+    if execution.failure_code is not None or not execution.records:
+        return None
+    # CRITICAL 3: recipe replay only LOCATES evidence on the page. The grounded
+    # values become ordinary Evidence and flow through the SAME adapter
+    # resolve -> publish authority as deterministic evidence, so recipe replay
+    # can never mint records or bypass publication contracts (e.g. the
+    # currency-gated price). ``publication.py`` remains the single record maker.
+    evidence_rows = recipe_execution_evidence(request, recipe, execution)
+    if not evidence_rows:
+        return None
+    adapter = adapter_for(request.surface)
+    recipe_harvest = HarvestResult(
+        surface=request.surface,
+        evidence=evidence_rows,
+        collector_outcomes=(
+            CollectorOutcome(
+                collector_id="recipe_replay",
+                outcome="produced_evidence",
+                evidence_count=len(evidence_rows),
+            ),
+        ),
+    )
+    attempt = _execute_attempt(
+        request, adapter, recipe_harvest, stage_prefix="recipe_"
+    )
+    # Drift: fall through to the deterministic/model floors rather than
+    # short-circuiting them with a degraded recipe-tier result when the recipe
+    # produced no publishable record at all, or when a field the recipe grounded
+    # on this page was lost/suppressed by publication (e.g. price dropped for
+    # currency_unresolved). A record that is merely partial because optional
+    # contract fields the page genuinely lacks (brand/description) is NOT drift:
+    # every field the recipe located still published, so replay is at least as
+    # complete as the deterministic floor would be for the same page.
+    if not attempt.records or _recipe_fields_suppressed(execution, attempt.records):
+        return None
+    stage_outcomes = (
+        StageOutcome(stage="recipe_select", outcome="ran"),
+        *attempt.stage_outcomes,
+    )
+    return _build_result(
+        request,
+        attempt,
+        stage_outcomes=stage_outcomes,
+        extractor_tier="recipe",
+        manifest_template=template,
+        recipe_execution=execution,
     )
 
 

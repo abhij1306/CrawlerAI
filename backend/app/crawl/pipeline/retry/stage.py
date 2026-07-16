@@ -5,6 +5,7 @@ from dataclasses import replace
 import time
 
 from app.models.crawl_settings import CrawlRunSettings
+from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
 from app.acquisition.acquirer import (
     AcquisitionRequest,
     PageEvidence,
@@ -39,22 +40,33 @@ async def retry_extraction_request_with_browser(
     *,
     result: ExtractionResult,
 ) -> ExtractionResult:
+    """Climb the bounded browser escalation ladder.
+
+    Each rung acquires with the browser and re-extracts. The rung count is
+    bounded by ``retry_request.max_attempts`` — which the contract clamps to
+    ``CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP`` — so the ladder is finite and
+    config-owned, never unbounded. Climbing stops when the verdict no longer
+    requests a retry, the acquisition cannot escalate further, or the rung
+    budget is spent, then exits honestly with the last extraction result.
+    """
     retry_request = result.retry_request
-    if retry_request is None or not retry_request.required:
-        return result
-    browser_result = await _acquire_browser_retry_result(
-        context,
-        fetched,
-        retry_reason=retry_request.reason,
-    )
-    if browser_result is None:
-        return result
-    fetched.acquisition_result = browser_result
-    retry_result, _selector_rules = await _extract_records_for_acquisition(
-        context,
-        fetched,
-    )
-    return retry_result
+    while retry_request is not None and retry_request.required:
+        browser_result = await _acquire_browser_retry_result(
+            context,
+            fetched,
+            retry_reason=retry_request.reason,
+            required_artifacts=retry_request.required_artifacts,
+            max_attempts=retry_request.max_attempts,
+        )
+        if browser_result is None:
+            return result
+        fetched.acquisition_result = browser_result
+        result, _selector_rules = await _extract_records_for_acquisition(
+            context,
+            fetched,
+        )
+        retry_request = result.retry_request
+    return result
 
 
 async def build_acquisition_request(
@@ -124,21 +136,37 @@ async def _acquire_browser_retry_result(
     fetched: _FetchedURLStage,
     *,
     retry_reason: str,
+    required_artifacts: tuple[str, ...] = (),
+    max_attempts: int = 1,
     forced_browser_engine: str | None = None,
 ):
     acquisition_result = fetched.acquisition_result
-    if PageEvidence.from_acquisition_result(acquisition_result).browser_attempted:
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"Skipping browser retry for {context.url}: browser already attempted",
-        )
-        return None
-    if context.browser_escalation_count >= 1:
+    # Budget-first: the ladder may climb up to ``max_attempts`` browser rungs
+    # (contract-clamped to CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP). Once the budget
+    # is spent, stop honestly.
+    if context.browser_escalation_count >= max(1, max_attempts):
         await _log_pipeline_event(
             context,
             "info",
             f"Skipping browser retry for {context.url}: browser retry budget exhausted",
+        )
+        return None
+    browser_attempted = PageEvidence.from_acquisition_result(
+        acquisition_result
+    ).browser_attempted
+    # An initial browser result satisfies rendered HTML, but not a requested
+    # network capability unless it actually captured payloads. Avoid repeating
+    # an already-satisfied acquisition while still allowing the bounded network
+    # rung to repair browser-first runs that started with capture disabled.
+    if (
+        context.browser_escalation_count == 0
+        and browser_attempted
+        and _required_retry_artifacts_present(acquisition_result, required_artifacts)
+    ):
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Skipping browser retry for {context.url}: required artifacts already captured",
         )
         return None
     profile_updates: dict[str, object] = {
@@ -146,6 +174,11 @@ async def _acquire_browser_retry_result(
         "prefer_browser": True,
         "retry_reason": retry_reason,
     }
+    if (
+        (context.browser_escalation_count > 0 or browser_attempted)
+        and "network_payloads" in required_artifacts
+    ):
+        profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
     request = replace(
@@ -193,3 +226,18 @@ async def _acquire_browser_retry_result(
             ),
         )
         return None
+
+
+def _required_retry_artifacts_present(
+    acquisition_result,
+    required_artifacts: tuple[str, ...],
+) -> bool:
+    available = set()
+    if (
+        PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+        and str(getattr(acquisition_result, "html", "") or "")
+    ):
+        available.add("rendered_html")
+    if list(getattr(acquisition_result, "network_payloads", []) or []):
+        available.add("network_payloads")
+    return set(required_artifacts).issubset(available)

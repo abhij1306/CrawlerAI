@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.ai_visibility import router as ai_visibility_router
 from app.api.auth import router as auth_router
 from app.api.api_keys import router as api_keys_router
 from app.api.public.capabilities import router as public_capabilities_router
@@ -604,6 +605,7 @@ for router in [
     knowledge_router,
     llm_router,
     product_intelligence_router,
+    ai_visibility_router,
     public_extract_router,
     public_domains_router,
     public_capabilities_router,

@@ -15,6 +15,8 @@ from app.core.records.divergence import (
     compare_records_to_projection,
 )
 from app.extraction.contracts import (
+    ArtifactReader,
+    CaptureBundle,
     CollectorOutcome,
     CommerceDetailProjection,
     CommerceListingProjection,
@@ -40,7 +42,15 @@ from app.extraction.jobs import (
     resolve_job_detail,
     resolve_job_listing,
     wrong_surface_findings_for_job_detail,
+    wrong_surface_findings_for_job_listing,
 )
+from app.core.config.cascade import (
+    CASCADE_ECOMMERCE_DETAIL_ENABLED,
+    CASCADE_ECOMMERCE_LISTING_ENABLED,
+    CASCADE_JOB_DETAIL_ENABLED,
+    CASCADE_JOB_LISTING_ENABLED,
+)
+from app.extraction.cascade import run_detail_cascade, run_listing_cascade
 from app.extraction.listing import (
     collect_ecommerce_listing,
     resolve_ecommerce_listing,
@@ -65,7 +75,7 @@ from app.extraction.result_building import (
     evidence_dispositions,
     projection_field_states,
 )
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
 from app.extraction.targeting import (
     scoped_graph,
     select_commerce_target,
@@ -86,11 +96,23 @@ def adapter_for(surface: Surface) -> SurfaceAdapter:
 
 
 def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
-    harvested = harvest_ecommerce_detail(
-        request.capture,
-        request.artifact_reader,
-        requested_fields=request.requested_fields,
-    )
+    """Commerce-detail harvest: detail cascade when enabled, legacy otherwise.
+
+    Flag-ON routes through the spec-driven detail cascade seam; flag-OFF calls
+    the legacy inline harvest. Both assemble the same floors, so normalization
+    below sees identical evidence. The flag is read at module scope so tests can
+    monkeypatch it.
+    """
+    if CASCADE_ECOMMERCE_DETAIL_ENABLED:
+        harvested = run_detail_cascade(
+            request, request.artifact_reader, _surface_spec(request)
+        )
+    else:
+        harvested = harvest_ecommerce_detail(
+            request.capture,
+            request.artifact_reader,
+            requested_fields=request.requested_fields,
+        )
     normalized = normalize_ecommerce_detail(
         harvested.evidence,
         page_url=request.capture.final_url or request.capture.requested_url,
@@ -152,14 +174,58 @@ def _request_locale_hint(request: ExtractionRequest) -> str | None:
     return context.locale or context.country
 
 
-def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
+def _harvest_listing_surface(
+    request: ExtractionRequest,
+    surface: Surface,
+    *,
+    enabled: bool,
+    legacy_collector: Callable[[CaptureBundle, ArtifactReader], object],
+) -> HarvestResult:
+    """Shared listing harvest: cascade when enabled, legacy collector otherwise.
+
+    Flag-ON path routes the surface through the SAME deterministic cascade
+    (structured -> network -> DOM) and carries the per-floor diagnostics
+    (including skipped/no_match floors) through verbatim. Flag-OFF path defers
+    to the surface's legacy card collector unchanged. ``enabled`` is resolved by
+    the caller from the module-level flag so tests can monkeypatch it.
+    """
+    schema = listing_schema(surface) if enabled else None
+    if schema is not None:
+        result = run_listing_cascade(request, request.artifact_reader, schema)
+        return _harvest_from_rows(
+            surface,
+            result.evidence,
+            collector_outcomes=result.collector_outcomes,
+        )
     return _harvest_from_rows(
+        surface,
+        tuple(legacy_collector(request.capture, request.artifact_reader)),
+    )
+
+
+def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
+    return _harvest_listing_surface(
+        request,
         Surface.ECOMMERCE_LISTING,
-        tuple(collect_ecommerce_listing(request.capture, request.artifact_reader)),
+        enabled=CASCADE_ECOMMERCE_LISTING_ENABLED,
+        legacy_collector=collect_ecommerce_listing,
     )
 
 
 def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
+    """Job-detail harvest: detail cascade when enabled, legacy otherwise.
+
+    Flag-ON routes through the SAME spec-driven detail cascade seam commerce
+    uses (structured JSON-LD JobPosting floor -> DOM floor), so JS-rendered job
+    pages are covered and structured+DOM fuse onto one subject. Job detail has
+    no commerce normalization, so the harvest is returned directly. Flag-OFF
+    calls the legacy inline collector. The flag is read at module scope so tests
+    can monkeypatch it.
+    """
+    if CASCADE_JOB_DETAIL_ENABLED:
+        return run_detail_cascade(
+            request, request.artifact_reader, _surface_spec(request)
+        )
     return _harvest_from_rows(
         Surface.JOB_DETAIL,
         tuple(collect_job_detail(request.capture, request.artifact_reader)),
@@ -167,27 +233,36 @@ def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
 
 
 def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:
-    return _harvest_from_rows(
+    return _harvest_listing_surface(
+        request,
         Surface.JOB_LISTING,
-        tuple(collect_job_listing(request.capture, request.artifact_reader)),
+        enabled=CASCADE_JOB_LISTING_ENABLED,
+        legacy_collector=collect_job_listing,
     )
 
 
-def _harvest_from_rows(surface: Surface, rows: tuple[Evidence, ...]) -> HarvestResult:
-    counts: dict[str, int] = {}
-    for row in rows:
-        counts[row.collector_id] = counts.get(row.collector_id, 0) + 1
-    return HarvestResult(
-        surface=surface,
-        evidence=rows,
-        collector_outcomes=tuple(
+def _harvest_from_rows(
+    surface: Surface,
+    rows: tuple[Evidence, ...],
+    *,
+    collector_outcomes: tuple[CollectorOutcome, ...] | None = None,
+) -> HarvestResult:
+    if collector_outcomes is None:
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row.collector_id] = counts.get(row.collector_id, 0) + 1
+        collector_outcomes = tuple(
             CollectorOutcome(
                 collector_id=collector_id,
                 outcome="produced_evidence",
                 evidence_count=count,
             )
             for collector_id, count in sorted(counts.items())
-        ),
+        )
+    return HarvestResult(
+        surface=surface,
+        evidence=rows,
+        collector_outcomes=collector_outcomes,
         admitted_source_objects=len({row.subject_id for row in rows}),
     )
 
@@ -344,11 +419,16 @@ def _resolve_job_listing_adapter(
     selected_subjects = set(target.root_entity_ids)
     rows = [row for row in harvest.evidence if row.subject_id in selected_subjects]
     decisions = tuple(resolve_job_listing(rows))
-    findings = _incomplete_record_findings(
-        target.root_entity_ids,
-        decisions,
-        required={"job.title", "job.url"},
-        rule_id="INCOMPLETE_JOB_LISTING_CARD",
+    findings = (
+        *wrong_surface_findings_for_job_listing(
+            request.capture, request.artifact_reader
+        ),
+        *_incomplete_record_findings(
+            target.root_entity_ids,
+            decisions,
+            required={"job.title", "job.url"},
+            rule_id="INCOMPLETE_JOB_LISTING_CARD",
+        ),
     )
     projection, selected = job_listing_projection(
         decisions, harvest.evidence, max_records=request.max_records

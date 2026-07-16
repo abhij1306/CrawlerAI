@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import field_mappings
-from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
+from app.core.config.extraction_memory import (
+    EXTRACTION_MEMORY_STATUS_SUSPENDED,
+    EXTRACTION_RELEASE_VERSION,
+)
 from app.core.extraction_memory.templates import (
     normalize_route,
     normalize_source_pattern,
@@ -246,3 +250,57 @@ def _requested_aliases(fact_type: str) -> frozenset[str]:
         if mapped_fact_type == fact_type:
             aliases.add(requested_field)
     return frozenset(aliases)
+
+
+def select_active_recipe(
+    snapshot: dict[str, Any],
+    *,
+    surface: str,
+    url: str,
+    template_signature: str = "",
+) -> dict[str, Any] | None:
+    """Select one executable-recipe release entry before discovery runs.
+
+    Reads the unified frozen release payload produced by ``build_release_payload``
+    (``schema_version == EXTRACTION_RELEASE_VERSION``). A template participates in
+    recipe replay only when it carries an ``executable_recipe`` block — the
+    ``extraction_recipe.v2`` payload — kept distinct from the selector/contract
+    ``compiled_recipe`` block that drives the deterministic floors.
+    """
+    if (
+        snapshot.get("schema_version") != EXTRACTION_RELEASE_VERSION
+        or snapshot.get("surface") != surface
+    ):
+        return None
+    route = _normalized_recipe_route(normalize_route(url, surface))
+    templates = [
+        row
+        for row in snapshot.get("templates", ())
+        if isinstance(row, dict)
+        and isinstance(row.get("executable_recipe"), dict)
+        and str(row.get("status") or "active") != EXTRACTION_MEMORY_STATUS_SUSPENDED
+        and not bool(row.get("sentinel_suspended"))
+    ]
+    if template_signature:
+        exact = next(
+            (
+                row
+                for row in templates
+                if str(row.get("template_signature") or "") == template_signature
+            ),
+            None,
+        )
+        if exact is not None:
+            return exact
+    return next(
+        (
+            row
+            for row in templates
+            if _normalized_recipe_route(str(row.get("route_pattern") or "/")) == route
+        ),
+        None,
+    )
+
+
+def _normalized_recipe_route(value: str) -> str:
+    return re.sub(r"\{[^/{}]+\}", "{id}", str(value or "/"))

@@ -631,6 +631,7 @@ async def test_release_payload_returns_empty_templates_for_unknown_domain(
         db_session, domain="unknown.example", surface="ecommerce_detail"
     )
     assert snapshot == {
+        "schema_version": "release.v2",
         "domain": "unknown.example",
         "surface": "ecommerce_detail",
         "templates": [],
@@ -900,12 +901,27 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
 
     await db_session.flush()
     await db_session.refresh(template)
-    frozen = await load_release_payload(db_session, release.id)
 
+    # CRITICAL 2: the stored release snapshot is frozen. Reloading the in-flight
+    # run's snapshot returns the payload EXACTLY as created — suspending the
+    # template later must not mutate a run already in progress.
+    frozen = await load_release_payload(db_session, release.id)
     assert template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED
-    assert frozen["templates"][0]["sentinel_suspended"] is True
-    assert not release.payload["templates"][0].get("sentinel_suspended", False)
-    assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
+    assert frozen["templates"][0]["status"] != EXTRACTION_MEMORY_STATUS_SUSPENDED
+    assert frozen == release.payload
+
+    # A FUTURE snapshot built after suspension excludes the suspended template,
+    # so the next run falls through to the floors (and can re-learn).
+    future = await build_release_payload(
+        db_session, domain=template.domain, surface="ecommerce_detail"
+    )
+    future_fingerprints = {
+        row["fingerprint"] for row in future["templates"]
+    }
+    assert template.fingerprint not in future_fingerprints
+    # The suspended template held the only selector rules, so future crawls fall
+    # through to the floors.
+    assert selector_rules_from_release(future, surface="ecommerce_detail") == []
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from app.acquisition.dom_runtime import get_page_html, wait_for_dom_mutation_settle
+from app.acquisition.listing_cards import card_fragments_from_html
 from app.acquisition.browser_capture import (
     PlaywrightError,
     PlaywrightTimeoutError,
@@ -42,6 +43,7 @@ async def _append_html_fragment(
         return
     fragment = _bounded_traversal_fragment_html(
         html,
+        page_url=str(getattr(page, "url", "") or ""),
         surface=surface,
         seen_cards=result._seen_card_fragments,
         seen_structured=result._seen_structured_fragments,
@@ -204,6 +206,7 @@ async def _page_matches_block_challenge(page) -> bool:
 def _bounded_traversal_fragment_html(
     html: str,
     *,
+    page_url: str = "",
     surface: str,
     seen_cards: set[str],
     seen_structured: set[str],
@@ -219,6 +222,7 @@ def _bounded_traversal_fragment_html(
     card_budget = max_bytes - _fragments_bytes(structured_fragments)
     card_fragments = _collect_listing_card_fragments(
         parser,
+        page_url=page_url,
         surface=surface,
         seen=seen_cards,
         byte_budget=card_budget,
@@ -278,59 +282,30 @@ def _collect_structured_script_fragments(
 def _collect_listing_card_fragments(
     parser: LexborHTMLParser,
     *,
+    page_url: str,
     surface: str,
     seen: set[str],
     byte_budget: int,
 ) -> list[str]:
-    del surface
     fragments: list[str] = []
     used_bytes = 0
     limit = max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit))
-    selectors = (
-        "[data-product-id]",
-        "[data-sku]",
-        ".product-card",
-        ".product-tile",
-        "[class*='product-card' i]",
-        "[class*='product-tile' i]",
-        ".job-card",
-        "[class*='job-card' i]",
-        "article",
-        "li",
-    )
-    for selector in selectors:
-        for node in parser.css(selector):
-            if _listing_fragment_score(node) <= 0:
-                continue
-            fragment = str(getattr(node, "html", "") or "").strip()
-            if not fragment or fragment in seen:
-                continue
-            fragment_bytes = len(fragment.encode("utf-8"))
-            if used_bytes + fragment_bytes > byte_budget:
-                return fragments
-            seen.add(fragment)
-            fragments.append(fragment)
-            used_bytes += fragment_bytes
-            if len(fragments) >= limit:
-                return fragments
+    html = str(getattr(parser, "html", "") or "")
+    for fragment in card_fragments_from_html(
+        html,
+        page_url=page_url,
+        surface=surface,
+        limit=limit,
+    ):
+        if fragment in seen:
+            continue
+        fragment_bytes = len(fragment.encode("utf-8"))
+        if used_bytes + fragment_bytes > byte_budget:
+            return fragments
+        seen.add(fragment)
+        fragments.append(fragment)
+        used_bytes += fragment_bytes
     return fragments
-
-
-def _listing_fragment_score(node) -> int:
-    try:
-        anchors = node.css("a[href]")
-        text = str(node.text(separator=" ", strip=True) or "").strip()
-    except Exception:
-        return 0
-    if not anchors or len(text) < 4:
-        return 0
-    score = 1
-    try:
-        if node.css("img, [data-price], .price, [class*='price' i]"):
-            score += 1
-    except Exception:
-        pass
-    return score
 
 
 def _fragments_bytes(fragments: list[str]) -> int:

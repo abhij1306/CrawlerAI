@@ -9,6 +9,8 @@ from app.core.config.browser_fingerprint_profiles import (
     RETRY_REASON_BROWSER_LABELS,
 )
 from app.core.config.domain_profiles import (
+    CAPTURE_NETWORK_OFF,
+    CAPTURE_NETWORK_VALUES,
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
     INTERNAL_API_ENDPOINT_URL_KEY,
@@ -24,6 +26,7 @@ class AcquisitionPolicyUpdates(TypedDict, total=False):
     proxy_profile: dict[str, object]
     locality_profile: dict[str, object]
     capture_screenshot: bool
+    capture_network: str
     host_memory_ttl_seconds: int | None
     prefer_curl_handoff: bool
     handoff_cookie_engine: str | None
@@ -40,6 +43,7 @@ class AcquisitionPolicy:
     proxy_profile: Mapping[str, object] = field(default_factory=dict)
     locality_profile: Mapping[str, object] = field(default_factory=dict)
     capture_screenshot: bool = False
+    capture_network: str = CAPTURE_NETWORK_OFF
     host_memory_ttl_seconds: int | None = None
     prefer_curl_handoff: bool = False
     handoff_cookie_engine: str | None = None
@@ -69,6 +73,9 @@ class AcquisitionPolicy:
                 field_name="locality_profile",
             ),
             capture_screenshot=bool(payload.get("capture_screenshot", False)),
+            capture_network=_normalized_capture_network(
+                payload.get("capture_network")
+            ),
             host_memory_ttl_seconds=_optional_positive_int(
                 payload.get("host_memory_ttl_seconds")
             ),
@@ -120,6 +127,7 @@ class AcquisitionPolicy:
         profile: dict[str, object] = {
             "fetch_mode": self.fetch_mode,
             "prefer_browser": self.prefer_browser,
+            "capture_network": self.capture_network,
         }
         if self.retry_reason:
             profile["retry_reason"] = self.retry_reason
@@ -241,6 +249,15 @@ def _normalized_retry_reason(value: object) -> str | None:
     if normalized.endswith("_retry"):
         normalized = normalized[: -len("_retry")]
     return normalized or None
+
+
+def _normalized_capture_network(value: object) -> str:
+    normalized = str(value or CAPTURE_NETWORK_OFF).strip().lower()
+    if normalized in CAPTURE_NETWORK_VALUES:
+        return normalized
+    raise ValueError(
+        f"capture_network must be one of {sorted(CAPTURE_NETWORK_VALUES)}"
+    )
 
 
 __all__ = ["AcquisitionPolicy"]

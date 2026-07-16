@@ -1,0 +1,123 @@
+{
+  "fields": {
+    "availability": "InStock",
+    "brand": "ColourPop",
+    "category": "Home>Shadow Palettes>Going Coconuts",
+    "currency": "USD",
+    "description": "The neutral palette that makes every look look expensive. \ud83e\udd65 Going Coconuts delivers 9 warm, toasted pans \u2014 mattes, metallics, matte sparkle \u2014 that blend effortlessly and wear all day without a crease in sight.\n\nUltra-pigmented pressed powder formula that applies evenly, builds beautifully, and works for every skill level and every mood.\n\nFinish Mix: Matte, Metallic, Matte Sparkle\nPan count: 9\n\n\u2713 100% Vegan & Cruelty-Free",
+    "gtin": null,
+    "images": [
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-Closed-PDP.jpg?v=1739473333&width=620",
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-MacroCrush.jpg?v=1751302080&width=120",
+      "https://colourpop.com/cdn/shop/files/PPBlushCompact-ForeverYours-editorial-square_4980.jpg?v=1739473333&width=120",
+      "https://colourpop.com/cdn/shop/files/4353268842578-Going-Coconuts-EyePalette-GoingCoconuts-3.jpg?v=1751301258&width=120",
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-Closed-PDP.jpg?v=1739473333&width=120",
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-ArmSwatch.jpg?v=1751302080&width=120",
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-Stylized-TopDown-Less-Sand-Closed-Angled-Option-3.jpg?v=1739473333&width=120",
+      "https://colourpop.com/cdn/shop/files/EyePalette-GoingCoconuts-MacroCrush.jpg?v=1751302080&width=620",
+      "https://colourpop.com/cdn/shop/files/PPBlushCompact-ForeverYours-editorial-square_4980.jpg?v=1739473333&width=620",
+      "https://cdn.shopify.com/s/files/1/1338/0845/files/preview_images/6910bf9fd42641c29e6dd89875f52487.thumbnail.0000000000.jpg?v=1782886962&width=1800",
+      "https://cdn.shopify.com/s/files/1/1338/0845/files/preview_images/53f949aa8a2d48cab13609fa1407a02b.thumbnail.0000000000.jpg?v=1765324354&width=1800",
+      "https://cdn.shopify.com/s/files/1/1338/0845/files/preview_images/202faecf4af047929465f77c028a2264.thumbnail.0000000000.jpg?v=1782886970&width=1800"
+    ],
+    "mpn": null,
+    "price": "14.00",
+    "sale_price": null,
+    "sku": "4353268842578",
+    "title": "9-Pan Palette"
+  },
+  "human_verified": true,
+  "metadata": {
+    "human_verified_at": "2026-07-06",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 17,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+  "variants": [
+    {
+      "color": "peach-jelly-shadow-palette"
+    },
+    {
+      "color": "pink-dreams-shadow-palette"
+    },
+    {
+      "color": "silver-lining-shadow-palette"
+    },
+    {
+      "color": "going-coconuts-eyeshadow-palette"
+    },
+    {
+      "color": "baby-got-peach-shadow-palette"
+    },
+    {
+      "color": "blowin-smoke-eyeshadow-palette"
+    },
+    {
+      "color": "its-my-pleasure-eyeshadow-palette"
+    },
+    {
+      "color": "blue-moon-eyeshadow-palette"
+    },
+    {
+      "color": "thats-taupe-eyeshadow-palette"
+    },
+    {
+      "color": "in-a-trance-blue-purple-shadow-palette"
+    },
+    {
+      "color": "just-my-luck-eyeshadow-palette"
+    },
+    {
+      "color": "blush-crush-pink-eyeshadow-palette"
+    },
+    {
+      "color": "nude-mood-neutral-eyeshadow-palette"
+    },
+    {
+      "color": "wild-child-neutral-pressed-powder-makeup-palette"
+    },
+    {
+      "color": "wine-and-only-pressed-powder-makeup-palette"
+    },
+    {
+      "color": "cloud-spun-pressed-powder-makeup-palette"
+    },
+    {
+      "color": "of-quartz-pressed-powder-palette"
+    },
+    {
+      "color": "deja-brew-shadow-palette"
+    },
+    {
+      "color": "all-amethyst-pressed-powder-palette"
+    },
+    {
+      "color": "feelin-bubbly-pressed-powder-palette"
+    },
+    {
+      "color": "by-the-rose-eyeshadow-palette"
+    },
+    {
+      "color": "blush-baby-shadow-palette"
+    },
+    {
+      "color": "gone-metal-shadow-palette"
+    },
+    {
+      "color": "so-elemental-shadow-palette"
+    },
+    {
+      "color": "rock-on-shadow-palette"
+    },
+    {
+      "color": "feelin-toasty-shadow-palette"
+    },
+    {
+      "color": "sage-the-day-shadow-palette"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

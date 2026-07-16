@@ -10,14 +10,15 @@ from app.core.config.extraction_recipes import (
     JOB_DETAIL_DESCRIPTION_SELECTORS,
     JOB_DETAIL_LOCATION_SELECTORS,
     JOB_DETAIL_TITLE_SELECTORS,
-    JOB_LISTING_CARD_SELECTORS,
     JOB_LISTING_COMPANY_SELECTORS,
     JOB_LISTING_LOCATION_SELECTORS,
     JOB_LISTING_TITLE_SELECTORS,
-    JOB_LISTING_URL_SELECTORS,
+    LISTING_HTML_ARTIFACT_IDS,
 )
+from app.core.listing_cards import select_listing_cards
 from app.extraction.collectors._helpers import (
     evidence,
+    html_doc,
     json_objects,
     loads_jsonish,
     text_without_non_text_descendants,
@@ -35,32 +36,72 @@ from app.extraction.contracts import (
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import Surface
+from app.extraction.surfaces import Surface, listing_schema
+
+
+def _wrong_surface_findings(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    *,
+    finding_suffix: str,
+    message: str,
+) -> tuple[Finding, ...]:
+    """Blocking wrong-surface finding when a job page carries product schema.
+
+    Shared by the job_detail and job_listing guards: when the page carries
+    product schema and no JobPosting schema, the surface was mis-selected as a
+    job page over a commerce page. ``finding_suffix`` keeps the two callers'
+    finding ids distinct; ``message`` names the mis-selected surface.
+    """
+    doc = reader.document_store.html("html")
+    if not _has_wrong_surface_product_schema(doc):
+        return ()
+    return (
+        Finding(
+            finding_id=stable_id("finding", bundle.bundle_id, finding_suffix),
+            rule_id="WRONG_SURFACE_CONTENT",
+            severity="high",
+            scope="page",
+            entity_ids=(),
+            evidence_ids=(),
+            message=message,
+            blocking=True,
+        ),
+    )
 
 
 def wrong_surface_findings_for_job_detail(
     bundle: CaptureBundle,
     reader: ArtifactReader,
 ) -> tuple[Finding, ...]:
-    doc = reader.document_store.html("html")
-    if not _has_wrong_surface_product_schema(doc):
-        return ()
-    return (
-        Finding(
-            finding_id=stable_id("finding", bundle.bundle_id, "wrong_surface_content"),
-            rule_id="WRONG_SURFACE_CONTENT",
-            severity="high",
-            scope="page",
-            entity_ids=(),
-            evidence_ids=(),
-            message="Selected job_detail but page contains product schema.",
-            blocking=True,
-        ),
+    return _wrong_surface_findings(
+        bundle,
+        reader,
+        finding_suffix="wrong_surface_content",
+        message="Selected job_detail but page contains product schema.",
+    )
+
+
+def wrong_surface_findings_for_job_listing(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+) -> tuple[Finding, ...]:
+    """Reject a job_listing page whose structured content is a product listing.
+
+    Mirrors ``wrong_surface_findings_for_job_detail``: when the page carries
+    product schema and no JobPosting schema, it is a commerce listing selected
+    as jobs — a blocking wrong-surface finding, not an empty job listing.
+    """
+    return _wrong_surface_findings(
+        bundle,
+        reader,
+        finding_suffix="wrong_surface_content_listing",
+        message="Selected job_listing but page contains product schema.",
     )
 
 
 def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
-    doc = reader.document_store.html("html")
+    _, doc = html_doc(bundle, reader)
     structured = _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
     dom = _collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url)
     structured_subjects = {row.subject_id for row in structured}
@@ -73,11 +114,90 @@ def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Ev
     return [*structured, *dom]
 
 
+class _JobStructuredCollector:
+    """Structured JSON-LD JobPosting floor as a cascade-shaped collector.
+
+    Reads the rendered-preferring document so JS-rendered job pages are covered,
+    then yields the JSON-LD JobPosting evidence via the shared collector.
+    """
+
+    collector_id = "job_jsonld"
+
+    def collect(
+        self, bundle: CaptureBundle, reader: ArtifactReader
+    ) -> tuple[Evidence, ...]:
+        _, doc = html_doc(bundle, reader)
+        return tuple(
+            _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
+        )
+
+
+class _JobDomCollector:
+    """DOM job-detail floor as a cascade-shaped collector.
+
+    Rebinds its rows onto the single structured JobPosting subject when exactly
+    one exists, preserving the legacy subject-unification so structured and DOM
+    evidence share one subject inside the detail cascade profile.
+    """
+
+    collector_id = "job_dom"
+
+    def collect(
+        self, bundle: CaptureBundle, reader: ArtifactReader
+    ) -> tuple[Evidence, ...]:
+        _, doc = html_doc(bundle, reader)
+        subject_id = _single_structured_job_subject(
+            bundle, doc, page_url=bundle.final_url
+        )
+        return tuple(
+            _collect_dom_job_evidence(
+                bundle, doc, page_url=bundle.final_url, subject_id=subject_id
+            )
+        )
+
+
+def job_detail_structured_collectors() -> tuple[object, ...]:
+    """Structured-source detail floor for job_detail (JSON-LD JobPosting)."""
+    return (_JobStructuredCollector(),)
+
+
+def job_detail_dom_collectors() -> tuple[object, ...]:
+    """DOM detail floor for job_detail, fused onto the structured subject."""
+    return (_JobDomCollector(),)
+
+
+def _single_structured_job_subject(
+    bundle: CaptureBundle,
+    doc: HtmlDocument,
+    *,
+    page_url: str,
+) -> str | None:
+    """The single structured JobPosting subject id, or ``None`` when absent or
+    ambiguous — the DOM floor only fuses onto an unambiguous structured subject."""
+    subjects = {
+        row.subject_id
+        for row in _collect_jsonld_job_evidence(bundle, doc, page_url=page_url)
+    }
+    return next(iter(subjects)) if len(subjects) == 1 else None
+
+
 def collect_job_listing(
     bundle: CaptureBundle, reader: ArtifactReader
 ) -> list[Evidence]:
-    doc = reader.document_store.html("html")
-    return _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
+    # Read the shared LISTING HTML-artifact set (base document plus rendered
+    # listing fragments / visual-element HTML) so JS-rendered job boards, whose
+    # cards only appear after render, are covered — not just the raw "html".
+    # The first artifact that yields cards wins, matching the DOM-floor's
+    # first-non-empty-artifact contract.
+    rows: list[Evidence] = []
+    for artifact_id in LISTING_HTML_ARTIFACT_IDS:
+        if not reader.exists(artifact_id):
+            continue
+        doc = reader.document_store.html(artifact_id)
+        rows = _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
+        if rows:
+            return rows
+    return rows
 
 
 def _collect_job_listing_evidence(
@@ -87,25 +207,25 @@ def _collect_job_listing_evidence(
     page_url: str,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    seen_cards: set[str] = set()
-    for selector in JOB_LISTING_CARD_SELECTORS:
-        for index, card in enumerate(doc.css(selector)):
-            if card.is_hidden():
-                continue
-            card_key = card.html()
-            if card_key in seen_cards:
-                continue
-            seen_cards.add(card_key)
-            subject_id = stable_id("subject", bundle.bundle_id, "job", len(seen_cards))
-            card_rows = _job_listing_card_evidence(
+    schema = listing_schema(Surface.JOB_LISTING)
+    if schema is None:
+        return rows
+    for position, candidate in enumerate(
+        select_listing_cards(doc, surface=schema, page_url=page_url), start=1
+    ):
+        subject_id = stable_id("subject", bundle.bundle_id, "job", position)
+        rows.extend(
+            _job_listing_card_evidence(
                 bundle,
-                card,
+                candidate.node,
                 page_url=page_url,
                 subject_id=subject_id,
-                card_selector=selector,
-                card_index=index,
+                card_selector=candidate.selector,
+                card_index=candidate.selector_index,
+                artifact_id=doc.artifact_id,
+                record_url=candidate.url,
             )
-            rows.extend(card_rows)
+        )
     return rows
 
 
@@ -117,14 +237,15 @@ def _job_listing_card_evidence(
     subject_id: str,
     card_selector: str,
     card_index: int,
+    artifact_id: str = "html",
+    record_url: str = "",
 ) -> list[Evidence]:
     title = _first_node_text(card, JOB_LISTING_TITLE_SELECTORS)
-    url = _first_node_attr(card, JOB_LISTING_URL_SELECTORS, "href")
     company = _first_node_text(card, JOB_LISTING_COMPANY_SELECTORS)
     location = _first_node_text(card, JOB_LISTING_LOCATION_SELECTORS)
     values = (
         ("job.title", title, "title", 0.72),
-        ("job.url", urljoin(page_url, url) if url else None, "url", 0.74),
+        ("job.url", record_url or None, "url", 0.74),
         ("job.company", company, "company", 0.62),
         ("job.location", location, "location", 0.62),
     )
@@ -135,7 +256,7 @@ def _job_listing_card_evidence(
         rows.append(
             _job_evidence(
                 bundle,
-                artifact_id="html",
+                artifact_id=artifact_id,
                 collector_id="job_listing_css",
                 fact_type=fact_type,
                 value=value,
@@ -237,8 +358,9 @@ def _collect_dom_job_evidence(
     doc: HtmlDocument,
     *,
     page_url: str,
+    subject_id: str | None = None,
 ) -> list[Evidence]:
-    subject_id = stable_id("subject", bundle.bundle_id, "job", page_url)
+    subject_id = subject_id or stable_id("subject", bundle.bundle_id, "job", page_url)
     rows: list[Evidence] = []
     for fact_type, value, selector, confidence in (
         ("job.title", _first_text(doc, JOB_DETAIL_TITLE_SELECTORS), "title", 0.72),

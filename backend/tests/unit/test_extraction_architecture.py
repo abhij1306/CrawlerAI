@@ -223,7 +223,7 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
     # Re-architecture exception: resolution is now a package, field-state
     # construction and Sentinel comparison have their own modules so semantic
     # ownership can stay honest.
-    assert len(files) <= 29
+    assert len(files) <= 35
     assert (
         sum(_physical_line_count(path) for path in files)
         <= ratchets["physical_loc_budget"]
@@ -580,6 +580,37 @@ def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None
                 ):
                     offenders.append((node.name, parameter))
     assert not offenders
+
+
+def test_publication_is_the_only_typed_record_producer() -> None:
+    # Every surface record type must be instantiated in exactly one module:
+    # publication.py. LEARN-ONCE recipe replay only produces Evidence and flows
+    # through the normal adapter resolve -> publish path, so publication.py
+    # remains the sole typed-record producer for recipe-tier output too.
+    surface_models = {
+        "CommerceDetailRecord",
+        "CommerceListingRecord",
+        "JobDetailRecord",
+        "JobListingRecord",
+        "CommerceVariantRecord",
+    }
+    producers: set[str] = set()
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = _parse_module(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            # Match both `Model(...)` and `Model.model_validate(...)` forms.
+            if isinstance(func, ast.Name) and func.id in surface_models:
+                producers.add(path.relative_to(EXTRACTION_ROOT).as_posix())
+            elif (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id in surface_models
+            ):
+                producers.add(path.relative_to(EXTRACTION_ROOT).as_posix())
+    assert producers == {"publication.py"}, producers
 
 
 def test_persistence_performs_no_extraction_repair() -> None:

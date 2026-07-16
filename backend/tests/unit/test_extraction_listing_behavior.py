@@ -31,6 +31,25 @@ def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "ecommerce_listing" for item in result.evidence)
 
 
+def test_ecommerce_listing_uses_product_link_after_collection_link() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main><article class="product-card">
+          <a href="/collections/shoes">Shop all shoes</a>
+          <a href="/products/trail-shoe"><h2>Trail Shoe</h2><img src="shoe.jpg"></a>
+          <span class="price">$129</span>
+        </article></main>
+        """,
+        "https://shop.test/collections/all",
+    )
+
+    assert [row["url"] for row in result.records] == [
+        "https://shop.test/products/trail-shoe"
+    ]
+    assert [row["title"] for row in result.records] == ["Trail Shoe"]
+
+
 def test_ecommerce_listing_reads_hyphenated_data_test_id_product_cards() -> None:
     result = _extract(
         "ecommerce_listing",

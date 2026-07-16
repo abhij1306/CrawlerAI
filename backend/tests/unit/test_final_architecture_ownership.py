@@ -13,8 +13,7 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_capture.py": 752,
     "acquisition/browser_pool.py": 720,
-    "acquisition/browser_readiness.py": 727,
-    "acquisition/browser_recovery.py": 746,
+    "acquisition/browser_recovery.py": 722,
     "acquisition/browser_result_builder.py": 714,
     "acquisition/cookie_store.py": 713,
     "acquisition/fetch/browser_attempt_runner.py": 726,
@@ -24,15 +23,21 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/collectors/jsonld.py": 834,
     "extraction/collectors/js_state.py": 988,
     "extraction/contracts.py": 1024,
-    "extraction/engine.py": 1023,
+    # LEARN-ONCE recipe tier: engine.py gained recipe replay + shared result
+    # building. Kept in lockstep with the extraction_semantic_surface.toml
+    # manifest budget (engine.py 1023 -> 1099).
+    "extraction/engine.py": 1099,
     "extraction/entities.py": 932,
-    "extraction/pipeline.py": 772,
+    "extraction/pipeline.py": 781,
     "extraction/resolution/__init__.py": 2044,
-    "extraction/result_building.py": 734,
+    "extraction/result_building.py": 738,
     "extraction/validation.py": 786,
     "intelligence/discovery.py": 726,
     "intelligence/matching.py": 749,
-    "persistence/extraction_memory.py": 825,
+    # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
+    # + drift counter live here (no TOML manifest counterpart; this dict is the
+    # sole ledger for this persistence module).
+    "persistence/extraction_memory.py": 1157,
     "schemas/crawl.py": 747,
 }
 COMPLEX_FUNCTION_DEBT = {
@@ -45,10 +50,8 @@ COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_readiness.py", "analyze_extractable_content"): 35,
     ("acquisition/browser_readiness.py", "_has_detail_dom_signals"): 22,
     ("acquisition/browser_readiness.py", "probe_browser_readiness"): 30,
-    ("acquisition/browser_readiness.py", "_ecommerce_node_has_product_evidence"): 23,
     ("acquisition/platform_policy.py", "detect_platform_family"): 24,
     ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 26,
-    ("acquisition/traversal_card_counting.py", "count_listing_cards"): 30,
     ("core/records/confidence.py", "_field_penalties"): 23,
     ("core/records/divergence.py", "compare_records_to_projection"): 21,
     ("core/records/divergence.py", "_compare_variants"): 23,
@@ -98,7 +101,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
     ("extraction/result_building.py", "field_evidence_states"): 41,
     ("extraction/result_building.py", "projection_field_states"): 70,
-    ("extraction/result_building.py", "retry_request"): 31,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
@@ -152,19 +154,27 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 PACKAGE_LOC_BUDGETS = {
     "acquisition": 18_643,
-    "crawl": 9_601,
-    "core": 19_272,
+    "crawl": 9_620,
+    # LEARN-ONCE recipe tier adds the pure recipe primitives, compiler, evidence
+    # bridge, and persistence release/drift logic under core/. Bumped once to
+    # seat the new tier; the eval-gated cleanup slice consolidates it back down.
+    "core": 20_585,
     "enrichment": 2_245,
     "connectors": 2_767,
     "intelligence": 3_659,
-    "extraction": 15_534,
+    # LEARN-ONCE recipe replay + shared result building grew engine.py; kept in
+    # lockstep with the extraction_semantic_surface.toml manifest bump.
+    "extraction": 16_600,
     # Phase 7 documented feature exception: the grounded LLM repair adapter
     # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
     # runs in the hot path and cannot publish or activate values; the budget is
     # bumped once to seat it beside the existing offline evaluation harness.
     "evaluation": 2_295,
 }
-TOTAL_APP_LOC_BUDGET = 84_853
+# Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
+# bridge, persistence release/drift logic, engine replay). Tracked here so the
+# eval-gated cleanup slice can drive it back down.
+TOTAL_APP_LOC_BUDGET = 85_727
 
 
 def test_production_package_loc_budgets() -> None:

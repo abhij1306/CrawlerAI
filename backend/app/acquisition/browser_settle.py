@@ -13,7 +13,7 @@ from app.acquisition.browser_page_helpers import (
 )
 from app.acquisition.browser_readiness import analyze_html
 from app.acquisition.dom_runtime import get_page_html
-from app.core.config.selectors import CARD_SELECTORS
+from app.acquisition.listing_cards import selectors_for_surface
 from app.extraction.documents import HtmlAnalysis
 from app.core.shared.ids import content_sha256
 
@@ -94,21 +94,9 @@ class _SettleContext:
 
 
 def _generic_card_selectors_for_surface(surface: str | None) -> list[str]:
-    if not isinstance(CARD_SELECTORS, dict):
+    if not surface or "listing" not in str(surface).lower():
         return []
-    normalized = str(surface or "").strip().lower()
-    groups = (
-        ("jobs",)
-        if normalized == "jobs" or normalized.startswith("job_")
-        else ("ecommerce",)
-    )
-    selectors: list[str] = []
-    for group in groups:
-        for selector in CARD_SELECTORS.get(group) or []:
-            value = str(selector or "").strip()
-            if value and value not in selectors:
-                selectors.append(value)
-    return selectors
+    return list(selectors_for_surface(str(surface)))
 
 
 async def _run_optimistic_wait(context: _SettleContext) -> None:

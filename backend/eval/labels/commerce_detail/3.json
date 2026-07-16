@@ -1,0 +1,50 @@
+{
+  "fields": {
+    "availability": "InStock",
+    "brand": "Peter Do",
+    "category": "Peter Do>Peter Do Womenswear>Peter Do Outerwear>Peter Do Blazers>Velcro Strap Set-up Blazer / Pants",
+    "currency": "USD",
+    "description": "\u2022 Jacket SIZE : 36\n\u2022 Please check the measurements below\nChest : 60cm / Shoulder width : 45.5cm / Sleeve length : 64.5cm / Top to bottom : 77cm\n\n\u2022 Pants SIZE : 36\n\u2022 Please check the measurements below\nWaist : 39.5cm / Rise : 28.5cm / Thigh width : 27cm / Length : 114.5cm / Hem : 20.5cm\n\n\u2022 All Items are 100% Authentic\n\u2022 All Shipments Will be Processed By EMS (Basically)\n\u2022 NO RETURN / NO EXCHANGE / NO REFUND\n\u2022 Please Contact For Any Question / Quick Response : lnstagram @lumieruki\n\n\u2022 Import duties, taxes, and charges are not included in the item price or shipping cost, these charges are the buyer's responsibility.\n\u2022 Please check with your country's customs office to determine what these additional costs will be prior to bidding or buying.",
+    "gtin": null,
+    "images": [
+      "https://media-assets.grailed.com/prd/listing/46751774/3fa70b7220824307bb07d283f56e851e?w=3500",
+      "https://media-assets.grailed.com/prd/listing/46751774/c1e43c47422b4914af57ac37dc8d5f83?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/93b9066137d1437ca068123bd60c40de?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/32dd5e76249f452ea06b7e0d4d351ba7?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/8442e7f512b246cb810e71f17622af10?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/2ec1d5200eae45a5bf3c5f58f6ccb57f?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/8ccdf9de9001479aa8bc7832dffebd81?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/6a8d78f36fc54e1cbb0c75533f8bfff4?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/67963f8d96ca4fbd8e849d895faac6dd?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/3fa70b7220824307bb07d283f56e851e?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/90eaedcdc3034d67b012385b11b2aa77?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/3ffd47445d2d40f78ba6c9d9988df7f5?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/53779006b1ca40829fb1c7114792381c?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/013e2cfec0a745f8b639359cfbe74a34?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/d32a6b59bc3d4f819d96e08dd73de115?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/e6ac4c4020c344b6b702ef74b24af050?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/13123ad65265441298e66e9a7f56fb0e?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/5ed15d62388c453b8d090424c901c3ea?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/26bd2c0843424d91ad4c00a63c569289?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/dc45c791def64f33aadb2e0154cd0893?w=150",
+      "https://media-assets.grailed.com/prd/listing/46751774/6a8d78f36fc54e1cbb0c75533f8bfff4?w=3500"
+    ],
+    "mpn": null,
+    "price": "1012.00",
+    "sale_price": null,
+    "sku": "92502018",
+    "title": "Velcro Strap Set-up Blazer / Pants"
+  },
+  "human_verified": true,
+  "metadata": {
+    "human_verified_at": "2026-07-06",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 3,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://www.grailed.com/listings/92502018-peter-do-velcro-strap-set-up-blazer-pants",
+  "variants": [],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

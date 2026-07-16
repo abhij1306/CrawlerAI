@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.acquisition.dom_runtime import get_page_html
-from app.acquisition.traversal_card_counting import count_listing_cards
+from app.acquisition.listing_cards import count_listing_cards
 from app.core.config.extraction_rules import (
     ACTION_BUY_NOW,
     BROWSER_DETAIL_READINESS_HINTS,
@@ -28,7 +28,7 @@ from app.core.config.extraction_rules import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.shared.field_coerce import clean_text, coerce_int as _coerce_int
 from app.core.shared.text_coerce import slug_tokens
-from app.extraction.documents import HtmlAnalysis, HtmlDocument, HtmlNode
+from app.extraction.documents import HtmlAnalysis, HtmlDocument
 
 
 _STRUCTURED_SHELL_TOKENS = (
@@ -41,38 +41,6 @@ _DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
     str(key): tuple(map(str, value or ()))
     for key, value in (BROWSER_DETAIL_READINESS_HINTS or {}).items()
 }
-_ECOMMERCE_READY_CARD_SELECTORS = (
-    "[data-product-id]",
-    "[itemscope][itemtype*='Product']",
-    ".product-grid-item",
-    "li.product-grid-product",
-    "li.product-base",
-    ".plp-card",
-    "[class*='productcard']",
-    "[class*='product-card']",
-    "[class*='product-item']",
-    "[class*='product-tile']",
-    "[class*='ProductPod']",
-    "[class*='item-tile']",
-    "[data-testid*='product']",
-    "[data-test*='product']",
-    "[data-component*='product']",
-    "[data-automation*='product']",
-)
-_ECOMMERCE_READY_PRICE_RE = re.compile(
-    r"(?:rs\.?|inr|₹|\$|£|€|cad|usd|brl|r\$)\s*\d|\b\d[\d,.]{2,}\s*(?:cad|usd|brl)\b",
-    re.I,
-)
-_ECOMMERCE_READY_PRODUCT_ATTR_RE = re.compile(
-    r"\bproduct[-_ ]?(?:cards?|items?|tiles?|grid|pod|base)(?=$|[^A-Za-z0-9_-])",
-    re.I,
-)
-_ECOMMERCE_READY_DETAIL_PATH_RE = re.compile(
-    r"/(?:products?|p|dp|item|shop)/",
-    re.I,
-)
-
-
 @dataclass(frozen=True, slots=True)
 class ExtractableContentSignals:
     detail: bool
@@ -421,11 +389,7 @@ async def probe_browser_readiness(
     listing_card_count = 0
     matched_listing_selectors = 0
     if is_listing:
-        listing_card_count = await listing_card_signal_count(
-            page,
-            surface=surface,
-            analysis=analysis,
-        )
+        listing_card_count = await count_listing_cards(page, surface=surface)
         raw_override_selectors = (
             listing_override.get("selectors")
             if isinstance(listing_override, dict)
@@ -480,29 +444,6 @@ async def probe_browser_readiness(
     }
 
 
-async def listing_card_signal_count(
-    page: Any,
-    *,
-    surface: str,
-    analysis: HtmlAnalysis | None = None,
-) -> int:
-    if str(surface or "").strip().lower().startswith("ecommerce"):
-        if analysis is None:
-            html = await get_page_html(page)
-            analysis = await asyncio.to_thread(analyze_html, html)
-        ready_count, candidates_present = _ecommerce_ready_card_count(analysis.document)
-        if ready_count <= 0:
-            if candidates_present:
-                return 0
-            return await count_listing_cards(page, surface=surface)
-        selector_count = await count_listing_cards(page, surface=surface)
-        return max(ready_count, selector_count)
-    return await count_listing_cards(
-        page,
-        surface=surface,
-    )
-
-
 def _detail_title_matches_url(
     url: str,
     title: str,
@@ -528,67 +469,6 @@ def _detail_title_matches_url(
         if len(set(segment_tokens) & title_tokens) >= min_matches:
             return True
     return False
-
-
-def _ecommerce_ready_card_count(document: HtmlDocument) -> tuple[int, bool]:
-    seen: set[int] = set()
-    count = 0
-    candidates_present = False
-    for selector in _ECOMMERCE_READY_CARD_SELECTORS:
-        try:
-            nodes = document.css(selector)
-        except Exception:
-            nodes = ()
-        for node in nodes:
-            candidates_present = True
-            node_id = node.identity()
-            if node_id in seen:
-                continue
-            seen.add(node_id)
-            if _ecommerce_node_has_product_evidence(node):
-                count += 1
-    return count, candidates_present
-
-
-def _ecommerce_node_has_product_evidence(node: HtmlNode) -> bool:
-    attrs = node.attributes()
-    text = clean_text(node.text())
-    signature = " ".join(
-        str(attrs.get(key) or "")
-        for key in (
-            "class",
-            "id",
-            "role",
-            "aria-label",
-            "data-testid",
-            "data-test",
-            "data-component",
-            "data-automation",
-        )
-    )
-    product_signature = bool(_ECOMMERCE_READY_PRODUCT_ATTR_RE.search(signature))
-    has_product_id = bool(
-        attrs.get("data-product-id") or node.css_first("[data-product-id]")
-    )
-    itemtype = str(attrs.get("itemtype") or "")
-    has_product_itemtype = "product" in itemtype.lower() or bool(
-        node.css_first("[itemscope][itemtype*='Product']")
-    )
-    has_price = bool(_ECOMMERCE_READY_PRICE_RE.search(text))
-    has_media = bool(node.css_first("img, picture, source"))
-    links = node.css("a[href]")[:8]
-    hrefs = [str(link.attribute("href") or "").strip() for link in links]
-    has_link = any(href and not href.startswith(("#", "javascript:")) for href in hrefs)
-    has_detail_link = any(
-        _ECOMMERCE_READY_DETAIL_PATH_RE.search(href) for href in hrefs
-    )
-    if has_product_id or has_product_itemtype:
-        return True
-    if has_price and (has_link or has_media):
-        return True
-    if product_signature and (text or has_link or has_media):
-        return True
-    return bool(has_detail_link and (has_price or product_signature or has_media))
 
 
 async def count_matching_selectors(page: Any, *, selectors: list[str]) -> int:
