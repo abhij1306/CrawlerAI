@@ -35,7 +35,7 @@ from app.extraction.contracts import (
 from app.extraction.entities import EntitySet
 from app.extraction.field_states import FieldStateName, field_state
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import SurfaceSpec
+from app.extraction.surfaces import Surface, SurfaceSpec
 
 
 def decisions(resolution: Any) -> tuple[Decision, ...]:
@@ -620,7 +620,7 @@ def _commerce_dynamic_content_retry(
     return None
 
 
-_JOB_SURFACES = frozenset({"job_detail", "job_listing"})
+_JOB_SURFACES = frozenset({Surface.JOB_DETAIL.value, Surface.JOB_LISTING.value})
 
 
 def _job_retry_request(
