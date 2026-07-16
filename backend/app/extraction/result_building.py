@@ -633,10 +633,10 @@ def _job_retry_request(
 
     An empty or shell job page requests the rendered document; when the
     structured JSON-LD signal is also missing, network payloads are added so the
-    multi-rung ladder can climb to the network floor. ``max_attempts`` is pinned
-    to the configured cap (default 1 would keep the ladder one-shot).
+    ladder climbs the network floor. ``max_attempts`` is the configured cap; a
+    request is still emitted after a browser attempt (retry/stage.py stops it).
     """
-    if request.surface.value not in _JOB_SURFACES or request.capture.browser_attempted:
+    if request.surface.value not in _JOB_SURFACES:
         return None
     shell = any(is_shell_record(record) for record in records) or any(
         DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
