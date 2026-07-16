@@ -13,7 +13,6 @@ from app.core.config.extraction_recipes import (
     JOB_LISTING_COMPANY_SELECTORS,
     JOB_LISTING_LOCATION_SELECTORS,
     JOB_LISTING_TITLE_SELECTORS,
-    JOB_LISTING_URL_SELECTORS,
     LISTING_HTML_ARTIFACT_IDS,
 )
 from app.core.listing_cards import select_listing_cards
@@ -224,6 +223,7 @@ def _collect_job_listing_evidence(
                 card_selector=candidate.selector,
                 card_index=candidate.selector_index,
                 artifact_id=doc.artifact_id,
+                record_url=candidate.url,
             )
         )
     return rows
@@ -238,14 +238,14 @@ def _job_listing_card_evidence(
     card_selector: str,
     card_index: int,
     artifact_id: str = "html",
+    record_url: str = "",
 ) -> list[Evidence]:
     title = _first_node_text(card, JOB_LISTING_TITLE_SELECTORS)
-    url = _first_node_attr(card, JOB_LISTING_URL_SELECTORS, "href")
     company = _first_node_text(card, JOB_LISTING_COMPANY_SELECTORS)
     location = _first_node_text(card, JOB_LISTING_LOCATION_SELECTORS)
     values = (
         ("job.title", title, "title", 0.72),
-        ("job.url", urljoin(page_url, url) if url else None, "url", 0.74),
+        ("job.url", record_url or None, "url", 0.74),
         ("job.company", company, "company", 0.62),
         ("job.location", location, "location", 0.62),
     )

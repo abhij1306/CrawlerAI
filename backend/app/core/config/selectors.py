@@ -51,6 +51,10 @@ CARD_SELECTORS: dict[str, tuple[str, ...]] = {
 }
 
 ECOMMERCE_READY_CARD_SELECTORS = CARD_SELECTORS["ecommerce"]
+CARD_SELECTORS_BY_ROOT_ENTITY = {
+    "product": CARD_SELECTORS["ecommerce"],
+    "job": CARD_SELECTORS["jobs"],
+}
 
 COOKIE_CONSENT_SELECTORS = (
     "button#onetrust-accept-btn-handler",
@@ -219,6 +223,7 @@ LISTING_FIELD_SELECTORS: dict[str, tuple[str, ...]] = {
 __all__ = [
     "ANCHOR_SELECTOR",
     "CARD_SELECTORS",
+    "CARD_SELECTORS_BY_ROOT_ENTITY",
     "CLOUDFLARE_TURNSTILE_SELECTORS",
     "COOKIE_CONSENT_SELECTORS",
     "ECOMMERCE_READY_CARD_SELECTORS",

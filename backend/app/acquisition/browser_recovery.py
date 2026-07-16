@@ -9,12 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from app.core.config.runtime_settings import crawler_runtime_settings
-from app.core.config.selectors import (
-    ANCHOR_SELECTOR,
-    CLOUDFLARE_TURNSTILE_SELECTORS,
-    LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
+from app.core.config.selectors import CLOUDFLARE_TURNSTILE_SELECTORS
+from app.acquisition.listing_cards import (
+    card_fragments_from_html,
+    selectors_for_surface,
 )
-from app.acquisition.listing_cards import selectors_for_surface
 
 logger = logging.getLogger(__name__)
 
@@ -754,60 +753,44 @@ async def capture_rendered_listing_fragments(
 ) -> list[str]:
     if "listing" not in str(surface or "").strip().lower():
         return []
+    selectors = _listing_capture_selectors(str(surface or ""))
     try:
         snapshot = await page.evaluate(
             """(args) => {
-                const limit = Number(args?.limit || 0);
-                const anchorSelector = String(args?.anchorSelector || '');
                 const selectors = Array.isArray(args?.selectors) ? args.selectors : [];
-                const seenFragments = new Set();
+                const candidateLimit = Number(args?.candidateLimit || 0);
                 const fragments = [];
-                const structuralAncestorSelectors = Array.isArray(args?.structuralAncestorSelectors) ? args.structuralAncestorSelectors : [];
-                const textOf = (node) =>
-                    String(node?.innerText || node?.textContent || '')
-                        .replace(/\\s+/g, ' ')
-                        .trim();
                 for (const selector of selectors) {
                     for (const card of document.querySelectorAll(selector)) {
-                        if (!(card instanceof HTMLElement) || !card.isConnected) continue;
-                        const rect = card.getBoundingClientRect();
-                        if (rect.width <= 0 || rect.height <= 0) continue;
-                        const style = window.getComputedStyle(card);
-                        if (style.display === 'none' || style.visibility === 'hidden') continue;
-                        if (structuralAncestorSelectors.some((ancestor) => card.closest(ancestor))) continue;
-                        const anchors = !anchorSelector
-                            ? []
-                            : (card.matches(anchorSelector) ? [card] : Array.from(card.querySelectorAll(anchorSelector)));
-                        if (!anchors.length) continue;
-                        const anchorCount = anchors.length;
-                        if (anchorCount > 12) continue;
-                        const text = textOf(card);
-                        if (text.length < 12 || text.length > 4000) continue;
                         const fragment = String(card.outerHTML || '').trim();
-                        if (!fragment || seenFragments.has(fragment)) continue;
-                        seenFragments.add(fragment);
-                        fragments.push(fragment);
-                        if (fragments.length >= limit) return fragments;
+                        if (fragment) fragments.push(fragment);
+                        if (candidateLimit > 0 && fragments.length >= candidateLimit) {
+                            return fragments;
+                        }
                     }
                 }
                 return fragments;
             }""",
             {
-                "limit": int(limit),
-                "anchorSelector": ANCHOR_SELECTOR,
-                "selectors": _listing_capture_selectors(str(surface or "")),
-                "structuralAncestorSelectors": list(
-                    LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS
-                ),
+                "selectors": selectors,
+                "candidateLimit": max(int(limit), int(limit) * len(selectors)),
             },
         )
     except Exception:
         return []
     if not isinstance(snapshot, list):
         return []
-    return [
-        str(item).strip() for item in snapshot[: int(limit)] if str(item or "").strip()
-    ]
+    candidate_html = "<main>" + "\n".join(
+        str(item).strip() for item in snapshot if str(item or "").strip()
+    ) + "</main>"
+    return list(
+        card_fragments_from_html(
+            candidate_html,
+            page_url=str(getattr(page, "url", "") or ""),
+            surface=str(surface or ""),
+            limit=limit,
+        )
+    )
 
 
 def _listing_capture_selectors(surface: str) -> list[str]:

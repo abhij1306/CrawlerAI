@@ -223,6 +223,23 @@ def surface_spec(value: Surface | str) -> SurfaceSpec:
     return SURFACE_SPECS[surface]
 
 
+_LISTING_SURFACE_ALIASES = {
+    **{
+        spec.domain: spec.surface
+        for spec in SURFACE_SPECS.values()
+        if spec.cardinality == "many"
+    },
+    "ecommerce": Surface.ECOMMERCE_LISTING,
+}
+
+
+def listing_surface_spec(value: Surface | str) -> SurfaceSpec:
+    """Resolve a canonical listing surface, including public domain aliases."""
+
+    text = str(getattr(value, "value", value) or "").strip().lower()
+    return surface_spec(_LISTING_SURFACE_ALIASES.get(text, text))
+
+
 def listing_schema(value: Surface | str) -> ListingSchema | None:
     """Return the typed listing contract, or ``None`` for one-record surfaces."""
     spec = surface_spec(value)

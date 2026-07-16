@@ -116,6 +116,15 @@ JOB_LISTING_CARD_SELECTORS: tuple[str, ...] = (
     "li",
 )
 
+LISTING_CARD_SELECTORS_BY_ROOT_ENTITY = {
+    "product": ECOMMERCE_LISTING_CARD_SELECTORS,
+    "job": JOB_LISTING_CARD_SELECTORS,
+}
+LISTING_GENERIC_CARD_SELECTORS_BY_ROOT_ENTITY = {
+    "product": ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS,
+    "job": frozenset(),
+}
+
 JOB_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "[data-testid*='title' i]",
     "[class*='title' i]",

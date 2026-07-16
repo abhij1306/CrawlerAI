@@ -11,7 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 from app.core.config.cascade import (
     CASCADE_LISTING_ONCLICK_URL_PATTERN,
@@ -19,27 +19,28 @@ from app.core.config.cascade import (
     CASCADE_LISTING_RECORD_KEY_ATTRIBUTES,
     CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES,
     CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
+    CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES,
 )
 from app.core.config.extraction_recipes import (
-    ECOMMERCE_LISTING_CARD_SELECTORS,
-    ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS,
-    JOB_LISTING_CARD_SELECTORS,
+    LISTING_CARD_SELECTORS_BY_ROOT_ENTITY,
+    LISTING_GENERIC_CARD_SELECTORS_BY_ROOT_ENTITY,
 )
-from app.core.config.extraction_rules import LISTING_CARD_URL_ATTRS
-from app.core.config.selectors import CARD_SELECTORS
-from app.core.records.field_url_normalization import same_site
-from app.core.records.url_identity import listing_url_is_structural
+from app.core.config.extraction_rules import (
+    LISTING_CARD_URL_ATTRS,
+    LISTING_MARKET_LOCALE_GENDER_SEGMENTS,
+    LISTING_MARKET_LOCALE_PRODUCT_PREFIX,
+    LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS,
+    LISTING_UTILITY_URL_TOKENS,
+)
+from app.core.config.selectors import CARD_SELECTORS_BY_ROOT_ENTITY
+from app.core.records.field_url_normalization import same_site, strip_tracking_query_params
+from app.core.records.url_identity import (
+    listing_detail_like_path,
+    listing_url_is_structural,
+)
 
 _PRICE_SIGNAL = re.compile(CASCADE_LISTING_PRICE_SIGNAL_PATTERN, re.I)
 _ONCLICK_URL = re.compile(CASCADE_LISTING_ONCLICK_URL_PATTERN)
-_GENERIC_SELECTORS = frozenset(
-    {
-        *ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS,
-        "section",
-        "div",
-        *(selector for selector in CARD_SELECTORS.get("ecommerce", ()) if selector.startswith("a[")),
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,29 +52,27 @@ class ListingCard:
     selector_index: int
     identity: str
     url: str
+    url_node: Any
     quality_score: int
 
 
-def _domain(surface: object) -> str:
-    domain = str(getattr(surface, "domain", "") or "").strip().lower()
-    if domain:
-        return domain
-    value = getattr(surface, "surface", surface)
-    text = str(getattr(value, "value", value) or "").strip().lower()
-    return "jobs" if text.startswith("job_") else "commerce"
+def _root_entity(surface: object) -> str:
+    return str(getattr(surface, "root_entity", "") or "").strip().lower()
+
+
+def _uses_visual_evidence(surface: object) -> bool:
+    return any(
+        str(fact).endswith(CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES)
+        for fact in getattr(surface, "record_signal_facts", ()) or ()
+    )
 
 
 def derive_card_selectors(surface: object) -> tuple[str, ...]:
     """Return de-duplicated config-owned selectors for a surface lens."""
 
-    domain = _domain(surface)
-    extraction_selectors = (
-        JOB_LISTING_CARD_SELECTORS if domain == "jobs" else ECOMMERCE_LISTING_CARD_SELECTORS
-    )
-    runtime_group = "jobs" if domain == "jobs" else "ecommerce"
-    runtime_selectors = (
-        CARD_SELECTORS.get(runtime_group, ()) if isinstance(CARD_SELECTORS, dict) else ()
-    )
+    root_entity = _root_entity(surface)
+    extraction_selectors = LISTING_CARD_SELECTORS_BY_ROOT_ENTITY.get(root_entity, ())
+    runtime_selectors = CARD_SELECTORS_BY_ROOT_ENTITY.get(root_entity, ())
     return tuple(
         dict.fromkeys(
             value
@@ -177,23 +176,132 @@ def _candidate_nodes(node: Any) -> tuple[Any, ...]:
     return (node, *_css(node, "a[href], [data-href], [data-url]"))
 
 
-def _candidate_url(node: Any, *, page_url: str) -> str:
+def _raw_url_candidates(node: Any, *, page_url: str) -> tuple[tuple[Any, str], ...]:
+    candidates: list[tuple[Any, str]] = []
     for candidate in _candidate_nodes(node):
         for attribute in (*LISTING_CARD_URL_ATTRS, *CASCADE_LISTING_RECORD_URL_ATTRIBUTES):
             value = _attribute(candidate, attribute)
             if value and not value.lower().startswith(("#", "javascript:", "mailto:", "tel:")):
-                return urljoin(page_url, value)
+                candidates.append((candidate, _resolve_listing_url(page_url, value)))
     for candidate in (node, *_css(node, "*")):
         for attribute in CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES:
             if match := _ONCLICK_URL.search(_attribute(candidate, attribute)):
-                return urljoin(page_url, match.group(1))
-    return ""
+                candidates.append(
+                    (candidate, _resolve_listing_url(page_url, match.group(1)))
+                )
+    return tuple(candidates)
 
 
-def stable_card_identity(node: Any, *, page_url: str) -> str:
+def canonical_record_url(
+    node: Any,
+    *,
+    surface: object,
+    page_url: str,
+) -> tuple[Any | None, str]:
+    """Select the one admissible record URL shared by all card consumers."""
+
+    ranked: list[tuple[int, int, Any, str]] = []
+    for index, (candidate, url) in enumerate(
+        _raw_url_candidates(node, page_url=page_url)
+    ):
+        if not _record_url_is_admissible(url, surface=surface, page_url=page_url):
+            continue
+        rank = int(listing_detail_like_path(url)) * 2 + int(
+            bool(_css(candidate, "img, picture, source"))
+        )
+        ranked.append((rank, -index, candidate, canonicalize_identity_url(url)))
+    if not ranked:
+        return None, ""
+    _, _, candidate, url = max(ranked, key=lambda item: item[:2])
+    return candidate, url
+
+
+def _resolve_listing_url(page_url: str, raw_url: str) -> str:
+    resolved = urljoin(page_url, raw_url)
+    page = urlparse(page_url)
+    candidate = urlparse(resolved)
+    if not raw_url.strip() or not same_site(page_url, resolved):
+        return resolved
+    page_parts = _path_parts(page.path)
+    candidate_parts = _path_parts(candidate.path)
+    category_index = next(
+        (
+            index
+            for index, part in enumerate(page_parts)
+            if part.casefold() in LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS
+        ),
+        None,
+    )
+    if category_index is None:
+        return resolved
+    market_prefix = page_parts[:category_index]
+    if not market_prefix or candidate_parts[: len(market_prefix)] == market_prefix:
+        return resolved
+    first = candidate_parts[0].casefold() if candidate_parts else ""
+    if first == LISTING_MARKET_LOCALE_PRODUCT_PREFIX:
+        restored = (*market_prefix, *candidate_parts)
+    elif first in LISTING_MARKET_LOCALE_GENDER_SEGMENTS and _probable_product_slug(
+        candidate_parts[-1] if candidate_parts else ""
+    ):
+        restored = (
+            *market_prefix,
+            LISTING_MARKET_LOCALE_PRODUCT_PREFIX,
+            *candidate_parts,
+        )
+    else:
+        return resolved
+    return urlunparse(candidate._replace(path="/" + "/".join(restored)))
+
+
+def _path_parts(path: str) -> tuple[str, ...]:
+    return tuple(part for part in path.split("/") if part)
+
+
+def _probable_product_slug(value: str) -> bool:
+    tokens = re.findall(r"[a-z0-9]+", value.casefold())
+    return bool(tokens and any(char.isdigit() for char in value) and len(tokens) >= 3)
+
+
+def _listing_url_has_category_segment(url: str) -> bool:
+    return any(
+        part.casefold() in LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS
+        for part in _path_parts(urlparse(url).path)
+    )
+
+
+def _record_url_is_admissible(
+    url: str,
+    *,
+    surface: object,
+    page_url: str,
+) -> bool:
+    parsed = urlparse(url)
+    page = urlparse(page_url)
+    if parsed.scheme not in {"http", "https"} or parsed.path in {"", "/"}:
+        return False
+    if (
+        parsed.path.rstrip("/") == page.path.rstrip("/")
+        and parsed.query == page.query
+    ):
+        return False
+    if not bool(getattr(surface, "off_host_records_allowed", False)) and not same_site(
+        page_url, url
+    ):
+        return False
+    if listing_url_is_structural(url):
+        return False
+    if _uses_visual_evidence(surface):
+        if any(token in parsed.path.casefold() for token in LISTING_UTILITY_URL_TOKENS):
+            return False
+        if _listing_url_has_category_segment(url) and not listing_detail_like_path(url):
+            return False
+    return True
+
+
+def stable_card_identity(node: Any, *, surface: object, page_url: str) -> str:
     """Return stable URL identity, then configured record key, then no identity."""
 
-    url = _candidate_url(node, page_url=page_url)
+    _, url = canonical_record_url(node, surface=surface, page_url=page_url)
     identity = stable_url_identity(url)
     if identity:
         return identity
@@ -204,10 +312,19 @@ def stable_card_identity(node: Any, *, page_url: str) -> str:
     return ""
 
 
+def canonicalize_identity_url(url: str) -> str:
+    """Strip configured tracking parameters and deterministically order the rest."""
+
+    cleaned = strip_tracking_query_params(url) or str(url or "").strip()
+    parsed = urlparse(cleaned)
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True)
+    return urlunparse(parsed._replace(query=query, fragment=""))
+
+
 def stable_url_identity(url: str) -> str:
     """Canonical case-folded URL identity used across card sources."""
 
-    parsed = urlparse(str(url or "").strip())
+    parsed = urlparse(canonicalize_identity_url(url))
     host = str(parsed.hostname or "").casefold().strip(".")
     path = unquote(str(parsed.path or "")).casefold().rstrip("/")
     query = str(parsed.query or "").strip()
@@ -226,16 +343,21 @@ def card_quality_score(
     """Score only generic, surface-relevant evidence; selectors add no data."""
 
     text = _text(node)
-    url = _candidate_url(node, page_url=page_url)
+    _, url = canonical_record_url(node, surface=surface, page_url=page_url)
     score = int(bool(url)) + int(len(re.findall(r"\w+", text)) >= 2)
     has_media = bool(_css(node, "img, picture, source"))
     has_price = bool(_PRICE_SIGNAL.search(text))
-    if _domain(surface) == "jobs":
+    if not _uses_visual_evidence(surface):
         score += int(len(re.findall(r"\w+", text)) >= 3)
-        score += int(bool(stable_card_identity(node, page_url=page_url)))
+        score += int(
+            bool(stable_card_identity(node, surface=surface, page_url=page_url))
+        )
     else:
         score += int(has_media) + int(has_price)
-        score += int(selector not in _GENERIC_SELECTORS)
+        generic_selectors = LISTING_GENERIC_CARD_SELECTORS_BY_ROOT_ENTITY.get(
+            _root_entity(surface), frozenset()
+        )
+        score += int(selector not in generic_selectors)
     return score
 
 
@@ -253,16 +375,14 @@ def card_rejection_reason(
     text = _text(node)
     if len(text) < 4:
         return "insufficient_text"
-    url = _candidate_url(node, page_url=page_url)
-    identity = stable_card_identity(node, page_url=page_url)
+    _, url = canonical_record_url(node, surface=surface, page_url=page_url)
+    identity = stable_card_identity(node, surface=surface, page_url=page_url)
     if not identity:
         return "missing_identity"
-    if url and listing_url_is_structural(url):
-        return "structural_url"
-    off_host_allowed = bool(getattr(surface, "off_host_records_allowed", False))
-    if url and not off_host_allowed and not same_site(page_url, url):
-        return "off_host_url"
-    if _domain(surface) == "commerce" and selector in _GENERIC_SELECTORS:
+    generic_selectors = LISTING_GENERIC_CARD_SELECTORS_BY_ROOT_ENTITY.get(
+        _root_entity(surface), frozenset()
+    )
+    if _uses_visual_evidence(surface) and selector in generic_selectors:
         if not _css(node, "img, picture, source") and not _PRICE_SIGNAL.search(text):
             return "weak_generic_card"
     if card_quality_score(node, surface=surface, page_url=page_url, selector=selector) < 2:
@@ -305,7 +425,12 @@ def select_listing_cards(
             )
             if reason is not None:
                 continue
-            identity = stable_card_identity(node, page_url=page_url)
+            url_node, url = canonical_record_url(
+                node, surface=surface, page_url=page_url
+            )
+            identity = stable_url_identity(url) or stable_card_identity(
+                node, surface=surface, page_url=page_url
+            )
             if identity in seen_identities:
                 continue
             seen_identities.add(identity)
@@ -315,7 +440,8 @@ def select_listing_cards(
                     selector=selector,
                     selector_index=index,
                     identity=identity,
-                    url=_candidate_url(node, page_url=page_url),
+                    url=url,
+                    url_node=url_node,
                     quality_score=card_quality_score(
                         node, surface=surface, page_url=page_url, selector=selector
                     ),
@@ -343,6 +469,8 @@ __all__ = [
     "card_is_admitted",
     "card_quality_score",
     "card_rejection_reason",
+    "canonical_record_url",
+    "canonicalize_identity_url",
     "derive_card_selectors",
     "select_listing_cards",
     "stable_card_identity",

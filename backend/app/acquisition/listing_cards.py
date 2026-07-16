@@ -16,19 +16,11 @@ from app.core.listing_cards import (
     stable_card_identity,
     unique_card_count,
 )
-from app.extraction.surfaces import surface_spec
-
-
-def _listing_surface(surface: str) -> str:
-    normalized = str(surface or "").strip().lower()
-    return {
-        "ecommerce": "ecommerce_listing",
-        "jobs": "job_listing",
-    }.get(normalized, normalized)
+from app.extraction.surfaces import listing_surface_spec
 
 
 def selectors_for_surface(surface: str) -> tuple[str, ...]:
-    return derive_card_selectors(surface_spec(_listing_surface(surface)))
+    return derive_card_selectors(listing_surface_spec(surface))
 
 
 def cards_from_html(
@@ -42,7 +34,7 @@ def cards_from_html(
         return ()
     return select_listing_cards(
         LexborHTMLParser(str(html)),
-        surface=surface_spec(_listing_surface(surface)),
+        surface=listing_surface_spec(surface),
         page_url=page_url,
         limit=limit,
     )

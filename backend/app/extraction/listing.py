@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Literal
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin
 
 from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_HTML_ARTIFACT_IDS,
@@ -10,7 +10,6 @@ from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_PRICE_SELECTORS,
     ECOMMERCE_LISTING_TITLE_ATTRIBUTES,
     ECOMMERCE_LISTING_TITLE_SELECTORS,
-    ECOMMERCE_LISTING_URL_SELECTORS,
 )
 from app.core.listing_cards import select_listing_cards
 from app.core.config.extraction_rules import (
@@ -21,11 +20,7 @@ from app.core.config.extraction_rules import (
     LISTING_TITLE_CONTROL_MARKERS,
     LISTING_TITLE_CTA_TITLES,
     LISTING_UTILITY_TITLE_PATTERNS,
-    LISTING_UTILITY_URL_TOKENS,
     LISTING_WEAK_TITLES,
-    LISTING_MARKET_LOCALE_GENDER_SEGMENTS,
-    LISTING_MARKET_LOCALE_PRODUCT_PREFIX,
-    LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS,
 )
 from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import (
@@ -40,11 +35,6 @@ from app.extraction.contracts import (
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.shared.ids import stable_id
 from app.extraction.surfaces import Surface, listing_schema
-from app.core.records.field_url_normalization import same_site
-from app.core.records.url_identity import (
-    listing_detail_like_path,
-    listing_url_is_structural,
-)
 
 _LISTING_PRICE_SYMBOL_PATTERN = "|".join(
     re.escape(symbol) for symbol in sorted(CURRENCY_SYMBOL_MAP, key=len, reverse=True)
@@ -90,6 +80,8 @@ def _collect_listing_evidence(
                 card_selector=candidate.selector,
                 card_index=candidate.selector_index,
                 strong_card=candidate.quality_score >= 3,
+                product_link=candidate.url_node,
+                product_url=candidate.url,
             )
         )
     return rows
@@ -104,13 +96,12 @@ def _card_evidence(
     card_selector: str,
     card_index: int,
     strong_card: bool,
+    product_link: HtmlNode | None,
+    product_url: str,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
     selector_price = _first_price(card)
     price = selector_price or _first_price(card, allow_text_scan=strong_card)
-    product_link, product_url = _listing_product_link(
-        card, page_url=page_url, strong_card=strong_card
-    )
     image_url = _first_image(card)
     title = _listing_product_title(card, product_link) if product_url else None
     absolute_image_url = urljoin(page_url, image_url) if image_url else None
@@ -139,124 +130,6 @@ def _card_evidence(
             )
         )
     return rows
-
-
-def _valid_listing_product_url(product_url: str, page_url: str) -> bool:
-    product = urlparse(product_url)
-    page = urlparse(page_url)
-    same_document = (
-        product.path.rstrip("/") == page.path.rstrip("/")
-        and product.query == page.query
-    )
-    return (
-        product.scheme in {"http", "https"}
-        and same_site(page_url, product_url)
-        and product.path not in {"", "/"}
-        and not same_document
-        and not any(
-            token in product.path.casefold() for token in LISTING_UTILITY_URL_TOKENS
-        )
-        and not (
-            _listing_url_has_category_segment(product_url)
-            and not listing_detail_like_path(product_url)
-        )
-        and not listing_url_is_structural(product_url)
-    )
-
-
-def _listing_product_link(
-    card: HtmlNode,
-    *,
-    page_url: str,
-    strong_card: bool,
-) -> tuple[HtmlNode | None, str | None]:
-    fallback: tuple[HtmlNode, str] | None = None
-    image_fallback: tuple[HtmlNode, str] | None = None
-    detail_fallback: tuple[HtmlNode, str] | None = None
-    for selector in ECOMMERCE_LISTING_URL_SELECTORS:
-        for link in card.css(selector):
-            href = str(link.attribute("href") or "").strip()
-            product_url = _resolve_listing_href(page_url, href) if href else ""
-            if link.is_hidden() or not _valid_listing_product_url(
-                product_url, page_url
-            ):
-                continue
-            detail_like = listing_detail_like_path(product_url)
-            if detail_like and _link_has_title_signal(link):
-                return link, product_url
-            if not strong_card:
-                continue
-            if detail_like:
-                detail_fallback = detail_fallback or (link, product_url)
-                continue
-            fallback = fallback or (link, product_url)
-            if image_fallback is None and any(
-                link.css_first(image_selector) is not None
-                for image_selector in ECOMMERCE_LISTING_IMAGE_SELECTORS
-            ):
-                image_fallback = (link, product_url)
-    return detail_fallback or image_fallback or fallback or (None, None)
-
-
-def _resolve_listing_href(page_url: str, href: str) -> str:
-    product_url = urljoin(page_url, href)
-    return _restore_market_locale_product_path(page_url, href, product_url)
-
-
-def _restore_market_locale_product_path(
-    page_url: str, raw_href: str, product_url: str
-) -> str:
-    if not raw_href.strip():
-        return product_url
-    page = urlparse(page_url)
-    product = urlparse(product_url)
-    if not same_site(page_url, product_url):
-        return product_url
-    page_parts = _path_parts(page.path)
-    product_parts = _path_parts(product.path)
-    category_index = next(
-        (
-            index
-            for index, part in enumerate(page_parts)
-            if part.casefold() in LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS
-        ),
-        None,
-    )
-    if category_index is None:
-        return product_url
-    market_prefix = page_parts[:category_index]
-    if not market_prefix or product_parts[: len(market_prefix)] == market_prefix:
-        return product_url
-    first = product_parts[0].casefold() if product_parts else ""
-    if first == LISTING_MARKET_LOCALE_PRODUCT_PREFIX:
-        restored_parts = (*market_prefix, *product_parts)
-    elif first in LISTING_MARKET_LOCALE_GENDER_SEGMENTS and _probable_product_slug(
-        product_parts[-1] if product_parts else ""
-    ):
-        restored_parts = (
-            *market_prefix,
-            LISTING_MARKET_LOCALE_PRODUCT_PREFIX,
-            *product_parts,
-        )
-    else:
-        return product_url
-    return urlunparse(product._replace(path="/" + "/".join(restored_parts)))
-
-
-def _path_parts(path: str) -> tuple[str, ...]:
-    return tuple(part for part in path.split("/") if part)
-
-
-def _probable_product_slug(value: str) -> bool:
-    tokens = re.findall(r"[a-z0-9]+", value.casefold())
-    return bool(tokens and any(char.isdigit() for char in value) and len(tokens) >= 3)
-
-
-def _listing_url_has_category_segment(url: str) -> bool:
-    return any(
-        part.casefold() in LISTING_STRUCTURAL_CATEGORY_PATH_SEGMENTS
-        for part in _path_parts(urlparse(url).path)
-    )
 
 
 def _listing_evidence(
