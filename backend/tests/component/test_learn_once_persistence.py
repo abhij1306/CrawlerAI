@@ -697,3 +697,65 @@ async def test_reset_caller_ignores_non_recipe_and_empty_results(
         )
         is True
     )
+
+
+# --- Finding 13: operator-scope exemption is EXACT-template only --------------
+
+
+@pytest.mark.asyncio
+async def test_operator_label_on_sibling_template_does_not_exempt(
+    db_session: AsyncSession,
+) -> None:
+    # MEDIUM 13 (hardening): an ownership label attached to a DIFFERENT template
+    # of the SAME domain/surface must not exempt this recipe from drift
+    # self-heal. Exemption is scoped to the exact template_id, never domain or
+    # surface, so the target recipe still auto-suspends at threshold.
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    target_template, _recipe = await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+
+    # A SIBLING template (same domain + surface, different route/fingerprint)
+    # that carries the operator ownership label.
+    sibling_route = normalize_route(
+        "https://shop.test/category/shoes", _SURFACE_VALUE
+    )
+    assert sibling_route != route_pattern
+    sibling_fp = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, sibling_route
+    )
+    sibling_template, _sib_recipe = await _persist_recipe(
+        db_session,
+        domain=domain,
+        route_pattern=sibling_route,
+        fingerprint=sibling_fp,
+    )
+    assert sibling_template.id != target_template.id
+    db_session.add(
+        ExtractionOperatorLabel(
+            label_kind="review_promotion",
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            template_id=sibling_template.id,
+        )
+    )
+    await db_session.commit()
+
+    # The target template's recipe self-heals at threshold despite the sibling
+    # ownership label — the exemption never leaks across templates.
+    outcomes = [
+        await note_recipe_drift_failure(
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
+        )
+        for _ in range(3)
+    ]
+    await db_session.commit()
+    assert outcomes == [False, False, True]
