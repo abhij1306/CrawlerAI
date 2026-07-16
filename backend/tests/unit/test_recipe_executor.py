@@ -336,3 +336,112 @@ def test_executor_has_no_discovery_model_resolver_or_storage_imports() -> None:
         )
         for name in imports
     )
+
+
+_LISTING_HTML = (
+    "<html><body><ul>"
+    '<li><a href="/p/1"><h3>Alpha</h3></a><span>$10</span></li>'
+    '<li><a href="/p/2"><h3>Beta</h3></a><span>$20</span></li>'
+    "</ul></body></html>"
+)
+_ONE_CARD_HTML = (
+    "<html><body><ul>"
+    '<li><a href="/p/1"><h3>Alpha</h3></a><span>$10</span></li>'
+    "</ul></body></html>"
+)
+
+
+def _listing_recipe(*, min_count: int | None = None) -> ExtractionRecipe:
+    root_kwargs: dict[str, object] = dict(
+        binding_id="record.root",
+        source="dom_text",
+        path="ul > li",
+        cardinality="many",
+        required=True,
+    )
+    if min_count is not None:
+        root_kwargs["min_count"] = min_count
+    return ExtractionRecipe(
+        recipe_id="listing-v2",
+        scope=RecipeScope(
+            domain="shop.test",
+            surface="ecommerce_listing",
+            route_pattern="/c/{id}",
+        ),
+        capture_requirements=("rendered_dom",),
+        record_root=RecipeBinding(**root_kwargs),
+        identity=(
+            RecipeBinding(
+                binding_id="record.identity.url",
+                source="dom_attribute",
+                path="a",
+                attribute="href",
+                field="url",
+                scope="record.root",
+                cardinality="zero_or_one",
+                required=True,
+            ),
+        ),
+        fields={
+            "url": (
+                RecipeBinding(
+                    binding_id="field.url",
+                    source="dom_attribute",
+                    path="a",
+                    attribute="href",
+                    field="url",
+                    scope="record.root",
+                    cardinality="zero_or_one",
+                ),
+            ),
+            "title": (
+                RecipeBinding(
+                    binding_id="field.title",
+                    source="dom_text",
+                    path="a > h3",
+                    field="title",
+                    scope="record.root",
+                ),
+            ),
+        },
+        required=("record.identity", "url", "title"),
+    )
+
+
+def _listing_request(html: str, *, max_records: int = 10):
+    return fixture_request_from_inputs(
+        Surface.ECOMMERCE_LISTING,
+        html,
+        "https://shop.test/c/shoes",
+        max_records=max_records,
+    )
+
+
+def test_listing_recipe_single_card_root_fails_cardinality() -> None:
+    # Finding 7: a listing recipe whose record root grounds to a single card is
+    # not a record set; the executor must fail_cardinality even though a lone
+    # card would otherwise satisfy the required bindings.
+    result = execute_recipe(_listing_request(_ONE_CARD_HTML), _listing_recipe(min_count=2))
+    assert result.records == ()
+    assert result.failure_code == "recipe_cardinality_changed"
+
+
+def test_listing_recipe_multi_card_passes_even_with_max_records_one() -> None:
+    # The raw root count is checked BEFORE the max_records slice, so a
+    # max_records=1 request against a genuine multi-card grid still passes.
+    result = execute_recipe(
+        _listing_request(_LISTING_HTML, max_records=1), _listing_recipe(min_count=2)
+    )
+    assert result.failure_code is None
+    assert len(result.records) == 1
+
+
+def test_legacy_listing_payload_without_min_count_still_enforced() -> None:
+    # A recipe payload compiled before finding 7 carries no min_count (defaults
+    # to 1). The executor derives the min-2 listing floor from the request surface
+    # + config, so a one-card replay still fails.
+    recipe = _listing_recipe(min_count=None)
+    assert recipe.record_root.min_count == 1  # legacy default
+    result = execute_recipe(_listing_request(_ONE_CARD_HTML), recipe)
+    assert result.records == ()
+    assert result.failure_code == "recipe_cardinality_changed"

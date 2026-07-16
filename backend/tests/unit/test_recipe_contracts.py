@@ -108,6 +108,26 @@ def test_recipe_contract_covers_frozen_primitives() -> None:
     assert recipe.exclusions[0].path.endswith("recommendations']")
 
 
+def test_recipe_binding_min_count_defaults_to_one_and_is_additive() -> None:
+    # Finding 7: min_count is an additive frozen field defaulting to 1 so legacy
+    # stored payloads (which never carried the key) deserialize unchanged.
+    binding = RecipeBinding(binding_id="record.root", source="dom_text", path="ul > li")
+    assert binding.min_count == 1
+    # A payload compiled before this change omits the key entirely.
+    legacy = RecipeBinding.model_validate(
+        {"binding_id": "record.root", "source": "dom_text", "path": "ul > li"}
+    )
+    assert legacy.min_count == 1
+    explicit = RecipeBinding(
+        binding_id="record.root",
+        source="dom_text",
+        path="ul > li",
+        cardinality="many",
+        min_count=2,
+    )
+    assert explicit.min_count == 2
+
+
 def test_recipe_rejects_ungrounded_or_ambiguous_bindings() -> None:
     with pytest.raises(ValidationError):
         RecipeBinding(binding_id="field.title", source="dom_text", path="")

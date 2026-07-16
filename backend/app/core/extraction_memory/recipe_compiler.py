@@ -27,6 +27,7 @@ from string import Template
 from typing import Any, Awaitable, Callable
 
 from app.core.config.cascade import (
+    CASCADE_LISTING_MIN_REPEATED_RECORDS,
     CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS,
     CASCADE_RECIPE_COMPILER_MAX_FLAT_MAP_ENTRIES,
     CASCADE_RECIPE_COMPILER_SYSTEM_PROMPT,
@@ -119,6 +120,13 @@ async def compile_recipe(
         return _failure(
             execution.failure_code or "recipe_binding_not_found",
             execution.detail or "recipe did not re-ground on the page",
+        )
+    # Finding 7: a listing recipe must ground a genuine multi-record set, not a
+    # lone card. Enforce the min-repeated-records floor on the grounded roots.
+    if is_listing and len(execution.records) < CASCADE_LISTING_MIN_REPEATED_RECORDS:
+        return _failure(
+            "recipe_cardinality_changed",
+            "listing recipe grounded fewer than the minimum repeated records",
         )
     grounded_paths = tuple(
         dict.fromkeys(
@@ -268,6 +276,11 @@ def _build_recipe(
         path=root_css,
         cardinality=root_cardinality,
         required=True,
+        # Listing surfaces must ground at least the configured min-repeated-records
+        # count; a singleton root is not a record set (finding 7).
+        min_count=(
+            CASCADE_LISTING_MIN_REPEATED_RECORDS if is_listing else 1
+        ),
     )
     fields: dict[str, tuple[RecipeBinding, ...]] = {}
     for field, path in field_paths.items():

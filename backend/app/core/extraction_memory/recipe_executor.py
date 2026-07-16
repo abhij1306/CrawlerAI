@@ -7,6 +7,7 @@ import re
 from typing import Any, Literal
 
 from app.core.domain_utils import normalize_domain
+from app.core.config.cascade import CASCADE_LISTING_MIN_REPEATED_RECORDS
 from app.core.config.extraction_rules import (
     LISTING_TITLE_CTA_TITLES,
     LISTING_UTILITY_TITLE_PATTERNS,
@@ -27,6 +28,7 @@ from app.core.records.url_identity import (
 )
 from app.extraction.contracts import ArtifactRef, ExtractionRequest
 from app.extraction.documents import HtmlDocument, HtmlNode
+from app.extraction.surfaces import listing_schema
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,7 @@ def execute_recipe(
         _check_scope(request, recipe)
         _check_capture_requirements(request, recipe)
         roots = _read(request, recipe.record_root, None, outcomes, root=True)
+        _check_record_root_minimum(request, recipe, len(roots))
         records = tuple(
             _record(request, recipe, root, outcomes)
             for root in roots[: request.max_records]
@@ -514,6 +517,30 @@ def _check_cardinality(
         raise _RecipeError(
             "recipe_cardinality_changed",
             f"expected repeated values: {binding.binding_id}",
+        )
+
+
+def _check_record_root_minimum(
+    request: ExtractionRequest, recipe: ExtractionRecipe, root_count: int
+) -> None:
+    """Enforce the min-repeated-records floor on the RAW record-root count.
+
+    Finding 7: applied to the roots BEFORE the ``max_records`` slice so a
+    ``max_records=1`` request cannot mask a real multi-record grid. The listing
+    floor is derived from the request surface + config at replay time rather than
+    trusting the persisted ``min_count`` alone, so legacy payloads (which default
+    to ``min_count=1``) are still held to the min-2 listing floor.
+    """
+
+    if recipe.record_root.cardinality != "many":
+        return
+    is_listing = listing_schema(request.surface) is not None
+    listing_floor = CASCADE_LISTING_MIN_REPEATED_RECORDS if is_listing else 1
+    minimum = max(recipe.record_root.min_count, listing_floor)
+    if 0 < root_count < minimum:
+        raise _RecipeError(
+            "recipe_cardinality_changed",
+            f"record root grounded {root_count} < required {minimum}",
         )
 
 

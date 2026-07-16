@@ -350,3 +350,26 @@ async def test_http_only_capture_never_calls_model_and_fails() -> None:
     assert calls == []
     assert result.candidate is None
     assert result.failure_code == "recipe_capture_requirement_missing"
+
+
+_SINGLE_CARD_LISTING_HTML = (
+    "<html><body><ul>"
+    '<li><a href="/p/1"><h3>Alpha</h3></a><span>$10</span></li>'
+    "</ul></body></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_compiler_rejects_single_card_listing_page() -> None:
+    # Finding 7: the compiler must enforce the min-repeated-records floor at
+    # compile time — a listing page grounding a single card yields no recipe.
+    response = (
+        '{"record_root": "/html[1]/body[1]/ul[1]/li[1]", "fields": {'
+        '"title": "/html[1]/body[1]/ul[1]/li[1]/a[1]/h3[1]", '
+        '"price": "/html[1]/body[1]/ul[1]/li[1]/span[1]"}}'
+    )
+    request = _listing_request(html=_SINGLE_CARD_LISTING_HTML)
+    result = await _compile(request, Surface.ECOMMERCE_LISTING, response)
+
+    assert result.candidate is None
+    assert result.failure_code == "recipe_cardinality_changed"

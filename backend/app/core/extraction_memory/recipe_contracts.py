@@ -62,6 +62,11 @@ class RecipeBinding(FrozenRecipeModel):
     cardinality: RecipeCardinality = "zero_or_one"
     required: bool = False
     compare_to: str | None = None
+    # Minimum number of grounded values this binding must yield. For a listing
+    # record-root binding this carries the min-repeated-records floor so a
+    # singleton root is rejected at compile and replay (finding 7). Additive and
+    # defaulting to 1 so legacy payloads deserialize unchanged.
+    min_count: int = 1
 
     @model_validator(mode="after")
     def attribute_source_requires_attribute(self) -> RecipeBinding:
