@@ -414,6 +414,53 @@ _SCOPED_DETAIL_HTML = (
 _FOOTER_PATH = "/html[1]/body[1]/footer[1]/span[1]"
 
 
+_OUT_OF_SCOPE_ATTR_HTML = (
+    "<html><body>"
+    "<main>"
+    "<h1>Trail Shoe Red</h1>"
+    '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
+    '<span class="price">$129.99</span>'
+    f"<p>{_SCOPED_FILLER}</p>"
+    '<img src="/img/red.jpg">'
+    "</main>"
+    '<footer><a href="/promo/out-of-scope">Promo Link</a></footer>'
+    "</body></html>"
+)
+_OUT_OF_SCOPE_ANCHOR_PATH = "/html[1]/body[1]/footer[1]/a[1]"
+
+
+@pytest.mark.asyncio
+async def test_attribute_binding_rejects_path_outside_scoped_map() -> None:
+    # Finding 1: attribute fields (url/apply_url/image_url) must not ground onto
+    # a DOM node outside the scoped/capped region the model was shown, even
+    # though it resolves on the full page. Here the model grounds ``url`` onto a
+    # footer anchor outside ``main``; the exact-node binding must be rejected so
+    # the recipe never anchors url to the out-of-scope promo link.
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+        '"price": "/html[1]/body[1]/main[1]/span[1]", '
+        f'"url": "{_OUT_OF_SCOPE_ANCHOR_PATH}"}}}}'
+    )
+    request = _detail_request(html=_OUT_OF_SCOPE_ATTR_HTML)
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, response)
+
+    assert result.candidate is not None
+    url_bindings = result.candidate.recipe.fields.get("url", ())
+    # The out-of-scope footer anchor must never become the url binding path.
+    assert all(
+        binding.path != "a[1] > a[1]" and "footer" not in binding.path
+        for binding in url_bindings
+    )
+    # The recipe still binds url via the in-scope canonical link, not the promo.
+    execution = execute_recipe(request, result.candidate.recipe)
+    assert execution.records
+    assert all(
+        "/promo/out-of-scope" not in str(row.get("url", ""))
+        for row in execution.records
+    )
+
+
 @pytest.mark.asyncio
 async def test_compiler_rejects_path_outside_scoped_map() -> None:
     # Finding 9: the model may only ground onto paths in the scoped/capped map it

@@ -321,11 +321,15 @@ def _build_recipe(
         if binding is not None:
             fields[field] = (binding,)
     # Attribute-only identity/image fields never appear in the flat map, so they
-    # are located structurally inside the record root.
+    # are located structurally inside the record root (or scoped region on a
+    # document surface so the fallback cannot reach an out-of-scope node).
+    scope_css = _scoped_region_css(root_css, flat_map_paths)
     for field in (identity_field, "image_url"):
         if field in fields or field not in _ATTRIBUTE_FIELDS:
             continue
-        binding = _structural_attribute_binding(field, root_css, document)
+        binding = _structural_attribute_binding(
+            field, root_css, document, scope_css=scope_css
+        )
         if binding is not None:
             fields[field] = (binding,)
     if "title" not in fields or identity_field not in fields:
@@ -426,6 +430,24 @@ def _relative_css(root_path: str, absolute_path: str) -> str | None:
     return _segments_to_css(tail) or None
 
 
+def _path_within_scope(path: str, flat_map_paths: tuple[str, ...]) -> bool:
+    """True when ``path`` lives inside the region the model was shown.
+
+    Finding 1: attribute nodes carry no flat-map text, so their proposed path
+    cannot be a direct ``flat_map_paths`` member. Instead require it to descend
+    from (or equal) the common ancestor of the capped flat-map entries — the
+    scoped region actually rendered into the prompt. A path outside that region
+    (valid only on the uncapped full page) is rejected.
+    """
+
+    ancestor = _common_ancestor(flat_map_paths)
+    if not ancestor:
+        return False
+    ancestor_segments = _path_segments(ancestor)
+    path_segments = _path_segments(path)
+    return path_segments[: len(ancestor_segments)] == ancestor_segments
+
+
 def _common_ancestor(paths: tuple[str, ...]) -> str:
     split = [
         [seg for seg in path.strip("/").split("/") if seg]
@@ -461,7 +483,14 @@ def _field_binding(
         # Anchor to that node so sibling anchors/images do not collapse onto the
         # same field; fall back to a structural selector only when the grounded
         # path does not resolve.
-        return _attribute_binding(field, path, root_css=root_css, document=document)
+        return _attribute_binding(
+            field,
+            path,
+            root_css=root_css,
+            flat_map_paths=flat_map_paths,
+            scope_css=_scoped_region_css(root_css, flat_map_paths),
+            document=document,
+        )
     if path not in flat_map_paths:
         return None
     listing = root_css != "body"
@@ -482,17 +511,51 @@ def _field_binding(
     )
 
 
+def _scoped_region_css(root_css: str, flat_map_paths: tuple[str, ...]) -> str | None:
+    """CSS for the scoped region the model was shown (document surfaces only).
+
+    Finding 1: on a document-scoped (detail) surface a bare structural selector
+    like ``a[href]`` matches the whole page, so the fallback could re-capture an
+    out-of-scope anchor. Confine the fallback to the common ancestor of the
+    capped flat-map entries. Listing surfaces already anchor under the record
+    root, so no extra scoping is returned for them.
+    """
+
+    if root_css != "body":
+        return None
+    ancestor = _common_ancestor(flat_map_paths)
+    return _absolute_css(ancestor) if ancestor else None
+
+
 def _attribute_binding(
-    field: str, path: str, *, root_css: str, document: HtmlDocument
+    field: str,
+    path: str,
+    *,
+    root_css: str,
+    flat_map_paths: tuple[str, ...],
+    scope_css: str | None,
+    document: HtmlDocument,
 ) -> RecipeBinding | None:
     attribute = _ATTRIBUTE_FIELDS[field]
     listing = root_css != "body"
+    # Finding 1: attribute values never appear in the flat-map text, so the
+    # model-proposed node path cannot be checked against ``flat_map_paths``
+    # directly (the anchor/image node itself may carry no text). Constrain it to
+    # the scoped region the model was actually shown: require the proposed path
+    # to live under the common ancestor of the capped flat-map entries. A path
+    # valid on the full page but outside that region (e.g. /html/body/a[405]) is
+    # rejected and only the structural fallback, anchored to the accepted record
+    # root, remains.
     css = (
         _relative_css(_root_absolute(root_css), path)
         if listing
         else _absolute_css(path)
     )
-    if css and _attribute_node_resolves(document, root_css, css, attribute, listing):
+    if (
+        css
+        and _path_within_scope(path, flat_map_paths)
+        and _attribute_node_resolves(document, root_css, css, attribute, listing)
+    ):
         return RecipeBinding(
             binding_id=f"field.{field}",
             source="dom_attribute",
@@ -505,9 +568,13 @@ def _attribute_binding(
             cardinality="zero_or_one",
             field=field,
         )
-    # The grounded path did not resolve to a node carrying the attribute; fall
-    # back to the structural selector (best-effort, may be broad).
-    return _structural_attribute_binding(field, root_css, document)
+    # The grounded path did not resolve to a node carrying the attribute (or it
+    # fell outside the scoped region); fall back to the structural selector,
+    # confined to the scoped region on document surfaces so it cannot re-capture
+    # an out-of-scope node.
+    return _structural_attribute_binding(
+        field, root_css, scope_css=scope_css, document=document
+    )
 
 
 def _attribute_node_resolves(
@@ -549,7 +616,11 @@ def _resolves_under_root(document: HtmlDocument, root_css: str, css: str) -> boo
 
 
 def _structural_attribute_binding(
-    field: str, root_css: str, document: HtmlDocument
+    field: str,
+    root_css: str,
+    document: HtmlDocument,
+    *,
+    scope_css: str | None = None,
 ) -> RecipeBinding | None:
     attribute = _ATTRIBUTE_FIELDS[field]
     tag = "img" if attribute == "src" else "a"
@@ -558,6 +629,10 @@ def _structural_attribute_binding(
     if listing:
         found = _resolves_under_root(document, root_css, selector)
     else:
+        # Finding 1: confine the document-scoped fallback to the scoped region so
+        # it cannot re-capture an out-of-scope node the model was never shown.
+        if scope_css:
+            selector = f"{scope_css} {selector}"
         found = bool(document.safe_css(selector))
     if not found:
         return None
