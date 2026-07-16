@@ -112,21 +112,32 @@ async def _extract_records_for_acquisition(
 
 
 def _browser_retry_pending(
-    acquisition_result: PageAcquisitionResult, result: ExtractionResult
+    context: _URLProcessingContext,
+    acquisition_result: PageAcquisitionResult,
+    result: ExtractionResult,
 ) -> bool:
-    """True when a browser retry will still run, so learning must be deferred.
+    """True when a browser retry rung will still run, so learning is deferred.
 
-    Finding 5: learning fires only after the FINAL attempt. When the result
-    requests a browser retry and the browser has not been attempted yet, a retry
-    pass will re-run extraction; the post-browser pass is the single learn attempt.
+    Learning fires only after the FINAL browser rung, so the defer decision is
+    driven by the REMAINING RUNG BUDGET: after rung 1 a retry can still be
+    required (``browser_escalation_count < max_attempts``) while
+    ``browser_attempted`` is already true, so a bare browser-attempted check
+    would latch learning too early — before the multi-rung ladder is exhausted.
+    The initial-browser short-circuit is preserved: with nothing escalated yet
+    (``browser_escalation_count == 0``) but the first pass already browser-fetched,
+    ``retry/stage.py`` short-circuits and climbs NO rung, so learning may fire now
+    (a pure budget check would defer forever for those initial-browser pages).
     """
 
     retry_request = result.retry_request
     if retry_request is None or not retry_request.required:
         return False
-    return not PageEvidence.from_acquisition_result(
-        acquisition_result
-    ).browser_attempted
+    if (
+        context.browser_escalation_count == 0
+        and PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+    ):
+        return False
+    return context.browser_escalation_count < retry_request.max_attempts
 
 
 async def _maybe_learn_once(
@@ -152,7 +163,7 @@ async def _maybe_learn_once(
     # Learn only after the FINAL attempt: if a browser retry is still pending, the
     # post-browser pass is the single learn attempt (and, with finding 6, the
     # HTTP-only first pass would not call the model anyway).
-    if _browser_retry_pending(acquisition_result, result):
+    if _browser_retry_pending(context, acquisition_result, result):
         return
     context.learn_once_attempted = True
 

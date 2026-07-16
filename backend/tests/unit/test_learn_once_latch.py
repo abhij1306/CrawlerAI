@@ -8,6 +8,7 @@ from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.pipeline import record_extraction_stage as stage
 from app.crawl.pipeline.url_processing_context import URLProcessingContext
+from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.extraction.contracts import CapabilityRequest, ExtractionResult
 from app.extraction.surfaces import Surface
 
@@ -47,12 +48,15 @@ def _context() -> URLProcessingContext:
     )
 
 
-def _empty_result(*, retry_required: bool) -> ExtractionResult:
+def _empty_result(
+    *, retry_required: bool, max_attempts: int = 1
+) -> ExtractionResult:
     retry = (
         CapabilityRequest(
             required=True,
             reason="empty_extraction",
             required_artifacts=("rendered_html",),
+            max_attempts=max_attempts,
         )
         if retry_required
         else None
@@ -133,3 +137,63 @@ async def test_maybe_learn_once_latches_after_first_attempt(monkeypatch) -> None
 
     assert calls == [1]
     assert context.learn_once_attempted is True
+
+
+def _budget_context(*, escalation_count: int) -> URLProcessingContext:
+    context = _context()
+    context.browser_escalation_count = escalation_count
+    return context
+
+
+def test_browser_retry_pending_defers_mid_ladder() -> None:
+    # Finding 3: with max_attempts=2 and one browser rung already climbed, a
+    # still-required retry means a further rung will run, so learning must be
+    # deferred (budget remains: escalation_count 1 < max_attempts 2).
+    context = _budget_context(escalation_count=1)
+    result = _empty_result(
+        retry_required=True, max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    )
+    assert (
+        stage._browser_retry_pending(
+            context,
+            _acquisition_result(method="browser"),
+            result,
+        )
+        is True
+    )
+
+
+def test_browser_retry_pending_fires_at_exhaustion() -> None:
+    # Finding 3: at the rung budget ceiling (escalation_count == max_attempts) no
+    # further rung will run, so learning may fire now.
+    context = _budget_context(escalation_count=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP)
+    result = _empty_result(
+        retry_required=True, max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    )
+    assert (
+        stage._browser_retry_pending(
+            context,
+            _acquisition_result(method="browser"),
+            result,
+        )
+        is False
+    )
+
+
+def test_browser_retry_pending_initial_browser_short_circuit() -> None:
+    # Finding 3: initial-browser short-circuit — nothing escalated yet
+    # (escalation_count == 0) but the first pass already browser-fetched the page,
+    # so retry/stage.py climbs NO rung. Learning must be allowed now (not deferred
+    # forever) even though a retry is nominally required with budget remaining.
+    context = _budget_context(escalation_count=0)
+    result = _empty_result(
+        retry_required=True, max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    )
+    assert (
+        stage._browser_retry_pending(
+            context,
+            _acquisition_result(method="browser"),
+            result,
+        )
+        is False
+    )
