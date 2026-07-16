@@ -1,11 +1,9 @@
 """Slice 4 / Task B5: bounded multi-rung browser escalation ladder.
 
 The retry stage now climbs a bounded ladder rather than a single browser rung.
-This test drives ``retry_extraction_request_with_browser`` with a URL that stays
-empty across rungs and asserts the ladder climbs past the first browser rung and
-then exhausts honestly with a terminal verdict — it does NOT assert real
-network-payload data was captured (that fixture-backed assertion is the §6
-acquisition-ladder slice's job).
+These tests drive ``retry_extraction_request_with_browser`` through the bounded
+browser ladder, including the rung-2 network capability and its extraction
+bundle handoff.
 """
 
 from __future__ import annotations
@@ -18,7 +16,9 @@ import pytest
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
 from app.extraction.contracts import ExtractionResult, RetryRequest
+from app.extraction.replay import request_from_acquisition_result
 from app.extraction.surfaces import Surface
 from app.crawl.pipeline import extraction_loop
 from app.crawl.pipeline.retry import stage
@@ -171,4 +171,98 @@ async def test_escalation_ladder_stops_when_verdict_satisfied(monkeypatch) -> No
 
     assert acquire_calls == 1
     assert context.browser_escalation_count == 1
+    assert result.verdict == "success"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) -> None:
+    requests: list[AcquisitionRequest] = []
+    payload = {
+        "data": {
+            "job": {
+                "title": "Network-only role",
+                "url": "https://jobs.test/j/1",
+            }
+        }
+    }
+
+    async def fake_build_request(context):
+        return AcquisitionRequest(
+            run_id=1,
+            url=context.url,
+            plan=AcquisitionIntent(surface="job_detail"),
+            acquisition_profile={"capture_network": "off"},
+        )
+
+    async def fake_acquire(request):
+        requests.append(request)
+        return PageAcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="<html></html>",
+            method="browser",
+            status_code=200,
+            network_payloads=(
+                [{"url": "https://jobs.test/api/j/1", "body": payload}]
+                if request.policy.capture_network == CAPTURE_NETWORK_ALL_SMALL_JSON
+                else []
+            ),
+            browser_diagnostics={"browser_attempted": True},
+        )
+
+    async def fake_extract(context, fetched):
+        request = request_from_acquisition_result(
+            Surface.JOB_DETAIL,
+            fetched.acquisition_result,
+            requested_url=context.url,
+            max_records=1,
+        )
+        network_refs = [
+            ref for ref in request.capture.artifacts if ref.artifact_type == "network_json"
+        ]
+        if not network_refs:
+            return _empty_result(with_retry=True), []
+        assert len(network_refs) == 1
+        assert request.artifact_reader.read_json(network_refs[0]) == payload
+        return (
+            ExtractionResult(
+                surface=Surface.JOB_DETAIL,
+                bundle_id=request.capture.bundle_id,
+                records=(),
+                verdict="success",
+            ),
+            [],
+        )
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_extract_records_for_acquisition", fake_extract)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://jobs.test/j/1",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+        session=None,
+    )
+    fetched = SimpleNamespace(acquisition_result=_acquisition("curl_cffi"), url_metrics={})
+
+    result = await stage.retry_extraction_request_with_browser(
+        context,
+        fetched,
+        result=_empty_result(with_retry=True),
+    )
+
+    assert [request.policy.capture_network for request in requests] == [
+        "off",
+        CAPTURE_NETWORK_ALL_SMALL_JSON,
+    ]
+    assert fetched.acquisition_result.network_payloads[0]["body"] == payload
     assert result.verdict == "success"

@@ -8,6 +8,7 @@ import pytest
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
 from app.crawl.pipeline import extraction_loop
 from app.crawl.pipeline.retry import stage
 
@@ -131,6 +132,73 @@ async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
     assert context.browser_escalation_count == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
     # The rung after the bump is exhausted -> honest stop.
     assert results[-1] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_browser_retry_network_rung_preserves_authorized_plan(monkeypatch) -> None:
+    requests: list[AcquisitionRequest] = []
+
+    async def fake_build_request(context):
+        return AcquisitionRequest(
+            run_id=1,
+            url=context.url,
+            plan=AcquisitionIntent(
+                surface="job_listing",
+                proxy_list=("http://proxy.test:8080",),
+                traversal_mode="paginate",
+                max_pages=3,
+                max_scrolls=2,
+            ),
+            acquisition_profile={
+                "capture_network": "off",
+                "capture_screenshot": False,
+            },
+        )
+
+    async def fake_acquire(request):
+        requests.append(request)
+        return _result("browser")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://example.com/jobs",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+    )
+    fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
+
+    for _ in range(2):
+        result = await stage._acquire_browser_retry_result(
+            context,
+            fetched,
+            retry_reason="empty_extraction",
+            required_artifacts=("rendered_html", "network_payloads"),
+            max_attempts=2,
+        )
+        assert result is not None
+        fetched.acquisition_result = result
+
+    assert [request.policy.capture_network for request in requests] == [
+        "off",
+        CAPTURE_NETWORK_ALL_SMALL_JSON,
+    ]
+    for request in requests:
+        assert request.plan.proxy_list == ("http://proxy.test:8080",)
+        assert request.plan.traversal_mode == "paginate"
+        assert request.plan.max_pages == 3
+        assert request.plan.max_scrolls == 2
+        assert request.policy.capture_screenshot is False
+        assert 0 < request.attempt_timeout_seconds <= 120.0
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from dataclasses import replace
 import time
 
 from app.models.crawl_settings import CrawlRunSettings
+from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
 from app.acquisition.acquirer import (
     AcquisitionRequest,
     PageEvidence,
@@ -54,6 +55,7 @@ async def retry_extraction_request_with_browser(
             context,
             fetched,
             retry_reason=retry_request.reason,
+            required_artifacts=retry_request.required_artifacts,
             max_attempts=retry_request.max_attempts,
         )
         if browser_result is None:
@@ -134,6 +136,7 @@ async def _acquire_browser_retry_result(
     fetched: _FetchedURLStage,
     *,
     retry_reason: str,
+    required_artifacts: tuple[str, ...] = (),
     max_attempts: int = 1,
     forced_browser_engine: str | None = None,
 ):
@@ -166,6 +169,11 @@ async def _acquire_browser_retry_result(
         "prefer_browser": True,
         "retry_reason": retry_reason,
     }
+    if (
+        context.browser_escalation_count > 0
+        and "network_payloads" in required_artifacts
+    ):
+        profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
     request = replace(

@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from app.core.config.domain_profiles import (
+    CAPTURE_NETWORK_OFF,
+    CAPTURE_NETWORK_VALUES,
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
     INTERNAL_API_ENDPOINT_METHOD_KEY,
@@ -28,7 +30,6 @@ _EXTRACTION_SOURCE_VALUES = {
     "network_payload_first",
 }
 _JS_MODE_VALUES = {"auto", "enabled", "disabled"}
-_CAPTURE_NETWORK_VALUES = {"off", "matched_only", "all_small_json"}
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
 _LEGACY_HANDOFF_ELIGIBLE_KEY = "prefer_curl_handoff"
 
@@ -328,8 +329,8 @@ def normalize_domain_run_profile(
             ),
             "capture_network": _coerce_choice(
                 diagnostics_profile.get("capture_network"),
-                _CAPTURE_NETWORK_VALUES,
-                default="off",
+                CAPTURE_NETWORK_VALUES,
+                default=CAPTURE_NETWORK_OFF,
             ),
             "capture_response_headers": bool(
                 diagnostics_profile.get("capture_response_headers", True)
