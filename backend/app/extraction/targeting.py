@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 from app.extraction.contracts import (
     Evidence,
@@ -83,13 +82,15 @@ def select_subject_targets(
     )
 
 
-def _subject_url_identity(url: object) -> str:
-    parsed = urlparse(str(url or "").strip())
-    host = str(parsed.hostname or "").casefold().strip(".")
-    path = unquote(parsed.path).casefold().rstrip("/")
-    if not host and not path:
-        return ""
-    return f"{host}{path}"
+def _subject_url_codes(url: object) -> frozenset[str]:
+    """Query-aware identity codes for a subject/capture URL.
+
+    Unlike a host+path key, ``detail_identity_codes_from_url`` folds query params
+    into the identity (``id=123`` -> ``ID123``), so ``/job?id=123`` and
+    ``/job?id=456`` stay distinct. Very short ids (below the code-length floor)
+    yield no codes, which surfaces as honest ambiguity downstream.
+    """
+    return frozenset(detail_identity_codes_from_url(str(url or "").strip()))
 
 
 def _subject_declares_url(row: Evidence) -> bool:
@@ -107,31 +108,27 @@ def _select_subject_by_url(
     request: ExtractionRequest,
 ) -> str | None:
     """Pick the competing detail root whose declared URL matches the requested
-    capture URL; when several subjects share that identity, the richest is
-    chosen. Returns ``None`` when no subject matches — an honest ambiguity."""
-    wanted = {
-        identity
-        for url in (request.capture.final_url, request.capture.requested_url)
-        if (identity := _subject_url_identity(url))
-    }
+    capture URL by query-aware identity codes. Returns the sole matching subject;
+    returns ``None`` (honest ambiguity) when no subject matches, when several
+    distinct subjects still share the requested codes, or when no distinguishing
+    codes exist at all (e.g. short ids yielding empty code sets)."""
+    wanted: set[str] = set()
+    for url in (request.capture.final_url, request.capture.requested_url):
+        wanted |= _subject_url_codes(url)
     if not wanted:
         return None
-    urls_by_subject: dict[str, set[str]] = {subject_id: set() for subject_id in graph}
-    facts_by_subject: dict[str, int] = {subject_id: 0 for subject_id in graph}
+    codes_by_subject: dict[str, set[str]] = {subject_id: set() for subject_id in graph}
     for row in evidence:
-        if row.subject_id not in urls_by_subject:
+        if row.subject_id not in codes_by_subject:
             continue
-        facts_by_subject[row.subject_id] += 1
-        if _subject_declares_url(row) and (
-            identity := _subject_url_identity(row.value)
-        ):
-            urls_by_subject[row.subject_id].add(identity)
-    scored = [
-        (facts_by_subject[subject_id], -index, subject_id)
-        for index, subject_id in enumerate(graph)
-        if urls_by_subject[subject_id] & wanted
+        if _subject_declares_url(row):
+            codes_by_subject[row.subject_id] |= _subject_url_codes(row.value)
+    matched = [
+        subject_id
+        for subject_id in graph
+        if codes_by_subject[subject_id] & wanted
     ]
-    return max(scored)[2] if scored else None
+    return matched[0] if len(matched) == 1 else None
 
 
 def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:

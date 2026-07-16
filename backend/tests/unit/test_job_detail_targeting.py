@@ -19,8 +19,8 @@ from app.extraction.surfaces import Surface
 pytestmark = pytest.mark.unit
 
 
-_PRIMARY_URL = "https://jobs.test/j/42"
-_SIMILAR_URL = "https://jobs.test/j/99"
+_PRIMARY_URL = "https://jobs.test/job?id=1042"
+_SIMILAR_URL = "https://jobs.test/job?id=1099"
 
 
 def _two_posting_html(*, primary_url: str, similar_url: str) -> str:
@@ -83,11 +83,50 @@ def test_job_detail_ambiguous_when_no_url_match() -> None:
     """When no posting's job.url matches the requested URL, selection stays
     ambiguous (honest failure), raising AMBIGUOUS_JOB_ROOT."""
     html = _two_posting_html(
-        primary_url="https://jobs.test/j/1", similar_url="https://jobs.test/j/2"
+        primary_url="https://jobs.test/job?id=1001",
+        similar_url="https://jobs.test/job?id=1002",
     )
     request = fixture_request_from_inputs(
-        Surface.JOB_DETAIL, html, "https://jobs.test/j/nomatch"
+        Surface.JOB_DETAIL, html, "https://jobs.test/job?id=9999"
     )
+
+    result = extract(request)
+
+    assert result.verdict != "success"
+    assert any(
+        finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings
+    )
+
+
+def test_query_string_ids_are_distinguished() -> None:
+    """Finding 5: /job?id=123 vs /job?id=456 fold into distinct identity codes,
+    so the requested query id selects the correct posting (not the richest)."""
+    html = _two_posting_html(
+        primary_url="https://jobs.test/job?id=123",
+        similar_url="https://jobs.test/job?id=456",
+    )
+    # Request the SECOND posting's URL; query-aware codes must select it even
+    # though host+path (``/job``) is identical for both postings.
+    request = fixture_request_from_inputs(
+        Surface.JOB_DETAIL, html, "https://jobs.test/job?id=456"
+    )
+
+    result = extract(request)
+
+    assert result.verdict == "success"
+    assert result.records
+    assert result.records[0]["title"] == "Staff Platform Engineer"
+    assert not any(
+        finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings
+    )
+
+
+def test_shared_query_id_stays_ambiguous() -> None:
+    """Finding 5: two postings sharing the SAME query id share identity codes,
+    so selection stays ambiguous rather than picking a fact-count winner."""
+    shared = "https://jobs.test/job?id=123"
+    html = _two_posting_html(primary_url=shared, similar_url=shared)
+    request = fixture_request_from_inputs(Surface.JOB_DETAIL, html, shared)
 
     result = extract(request)
 

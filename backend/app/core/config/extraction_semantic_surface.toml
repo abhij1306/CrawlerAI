@@ -57,7 +57,7 @@ default_module_cyclomatic_complexity_budget = 20
 "result_building.py" = 738
 "sentinel.py" = 286
 "surfaces.py" = 250
-"targeting.py" = 209
+"targeting.py" = 205
 "validation.py" = 786
 
 [ratchets.module_cyclomatic_complexity_budgets]
