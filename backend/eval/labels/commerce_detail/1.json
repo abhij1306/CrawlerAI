@@ -1,0 +1,67 @@
+{
+  "fields": {
+    "availability": "OutOfStock",
+    "brand": "Dime",
+    "category": "Home>Dime>Soft Rock Crewneck",
+    "currency": "EUR",
+    "description": "Arriving as part of the second drop from its Spring '25 collection, Montreal-based streetwear and skatewear brand Dime pays homage to one of its favorite music subgenres with this Soft Rock Crewneck. Crafted from heavyweight cotton for a comfortable, durable feel, this crewneck features an eye-catching Dime logo on the chest to round off the minimalistic look.\n\nDime Soft Rock Crewneck\n100% Cotton\nHeavyweight 14oz\nScreen printed logo\nPre-shrunk\n\nArticle no\nDIME2SP2542BLK\nGender\nMen\nColor\nBLACK",
+    "gtin": null,
+    "images": [
+      "https://www.sneakersnstuff.com/cdn/shop/files/DIME2SP2542BLK-1.jpg?v=1745568172&width=2560",
+      "https://www.sneakersnstuff.com/cdn/shop/files/DIME2SP2542BLK-2.jpg?v=1745568172&width=2560",
+      "https://www.sneakersnstuff.com/cdn/shop/files/DIME2SP2542BLK-3.jpg?v=1745568172&width=2560",
+      "https://www.sneakersnstuff.com/cdn/shop/files/DIME2SP2542BLK-4.jpg?v=1745568173&width=2560"
+    ],
+    "mpn": null,
+    "price": "160.00",
+    "sale_price": "64.00",
+    "sku": "9906444108117",
+    "title": "Soft Rock Crewneck"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 1,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+  "variants": [
+    {
+      "availability": "out_of_stock",
+      "currency": "EUR",
+      "price": "64.00",
+      "size": "L",
+      "sku": "DIME2SP2542BLK-L",
+      "variant_id": "50688637763925"
+    },
+    {
+      "availability": "out_of_stock",
+      "currency": "EUR",
+      "price": "64.00",
+      "size": "M",
+      "sku": "DIME2SP2542BLK-M",
+      "variant_id": "50688637796693"
+    },
+    {
+      "availability": "out_of_stock",
+      "currency": "EUR",
+      "price": "64.00",
+      "size": "S",
+      "sku": "DIME2SP2542BLK-S",
+      "variant_id": "50688637829461"
+    },
+    {
+      "availability": "out_of_stock",
+      "currency": "EUR",
+      "price": "64.00",
+      "size": "XL",
+      "sku": "DIME2SP2542BLK-XL",
+      "variant_id": "50688637862229"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

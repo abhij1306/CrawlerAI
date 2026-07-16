@@ -1,0 +1,74 @@
+{
+  "fields": {
+    "availability": "InStock",
+    "brand": "One Of These Days",
+    "category": "Home>Hoodies>One Of These Days Follow The Road Pullover Hoodie - Dark Brown",
+    "currency": "USD",
+    "description": "The Follow The Road Pullover Hoodie from One Of These Days is made with 100% Cotton and knit fabric. The Dark Brown hoodie features a fixed hood with pre-shrunk construction. A printed graphic appears on the front and back.",
+    "gtin": null,
+    "images": [
+      "https://sneakerpolitics.com/cdn/shop/files/OOTD-APRIL26-01D-04-024.jpg?v=1775842325",
+      "https://sneakerpolitics.com/cdn/shop/files/OOTD-APRIL26-01D-04-024-2.jpg?v=1775842325",
+      "https://sneakerpolitics.com/cdn/shop/files/OOTD-APRIL26-01D-04-024-3.jpg?v=1775842325"
+    ],
+    "mpn": null,
+    "price": "185",
+    "sale_price": "120.25",
+    "sku": "9144977653948",
+    "title": "One Of These Days Follow The Road Pullover Hoodie"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 2,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://sneakerpolitics.com/collections/hoodies/products/one-of-these-days-follow-the-road-pullover-hoodie-dark-brown",
+  "variants": [
+    {
+      "availability": "in_stock",
+      "currency": "USD",
+      "price": "120.25",
+      "size": "S",
+      "sku": "806-014632-S",
+      "variant_id": "45750276030652"
+    },
+    {
+      "availability": "in_stock",
+      "currency": "USD",
+      "price": "120.25",
+      "size": "M",
+      "sku": "806-014632-M",
+      "variant_id": "45750276063420"
+    },
+    {
+      "availability": "in_stock",
+      "currency": "USD",
+      "price": "120.25",
+      "size": "L",
+      "sku": "806-014632-L",
+      "variant_id": "45750276096188"
+    },
+    {
+      "availability": "in_stock",
+      "currency": "USD",
+      "price": "120.25",
+      "size": "XL",
+      "sku": "806-014632-XL",
+      "variant_id": "45750276128956"
+    },
+    {
+      "availability": "in_stock",
+      "currency": "USD",
+      "price": "120.25",
+      "size": "XXL",
+      "sku": "806-014632-XXL",
+      "variant_id": "45750276161724"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}

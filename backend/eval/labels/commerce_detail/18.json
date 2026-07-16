@@ -1,0 +1,138 @@
+{
+  "fields": {
+    "availability": "in_stock",
+    "brand": "Bombas",
+    "category": "Men's>Socks>Ankle",
+    "color": "Black Onyx",
+    "currency": "INR",
+    "description": "These versatile, everyday sport socks are built for movement in every form\u2014from daily training to a round of pickleball. Strategic cushioning helps absorb impact, while a ventilated mesh knit and sweat-wicking yarns help keep feet dry on any track, field, or court. A blister-fighting tab helps prevent friction, while targeted arch compression and No-Shift Tech provide comfort that\u2019s as locked in as you are. ",
+    "gtin": null,
+    "images": [
+      "https://assets.bombas.com/image/fetch/c_crop,h_3040,w_3040/b_rgb:f1f1ee,c_scale,w_1068/f_auto,q_auto/https://images.ctfassets.net/09hbx69ra4p2/5zdxMj6rytX7d09c0h5cLM/dce4b4cec89568ab668b16acd268155a/10444-black-adult-male-layflat-1-transparent-_1_.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3052,w_2288/b_rgb:ffffff,c_scale,w_760/f_auto,q_auto/https://images.ctfassets.net/09hbx69ra4p2/6YB9cIRWCk3tJMesC9ZnRu/d4288a605dffb4aa8ac9dffccb087507/KVP_02_-_M_-_All_Sport_Ankle.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3052,w_2288/b_rgb:ffffff,c_scale,w_760/f_auto,q_auto/https://images.ctfassets.net/09hbx69ra4p2/4t0DVLj6h87uPjBrOnpnAC/2f105a06ba13205f3f955ba3ffbe2a0d/KVP_01_-_M_-_All_Sport_Ankle.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3040,w_3040/b_rgb:f1f1ee,c_scale,w_1068/f_auto,q_auto/https://images.ctfassets.net/09hbx69ra4p2/2Fahrzd7PA8NXjEcxcDmCC/dbf1855ff7c479076eef56ddbf6b6698/10444-black-adult-male-onmodel-2-transparent-_1_.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_1202,w_2560/b_rgb:ffffff,c_scale,w_1520/f_auto,q_auto/https://images.ctfassets.net/09hbx69ra4p2/2BC5s4Sr8yLRYS7i7mgCdR/4dd737eab0ac6104e57914c91d46c2b3/Desktop_Sport_KVP_-_Top_Module_-_All_Sport.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3040,w_3040/b_rgb:f1f1ee,c_scale,w_50/f_auto,q_1/https://images.ctfassets.net/09hbx69ra4p2/2Fahrzd7PA8NXjEcxcDmCC/dbf1855ff7c479076eef56ddbf6b6698/10444-black-adult-male-onmodel-2-transparent-_1_.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3052,w_2288/b_rgb:ffffff,c_scale,w_572/f_auto,q_1/https://images.ctfassets.net/09hbx69ra4p2/6YB9cIRWCk3tJMesC9ZnRu/d4288a605dffb4aa8ac9dffccb087507/KVP_02_-_M_-_All_Sport_Ankle.png",
+      "https://assets.bombas.com/image/fetch/c_crop,h_3052,w_2288/b_rgb:ffffff,c_scale,w_572/f_auto,q_1/https://images.ctfassets.net/09hbx69ra4p2/4t0DVLj6h87uPjBrOnpnAC/2f105a06ba13205f3f955ba3ffbe2a0d/KVP_01_-_M_-_All_Sport_Ankle.png"
+    ],
+    "mpn": null,
+    "price": "1700.00",
+    "sale_price": null,
+    "size": "L",
+    "sku": "A-E-A-129AM3-SADS-01P-BLACK-L",
+    "title": "Men's All Sport Ankle Socks"
+  },
+  "human_verified": true,
+  "metadata": {
+    "crawlerai_record_checked": true,
+    "human_verified_at": "2026-07-06",
+    "operator_correction": "Variant matrix corrected to visible 4 colors x 3 sizes; parent availability/price/currency from CrawlerAI artifact.",
+    "source": "zyte_api_product",
+    "zyte_status_code": 200
+  },
+  "result_id": 18,
+  "schema_version": "extraction_v3_label.v1",
+  "surface": "commerce_detail",
+  "url": "https://bombas.com/products/mens-all-purpose-performance-ankle-socks?variant=black-onyx&size=l",
+  "variants": [
+    {
+      "availability": "in_stock",
+      "color": "Black Onyx",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "M",
+      "size_label": "US 6-9"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Black Onyx",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "L",
+      "size_label": "US 9.5-13"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Black Onyx",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "XL",
+      "size_label": "US 13.5-16"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Charcoal",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "M",
+      "size_label": "US 6-9"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Charcoal",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "L",
+      "size_label": "US 9.5-13"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Charcoal",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "XL",
+      "size_label": "US 13.5-16"
+    },
+    {
+      "availability": "in_stock",
+      "color": "White",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "M",
+      "size_label": "US 6-9"
+    },
+    {
+      "availability": "in_stock",
+      "color": "White",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "L",
+      "size_label": "US 9.5-13"
+    },
+    {
+      "availability": "in_stock",
+      "color": "White",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "XL",
+      "size_label": "US 13.5-16"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Black",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "M",
+      "size_label": "US 6-9"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Black",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "L",
+      "size_label": "US 9.5-13"
+    },
+    {
+      "availability": "in_stock",
+      "color": "Black",
+      "currency": "INR",
+      "price": "1700.00",
+      "size": "XL",
+      "size_label": "US 13.5-16"
+    }
+  ],
+  "verification_notes": "Human verified from operator review; Zyte draft corrected where noted."
+}
