@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+
+from app.core.extraction_memory.recipe_compiler import compile_recipe
+from app.core.extraction_memory.recipe_executor import execute_recipe
+from app.extraction.replay import fixture_request_from_inputs
+from app.extraction.surfaces import Surface, listing_schema, surface_spec
+from tests.ast_helpers import collect_import_modules
+
+pytestmark = pytest.mark.unit
+
+APP_ROOT = Path(__file__).resolve().parents[2] / "app"
+COMPILER_PATH = APP_ROOT / "core" / "extraction_memory" / "recipe_compiler.py"
+
+_DETAIL_HTML = (
+    "<html><body><main>"
+    '<h1>Trail Shoe Red</h1>'
+    '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
+    '<span class="price">$129.99</span>'
+    '<img src="/img/red.jpg">'
+    "</main></body></html>"
+)
+_LISTING_HTML = (
+    "<html><body><ul>"
+    '<li><a href="/p/1"><h3>Alpha</h3></a><span>$10</span></li>'
+    '<li><a href="/p/2"><h3>Beta</h3></a><span>$20</span></li>'
+    "</ul></body></html>"
+)
+
+
+def _detail_request(**kwargs):
+    return fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        kwargs.pop("html", _DETAIL_HTML),
+        "https://shop.test/products/trail-shoe-red",
+        requested_fields=("title", "price", "image"),
+        **kwargs,
+    )
+
+
+def _listing_request(**kwargs):
+    return fixture_request_from_inputs(
+        Surface.ECOMMERCE_LISTING,
+        kwargs.pop("html", _LISTING_HTML),
+        "https://shop.test/c/shoes",
+        max_records=10,
+        requested_fields=("title", "price"),
+        **kwargs,
+    )
+
+
+def _stub(response: str, calls: list[int] | None = None):
+    async def _client(system_prompt: str, user_prompt: str) -> str:
+        assert system_prompt
+        assert user_prompt
+        if calls is not None:
+            calls.append(1)
+        return response
+
+    return _client
+
+
+async def _compile(request, surface, response, calls=None):
+    return await compile_recipe(
+        request,
+        surface_spec=surface_spec(surface),
+        listing_schema=listing_schema(surface),
+        model_client=_stub(response, calls),
+    )
+
+
+@pytest.mark.asyncio
+async def test_grounded_detail_recipe_is_accepted_with_one_model_call() -> None:
+    calls: list[int] = []
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+        '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    )
+    result = await _compile(_detail_request(), Surface.ECOMMERCE_DETAIL, response, calls)
+
+    assert len(calls) == 1
+    assert result.failure_code is None
+    assert result.candidate is not None
+    recipe = result.candidate.recipe
+    assert recipe.schema_version == "extraction_recipe.v2"
+    assert "title" in recipe.fields and "url" in recipe.fields
+    assert result.candidate.origin == "model_assisted"
+
+
+@pytest.mark.asyncio
+async def test_grounded_listing_recipe_replays_every_card() -> None:
+    response = (
+        '{"record_root": "/html[1]/body[1]/ul[1]/li[1]", "fields": {'
+        '"title": "/html[1]/body[1]/ul[1]/li[1]/a[1]/h3[1]", '
+        '"price": "/html[1]/body[1]/ul[1]/li[1]/span[1]"}}'
+    )
+    request = _listing_request()
+    result = await _compile(request, Surface.ECOMMERCE_LISTING, response)
+
+    assert result.failure_code is None
+    assert result.candidate is not None
+    execution = execute_recipe(request, result.candidate.recipe)
+    assert [row["title"] for row in execution.records] == ["Alpha", "Beta"]
+    assert [row["url"] for row in execution.records] == [
+        "https://shop.test/p/1",
+        "https://shop.test/p/2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_optional_ungrounded_binding_is_dropped() -> None:
+    html = "<html><body><main><h1>Shoe</h1><a href='/p/1'>l</a></main></body></html>"
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+        '"price": "/nonexistent[9]"}}'
+    )
+    result = await _compile(
+        _detail_request(html=html), Surface.ECOMMERCE_DETAIL, response
+    )
+
+    assert result.failure_code is None
+    assert result.candidate is not None
+    assert "price" not in result.candidate.recipe.fields
+    assert "title" in result.candidate.recipe.fields
+
+
+@pytest.mark.asyncio
+async def test_required_ungrounded_field_yields_no_recipe() -> None:
+    # No <a href> on the page -> the required url identity cannot ground.
+    html = "<html><body><main><h1>Trail Shoe</h1><span>$5</span></main></body></html>"
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]"}}'
+    )
+    result = await _compile(
+        _detail_request(html=html), Surface.ECOMMERCE_DETAIL, response
+    )
+
+    assert result.candidate is None
+    assert result.failure_code is not None
+
+
+@pytest.mark.asyncio
+async def test_compiler_ignores_published_record_like_bundle_data() -> None:
+    # A network payload shaped like already-published records is present in the
+    # bundle. The compiler must never surface those values; it only grounds
+    # against the DOM, so the learned price comes from the page ($129.99), not
+    # the fabricated 999.99 in the payload.
+    payloads = [
+        {
+            "body": {
+                "records": [
+                    {"title": "FAKE PUBLISHED", "price": 999.99, "url": "/fake"}
+                ]
+            }
+        }
+    ]
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+        '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    )
+    request = _detail_request(network_payloads=payloads)
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, response)
+
+    assert result.candidate is not None
+    execution = execute_recipe(request, result.candidate.recipe)
+    record = execution.records[0]
+    assert record["title"] == "Trail Shoe Red"
+    assert record["price"] == "129.99"
+    assert "FAKE PUBLISHED" not in str(record)
+
+
+@pytest.mark.asyncio
+async def test_compiler_abstains_when_model_returns_no_json() -> None:
+    result = await _compile(_detail_request(), Surface.ECOMMERCE_DETAIL, "not json")
+    assert result.candidate is None
+    assert result.failure_code is not None
+
+
+def test_compiler_has_no_publication_persistence_or_model_imports() -> None:
+    tree = ast.parse(COMPILER_PATH.read_text(encoding="utf-8"))
+    imports = collect_import_modules(tree)
+
+    forbidden_prefixes = (
+        "app.persistence",
+        "app.models",
+        "app.extraction.model_runtime",
+        "app.extraction.adapters",
+        "app.extraction.resolution",
+        "app.observability",
+    )
+    offenders = [
+        name
+        for name in imports
+        if any(
+            name == prefix or name.startswith(prefix + ".")
+            for prefix in forbidden_prefixes
+        )
+    ]
+    assert not offenders, offenders
+
+    source = COMPILER_PATH.read_text(encoding="utf-8")
+    # The compiler must never read published records / publication output.
+    assert "record_extraction_result" not in source
+    assert "PublicRecord" not in source
+    assert ".publication" not in source
+    assert "result.records" not in source

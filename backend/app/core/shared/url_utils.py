@@ -209,6 +209,49 @@ def public_asset_delivery_url(value: object) -> str | None:
     return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 
 
+def largest_srcset_url(value: str) -> str:
+    """Return the highest-resolution URL from a ``srcset``/``data-srcset`` list."""
+    ranked: list[tuple[float, int, str]] = []
+    for index, (url, descriptor) in enumerate(_srcset_candidates(value)):
+        rank = float(index)
+        if descriptor[-1:].casefold() in {"w", "x"}:
+            try:
+                rank = float(descriptor[:-1])
+            except ValueError:
+                pass
+        ranked.append((rank, index, url))
+    return max(ranked, default=(0.0, 0, ""))[2]
+
+
+def _srcset_candidates(value: str) -> tuple[tuple[str, str], ...]:
+    """Parse candidates without treating commas inside URLs as separators."""
+    source = str(value or "")
+    candidates: list[tuple[str, str]] = []
+    position = 0
+    while position < len(source):
+        while position < len(source) and (
+            source[position].isspace() or source[position] == ","
+        ):
+            position += 1
+        start = position
+        while position < len(source) and not source[position].isspace():
+            position += 1
+        url = source[start:position]
+        if not url:
+            continue
+        if url.endswith(","):
+            candidates.append((url.rstrip(","), ""))
+            continue
+        while position < len(source) and source[position].isspace():
+            position += 1
+        descriptor_start = position
+        while position < len(source) and source[position] != ",":
+            position += 1
+        descriptor = source[descriptor_start:position].strip().split(" ", 1)[0]
+        candidates.append((url, descriptor))
+    return tuple(candidates)
+
+
 def _is_image_transform_query_key(key: str) -> bool:
     lowered = key.casefold()
     if lowered in CDN_IMAGE_QUERY_PARAMS:

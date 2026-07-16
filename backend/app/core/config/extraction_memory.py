@@ -19,6 +19,9 @@ EXTRACTION_RECIPE_LAYER_ORDER = (
 )
 EXTRACTION_RECIPE_KIND_SELECTORS = "selectors"
 EXTRACTION_RECIPE_KIND_CONTRACTS = "contracts"
+# LEARN-ONCE executable recipe (``extraction_recipe.v2``) stored as one recipe
+# layer keyed by ``(domain, surface, route_pattern)``.
+EXTRACTION_RECIPE_KIND_EXECUTABLE = "executable_recipe"
 EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC = "generic"
 EXTRACTION_CONTRACT_RESOLVER_OBSERVED = "observed_published_evidence"
 EXTRACTION_CONTRACT_OBSERVATION_SOURCE = "successful_crawl"
@@ -33,6 +36,11 @@ EXTRACTION_CORRECTION_STATUS_REPLAY_FAILED = "replay_failed"
 EXTRACTION_CORRECTION_STATUS_ACTIVATED = "activated"
 EXTRACTION_COMPILER_VERSION = "recipe.v1"
 EXTRACTION_RELEASE_VERSION = "release.v1"
+# Executable recipe release payloads carry compiled ``extraction_recipe.v2``
+# entries and are selected by ``select_active_recipe`` for the LEARN-ONCE
+# runtime. Kept distinct from the selector-rule ``release.v1`` payload so the
+# recipe replay path never picks up legacy selector-only snapshots.
+EXTRACTION_EXECUTABLE_RELEASE_VERSION = "release.v2"
 EXTRACTION_MANIFEST_VERSION = "manifest.v1"
 SENTINEL_DETERMINISTIC_CHALLENGER_ENABLED = True
 SENTINEL_DEFAULT_SAMPLE_RATE = 0.05

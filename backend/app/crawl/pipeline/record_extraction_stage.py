@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.crawl.profile import record_acquisition_contract_outcome
@@ -12,6 +14,7 @@ from app.crawl.domain_memory_service import (
     load_domain_selector_rules,
 )
 from app.core.domain_utils import normalize_domain
+from app.core.extraction_memory.contract_runtime import select_active_recipe
 from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.extraction import extract, parse_surface
 from app.extraction.contracts import ExtractionResult
@@ -40,6 +43,10 @@ __all__ = (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _session_needs_rollback(session: AsyncSession) -> bool:
+    return getattr(session, "is_active", True) is False
 
 
 def extract_records_for_acquisition_result(
@@ -94,7 +101,78 @@ async def _extract_records_for_acquisition(
         )
         if fallback_result is not None and fallback_result.records:
             result = fallback_result
+    if not result.records:
+        await _maybe_learn_once(
+            context,
+            acquisition_result=acquisition_result,
+            selector_rules=selector_rules,
+            result=result,
+        )
     return result, selector_rules
+
+
+async def _maybe_learn_once(
+    context: _URLProcessingContext,
+    *,
+    acquisition_result: PageAcquisitionResult,
+    selector_rules: list[dict[str, object]],
+    result: ExtractionResult,
+) -> None:
+    """Invoke the LEARN-ONCE compiler once when floors stay empty.
+
+    Gated inside ``learn_recipe_after_extraction`` on config, ``llm_enabled``,
+    the per-surface allow-list, and a not-yet-learned template. Failures never
+    change the crawl verdict.
+    """
+
+    from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
+
+    runtime_snapshot = await _load_runtime_snapshot(context)
+    request = request_from_acquisition_result(
+        parse_surface(context.surface),
+        acquisition_result,
+        requested_url=context.url,
+        max_records=context.config.max_records,
+        requested_fields=tuple(str(field) for field in context.requested_fields),
+        selector_rules=selector_rules,
+        runtime_snapshot=runtime_snapshot,
+    )
+    is_new_template = (
+        select_active_recipe(
+            runtime_snapshot,
+            surface=context.surface,
+            url=acquisition_result.final_url or context.url,
+        )
+        is None
+    )
+    try:
+        if is_new_template:
+            learned = await learn_recipe_after_extraction(
+                context.session,
+                request=request,
+                result=result,
+                run_id=context.run.id,
+                llm_enabled=context.run.settings_view.llm_enabled(),
+                is_new_template=is_new_template,
+            )
+            if learned:
+                await context.session.commit()
+        else:
+            # A recipe exists for this route yet the floors are empty: the stored
+            # recipe drifted. Count the failure and self-heal past the threshold.
+            from app.crawl.pipeline.learn_once import note_recipe_drift_after_replay
+
+            suspended = await note_recipe_drift_after_replay(
+                context.session,
+                request=request,
+                run_id=context.run.id,
+            )
+            if suspended:
+                await context.session.commit()
+    except Exception:  # pragma: no cover - learning never breaks the crawl
+        logger.warning("LEARN-ONCE recipe compilation failed", exc_info=True)
+        if _session_needs_rollback(context.session):
+            await context.session.rollback()
 
 
 def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:

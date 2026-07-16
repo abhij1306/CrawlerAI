@@ -95,6 +95,79 @@ CASCADE_RECIPE_SCOPE_KEY: Final[tuple[str, str, str]] = (
 # acquisition-contract self-heal loop rather than inventing a new mechanism.
 CASCADE_RECIPE_STALE_FAILURE_THRESHOLD: Final[int] = 3
 
+# --- LEARN-ONCE compiler configuration -------------------------------------
+
+# Per-surface allow-list for the LEARN-ONCE tier. Only surfaces named here may
+# auto-learn a recipe; every other surface (e.g. ``job_detail`` until its slice
+# lands) falls through to the deterministic floors and never invokes the model
+# compiler. Surface *values* (not the enum) so the cascade body never branches
+# on a surface literal — it membership-tests this tuple instead.
+CASCADE_LEARN_ONCE_SURFACES: Final[tuple[str, ...]] = (
+    "ecommerce_detail",
+    "ecommerce_listing",
+    "job_listing",
+)
+
+# Maximum number of flat-map entries handed to the model in one compile call.
+# The scoped flat map is already token-capped upstream; this is a hard belt-and-
+# braces bound so a pathological page cannot blow the prompt budget.
+CASCADE_RECIPE_COMPILER_MAX_FLAT_MAP_ENTRIES: Final[int] = 400
+
+# Per-domain, human-readable descriptors for the fields the compiler asks the
+# model to bind. Keyed by ``SurfaceSpec.domain`` so no surface-string branching
+# is needed. The compiler renders these into the prompt so the model knows what
+# each requested field means without any site-specific hint.
+CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS: Final[dict[str, dict[str, str]]] = {
+    "commerce": {
+        "title": "The product's display name / title heading.",
+        "url": "The canonical product detail page URL (href of the product link).",
+        "price": "The current selling price shown to the shopper.",
+        "currency": "The ISO currency code or symbol of the price.",
+        "image_url": "The primary product image (img src).",
+        "brand": "The product's brand or manufacturer name.",
+        "category": "The product's category or breadcrumb leaf.",
+        "sku": "The product's stock-keeping unit / product code.",
+        "description": "The product description text.",
+    },
+    "jobs": {
+        "title": "The job posting's title.",
+        "url": "The canonical job posting detail URL (href of the posting link).",
+        "apply_url": "The apply / application link for the posting.",
+        "company": "The hiring company or organization name.",
+        "location": "The job location (city / region / remote).",
+        "department": "The team or department the role sits in.",
+        "description": "The job description text.",
+    },
+}
+
+# System prompt for the single LEARN-ONCE compile call. It fixes the contract:
+# the model proposes flat-map PATHS only, never field values, and abstains
+# (empty path) when a field is absent. Every value is re-read and re-grounded
+# from the page at replay time, so the model's job is purely locating nodes.
+CASCADE_RECIPE_COMPILER_SYSTEM_PROMPT: Final[str] = (
+    "You are a DOM-binding locator for a storage-free extraction engine. You are "
+    "given a flat map of a web page: an ordered list of DOM node paths and the "
+    "visible text at each path. For each requested field, return the single flat-"
+    "map PATH whose node holds that field's value. Return ONLY paths that appear "
+    "verbatim in the provided flat map. NEVER return a field value, a guessed "
+    "path, or a path that is not in the flat map. If a field is not present on "
+    "the page, return an empty string for it. For listing pages, also return the "
+    "repeated record-root path: the shortest ancestor path shared by every "
+    "repeated record card. Respond with a single JSON object of the form "
+    '{"record_root": "<path or empty>", "fields": {"<field>": "<path or empty>"}} '
+    "and nothing else."
+)
+
+# User-prompt template for the compile call. ``$surface``/``$fields``/``$flat_map``
+# are substituted by the compiler; the rendering is owned here, never inline in
+# the compiler module.
+CASCADE_RECIPE_COMPILER_USER_TEMPLATE: Final[str] = (
+    "Surface: $surface\n"
+    "Requested fields (name: meaning):\n$fields\n\n"
+    "Flat map (path => text):\n$flat_map\n\n"
+    "Return the JSON object described in the system prompt."
+)
+
 # --- Listing floor evidence tunables ---------------------------------------
 
 # Per-floor confidence assigned to the evidence each deterministic listing
@@ -206,6 +279,11 @@ __all__ = [
     "CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL",
     "CASCADE_RECIPE_SCOPE_KEY",
     "CASCADE_RECIPE_STALE_FAILURE_THRESHOLD",
+    "CASCADE_LEARN_ONCE_SURFACES",
+    "CASCADE_RECIPE_COMPILER_MAX_FLAT_MAP_ENTRIES",
+    "CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS",
+    "CASCADE_RECIPE_COMPILER_SYSTEM_PROMPT",
+    "CASCADE_RECIPE_COMPILER_USER_TEMPLATE",
     "CASCADE_STRUCTURED_LISTING_CONFIDENCE",
     "CASCADE_NETWORK_LISTING_CONFIDENCE",
     "CASCADE_DOM_LISTING_CONFIDENCE",

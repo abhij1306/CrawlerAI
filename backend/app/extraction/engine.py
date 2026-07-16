@@ -21,7 +21,15 @@ from app.core.config.extraction_rules import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
-from app.core.extraction_memory.contract_runtime import match_template
+from app.core.extraction_memory.contract_runtime import (
+    match_template,
+    select_active_recipe,
+)
+from app.core.extraction_memory.recipe_contracts import (
+    ExtractionRecipe,
+    RecipeExecutionResult,
+)
+from app.core.extraction_memory.recipe_executor import execute_recipe
 from app.core.extraction_memory.templates import normalize_route
 from app.core.records.detail_outcome import normalized_detail_outcome
 from app.core.shared.ids import stable_id
@@ -56,6 +64,7 @@ from app.extraction.sentinel import (
     sentinel_sample_rate,
     should_sample_sentinel,
 )
+from app.extraction.publication import publish_recipe_execution
 from app.extraction.result_building import (
     assert_resolution_accounting,
     data_integrity_status,
@@ -90,6 +99,9 @@ def extract(
 ) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
+    recipe_replay = _replay_active_recipe(request)
+    if recipe_replay is not None:
+        return recipe_replay
     adapter = adapter_for(request.surface)
     compiled_template = _compiled_recipe_template(request)
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic"
@@ -385,6 +397,132 @@ def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
         outcome=("skipped" if result.outcome == "disabled" else result.outcome),
         evidence_count=len(result.evidence),
         detail=result.detail,
+    )
+
+
+def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None:
+    """Surface-agnostic recipe replay: execute a matching compiled recipe.
+
+    Returns a fully published recipe-tier result when a stored recipe grounds
+    on this page. Drift (no matching recipe or grounding fails) returns ``None``
+    so the caller falls through to the deterministic floors.
+    """
+
+    snapshot = dict(request.runtime_snapshot) if request.runtime_snapshot else {}
+    template = select_active_recipe(
+        snapshot,
+        surface=request.surface.value,
+        url=request.capture.final_url or request.capture.requested_url,
+        template_signature=str(snapshot.get("_template_signature") or ""),
+    )
+    if template is None:
+        return None
+    compiled_recipe = template.get("compiled_recipe")
+    if not isinstance(compiled_recipe, dict):
+        return None
+    try:
+        recipe = ExtractionRecipe.model_validate(compiled_recipe)
+    except (TypeError, ValueError):
+        return None
+    execution = execute_recipe(request, recipe)
+    if not execution.records:
+        return None
+    try:
+        records, publish_findings = publish_recipe_execution(request, recipe, execution)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
+        del exc
+        return None
+    if not records:
+        return None
+    return _recipe_result(
+        request,
+        recipe,
+        execution,
+        records=records,
+        findings=publish_findings,
+        template=template,
+    )
+
+
+def _recipe_result(
+    request: ExtractionRequest,
+    recipe: ExtractionRecipe,
+    execution: RecipeExecutionResult,
+    *,
+    records: tuple[PublicRecord, ...],
+    findings: tuple[Finding, ...],
+    template: dict[str, object],
+) -> ExtractionResult:
+    roots = tuple(str(record.get("_subject_id") or "") for record in records)
+    target = TargetSelection(
+        status="resolved" if records else "missing",
+        root_entity_ids=roots,
+        selected_root_entity_id=roots[0] if roots else None,
+    )
+    graph = EntityGraph(root_entity_ids=roots, entity_counts={"record": len(records)})
+    verdict = _assess(request, target, records, findings)
+    stage_outcomes = (
+        StageOutcome(stage="recipe_select", outcome="ran"),
+        _stage_outcome("recipe_execute", len(records)),
+    )
+    field_states = field_evidence_states(records, (), (), request)
+    transport_outcome = _capture_outcome(request, verdict, findings, records)
+    field_states = _terminal_detail_field_states(
+        request, field_states, transport_outcome=transport_outcome
+    )
+    retry = retry_request(verdict, records, request)
+    review_required = _review_required(
+        request,
+        verdict=verdict,
+        findings=findings,
+        field_states=field_states,
+        retry=retry,
+    )
+    failures = _failure_classifications(
+        request,
+        verdict=verdict,
+        records=records,
+        target=target,
+        findings=findings,
+        evidence=(),
+    )
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        evidence=(),
+        graph=graph,
+        target=target,
+        findings=findings,
+        field_states=field_states,
+        transport_outcome=transport_outcome,
+        data_integrity=data_integrity_status(verdict, field_states, findings),
+        records=records,
+        verdict=verdict,
+        retry_request=retry,
+        metrics=metrics(
+            (),
+            graph,
+            target,
+            findings,
+            (),
+            records,
+            verdict,
+        ),
+        stage_outcomes=stage_outcomes,
+        manifest_context=_manifest_context(request, template),
+        failure_classifications=failures,
+        recipe_execution=execution,
+        diagnostics=_diagnostic_summary(
+            verdict=verdict,
+            records=records,
+            evidence=(),
+            stage_outcomes=stage_outcomes,
+            field_states=field_states,
+            findings=findings,
+            failures=failures,
+            review_required=review_required,
+            extractor_tier="recipe",
+        ),
     )
 
 

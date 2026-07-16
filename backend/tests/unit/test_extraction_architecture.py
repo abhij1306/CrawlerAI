@@ -582,6 +582,37 @@ def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None
     assert not offenders
 
 
+def test_publication_is_the_only_typed_record_producer() -> None:
+    # Every surface record type (including the recipe-tier projection) must be
+    # instantiated in exactly one module: publication.py. The recipe replay
+    # path in engine.py delegates to publish_recipe_execution rather than
+    # constructing records itself.
+    surface_models = {
+        "CommerceDetailRecord",
+        "CommerceListingRecord",
+        "JobDetailRecord",
+        "JobListingRecord",
+        "CommerceVariantRecord",
+    }
+    producers: set[str] = set()
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = _parse_module(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            # Match both `Model(...)` and `Model.model_validate(...)` forms.
+            if isinstance(func, ast.Name) and func.id in surface_models:
+                producers.add(path.relative_to(EXTRACTION_ROOT).as_posix())
+            elif (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id in surface_models
+            ):
+                producers.add(path.relative_to(EXTRACTION_ROOT).as_posix())
+    assert producers == {"publication.py"}, producers
+
+
 def test_persistence_performs_no_extraction_repair() -> None:
     persistence = _parse_module(APP_ROOT / "crawl" / "pipeline" / "persistence.py")
     forbidden = {
