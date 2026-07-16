@@ -176,6 +176,9 @@ def test_recipe_contract_owner_has_no_runtime_or_publication_imports() -> None:
 
 
 def test_active_recipe_selection_matches_release_v2_route() -> None:
+    # A template participates in recipe replay only when it carries an
+    # ``executable_recipe`` block, kept distinct from the selector/contract
+    # ``compiled_recipe`` block that drives the deterministic floors.
     selected = select_active_recipe(
         {
             "schema_version": "release.v2",
@@ -184,7 +187,7 @@ def test_active_recipe_selection_matches_release_v2_route() -> None:
                 {
                     "compiled_recipe_id": "compiled-1",
                     "route_pattern": "/products/{slug}",
-                    "compiled_recipe": {"schema_version": "extraction_recipe.v2"},
+                    "executable_recipe": {"schema_version": "extraction_recipe.v2"},
                 }
             ],
         },
