@@ -36,6 +36,7 @@ from app.persistence.extraction_memory import (
     claim_learn_once_template,
     note_recipe_drift_failure,
     persist_learned_recipe,
+    reset_recipe_drift,
 )
 
 # LLM task type reused for provider/model + key resolution.
@@ -225,4 +226,34 @@ async def note_recipe_drift_after_replay(
         surface=surface_value,
         route_pattern=route_pattern,
         threshold=CASCADE_RECIPE_STALE_FAILURE_THRESHOLD,
+    )
+
+
+async def reset_recipe_drift_after_successful_replay(
+    session: AsyncSession,
+    *,
+    url: str,
+    surface: str,
+    result: ExtractionResult,
+) -> None:
+    """Reset the consecutive drift counter after a grounded recipe replay.
+
+    Finding 12: drift is counted consecutively and only a successful replay
+    should clear it, so a recipe that mostly works is never suspended by
+    scattered, non-consecutive misses. Only a real recipe-tier replay WITH
+    records qualifies; other tiers (deterministic/ml/llm) leave the counter
+    untouched. Keyed by the same ``(domain, surface, route)`` used by drift and
+    persistence so the reset targets exactly the replayed recipe.
+    """
+
+    if result.diagnostics.extractor_tier != "recipe" or not result.records:
+        return
+    surface_value = surface or result.surface.value
+    domain = normalize_domain(url)
+    route_pattern = normalize_route(url, surface_value)
+    await reset_recipe_drift(
+        session,
+        domain=domain,
+        surface=surface_value,
+        route_pattern=route_pattern,
     )

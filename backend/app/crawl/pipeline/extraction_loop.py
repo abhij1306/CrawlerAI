@@ -524,6 +524,19 @@ async def _record_extraction_memory(
             url_result = await context.session.get(CrawlUrlResult, url_result_id)
             if url_result is not None:
                 url_result.extraction_manifest_id = manifest.id
+            # Finding 12: a grounded recipe-tier replay clears the consecutive
+            # drift counter so a mostly-working recipe is never suspended by
+            # scattered misses. No-op for non-recipe tiers / empty results.
+            from app.crawl.pipeline.learn_once import (
+                reset_recipe_drift_after_successful_replay,
+            )
+
+            await reset_recipe_drift_after_successful_replay(
+                context.session,
+                url=observed_url,
+                surface=context.surface,
+                result=extracted.result,
+            )
             return extracted.result.model_copy(
                 update={
                     "manifest_context": extracted.result.manifest_context.model_copy(

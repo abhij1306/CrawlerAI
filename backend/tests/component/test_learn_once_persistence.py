@@ -571,3 +571,129 @@ async def test_concurrent_claims_compile_exactly_once(
         select(func.count()).select_from(ExtractionRecipe)
     )
     assert recipe_count == 1
+
+
+# --- Finding 12: production reset caller clears drift on a grounded replay ----
+
+
+def _recipe_tier_result(*, records: tuple = ({"title": "x"},)):
+    from app.extraction.contracts import DiagnosticSummary, ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    return ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        records=records,
+        verdict="success" if records else "empty",
+        diagnostics=DiagnosticSummary(extractor_tier="recipe"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_reset_caller_clears_drift_between_scattered_misses(
+    db_session: AsyncSession,
+) -> None:
+    # HIGH 12: the production reset seam
+    # (``reset_recipe_drift_after_successful_replay``) resets the CONSECUTIVE
+    # drift counter on a grounded recipe-tier replay, so drift -> success ->
+    # drift never suspends a mostly-working recipe.
+    from app.crawl.pipeline.learn_once import (
+        reset_recipe_drift_after_successful_replay,
+    )
+
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+    await db_session.commit()
+
+    # Two misses accumulate (threshold 3).
+    for _ in range(2):
+        assert (
+            await note_recipe_drift_failure(
+                db_session, domain=domain, surface=_SURFACE_VALUE,
+                route_pattern=route_pattern, threshold=3,
+            )
+            is False
+        )
+
+    # A grounded recipe-tier replay resets the counter through the production seam.
+    await reset_recipe_drift_after_successful_replay(
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
+        result=_recipe_tier_result(),
+    )
+
+    # Two more misses still never reach 3 CONSECUTIVE — recipe stays active.
+    for _ in range(2):
+        assert (
+            await note_recipe_drift_failure(
+                db_session, domain=domain, surface=_SURFACE_VALUE,
+                route_pattern=route_pattern, threshold=3,
+            )
+            is False
+        )
+    await db_session.commit()
+
+    payload = await build_release_payload(
+        db_session, domain=domain, surface=_SURFACE_VALUE
+    )
+    assert len(payload["templates"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_caller_ignores_non_recipe_and_empty_results(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 12: only a real grounded recipe-tier replay WITH records resets the
+    # counter — a deterministic/empty result must leave drift untouched so a
+    # genuinely broken recipe still self-heals.
+    from app.crawl.pipeline.learn_once import (
+        reset_recipe_drift_after_successful_replay,
+    )
+    from app.extraction.contracts import DiagnosticSummary, ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+    await db_session.commit()
+
+    for _ in range(2):
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+
+    # An empty recipe-tier result and a non-recipe result must NOT reset.
+    await reset_recipe_drift_after_successful_replay(
+        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        result=_recipe_tier_result(records=()),
+    )
+    await reset_recipe_drift_after_successful_replay(
+        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        result=ExtractionResult(
+            surface=Surface.ECOMMERCE_DETAIL,
+            records=({"title": "x"},),
+            verdict="success",
+            diagnostics=DiagnosticSummary(extractor_tier="deterministic"),
+        ),
+    )
+
+    # The counter was never reset, so the third consecutive miss suspends.
+    assert (
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+        is True
+    )

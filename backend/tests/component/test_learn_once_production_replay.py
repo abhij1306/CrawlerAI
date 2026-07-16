@@ -126,3 +126,81 @@ async def test_subsequent_run_replays_learned_recipe_with_zero_model_calls(
     assert result.diagnostics.extractor_tier == "recipe"
     assert len(result.records) == 1
     assert result.records[0].get("title") == "Trail Shoe Red"
+
+
+async def test_recipe_tier_replay_resets_drift_counter(
+    db_session: AsyncSession, test_user
+) -> None:
+    # HIGH 12: after a genuine recipe-tier replay, the production reset seam
+    # clears the recipe payload's consecutive drift counter to zero.
+    from app.crawl.pipeline.learn_once import (
+        reset_recipe_drift_after_successful_replay,
+    )
+    from app.persistence.extraction_memory import note_recipe_drift_failure
+
+    calls: list[int] = []
+    recipe = await _learn_recipe(calls)
+
+    domain = "prod-replay.example.invalid"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await persist_learned_recipe(
+        db_session,
+        domain=domain,
+        surface=_SURFACE_VALUE,
+        route_pattern=route_pattern,
+        fingerprint=fingerprint,
+        recipe_payload=recipe.model_dump(mode="json"),
+        confidence=0.75,
+    )
+    await db_session.commit()
+
+    # Seed a couple of consecutive drift misses so the counter is non-zero.
+    for _ in range(2):
+        await note_recipe_drift_failure(
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
+        )
+    await db_session.commit()
+
+    # A genuine subsequent run replays the recipe with zero model calls.
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {"run_type": "crawl", "url": _DETAIL_URL, "surface": _SURFACE_VALUE},
+    )
+    snapshot = await load_release_payload(
+        db_session, run.extraction_release_snapshot_id
+    )
+    calls.clear()
+    request = _detail_request().model_copy(update={"runtime_snapshot": snapshot})
+    result = extract(request)
+    assert calls == []
+    assert result.diagnostics.extractor_tier == "recipe"
+    assert len(result.records) == 1
+
+    # The production reset seam runs on the grounded replay and zeroes the counter.
+    await reset_recipe_drift_after_successful_replay(
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
+        result=result,
+    )
+    await db_session.commit()
+
+    from sqlalchemy import select
+
+    from app.models.extraction_memory import ExtractionRecipe
+
+    stored = (
+        await db_session.execute(select(ExtractionRecipe))
+    ).scalars().all()
+    payloads = [r.payload.get("_stale_after_failures") for r in stored]
+    assert any(
+        isinstance(p, dict) and p.get("failure_count") == 0 for p in payloads
+    ), payloads
