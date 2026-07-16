@@ -430,22 +430,38 @@ def _relative_css(root_path: str, absolute_path: str) -> str | None:
     return _segments_to_css(tail) or None
 
 
-def _path_within_scope(path: str, flat_map_paths: tuple[str, ...]) -> bool:
-    """True when ``path`` lives inside the region the model was shown.
+def _is_ancestor_or_descendant_or_equal(path: str, entry: str) -> bool:
+    """True when ``path`` is on the same ancestor/descendant chain as ``entry``.
 
-    Finding 1: attribute nodes carry no flat-map text, so their proposed path
-    cannot be a direct ``flat_map_paths`` member. Instead require it to descend
-    from (or equal) the common ancestor of the capped flat-map entries — the
-    scoped region actually rendered into the prompt. A path outside that region
-    (valid only on the uncapped full page) is rejected.
+    Segment-prefix comparison in EITHER direction: one segment list is a prefix
+    of the other (equal lists included). A sibling — sharing only a shorter
+    common prefix but diverging at some segment — is NOT on the chain.
     """
 
-    ancestor = _common_ancestor(flat_map_paths)
-    if not ancestor:
-        return False
-    ancestor_segments = _path_segments(ancestor)
     path_segments = _path_segments(path)
-    return path_segments[: len(ancestor_segments)] == ancestor_segments
+    entry_segments = _path_segments(entry)
+    shorter = min(len(path_segments), len(entry_segments))
+    return path_segments[:shorter] == entry_segments[:shorter]
+
+
+def _path_within_scope(path: str, flat_map_paths: tuple[str, ...]) -> bool:
+    """True when ``path`` lives on an INDIVIDUAL node shown to the model.
+
+    Finding 1: attribute nodes carry no flat-map text, so their proposed path
+    cannot be a direct ``flat_map_paths`` member. ``flat_map_paths`` is already
+    the CAPPED set actually rendered into the prompt, so require the path to be
+    equal to, an ancestor of, or a descendant of at least ONE individual capped
+    entry — i.e. on some shown node's ancestor/descendant chain.
+
+    Comparing against the entries' broad COMMON ANCESTOR is insufficient: a
+    sibling of the shown records (e.g. ``/html/body/a[405]`` when the shown
+    entries are ``/html/body/div[1]...``) descends from ``/html/body`` yet was
+    never in the prompt. Such siblings are rejected here.
+    """
+
+    return any(
+        _is_ancestor_or_descendant_or_equal(path, entry) for entry in flat_map_paths
+    )
 
 
 def _common_ancestor(paths: tuple[str, ...]) -> str:

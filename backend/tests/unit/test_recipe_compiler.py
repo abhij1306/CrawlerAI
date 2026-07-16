@@ -461,6 +461,54 @@ async def test_attribute_binding_rejects_path_outside_scoped_map() -> None:
     )
 
 
+def test_path_within_scope_matches_individual_capped_entries() -> None:
+    # Finding 1 (re-review): the scope check must compare an attribute path
+    # against each INDIVIDUAL capped flat-map entry (ancestor / descendant /
+    # equal), NOT their broad common ancestor. Shown entries below share only
+    # the common ancestor ``/html/body`` — a sibling that merely descends from
+    # that ancestor was never in the prompt and must be rejected.
+    from app.core.extraction_memory.recipe_compiler import _path_within_scope
+
+    shown = (
+        "/html[1]/body[1]/div[1]/h1[1]",
+        "/html[1]/body[1]/div[2]/span[1]",
+    )
+
+    # Equal to a capped entry -> accepted.
+    assert _path_within_scope("/html[1]/body[1]/div[1]/h1[1]", shown) is True
+    # Descendant of a capped entry -> accepted.
+    assert _path_within_scope("/html[1]/body[1]/div[1]/h1[1]/a[1]", shown) is True
+    # Ancestor (container) of a capped entry -> accepted.
+    assert _path_within_scope("/html[1]/body[1]/div[1]", shown) is True
+    # Sibling sharing only the broad common ancestor ``/html/body`` -> REJECTED.
+    assert _path_within_scope("/html[1]/body[1]/a[405]", shown) is False
+    # A different sibling branch under the shared prefix -> REJECTED.
+    assert _path_within_scope("/html[1]/body[1]/div[3]/span[1]", shown) is False
+    # Empty universe -> nothing is in scope.
+    assert _path_within_scope("/html[1]/body[1]/div[1]/h1[1]", ()) is False
+
+
+def test_is_ancestor_or_descendant_or_equal_direction() -> None:
+    # Finding 1 (re-review): segment-prefix comparison in EITHER direction.
+    from app.core.extraction_memory.recipe_compiler import (
+        _is_ancestor_or_descendant_or_equal,
+    )
+
+    entry = "/html[1]/body[1]/div[2]/span[1]"
+    # equal
+    assert _is_ancestor_or_descendant_or_equal(entry, entry) is True
+    # path is a descendant of entry
+    assert _is_ancestor_or_descendant_or_equal(f"{entry}/a[1]", entry) is True
+    # path is an ancestor of entry
+    assert _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/div[2]", entry) is True
+    # sibling: diverges at div[2] vs div[3]
+    assert (
+        _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/div[3]", entry) is False
+    )
+    # sibling leaf under shared ancestor
+    assert _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/a[405]", entry) is False
+
+
 @pytest.mark.asyncio
 async def test_compiler_rejects_path_outside_scoped_map() -> None:
     # Finding 9: the model may only ground onto paths in the scoped/capped map it
