@@ -59,6 +59,16 @@ CASCADE_ECOMMERCE_LISTING_ENABLED: Final[bool] = True
 # rearchitecture for job listings alone without affecting other surfaces.
 CASCADE_JOB_LISTING_ENABLED: Final[bool] = True
 
+# Independent per-surface switch that routes the commerce-detail adapter through
+# the deterministic detail cascade seam (structured source floor -> DOM harvest
+# pipeline). When False, the commerce-detail adapter falls back to the exact
+# legacy ``harvest_ecommerce_detail`` inline harvest, so operators can toggle the
+# rearchitecture for commerce detail alone without affecting other surfaces. The
+# seam composes the SAME collectors in the SAME fixed order, so ON/OFF produce
+# byte-identical detail records; the flag only changes which code path assembles
+# them.
+CASCADE_ECOMMERCE_DETAIL_ENABLED: Final[bool] = True
+
 # LEARN-ONCE LLM tier master switch. Even when True, the tier only fires for a
 # crawl whose ``llm_enabled`` control is set; this flag lets the tier be
 # disabled globally (e.g. during eval-gated rollout) regardless of per-crawl
@@ -191,6 +201,7 @@ __all__ = [
     "CASCADE_DOM_FLOOR_ENABLED",
     "CASCADE_ECOMMERCE_LISTING_ENABLED",
     "CASCADE_JOB_LISTING_ENABLED",
+    "CASCADE_ECOMMERCE_DETAIL_ENABLED",
     "CASCADE_LEARN_ONCE_TIER_ENABLED",
     "CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL",
     "CASCADE_RECIPE_SCOPE_KEY",

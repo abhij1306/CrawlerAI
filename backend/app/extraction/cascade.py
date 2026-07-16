@@ -1,11 +1,12 @@
-"""The single tier-ordering seam for the selector-free listing cascade.
+"""The single tier-ordering seam for the selector-free extraction cascade.
 
 This module owns the one place that fixes the deterministic floor order —
-**structured -> network -> DOM** — for every ``many``-record listing surface.
-Per the repo invariant (extraction order: structured source -> DOM, with the
-network-JSON floor slotted between them), the order is declared once here as a
-registry and executed here (first non-empty floor wins); no floor module or
-adapter re-decides it.
+**structured -> network -> DOM** — for every ``many``-record listing surface,
+and the analogous **structured source -> DOM** floor order for ``one``-record
+detail surfaces (``run_detail_cascade``). Per the repo invariant (extraction
+order: structured source -> DOM, with the network-JSON floor slotted between
+them for listings), the order is declared once here and executed here (first
+non-empty floor wins for listings); no floor module or adapter re-decides it.
 
 Design contract: the cascade body is **surface-agnostic**. It is driven purely
 by the ``ListingSchema`` / ``SurfaceSpec`` lens; there is deliberately no
@@ -18,24 +19,37 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from app.extraction.contracts import (
     ArtifactReader,
+    CaptureBundle,
     CollectorOutcome,
     Evidence,
     ExtractionRequest,
+    HarvestResult,
 )
 from app.extraction.listing_tier0 import (
     collect_dom_listing,
     collect_structured_listing,
 )
 from app.extraction.network_listing import collect_network_listing
-from app.extraction.surfaces import ListingSchema
+from app.extraction.pipeline import (
+    detail_dom_collectors,
+    detail_recipe_requested_evidence,
+    detail_structured_collectors,
+    run_detail_collectors,
+)
+from app.extraction.surfaces import ListingSchema, Surface, SurfaceSpec
 
 # Signature every listing floor implements: given a capture + reader + surface,
 # return that floor's evidence (empty when the floor does not hold).
 _Floor = Callable[..., list[Evidence]]
+
+# Signature every detail floor implements: a collector-group factory whose
+# members the cascade runs through the shared assembly primitive. The cascade
+# owns the ORDER these groups run in; the group membership lives in pipeline.
+_DetailFloor = Callable[[], tuple[Any, ...]]
 
 # The single declaration of floor order. The cascade executes these in sequence
 # and the first floor that yields evidence wins, so the ordering has exactly one
@@ -104,4 +118,96 @@ def _outcome(floor: str, status: str, count: int) -> CollectorOutcome:
     )
 
 
-__all__ = ["LISTING_FLOOR_ORDER", "ListingCascadeResult", "run_listing_cascade"]
+# The single declaration of one-record detail floor order: structured source
+# floor, then DOM floor. The cascade owns this ordering; group membership lives
+# in pipeline. Reorder this tuple and the runtime detail floor order changes.
+_DETAIL_FLOOR_REGISTRY: Final[tuple[tuple[str, _DetailFloor], ...]] = (
+    ("structured", detail_structured_collectors),
+    ("dom", detail_dom_collectors),
+)
+
+DETAIL_FLOOR_ORDER: Final[tuple[str, ...]] = tuple(
+    name for name, _ in _DETAIL_FLOOR_REGISTRY
+)
+
+# Per-surface detail collector profiles, keyed by ``spec.surface``. A one-record
+# surface is only supported when it has an entry here; this is the declarative,
+# spec-driven support table that replaces any ``surface ==`` branch. Slice 3
+# ships the ecommerce-detail profile (the commerce collector floors) ONLY —
+# routing job_detail here would falsely emit commerce facts, so it is
+# intentionally absent until Slice 4 adds the job-detail profile.
+_DETAIL_SURFACE_PROFILES: Final[
+    dict[Surface, tuple[tuple[str, _DetailFloor], ...]]
+] = {
+    Surface.ECOMMERCE_DETAIL: _DETAIL_FLOOR_REGISTRY,
+}
+
+DETAIL_SUPPORTED_SURFACES: Final[frozenset[Surface]] = frozenset(
+    _DETAIL_SURFACE_PROFILES
+)
+
+
+def run_detail_cascade(
+    request: ExtractionRequest,
+    reader: ArtifactReader,
+    spec: SurfaceSpec,
+) -> HarvestResult:
+    """Orchestrate the deterministic detail floors for a one-record surface.
+
+    Owns the floor ORDER (``_DETAIL_FLOOR_REGISTRY``: structured source -> DOM)
+    and runs each floor's collector group through the shared assembly primitive
+    ``run_detail_collectors``, then the trailing recipe/requested-field tail. All
+    detail floors run and are concatenated in order (unlike listings, where the
+    first non-empty floor wins), so a one-record surface fuses structured and DOM
+    evidence exactly as the legacy inline harvest did — hence byte-identical
+    output.
+
+    Routing is declarative, driven by the typed ``SurfaceSpec`` lens: the
+    ``spec.cardinality`` guard rejects listings, and ``_DETAIL_SURFACE_PROFILES``
+    (keyed by ``spec.surface``) selects that surface's collector profile. There
+    is deliberately no ``surface ==``/``is`` branch. A one-record surface with no
+    profile (e.g. job_detail until Slice 4) fails honestly rather than emitting
+    another surface's facts. ``resolve``/``publish``/variant logic is untouched.
+    """
+    if spec.cardinality != "one":
+        raise ValueError(
+            f"run_detail_cascade requires a one-record surface, got {spec.surface}"
+        )
+    profile = _DETAIL_SURFACE_PROFILES.get(spec.surface)
+    if profile is None:
+        raise ValueError(
+            f"no detail collector profile registered for {spec.surface}; "
+            "supported one-record surfaces: "
+            f"{sorted(s.value for s in DETAIL_SUPPORTED_SURFACES)}"
+        )
+    bundle: CaptureBundle = request.capture
+    requested_fields = request.requested_fields
+    rows: list[Evidence] = []
+    outcomes: list[CollectorOutcome] = []
+    admitted = 0
+    for _name, floor in profile:
+        floor_rows, floor_outcomes, floor_admitted = run_detail_collectors(
+            floor(), bundle, reader, requested_fields=requested_fields
+        )
+        rows.extend(floor_rows)
+        outcomes.extend(floor_outcomes)
+        admitted += floor_admitted
+    tail_rows, tail_outcomes, tail_admitted = detail_recipe_requested_evidence(
+        bundle, reader, requested_fields
+    )
+    return HarvestResult(
+        surface=spec.surface,
+        evidence=(*rows, *tail_rows),
+        collector_outcomes=(*outcomes, *tail_outcomes),
+        admitted_source_objects=admitted + tail_admitted,
+    )
+
+
+__all__ = [
+    "DETAIL_FLOOR_ORDER",
+    "DETAIL_SUPPORTED_SURFACES",
+    "LISTING_FLOOR_ORDER",
+    "ListingCascadeResult",
+    "run_detail_cascade",
+    "run_listing_cascade",
+]

@@ -102,16 +102,26 @@ def collect_ecommerce_detail(
     ).evidence
 
 
-def harvest_ecommerce_detail(
+def run_detail_collectors(
+    collectors: tuple[Any, ...],
     bundle: CaptureBundle,
     reader: ArtifactReader,
     *,
     requested_fields: tuple[str, ...] = (),
-) -> HarvestResult:
+) -> tuple[tuple[Evidence, ...], tuple[CollectorOutcome, ...], int]:
+    """Run one detail collector group, returning (rows, outcomes, admitted).
+
+    This is the extracted per-collector admission loop: FACT_TYPES-filtered
+    evidence, budget-limited outcome forwarding, and per-collector source-object
+    accounting. It is the SINGLE assembly primitive shared by the legacy inline
+    harvest and the cascade seam, so a collector group produces byte-identical
+    rows/outcomes/accounting regardless of which caller sequences it. The
+    ordering of floors is owned by the cascade, not here.
+    """
     rows: list[Evidence] = []
     outcomes: list[CollectorOutcome] = []
     admitted_source_objects = 0
-    for collector in default_collectors():
+    for collector in collectors:
         harvest_method = getattr(collector, "harvest", None)
         if callable(harvest_method):
             harvest = collector.harvest(
@@ -151,16 +161,29 @@ def harvest_ecommerce_detail(
                 evidence_count=produced,
             )
         )
+    return tuple(rows), tuple(outcomes), admitted_source_objects
+
+
+def detail_recipe_requested_evidence(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    requested_fields: tuple[str, ...] = (),
+) -> tuple[tuple[Evidence, ...], tuple[CollectorOutcome, ...], int]:
+    """Trailing known-template recipe + explicitly requested field evidence.
+
+    This runs after the deterministic floors for every detail harvest. Recipe
+    and requested rows share one source-object accounting set, matching the
+    legacy inline harvest exactly.
+    """
     recipe_rows = tuple(css_recipe_evidence(bundle, reader))
-    requested_rows = collect_requested_fields(bundle, reader, requested_fields)
-    rows.extend(recipe_rows)
-    rows.extend(requested_rows)
-    admitted_source_objects += len(
+    requested_rows = tuple(collect_requested_fields(bundle, reader, requested_fields))
+    admitted = len(
         {
             (row.collector_id, row.artifact_id, row.subject_id)
             for row in (*recipe_rows, *requested_rows)
         }
     )
+    outcomes: list[CollectorOutcome] = []
     if recipe_rows:
         outcomes.append(
             CollectorOutcome(
@@ -177,24 +200,57 @@ def harvest_ecommerce_detail(
                 evidence_count=len(requested_rows),
             )
         )
+    return (*recipe_rows, *requested_rows), tuple(outcomes), admitted
+
+
+def harvest_ecommerce_detail(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    *,
+    requested_fields: tuple[str, ...] = (),
+) -> HarvestResult:
+    """Legacy inline commerce-detail harvest (cascade flag-OFF path).
+
+    Runs the whole collector set in one pass, then the recipe/requested tail.
+    Kept as the exact byte-for-byte fallback; the cascade seam assembles the
+    same primitives split into ordered floors.
+    """
+    rows, outcomes, admitted = run_detail_collectors(
+        default_collectors(), bundle, reader, requested_fields=requested_fields
+    )
+    tail_rows, tail_outcomes, tail_admitted = detail_recipe_requested_evidence(
+        bundle, reader, requested_fields
+    )
     return HarvestResult(
         surface=Surface.ECOMMERCE_DETAIL,
-        evidence=tuple(rows),
-        collector_outcomes=tuple(outcomes),
-        admitted_source_objects=admitted_source_objects,
+        evidence=(*rows, *tail_rows),
+        collector_outcomes=(*outcomes, *tail_outcomes),
+        admitted_source_objects=admitted + tail_admitted,
     )
 
 
-def default_collectors():
+def detail_structured_collectors() -> tuple[Any, ...]:
+    """Structured-source detail floor: JSON-LD / OG / microdata / JS-state /
+    network-payload collectors, in resolver-priority order."""
     return (
         JsonLdCollector(),
         OpenGraphCollector(),
         MicrodataCollector(),
         JsStateCollector(),
         NetworkCollector(),
+    )
+
+
+def detail_dom_collectors() -> tuple[Any, ...]:
+    """DOM detail floor: rendered-DOM heuristics plus URL identity."""
+    return (
         DomCollector(),
         UrlCollector(),
     )
+
+
+def default_collectors() -> tuple[Any, ...]:
+    return (*detail_structured_collectors(), *detail_dom_collectors())
 
 
 def normalize_ecommerce_detail(

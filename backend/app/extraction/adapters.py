@@ -45,10 +45,11 @@ from app.extraction.jobs import (
     wrong_surface_findings_for_job_listing,
 )
 from app.core.config.cascade import (
+    CASCADE_ECOMMERCE_DETAIL_ENABLED,
     CASCADE_ECOMMERCE_LISTING_ENABLED,
     CASCADE_JOB_LISTING_ENABLED,
 )
-from app.extraction.cascade import run_listing_cascade
+from app.extraction.cascade import run_detail_cascade, run_listing_cascade
 from app.extraction.listing import (
     collect_ecommerce_listing,
     resolve_ecommerce_listing,
@@ -94,11 +95,23 @@ def adapter_for(surface: Surface) -> SurfaceAdapter:
 
 
 def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
-    harvested = harvest_ecommerce_detail(
-        request.capture,
-        request.artifact_reader,
-        requested_fields=request.requested_fields,
-    )
+    """Commerce-detail harvest: detail cascade when enabled, legacy otherwise.
+
+    Flag-ON routes through the spec-driven detail cascade seam; flag-OFF calls
+    the legacy inline harvest. Both assemble the same floors, so normalization
+    below sees identical evidence. The flag is read at module scope so tests can
+    monkeypatch it.
+    """
+    if CASCADE_ECOMMERCE_DETAIL_ENABLED:
+        harvested = run_detail_cascade(
+            request, request.artifact_reader, _surface_spec(request)
+        )
+    else:
+        harvested = harvest_ecommerce_detail(
+            request.capture,
+            request.artifact_reader,
+            requested_fields=request.requested_fields,
+        )
     normalized = normalize_ecommerce_detail(
         harvested.evidence,
         page_url=request.capture.final_url or request.capture.requested_url,
