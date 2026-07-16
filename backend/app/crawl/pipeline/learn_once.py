@@ -21,6 +21,7 @@ from app.connectors.llm.errors import ERROR_PREFIX
 from app.connectors.llm.provider_client import call_provider_with_retry
 from app.core.config.cascade import (
     CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL,
+    CASCADE_LEARN_ONCE_PROVIDER_MAX_RETRIES,
     CASCADE_LEARN_ONCE_SURFACES,
     CASCADE_LEARN_ONCE_TIER_ENABLED,
     CASCADE_RECIPE_STALE_FAILURE_THRESHOLD,
@@ -67,6 +68,9 @@ def _model_client_for_run(
             ),
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            # Finding 14: LEARN-ONCE is a single model call, so provider-level
+            # retries must be disabled — one grounded attempt, no re-requests.
+            max_retries=CASCADE_LEARN_ONCE_PROVIDER_MAX_RETRIES,
         )
         return raw
 
