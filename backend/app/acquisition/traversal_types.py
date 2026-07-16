@@ -21,6 +21,7 @@ class TraversalResult:
     events: list[tuple[str, str]] = field(default_factory=list)
     _seen_card_fragments: set[str] = field(default_factory=set, repr=False)
     _seen_structured_fragments: set[str] = field(default_factory=set, repr=False)
+    _seen_card_identities: set[str] = field(default_factory=set, repr=False)
 
     def html_bytes(self) -> int:
         return sum(

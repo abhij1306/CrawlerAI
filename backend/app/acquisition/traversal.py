@@ -55,6 +55,32 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def _observe_unique_cards(
+    result: TraversalResult,
+    snapshot: dict[str, object],
+    *,
+    additive_fallback: bool = False,
+) -> dict[str, object]:
+    """Convert a page snapshot into total unique cards observed by traversal."""
+
+    observed = dict(snapshot)
+    identities = {
+        str(identity or "").strip()
+        for identity in observed.get("card_identities", ()) or ()
+        if str(identity or "").strip()
+    }
+    if identities:
+        result._seen_card_identities.update(identities)
+        total = len(result._seen_card_identities)
+    elif additive_fallback:
+        total = result.card_count + max(0, int(observed.get("card_count", 0)))
+    else:
+        total = max(result.card_count, int(observed.get("card_count", 0)))
+    result.card_count = total
+    observed["card_count"] = total
+    return observed
+
+
 def _format_traversal_detection_message(
     *,
     mode: str,
@@ -242,8 +268,9 @@ async def _run_scroll_traversal(
     effective_max = _effective_scroll_limit(max_scrolls)
     gain_state = _TraversalGainState()
     await _append_html_fragment(page, result, surface=surface)
-    previous = await _page_snapshot(page, surface=surface)
-    result.card_count = int(previous.get("card_count", 0))
+    previous = _observe_unique_cards(
+        result, await _page_snapshot(page, surface=surface)
+    )
     await _emit_event(
         on_event,
         "info",
@@ -272,7 +299,7 @@ async def _run_scroll_traversal(
         if step.status != "ok" or step.snapshot is None:
             _set_stop_reason(result, step.status, surface=surface)
             break
-        current = step.snapshot
+        current = _observe_unique_cards(result, step.snapshot)
         if _snapshot_progressed(previous, current):
             card_gain = await _record_traversal_progress(
                 page,
@@ -293,7 +320,6 @@ async def _run_scroll_traversal(
         else:
             gain_state.record_no_progress()
         previous = current
-        result.card_count = int(current.get("card_count", 0))
         if _target_record_limit_reached(
             max_records=max_records, current_count=result.card_count
         ):
@@ -308,7 +334,7 @@ async def _run_scroll_traversal(
             break
     else:
         _set_stop_reason(result, "scroll_limit_reached", surface=surface)
-    result.card_count = int(previous.get("card_count", 0))
+    result.card_count = int(previous.get("card_count", result.card_count))
 
 
 async def _run_load_more_traversal(
@@ -325,8 +351,9 @@ async def _run_load_more_traversal(
     max_iterations = int(crawler_runtime_settings.traversal_max_iterations_cap)
     gain_state = _TraversalGainState()
     await _append_html_fragment(page, result, surface=surface)
-    previous = await _page_snapshot(page, surface=surface)
-    result.card_count = int(previous.get("card_count", 0))
+    previous = _observe_unique_cards(
+        result, await _page_snapshot(page, surface=surface)
+    )
     await _emit_event(
         on_event,
         "info",
@@ -355,8 +382,7 @@ async def _run_load_more_traversal(
         )
         if step.status != "ok" or step.snapshot is None:
             if step.snapshot is not None:
-                previous = step.snapshot
-                result.card_count = int(previous.get("card_count", result.card_count))
+                previous = _observe_unique_cards(result, step.snapshot)
                 await _append_html_fragment(page, result, surface=surface)
                 if _target_record_limit_reached(
                     max_records=max_records,
@@ -366,7 +392,7 @@ async def _run_load_more_traversal(
                     break
             _set_stop_reason(result, step.status, surface=surface)
             break
-        current = step.snapshot
+        current = _observe_unique_cards(result, step.snapshot)
         if not _snapshot_progressed(previous, current):
             _set_stop_reason(result, "load_more_no_progress", surface=surface)
             previous = current
@@ -386,7 +412,6 @@ async def _run_load_more_traversal(
         current_count = int(current.get("card_count", 0))
         gain_state.record_progress(card_gain=card_gain, current_count=current_count)
         previous = current
-        result.card_count = current_count
         if _target_record_limit_reached(
             max_records=max_records, current_count=current_count
         ):
@@ -399,7 +424,7 @@ async def _run_load_more_traversal(
             break
     else:
         _set_stop_reason(result, "load_more_limit_reached", surface=surface)
-    result.card_count = int(previous.get("card_count", 0))
+    result.card_count = int(previous.get("card_count", result.card_count))
 
 
 async def _run_paginate_traversal(
@@ -413,10 +438,11 @@ async def _run_paginate_traversal(
     on_event,
 ) -> None:
     del max_pages
-    previous = await _page_snapshot(page, surface=surface)
+    previous = _observe_unique_cards(
+        result, await _page_snapshot(page, surface=surface)
+    )
     gain_state = _TraversalGainState()
     page_limit = int(crawler_runtime_settings.traversal_max_iterations_cap)
-    result.card_count = int(previous.get("card_count", 0))
     await _append_html_fragment(page, result, surface=surface)
     await _emit_event(
         on_event,
@@ -447,13 +473,14 @@ async def _run_paginate_traversal(
             visited_urls=visited_urls,
         )
         if step.status == "settled" and step.snapshot is not None:
-            previous = step.snapshot
-            result.card_count = int(previous.get("card_count", result.card_count))
+            previous = _observe_unique_cards(result, step.snapshot)
             continue
         if step.status != "ok" or step.snapshot is None:
             _set_stop_reason(result, step.status, surface=surface)
             break
-        current = step.snapshot
+        current = _observe_unique_cards(
+            result, step.snapshot, additive_fallback=True
+        )
         if not _paginate_snapshot_progressed(previous, current):
             _set_stop_reason(result, "paginate_no_progress", surface=surface)
             break
@@ -473,7 +500,6 @@ async def _run_paginate_traversal(
         gain_state.record_progress(card_gain=card_gain, current_count=current_count)
         result.pages_advanced += 1
         previous = current
-        result.card_count += current_count
         if _target_record_limit_reached(
             max_records=max_records, current_count=result.card_count
         ):

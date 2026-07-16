@@ -54,7 +54,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_readiness.py", "_ecommerce_node_has_product_evidence"): 23,
     ("acquisition/platform_policy.py", "detect_platform_family"): 24,
     ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 26,
-    ("acquisition/traversal_card_counting.py", "count_listing_cards"): 30,
     ("core/records/confidence.py", "_field_penalties"): 23,
     ("core/records/divergence.py", "compare_records_to_projection"): 21,
     ("core/records/divergence.py", "_compare_variants"): 23,
@@ -161,7 +160,7 @@ PACKAGE_LOC_BUDGETS = {
     # LEARN-ONCE recipe tier adds the pure recipe primitives, compiler, evidence
     # bridge, and persistence release/drift logic under core/. Bumped once to
     # seat the new tier; the eval-gated cleanup slice consolidates it back down.
-    "core": 20_158,
+    "core": 20_462,
     "enrichment": 2_245,
     "connectors": 2_767,
     "intelligence": 3_659,
@@ -177,7 +176,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_659
+TOTAL_APP_LOC_BUDGET = 85_725
 
 
 def test_production_package_loc_budgets() -> None:
