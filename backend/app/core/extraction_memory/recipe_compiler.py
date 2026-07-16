@@ -533,14 +533,24 @@ def _scoped_region_css(root_css: str, flat_map_paths: tuple[str, ...]) -> str | 
     Finding 1: on a document-scoped (detail) surface a bare structural selector
     like ``a[href]`` matches the whole page, so the fallback could re-capture an
     out-of-scope anchor. Confine the fallback to the common ancestor of the
-    capped flat-map entries. Listing surfaces already anchor under the record
+    capped flat-map entries — but ONLY when that ancestor is a genuine narrowed
+    region (a proper subtree below ``<body>``). When the shown entries sit
+    directly under ``<body>`` their common ancestor degenerates to the whole
+    page (``/html/body``), which cannot distinguish a shown node from an
+    out-of-prompt sibling (e.g. ``/html/body/a[405]``). Return ``None`` there so
+    the document structural fallback is disabled and can never bind a node the
+    model was never shown. Listing surfaces already anchor under the record
     root, so no extra scoping is returned for them.
     """
 
     if root_css != "body":
         return None
     ancestor = _common_ancestor(flat_map_paths)
-    return _absolute_css(ancestor) if ancestor else None
+    # A genuine region is deeper than ``/html/body`` (>2 path segments); ``html``
+    # (1) or ``html/body`` (2) means the region is the whole page.
+    if len(_path_segments(ancestor)) <= 2:
+        return None
+    return _absolute_css(ancestor)
 
 
 def _attribute_binding(
@@ -645,10 +655,14 @@ def _structural_attribute_binding(
     if listing:
         found = _resolves_under_root(document, root_css, selector)
     else:
-        # Finding 1: confine the document-scoped fallback to the scoped region so
-        # it cannot re-capture an out-of-scope node the model was never shown.
-        if scope_css:
-            selector = f"{scope_css} {selector}"
+        # Finding 1: the document-scoped fallback is only safe inside a genuine
+        # narrowed region. ``scope_css`` is ``None`` when the shown entries have
+        # no proper subtree below ``<body>`` (their common ancestor is the whole
+        # page); a bare ``a[href]`` there would re-capture an out-of-prompt
+        # sibling the model was never shown, so refuse to bind at all.
+        if not scope_css:
+            return None
+        selector = f"{scope_css} {selector}"
         found = bool(document.safe_css(selector))
     if not found:
         return None

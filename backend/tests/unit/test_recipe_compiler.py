@@ -461,6 +461,91 @@ async def test_attribute_binding_rejects_path_outside_scoped_map() -> None:
     )
 
 
+# Content sits directly under ``<body>`` with no scoping wrapper, so the shown
+# entries' common ancestor degenerates to the whole page (``/html/body``). An
+# out-of-prompt sibling anchor lives directly under ``<body>`` too.
+_BARE_BODY_HTML = (
+    "<html><body>"
+    "<h1>Trail Shoe Red</h1>"
+    '<span class="price">$129.99</span>'
+    f"<p>{_SCOPED_FILLER}</p>"
+    '<a href="/promo/out-of-prompt"><img src="/promo.jpg"></a>'
+    "</body></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_document_fallback_binds_nothing_when_region_is_whole_page() -> None:
+    # Finding 1 (re-review): the structural attribute fallback must never bind a
+    # node the model was never shown. When the shown entries sit directly under
+    # ``<body>`` their common ancestor degenerates to the whole page, so a bare
+    # ``a[href]`` / ``img[src]`` fallback would re-capture an out-of-prompt
+    # sibling anchor/image. Here the model grounds only title/price (leaving
+    # url/image_url ungrounded), which forces the structural fallback; with no
+    # genuine scoped region the fallback must decline, so ``url`` never grounds
+    # and no recipe is returned (rather than binding the out-of-prompt promo
+    # anchor).
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/h1[1]", '
+        '"price": "/html[1]/body[1]/span[1]"}}'
+    )
+    request = _detail_request(html=_BARE_BODY_HTML)
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, response)
+
+    # No genuine region -> no structural attribute binding -> required url
+    # missing -> honest no-recipe. The out-of-prompt promo anchor is never bound.
+    assert result.candidate is None
+    assert result.failure_code == "recipe_required_field_missing"
+
+
+@pytest.mark.asyncio
+async def test_document_fallback_binds_url_inside_genuine_region() -> None:
+    # Finding 1 (re-review): the counterpart to the whole-page case above — when
+    # the shown entries DO have a genuine narrowed region (a ``<main>`` wrapper),
+    # the structural fallback legitimately binds the in-scope canonical anchor
+    # and image even though the model did not ground them. This must keep working.
+    response = (
+        '{"record_root": "", "fields": {'
+        '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+        '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    )
+    request = _detail_request()
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, response)
+
+    assert result.candidate is not None
+    recipe = result.candidate.recipe
+    assert "url" in recipe.fields and "image_url" in recipe.fields
+    # The fallback is confined to the genuine region (under ``main``).
+    assert all("main" in binding.path for binding in recipe.fields["url"])
+
+
+def test_scoped_region_css_is_none_when_region_is_whole_page() -> None:
+    # Finding 1 (re-review): a common ancestor no deeper than ``/html/body``
+    # (<=2 segments) is not a genuine region, so no fallback scope is returned
+    # and the document structural fallback is disabled.
+    from app.core.extraction_memory.recipe_compiler import _scoped_region_css
+
+    # Whole-page ancestor (entries diverge directly under body) -> no scope.
+    assert (
+        _scoped_region_css(
+            "body",
+            ("/html[1]/body[1]/h1[1]", "/html[1]/body[1]/span[1]"),
+        )
+        is None
+    )
+    # Genuine region (deeper than /html/body) -> scope returned.
+    assert (
+        _scoped_region_css(
+            "body",
+            ("/html[1]/body[1]/main[1]/h1[1]", "/html[1]/body[1]/main[1]/span[1]"),
+        )
+        == "html:nth-of-type(1) > body:nth-of-type(1) > main:nth-of-type(1)"
+    )
+    # Listing surfaces never use a document scope.
+    assert _scoped_region_css("ul > li", ("/html[1]/body[1]/ul[1]/li[1]",)) is None
+
+
 def test_path_within_scope_matches_individual_capped_entries() -> None:
     # Finding 1 (re-review): the scope check must compare an attribute path
     # against each INDIVIDUAL capped flat-map entry (ancestor / descendant /
