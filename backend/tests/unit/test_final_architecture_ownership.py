@@ -51,7 +51,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_readiness.py", "analyze_extractable_content"): 35,
     ("acquisition/browser_readiness.py", "_has_detail_dom_signals"): 22,
     ("acquisition/browser_readiness.py", "probe_browser_readiness"): 30,
-    ("acquisition/browser_readiness.py", "_ecommerce_node_has_product_evidence"): 23,
     ("acquisition/platform_policy.py", "detect_platform_family"): 24,
     ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 26,
     ("core/records/confidence.py", "_field_penalties"): 23,

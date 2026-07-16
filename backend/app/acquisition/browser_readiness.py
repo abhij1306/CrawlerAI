@@ -389,11 +389,7 @@ async def probe_browser_readiness(
     listing_card_count = 0
     matched_listing_selectors = 0
     if is_listing:
-        listing_card_count = await listing_card_signal_count(
-            page,
-            surface=surface,
-            analysis=analysis,
-        )
+        listing_card_count = await count_listing_cards(page, surface=surface)
         raw_override_selectors = (
             listing_override.get("selectors")
             if isinstance(listing_override, dict)
@@ -446,19 +442,6 @@ async def probe_browser_readiness(
         "matched_listing_selectors": matched_listing_selectors,
         "h1_present": analysis.h1_present,
     }
-
-
-async def listing_card_signal_count(
-    page: Any,
-    *,
-    surface: str,
-    analysis: HtmlAnalysis | None = None,
-) -> int:
-    del analysis
-    return await count_listing_cards(
-        page,
-        surface=surface,
-    )
 
 
 def _detail_title_matches_url(
