@@ -151,17 +151,22 @@ async def _acquire_browser_retry_result(
             f"Skipping browser retry for {context.url}: browser retry budget exhausted",
         )
         return None
-    # Only the INITIAL acquisition already using a browser short-circuits the
-    # ladder — once we have driven a rung ourselves, a browser-flagged result is
-    # expected and must not block the next rung while budget remains.
+    browser_attempted = PageEvidence.from_acquisition_result(
+        acquisition_result
+    ).browser_attempted
+    # An initial browser result satisfies rendered HTML, but not a requested
+    # network capability unless it actually captured payloads. Avoid repeating
+    # an already-satisfied acquisition while still allowing the bounded network
+    # rung to repair browser-first runs that started with capture disabled.
     if (
         context.browser_escalation_count == 0
-        and PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+        and browser_attempted
+        and _required_retry_artifacts_present(acquisition_result, required_artifacts)
     ):
         await _log_pipeline_event(
             context,
             "info",
-            f"Skipping browser retry for {context.url}: browser already attempted",
+            f"Skipping browser retry for {context.url}: required artifacts already captured",
         )
         return None
     profile_updates: dict[str, object] = {
@@ -170,7 +175,7 @@ async def _acquire_browser_retry_result(
         "retry_reason": retry_reason,
     }
     if (
-        context.browser_escalation_count > 0
+        (context.browser_escalation_count > 0 or browser_attempted)
         and "network_payloads" in required_artifacts
     ):
         profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
@@ -221,3 +226,18 @@ async def _acquire_browser_retry_result(
             ),
         )
         return None
+
+
+def _required_retry_artifacts_present(
+    acquisition_result,
+    required_artifacts: tuple[str, ...],
+) -> bool:
+    available = set()
+    if (
+        PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+        and str(getattr(acquisition_result, "html", "") or "")
+    ):
+        available.add("rendered_html")
+    if list(getattr(acquisition_result, "network_payloads", []) or []):
+        available.add("network_payloads")
+    return set(required_artifacts).issubset(available)

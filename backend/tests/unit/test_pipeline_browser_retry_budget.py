@@ -249,12 +249,24 @@ async def test_browser_retry_failure_preserves_original_http_result(
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_browser_retry_result_skips_when_browser_already_attempted(
+async def test_initial_browser_without_network_payloads_runs_network_retry(
     monkeypatch,
 ) -> None:
+    requests: list[AcquisitionRequest] = []
+
+    async def fake_build_request(context):
+        return _request()
+
+    async def fake_acquire(request):
+        requests.append(request)
+        return _result("browser")
+
     async def fake_log(*args, **kwargs):
         return None
 
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
     monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
     context = SimpleNamespace(
         url="https://example.com/item",
@@ -269,8 +281,62 @@ async def test_browser_retry_result_skips_when_browser_already_attempted(
         context,
         fetched,
         retry_reason="post_extraction_challenge_shell",
-        forced_browser_engine="real_chrome",
+        required_artifacts=("rendered_html", "network_payloads"),
+        max_attempts=1,
+    )
+
+    assert result is not None
+    assert len(requests) == 1
+    assert requests[0].policy.capture_network == CAPTURE_NETWORK_ALL_SMALL_JSON
+    assert context.browser_escalation_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("required_artifacts", "network_payloads"),
+    [
+        (("rendered_html",), []),
+        (("rendered_html", "network_payloads"), [{"body": {"job": {}}}]),
+    ],
+)
+async def test_initial_browser_skips_when_required_artifacts_already_present(
+    monkeypatch,
+    required_artifacts,
+    network_payloads,
+) -> None:
+    calls = 0
+
+    async def fake_acquire(request):
+        nonlocal calls
+        calls += 1
+        return _result("browser")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    context = SimpleNamespace(
+        url="https://example.com/item",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+    )
+    acquisition_result = _result("browser")
+    acquisition_result.network_payloads = network_payloads
+    fetched = SimpleNamespace(acquisition_result=acquisition_result, url_metrics={})
+
+    result = await stage._acquire_browser_retry_result(
+        context,
+        fetched,
+        retry_reason="empty_extraction",
+        required_artifacts=required_artifacts,
+        max_attempts=1,
     )
 
     assert result is None
+    assert calls == 0
     assert context.browser_escalation_count == 0
