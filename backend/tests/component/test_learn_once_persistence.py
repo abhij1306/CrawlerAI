@@ -759,3 +759,42 @@ async def test_operator_label_on_sibling_template_does_not_exempt(
     ]
     await db_session.commit()
     assert outcomes == [False, False, True]
+# --- Finding 15: LEARN-ONCE never accumulates detached (run_id NULL) snapshots
+
+
+@pytest.mark.asyncio
+async def test_learn_cycle_creates_no_detached_release_snapshot(
+    db_session: AsyncSession, test_user
+) -> None:
+    # MEDIUM 15: persisting a learned recipe (and building the next run's release)
+    # must add ZERO ``ExtractionReleaseSnapshot`` rows with ``run_id IS NULL``.
+    # Detached candidate snapshots only come from grounded_corrections (which
+    # activates them immediately for a run); the learn path must never mint one.
+    from sqlalchemy import func, select
+
+    from app.crawl.crud import create_crawl_run
+    from app.models.extraction_memory import ExtractionReleaseSnapshot
+
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+    await db_session.commit()
+
+    # A genuine subsequent run builds the unified release through create_crawl_run.
+    await create_crawl_run(
+        db_session,
+        test_user.id,
+        {"run_type": "crawl", "url": _DETAIL_URL, "surface": _SURFACE_VALUE},
+    )
+
+    detached = await db_session.scalar(
+        select(func.count())
+        .select_from(ExtractionReleaseSnapshot)
+        .where(ExtractionReleaseSnapshot.run_id.is_(None))
+    )
+    assert detached == 0
