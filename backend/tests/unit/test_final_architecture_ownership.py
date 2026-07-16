@@ -31,7 +31,7 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/entities.py": 932,
     "extraction/pipeline.py": 781,
     "extraction/resolution/__init__.py": 2044,
-    "extraction/result_building.py": 734,
+    "extraction/result_building.py": 738,
     "extraction/validation.py": 786,
     "intelligence/discovery.py": 726,
     "intelligence/matching.py": 749,
@@ -104,7 +104,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
     ("extraction/result_building.py", "field_evidence_states"): 41,
     ("extraction/result_building.py", "projection_field_states"): 70,
-    ("extraction/result_building.py", "retry_request"): 31,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
@@ -168,7 +167,7 @@ PACKAGE_LOC_BUDGETS = {
     "intelligence": 3_659,
     # LEARN-ONCE recipe replay + shared result building grew engine.py; kept in
     # lockstep with the extraction_semantic_surface.toml manifest bump.
-    "extraction": 16_601,
+    "extraction": 16_641,
     # Phase 7 documented feature exception: the grounded LLM repair adapter
     # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
     # runs in the hot path and cannot publish or activate values; the budget is
@@ -178,7 +177,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_179
+TOTAL_APP_LOC_BUDGET = 85_219
 
 
 def test_production_package_loc_budgets() -> None:

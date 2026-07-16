@@ -10,6 +10,7 @@ from app.core.config.extraction_rules._detail import (
     DETAIL_SHELL_TITLE_KEYS,
 )
 from app.core.config import field_mappings
+from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.records.field_policy import canonical_fields_for_surface
@@ -539,6 +540,9 @@ def retry_request(
     request: ExtractionRequest,
     evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
+    job_retry = _job_retry_request(verdict, records, request, evidence)
+    if job_retry is not None:
+        return job_retry
     shell_detected = any(is_shell_record(record) for record in records) or any(
         DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
     )
@@ -578,14 +582,23 @@ def retry_request(
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
+    if ecommerce_detail:
+        return _commerce_dynamic_content_retry(verdict, records, request)
+    return None
+
+
+def _commerce_dynamic_content_retry(
+    verdict: str,
+    records: tuple[PublicRecord, ...],
+    request: ExtractionRequest,
+) -> RetryRequest | None:
     requested_core_fields = {
         "image_url" if field == "image" else field
         for field in request.requested_fields
         if field in field_mappings.ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS
     }
     if (
-        ecommerce_detail
-        and verdict in {"error", "partial", "review"}
+        verdict in {"error", "partial", "review"}
         and not request.capture.browser_attempted
         and (not request.requested_fields or requested_core_fields or not records)
     ):
@@ -605,6 +618,40 @@ def retry_request(
                 required_artifacts=("rendered_html", "network_payloads"),
             )
     return None
+
+
+_JOB_SURFACES = frozenset({"job_detail", "job_listing"})
+
+
+def _job_retry_request(
+    verdict: str,
+    records: tuple[PublicRecord, ...],
+    request: ExtractionRequest,
+    evidence: tuple[Evidence, ...],
+) -> RetryRequest | None:
+    """Surface-agnostic escalation for job surfaces.
+
+    An empty or shell job page requests the rendered document; when the
+    structured JSON-LD signal is also missing, network payloads are added so the
+    multi-rung ladder can climb to the network floor. ``max_attempts`` is pinned
+    to the configured cap (default 1 would keep the ladder one-shot).
+    """
+    if request.surface.value not in _JOB_SURFACES or request.capture.browser_attempted:
+        return None
+    shell = any(is_shell_record(record) for record in records) or any(
+        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
+    )
+    if not ((verdict in {"empty", "error"} and not records) or shell):
+        return None
+    required_artifacts = ("rendered_html",)
+    if not any(row.collector_id == "job_jsonld" for row in evidence):
+        required_artifacts = ("rendered_html", "network_payloads")
+    return RetryRequest(
+        required=True,
+        reason="http_shell" if shell else "empty_extraction",
+        required_artifacts=required_artifacts,
+        max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP,
+    )
 
 
 def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:

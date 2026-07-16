@@ -462,3 +462,46 @@ def test_parent_availability_does_not_override_incomplete_variant_matrix() -> No
         result.records[0]["_lineage"]["availability"]["rule_id"]
         != "variant_availability_aggregate"
     )
+
+
+# --- Slice 4 / Task B3: job-surface retry_request escalation ---
+
+
+def _job_retry(result):
+    return result.retry_request
+
+
+def test_job_detail_empty_emits_rendered_html_retry() -> None:
+    result = _extract("job_detail", "<html><body></body></html>", "https://jobs.test/j/1")
+    retry = _job_retry(result)
+    assert retry is not None
+    assert retry.required is True
+    assert retry.reason == "empty_extraction"
+    assert "rendered_html" in retry.required_artifacts
+
+
+def test_job_listing_empty_emits_rendered_html_retry() -> None:
+    result = _extract("job_listing", "<html><body></body></html>", "https://jobs.test/jobs")
+    retry = _job_retry(result)
+    assert retry is not None
+    assert retry.required is True
+    assert retry.reason == "empty_extraction"
+    assert "rendered_html" in retry.required_artifacts
+
+
+def test_job_detail_missing_structured_adds_network_payloads() -> None:
+    # No JSON-LD JobPosting -> the structured signal is missing, so the retry
+    # also asks for network payloads to feed the ladder's network floor.
+    result = _extract("job_detail", "<html><body></body></html>", "https://jobs.test/j/1")
+    retry = _job_retry(result)
+    assert retry is not None
+    assert retry.required_artifacts == ("rendered_html", "network_payloads")
+
+
+def test_job_retry_request_sets_max_attempts_to_cap() -> None:
+    from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+
+    result = _extract("job_detail", "<html><body></body></html>", "https://jobs.test/j/1")
+    retry = _job_retry(result)
+    assert retry is not None
+    assert retry.max_attempts == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP

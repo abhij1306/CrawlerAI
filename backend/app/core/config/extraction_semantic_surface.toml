@@ -20,7 +20,7 @@ post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 17636
+physical_loc_budget = 17640
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -54,7 +54,7 @@ default_module_cyclomatic_complexity_budget = 20
 "resolution/assets.py" = 279
 "resolution/price_units.py" = 168
 "resolution/ranking.py" = 152
-"result_building.py" = 734
+"result_building.py" = 738
 "sentinel.py" = 286
 "surfaces.py" = 250
 "targeting.py" = 209
