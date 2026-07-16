@@ -121,14 +121,35 @@ async def compile_recipe(
     # Ultimate grounding gate: re-read every binding from the page. Values are
     # never taken from the model; if the required fields do not re-ground, the
     # recipe is discarded (honest no-recipe).
-    execution = execute_recipe(request, recipe)
+    #
+    # Finding 4: the executor slices grounded roots to ``request.max_records``,
+    # so validating against ``execution.records`` would wrongly reject a genuine
+    # multi-card listing compiled with a small ``max_records`` (e.g. 1). Run the
+    # validation with the record floor lifted to at least the listing minimum so
+    # the grounded roots are not masked by the slice; the executor's own
+    # ``_check_record_root_minimum`` still enforces the min-repeated floor on the
+    # RAW root count before slicing.
+    validation_request = (
+        request.model_copy(
+            update={
+                "max_records": max(
+                    request.max_records, CASCADE_LISTING_MIN_REPEATED_RECORDS
+                )
+            }
+        )
+        if is_listing
+        else request
+    )
+    execution = execute_recipe(validation_request, recipe)
     if execution.failure_code is not None or not execution.records:
         return _failure(
             execution.failure_code or "recipe_binding_not_found",
             execution.detail or "recipe did not re-ground on the page",
         )
     # Finding 7: a listing recipe must ground a genuine multi-record set, not a
-    # lone card. Enforce the min-repeated-records floor on the grounded roots.
+    # lone card. The floor is enforced on the RAW grounded roots (the executor
+    # slices only after ``_check_record_root_minimum``), so a two-card grid
+    # compiled with ``max_records=1`` still validates.
     if is_listing and len(execution.records) < CASCADE_LISTING_MIN_REPEATED_RECORDS:
         return _failure(
             "recipe_cardinality_changed",

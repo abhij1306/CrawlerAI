@@ -112,6 +112,29 @@ async def test_grounded_listing_recipe_replays_every_card() -> None:
     ]
 
 
+@pytest.mark.asyncio
+async def test_two_card_listing_compiles_with_max_records_one() -> None:
+    # Finding 4: the executor slices grounded roots to ``max_records``. A genuine
+    # two-card grid compiled with ``max_records=1`` must still compile — the
+    # compiler validates the RAW grounded roots, not the sliced output.
+    response = (
+        '{"record_root": "/html[1]/body[1]/ul[1]/li[1]", "fields": {'
+        '"title": "/html[1]/body[1]/ul[1]/li[1]/a[1]/h3[1]", '
+        '"price": "/html[1]/body[1]/ul[1]/li[1]/span[1]"}}'
+    )
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_LISTING,
+        _LISTING_HTML,
+        "https://shop.test/c/shoes",
+        max_records=1,
+        requested_fields=("title", "price"),
+    )
+    result = await _compile(request, Surface.ECOMMERCE_LISTING, response)
+
+    assert result.failure_code is None
+    assert result.candidate is not None
+
+
 _JOB_LISTING_HTML = (
     "<html><body><ul>"
     '<li class="job"><a class="t" href="/jobs/1">Engineer</a>'
