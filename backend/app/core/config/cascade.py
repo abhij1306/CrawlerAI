@@ -69,6 +69,13 @@ CASCADE_JOB_LISTING_ENABLED: Final[bool] = True
 # them.
 CASCADE_ECOMMERCE_DETAIL_ENABLED: Final[bool] = True
 
+# Independent per-surface switch that routes the job-detail adapter through the
+# deterministic detail cascade seam (structured JSON-LD floor -> DOM harvest)
+# instead of the legacy ``collect_job_detail`` inline harvest. Mirrors
+# ``CASCADE_ECOMMERCE_DETAIL_ENABLED`` so operators can toggle the
+# rearchitecture for job detail alone without affecting other surfaces.
+CASCADE_JOB_DETAIL_ENABLED: Final[bool] = True
+
 # LEARN-ONCE LLM tier master switch. Even when True, the tier only fires for a
 # crawl whose ``llm_enabled`` control is set; this flag lets the tier be
 # disabled globally (e.g. during eval-gated rollout) regardless of per-crawl
@@ -107,6 +114,13 @@ CASCADE_LEARN_ONCE_SURFACES: Final[tuple[str, ...]] = (
     "ecommerce_listing",
     "job_listing",
 )
+
+# Provider-retry budget for the single LEARN-ONCE compile call. "One model
+# call" must mean exactly one provider request, so the tier passes this value
+# (zero retries) to ``call_provider_with_retry`` rather than inheriting the
+# global ``provider_retry_max_retries`` default (>0), which would issue up to
+# ``max_retries + 1`` provider requests for a single learn attempt.
+CASCADE_LEARN_ONCE_PROVIDER_MAX_RETRIES: Final[int] = 0
 
 # Maximum number of flat-map entries handed to the model in one compile call.
 # The scoped flat map is already token-capped upstream; this is a hard belt-and-
@@ -275,6 +289,7 @@ __all__ = [
     "CASCADE_ECOMMERCE_LISTING_ENABLED",
     "CASCADE_JOB_LISTING_ENABLED",
     "CASCADE_ECOMMERCE_DETAIL_ENABLED",
+    "CASCADE_JOB_DETAIL_ENABLED",
     "CASCADE_LEARN_ONCE_TIER_ENABLED",
     "CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL",
     "CASCADE_RECIPE_SCOPE_KEY",
