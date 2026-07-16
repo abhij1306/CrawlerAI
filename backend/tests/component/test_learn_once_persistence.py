@@ -11,9 +11,10 @@ from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface, listing_schema, surface_spec
 from app.models.extraction_memory import ExtractionOperatorLabel
 from app.persistence.extraction_memory import (
-    build_executable_release_payload,
+    build_release_payload,
     note_recipe_drift_failure,
     persist_learned_recipe,
+    reset_recipe_drift,
 )
 
 pytestmark = pytest.mark.component
@@ -80,7 +81,7 @@ async def test_persisted_recipe_builds_release_that_select_active_recipe_matches
     assert template.route_pattern == route_pattern
     assert stored.kind == "executable_recipe"
 
-    payload = await build_executable_release_payload(
+    payload = await build_release_payload(
         db_session, domain=domain, surface=_SURFACE_VALUE
     )
     # release.v2 shape carries the top-level discriminators select_active_recipe
@@ -88,7 +89,7 @@ async def test_persisted_recipe_builds_release_that_select_active_recipe_matches
     assert payload["schema_version"] == "release.v2"
     assert payload["surface"] == _SURFACE_VALUE
     assert len(payload["templates"]) == 1
-    assert payload["templates"][0]["compiled_recipe"]["schema_version"] == (
+    assert payload["templates"][0]["executable_recipe"]["schema_version"] == (
         "extraction_recipe.v2"
     )
 
@@ -132,7 +133,7 @@ async def test_persist_keeps_most_confident_recipe(db_session: AsyncSession) -> 
     )
     await db_session.commit()
 
-    release = await build_executable_release_payload(
+    release = await build_release_payload(
         db_session, domain=domain, surface=_SURFACE_VALUE
     )
     assert release["templates"][0]["confidence"] == 0.9
@@ -197,7 +198,7 @@ async def test_drift_suspends_recipe_after_threshold(db_session: AsyncSession) -
     await db_session.commit()
 
     # Once suspended, the executable release no longer offers the recipe.
-    payload = await build_executable_release_payload(
+    payload = await build_release_payload(
         db_session, domain=domain, surface=_SURFACE_VALUE
     )
     assert payload["templates"] == []
@@ -212,14 +213,17 @@ async def test_operator_owned_scope_is_never_auto_suspended(
     fingerprint = stable_id(
         "learn-once-template", domain, _SURFACE_VALUE, route_pattern
     )
-    await _persist_recipe(
+    template, _recipe = await _persist_recipe(
         db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
     )
+    # Ownership is scoped to the EXACT template with an explicit ownership label
+    # kind (MEDIUM 13): a generic domain/surface label would not exempt.
     db_session.add(
         ExtractionOperatorLabel(
             label_kind="review_promotion",
             domain=domain,
             surface=_SURFACE_VALUE,
+            template_id=template.id,
         )
     )
     await db_session.commit()
@@ -238,7 +242,102 @@ async def test_operator_owned_scope_is_never_auto_suspended(
         )
     await db_session.commit()
 
-    payload = await build_executable_release_payload(
+    payload = await build_release_payload(
+        db_session, domain=domain, surface=_SURFACE_VALUE
+    )
+    assert len(payload["templates"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_unrelated_operator_label_does_not_exempt(
+    db_session: AsyncSession,
+) -> None:
+    # A label attached to a DIFFERENT template (or none) must not exempt this
+    # recipe from drift self-heal (MEDIUM 13 — exact-template scoping).
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+    db_session.add(
+        ExtractionOperatorLabel(
+            label_kind="review_promotion",
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            template_id=None,
+        )
+    )
+    await db_session.commit()
+
+    outcomes = [
+        await note_recipe_drift_failure(
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
+        )
+        for _ in range(3)
+    ]
+    await db_session.commit()
+    assert outcomes == [False, False, True]
+
+
+@pytest.mark.asyncio
+async def test_successful_replay_resets_consecutive_drift(
+    db_session: AsyncSession,
+) -> None:
+    # HIGH 12: drift is CONSECUTIVE — a successful replay resets the counter so
+    # scattered, non-consecutive misses never suspend a mostly-working recipe.
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    await _persist_recipe(
+        db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
+    )
+    await db_session.commit()
+
+    # fail, fail, success (reset), fail, fail — never reaches 3 consecutive.
+    assert (
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+        is False
+    )
+    assert (
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+        is False
+    )
+    await reset_recipe_drift(
+        db_session, domain=domain, surface=_SURFACE_VALUE, route_pattern=route_pattern
+    )
+    assert (
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+        is False
+    )
+    assert (
+        await note_recipe_drift_failure(
+            db_session, domain=domain, surface=_SURFACE_VALUE,
+            route_pattern=route_pattern, threshold=3,
+        )
+        is False
+    )
+    await db_session.commit()
+
+    # Still active because the counter was reset mid-way.
+    payload = await build_release_payload(
         db_session, domain=domain, surface=_SURFACE_VALUE
     )
     assert len(payload["templates"]) == 1

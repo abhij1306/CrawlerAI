@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config.extraction_memory import EXTRACTION_EXECUTABLE_RELEASE_VERSION
+from app.core.config.extraction_memory import EXTRACTION_RELEASE_VERSION
 from app.core.extraction_memory.recipe_compiler import compile_recipe
 from app.core.extraction_memory.templates import normalize_route
 from app.crawl.pipeline.learn_once import should_attempt_learn_once
@@ -57,14 +57,14 @@ async def _learn_recipe(request, response, calls):
 
 def _release_snapshot(recipe, *, surface: str, url: str) -> dict[str, object]:
     return {
-        "schema_version": EXTRACTION_EXECUTABLE_RELEASE_VERSION,
+        "schema_version": EXTRACTION_RELEASE_VERSION,
         "surface": surface,
         "templates": [
             {
                 "template_id": 1,
                 "route_pattern": normalize_route(url, surface),
                 "status": "active",
-                "compiled_recipe": recipe.model_dump(mode="json"),
+                "executable_recipe": recipe.model_dump(mode="json"),
             }
         ],
     }

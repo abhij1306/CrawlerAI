@@ -417,11 +417,13 @@ def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None
     )
     if template is None:
         return None
-    compiled_recipe = template.get("compiled_recipe")
-    if not isinstance(compiled_recipe, dict):
+    # Executable recipes live under their own key in the unified release payload,
+    # kept distinct from the selector/contract ``compiled_recipe`` block.
+    executable_recipe = template.get("executable_recipe")
+    if not isinstance(executable_recipe, dict):
         return None
     try:
-        recipe = ExtractionRecipe.model_validate(compiled_recipe)
+        recipe = ExtractionRecipe.model_validate(executable_recipe)
     except (TypeError, ValueError):
         return None
     execution = execute_recipe(request, recipe)
