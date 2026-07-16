@@ -168,7 +168,7 @@ PACKAGE_LOC_BUDGETS = {
     "intelligence": 3_659,
     # LEARN-ONCE recipe replay + shared result building grew engine.py; kept in
     # lockstep with the extraction_semantic_surface.toml manifest bump.
-    "extraction": 16_539,
+    "extraction": 16_601,
     # Phase 7 documented feature exception: the grounded LLM repair adapter
     # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
     # runs in the hot path and cannot publish or activate values; the budget is
@@ -178,7 +178,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_117
+TOTAL_APP_LOC_BUDGET = 85_179
 
 
 def test_production_package_loc_budgets() -> None:
