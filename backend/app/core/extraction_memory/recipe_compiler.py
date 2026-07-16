@@ -373,38 +373,36 @@ def _record_root_css(
     return (css or None), "many"
 
 
-def _repeated_root_css(path: str) -> str:
-    segments = [seg for seg in path.strip("/").split("/") if seg]
-    if not segments:
-        return ""
+def _path_segments(path: str) -> list[str]:
+    return [seg for seg in path.strip("/").split("/") if seg]
+
+
+def _segments_to_css(segments: list[str], *, drop_leaf_index: bool = False) -> str:
     parts: list[str] = []
+    last_index = len(segments) - 1
     for index, segment in enumerate(segments):
         tag, _, idx = segment.partition("[")
         idx = idx.rstrip("]")
         # Drop the positional index on the repeated (leaf) element so the root
         # selector matches every sibling card, not just the sample the model saw.
-        if index == len(segments) - 1 or not idx:
-            parts.append(tag)
-        else:
+        if idx and not (drop_leaf_index and index == last_index):
             parts.append(f"{tag}:nth-of-type({idx})")
+        else:
+            parts.append(tag)
     return " > ".join(parts)
 
 
+def _repeated_root_css(path: str) -> str:
+    return _segments_to_css(_path_segments(path), drop_leaf_index=True)
+
+
 def _relative_css(root_path: str, absolute_path: str) -> str | None:
-    root_segments = [seg for seg in root_path.strip("/").split("/") if seg]
-    abs_segments = [seg for seg in absolute_path.strip("/").split("/") if seg]
+    root_segments = _path_segments(root_path)
+    abs_segments = _path_segments(absolute_path)
     if len(abs_segments) <= len(root_segments):
         return None
-    if abs_segments[: len(root_segments)] != root_segments:
-        # Fall back to matching by tag chain when the sample index differs.
-        pass
     tail = abs_segments[len(root_segments):]
-    parts: list[str] = []
-    for segment in tail:
-        tag, _, idx = segment.partition("[")
-        idx = idx.rstrip("]")
-        parts.append(f"{tag}:nth-of-type({idx})" if idx else tag)
-    return " > ".join(parts) if parts else None
+    return _segments_to_css(tail) or None
 
 
 def _common_ancestor(paths: tuple[str, ...]) -> str:
@@ -425,13 +423,7 @@ def _common_ancestor(paths: tuple[str, ...]) -> str:
 
 
 def _absolute_css(path: str) -> str:
-    segments = [seg for seg in path.strip("/").split("/") if seg]
-    parts: list[str] = []
-    for segment in segments:
-        tag, _, idx = segment.partition("[")
-        idx = idx.rstrip("]")
-        parts.append(f"{tag}:nth-of-type({idx})" if idx else tag)
-    return " > ".join(parts)
+    return _segments_to_css(_path_segments(path))
 
 
 def _field_binding(

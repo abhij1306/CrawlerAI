@@ -20,7 +20,7 @@ post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 17496
+physical_loc_budget = 17459
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -35,7 +35,7 @@ default_module_cyclomatic_complexity_budget = 20
 "collectors/url.py" = 107
 "contracts.py" = 1024
 "documents.py" = 287
-"engine.py" = 1099
+"engine.py" = 1062
 "entities.py" = 932
 "field_states.py" = 42
 "jobs.py" = 510

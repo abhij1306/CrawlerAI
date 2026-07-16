@@ -230,18 +230,11 @@ def test_active_recipe_selection_rejects_legacy_release() -> None:
 
 
 def test_diagnosis_exposes_recipe_execution_causally() -> None:
-    candidate = RecipeCandidate(
-        candidate_id="candidate-1",
-        recipe=_recipe(),
-        origin="deterministic",
-        grounded_paths=("dom:#product",),
-    )
     result = ExtractionResult(
         surface="ecommerce_detail",
         bundle_id="bundle-1",
         records=(),
         verdict="empty",
-        recipe_candidate=candidate,
         recipe_execution=RecipeExecutionResult(
             recipe_id="recipe-1",
             failure_code="recipe_binding_not_found",
@@ -273,12 +266,6 @@ def test_diagnosis_exposes_recipe_execution_causally() -> None:
 
     assert diagnosis["recipe"] == {
         "selected": False,
-        "candidate": {
-            "candidate_id": "candidate-1",
-            "origin": "deterministic",
-            "recipe_id": "recipe-1",
-            "grounded_path_count": 1,
-        },
         "execution": {
             "recipe_id": "recipe-1",
             "failure_code": "recipe_binding_not_found",

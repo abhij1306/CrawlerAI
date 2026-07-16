@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -119,17 +119,6 @@ class RecipeCandidate(FrozenRecipeModel):
     grounded_paths: tuple[str, ...] = ()
 
 
-class RecipeBindingProposal(FrozenRecipeModel):
-    proposal_id: str = Field(min_length=1)
-    artifact_id: str = Field(min_length=1)
-    field: str = Field(min_length=1)
-    source: RecipeSource
-    path: str = Field(min_length=1)
-    attribute: str | None = None
-    confidence: float = Field(ge=0.0, le=1.0)
-    grounding_match_type: Literal["exact", "normalized"]
-
-
 class BindingOutcome(FrozenRecipeModel):
     binding_id: str
     status: Literal["resolved", "missing", "rejected", "join_failed"]
@@ -150,15 +139,9 @@ class DiscoveryResult(FrozenRecipeModel):
     candidate: RecipeCandidate | None = None
     failure_code: RecipeFailureCode | None = None
     detail: str | None = None
-    collector_diagnostics: tuple[dict[str, Any], ...] = ()
-    finding_diagnostics: tuple[dict[str, Any], ...] = ()
 
     @model_validator(mode="after")
     def candidate_or_failure(self) -> DiscoveryResult:
         if (self.candidate is None) == (self.failure_code is None):
             raise ValueError("discovery returns exactly one candidate or failure")
         return self
-
-
-class DiscoveryCompiler(Protocol):
-    def compile(self, capture_request: object) -> DiscoveryResult: ...

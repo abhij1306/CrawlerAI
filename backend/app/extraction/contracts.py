@@ -7,10 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validat
 from app.core.config import field_mappings
 from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
-from app.core.extraction_memory.recipe_contracts import (
-    RecipeCandidate,
-    RecipeExecutionResult,
-)
+from app.core.extraction_memory.recipe_contracts import RecipeExecutionResult
 from app.extraction.surfaces import Surface
 
 JsonValue = Any
@@ -1031,5 +1028,4 @@ class ExtractionResult(FrozenModel):
     )
     failure_classifications: tuple[FailureClassification, ...] = ()
     diagnostics: DiagnosticSummary = Field(default_factory=DiagnosticSummary)
-    recipe_candidate: RecipeCandidate | None = Field(default=None, exclude=True)
     recipe_execution: RecipeExecutionResult | None = None

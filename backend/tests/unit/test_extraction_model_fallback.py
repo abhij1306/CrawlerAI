@@ -12,7 +12,11 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.engine import extract
-from app.extraction.model_runtime import RuntimeCompactPage, _normalize_source_value
+from app.extraction.model_runtime import (
+    RuntimeCompactPage,
+    _normalize_source_value,
+    run_model_fallback,
+)
 from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import Surface
 
@@ -156,46 +160,42 @@ def test_deterministic_success_never_builds_or_invokes_model() -> None:
 
 
 def test_missing_or_unapproved_artifact_disables_fallback_cleanly() -> None:
-    adapter = MustNotRunAdapter()
-    result = extract(
+    # With no approved artifact in the frozen snapshot the runtime fallback is a
+    # clean no-op: it never touches the adapter and reports ``disabled``.
+    fallback = run_model_fallback(
         _request("<main><span href='/p/trail-shoe'>Trail Shoe</span></main>"),
-        model_adapter=adapter,
+        MustNotRunAdapter(),
     )
 
-    assert result.records == ()
-    assert result.diagnostics.model_outcome == "disabled"
-    assert result.metrics.universal_model_invocation_count == 0
-    assert result.failure_classifications[0].code != "model_service_failure"
+    assert fallback.outcome == "disabled"
+    assert fallback.invoked is False
+    assert fallback.evidence == ()
+    assert fallback.failure_code is None
 
 
-def test_grounded_model_evidence_reenters_normal_resolve_and_publish() -> None:
+def test_grounded_model_evidence_is_source_grounded() -> None:
     adapter = GroundedListingAdapter()
-    result = extract(
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
-        model_adapter=adapter,
+        adapter,
     )
 
     assert adapter.calls == 1
-    assert [row["title"] for row in result.records] == ["Trail Shoe"]
-    assert result.records[0]["url"] == "https://shop.test/p/trail-shoe"
+    assert fallback.outcome == "produced_evidence"
+    assert fallback.invoked is True
+    assert fallback.representation_built is True
+    assert fallback.ungrounded_rejection_count == 0
     title_evidence = next(
         row
-        for row in result.evidence
+        for row in fallback.evidence
         if row.collector_id == "universal_model" and row.fact_type == "product.title"
     )
-    assert (
-        title_evidence.evidence_id
-        in result.records[0]["_lineage"]["title"]["evidence_ids"]
-    )
-    assert result.diagnostics.extractor_tier == "ml"
-    assert result.diagnostics.model_outcome == "produced_evidence"
-    assert result.metrics.universal_representation_build_count == 1
-    assert result.metrics.universal_model_invocation_count == 1
-    assert result.metrics.universal_model_cost_usd == 0.001
-    assert result.metrics.universal_model_cost_per_1000_pages == 1.0
+    assert title_evidence.value == "Trail Shoe"
+    assert any(row.fact_type == "product.url" for row in fallback.evidence)
+    assert fallback.cost_usd == 0.001
 
 
 def test_ungrounded_model_value_is_rejected_before_resolution() -> None:
@@ -207,34 +207,30 @@ def test_ungrounded_model_value_is_rejected_before_resolution() -> None:
             )
             return result.model_copy(update={"predictions": (bad,)})
 
-    result = extract(
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
-        model_adapter=UngroundedAdapter(),
+        UngroundedAdapter(),
     )
 
-    assert result.records == ()
-    assert all(row.collector_id != "universal_model" for row in result.evidence)
-    assert result.metrics.universal_model_ungrounded_rejection_count == 1
-    assert result.metrics.universal_model_ungrounded_rejection_rate == 1.0
+    assert all(row.value != "Fabricated Product" for row in fallback.evidence)
+    assert fallback.ungrounded_rejection_count == 1
 
 
-def test_model_timeout_degrades_to_classified_zero_record_failure() -> None:
-    result = extract(
+def test_model_timeout_degrades_to_classified_service_failure() -> None:
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
-        model_adapter=TimeoutAdapter(),
+        TimeoutAdapter(),
     )
 
-    assert result.records == ()
-    assert result.diagnostics.model_outcome == "timed_out"
-    assert result.failure_classifications[0].code != "model_service_failure"
-    assert result.failure_classifications[-1].code == "model_service_failure"
-    assert result.metrics.universal_model_service_failure_count == 1
+    assert fallback.outcome == "timed_out"
+    assert fallback.evidence == ()
+    assert fallback.failure_code == "model_service_failure"
 
 
 def test_blocking_model_adapter_is_cut_off_at_runtime_boundary() -> None:
@@ -243,17 +239,16 @@ def test_blocking_model_adapter_is_cut_off_at_runtime_boundary() -> None:
     assert isinstance(artifact, dict)
     artifact["timeout_ms"] = 5
 
-    result = extract(
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=snapshot,
         ),
-        model_adapter=BlockingAdapter(),
+        BlockingAdapter(),
     )
 
-    assert result.records == ()
-    assert result.diagnostics.model_outcome == "timed_out"
-    assert result.failure_classifications[-1].code == "model_service_failure"
+    assert fallback.outcome == "timed_out"
+    assert fallback.failure_code == "model_service_failure"
 
 
 def test_model_budget_overrun_discards_all_predictions() -> None:
@@ -262,17 +257,16 @@ def test_model_budget_overrun_discards_all_predictions() -> None:
             result = super().predict(page, artifact, timeout_ms=timeout_ms)
             return result.model_copy(update={"memory_mb": 256.0})
 
-    result = extract(
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
-        model_adapter=OverBudgetAdapter(),
+        OverBudgetAdapter(),
     )
 
-    assert result.records == ()
-    assert result.diagnostics.model_outcome == "budget_limited"
-    assert all(row.collector_id != "universal_model" for row in result.evidence)
+    assert fallback.outcome == "budget_limited"
+    assert fallback.evidence == ()
 
 
 def test_model_result_identity_mismatch_fails_closed() -> None:
@@ -281,19 +275,17 @@ def test_model_result_identity_mismatch_fails_closed() -> None:
             result = super().predict(page, artifact, timeout_ms=timeout_ms)
             return result.model_copy(update={"artifact_version": "wrong-version"})
 
-    result = extract(
+    fallback = run_model_fallback(
         _request(
             "<main><span href='/p/trail-shoe'>Trail Shoe</span></main>",
             runtime_snapshot=_approved_snapshot(),
         ),
-        model_adapter=WrongIdentityAdapter(),
+        WrongIdentityAdapter(),
     )
 
-    assert result.records == ()
-    assert result.diagnostics.model_outcome == "failed"
-    assert result.failure_classifications[0].code != "model_service_failure"
-    assert result.failure_classifications[-1].code == "model_service_failure"
-    assert all(row.collector_id != "universal_model" for row in result.evidence)
+    assert fallback.outcome == "failed"
+    assert fallback.evidence == ()
+    assert fallback.failure_code == "model_service_failure"
 
 
 def test_attribute_spelling_mutation_stays_deterministic_and_model_free() -> None:

@@ -216,23 +216,12 @@ def _recipe_section(extraction_result: ExtractionResult) -> dict[str, object]:
     """Expose the one recipe path that caused this result without raw values."""
 
     execution = getattr(extraction_result, "recipe_execution", None)
-    candidate = getattr(extraction_result, "recipe_candidate", None)
     stages, _ = _bounded(
         getattr(extraction_result, "stage_outcomes", ()), _STAGES_LIMIT
     )
     return {
         "selected": any(
             row.stage == "recipe_select" and row.outcome == "ran" for row in stages
-        ),
-        "candidate": (
-            {
-                "candidate_id": candidate.candidate_id,
-                "origin": candidate.origin,
-                "recipe_id": candidate.recipe.recipe_id,
-                "grounded_path_count": len(candidate.grounded_paths),
-            }
-            if candidate is not None
-            else None
         ),
         "execution": (
             {

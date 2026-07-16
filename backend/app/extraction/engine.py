@@ -147,7 +147,6 @@ def extract(
         stage_outcomes.extend(attempt.stage_outcomes)
         extractor_tier = "deterministic"
 
-    model_fallback: ModelFallbackResult | None = None
     if extractor_tier == "recipe" and attempt.records:
         sentinel_observations = _sentinel_observations(
             request,
@@ -164,38 +163,6 @@ def extract(
                     detail=observation.state,
                 )
             )
-    if _needs_contract_fallback(attempt.verdict):
-        model_fallback = run_model_fallback(request, model_adapter)
-        model_outcome = _model_collector_outcome(model_fallback)
-        stage_outcomes.append(
-            StageOutcome(
-                stage="model_fallback",
-                outcome=model_outcome.outcome,
-                detail=model_outcome.detail,
-            )
-        )
-        attempt = replace(
-            attempt,
-            harvest=attempt.harvest.model_copy(
-                update={
-                    "collector_outcomes": (
-                        *attempt.harvest.collector_outcomes,
-                        model_outcome,
-                    )
-                }
-            ),
-        )
-        if model_fallback.evidence:
-            model_harvest = attempt.harvest.model_copy(
-                update={
-                    "evidence": (*attempt.harvest.evidence, *model_fallback.evidence),
-                }
-            )
-            attempt = _execute_attempt(
-                request, adapter, model_harvest, stage_prefix="model_"
-            )
-            stage_outcomes.extend(attempt.stage_outcomes)
-            extractor_tier = "ml"
 
     return _build_result(
         request,
@@ -203,7 +170,6 @@ def extract(
         stage_outcomes=tuple(stage_outcomes),
         extractor_tier=extractor_tier,
         manifest_template=compiled_template,
-        model_fallback=model_fallback,
         sentinel_observations=sentinel_observations,
     )
 
@@ -420,11 +386,6 @@ def _execute_attempt(
         publish_duration_ms=publish_duration_ms,
         stage_outcomes=tuple(stage_outcomes),
     )
-
-
-def _needs_contract_fallback(verdict: Verdict) -> bool:
-    # Review is usable output and does not require model fallback.
-    return verdict in {"empty", "partial"}
 
 
 def _recipe_fields_suppressed(
