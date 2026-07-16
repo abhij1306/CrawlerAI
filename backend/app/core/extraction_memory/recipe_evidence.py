@@ -13,7 +13,20 @@ from __future__ import annotations
 
 from typing import Literal
 
-from app.core.config import field_mappings
+from app.core.config.field_mappings import (
+    ASSET_IMAGE_URL_FACT_TYPE,
+    OFFER_AVAILABILITY_FACT_TYPE,
+    OFFER_CURRENCY_FACT_TYPE,
+    OFFER_ORIGINAL_PRICE_FACT_TYPE,
+    OFFER_PRICE_FACT_TYPE,
+    PRODUCT_BRAND_FACT_TYPE,
+    PRODUCT_DESCRIPTION_FACT_TYPE,
+    PRODUCT_GTIN_FACT_TYPE,
+    PRODUCT_MPN_FACT_TYPE,
+    PRODUCT_SKU_FACT_TYPE,
+    PRODUCT_TITLE_FACT_TYPE,
+    PRODUCT_URL_FACT_TYPE,
+)
 from app.core.extraction_memory.recipe_contracts import (
     ExtractionRecipe,
     RecipeBinding,
@@ -33,6 +46,51 @@ _ENTITY_BY_PREFIX: dict[str, Literal["product", "offer", "asset", "job"]] = {
     "asset.": "asset",
     "job.": "job",
     "product.": "product",
+}
+
+# LEARN-ONCE recipe replay: map a recipe record field name to the normal
+# evidence fact_type per surface. Recipe execution values are converted to
+# ordinary Evidence carrying these fact_types and then flow through the SAME
+# adapter Resolve -> Publish authority as deterministic evidence (CRITICAL 3).
+RECIPE_FIELD_FACT_TYPES_BY_SURFACE: dict[str, dict[str, str]] = {
+    "ecommerce_detail": {
+        "title": PRODUCT_TITLE_FACT_TYPE,
+        "url": PRODUCT_URL_FACT_TYPE,
+        "brand": PRODUCT_BRAND_FACT_TYPE,
+        "category": "product.category",
+        "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+        "sku": PRODUCT_SKU_FACT_TYPE,
+        "mpn": PRODUCT_MPN_FACT_TYPE,
+        "gtin": PRODUCT_GTIN_FACT_TYPE,
+        "price": OFFER_PRICE_FACT_TYPE,
+        "currency": OFFER_CURRENCY_FACT_TYPE,
+        "original_price": OFFER_ORIGINAL_PRICE_FACT_TYPE,
+        "availability": OFFER_AVAILABILITY_FACT_TYPE,
+        "image_url": ASSET_IMAGE_URL_FACT_TYPE,
+    },
+    "ecommerce_listing": {
+        "title": PRODUCT_TITLE_FACT_TYPE,
+        "url": PRODUCT_URL_FACT_TYPE,
+        "price": OFFER_PRICE_FACT_TYPE,
+        "image_url": ASSET_IMAGE_URL_FACT_TYPE,
+    },
+    "job_listing": {
+        "title": "job.title",
+        "url": "job.url",
+        "apply_url": "job.apply_url",
+        "company": "job.company",
+        "location": "job.location",
+    },
+    "job_detail": {
+        "title": "job.title",
+        "url": "job.url",
+        "apply_url": "job.apply_url",
+        "company": "job.company",
+        "location": "job.location",
+        "job_type": "job.type",
+        "posted_date": "job.posted_date",
+        "description": "job.description",
+    },
 }
 
 # recipe binding source -> evidence locator kind.
@@ -61,7 +119,7 @@ def recipe_execution_evidence(
     surface admissible facts, never arbitrary keys.
     """
 
-    fact_types = field_mappings.RECIPE_FIELD_FACT_TYPES_BY_SURFACE.get(
+    fact_types = RECIPE_FIELD_FACT_TYPES_BY_SURFACE.get(
         request.surface.value, {}
     )
     field_bindings = _field_bindings(recipe)

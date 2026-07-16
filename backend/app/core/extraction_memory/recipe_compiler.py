@@ -161,10 +161,14 @@ def _requested_field_names(
     descriptors = CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS.get(
         surface_spec.domain, {}
     )
-    identity_field = "apply_url" if "apply_url" in descriptors and (
-        surface_spec.domain == "jobs"
-    ) else "url"
-    required = ["title", identity_field]
+    # Keep the prompted required identity consistent with _identity_field, which
+    # keys on is_listing: a listing record is always identified by its own
+    # ``url`` (apply_url is a normal field there). A detail surface may use
+    # either, so prompt for both and let _identity_field pick post-grounding.
+    is_listing = listing_schema is not None
+    required = ["title", "url"]
+    if not is_listing and "apply_url" in descriptors:
+        required.append("apply_url")
     requested = [
         "image_url" if field == "image" else str(field)
         for field in request.requested_fields

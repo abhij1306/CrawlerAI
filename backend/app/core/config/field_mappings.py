@@ -376,51 +376,6 @@ ECOMMERCE_PUBLIC_FIELD_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
     "image_url": ASSET_IMAGE_URL_FACT_TYPE,
 }
-# LEARN-ONCE recipe replay: map a recipe record field name to the normal
-# evidence fact_type per surface. Recipe execution values are converted to
-# ordinary Evidence carrying these fact_types and then flow through the SAME
-# adapter Resolve -> Publish authority as deterministic evidence (CRITICAL 3).
-RECIPE_FIELD_FACT_TYPES_BY_SURFACE: dict[str, dict[str, str]] = {
-    "ecommerce_detail": {
-        "title": PRODUCT_TITLE_FACT_TYPE,
-        "url": PRODUCT_URL_FACT_TYPE,
-        "brand": PRODUCT_BRAND_FACT_TYPE,
-        "category": "product.category",
-        "description": PRODUCT_DESCRIPTION_FACT_TYPE,
-        "sku": PRODUCT_SKU_FACT_TYPE,
-        "mpn": PRODUCT_MPN_FACT_TYPE,
-        "gtin": PRODUCT_GTIN_FACT_TYPE,
-        "price": OFFER_PRICE_FACT_TYPE,
-        "currency": OFFER_CURRENCY_FACT_TYPE,
-        "original_price": OFFER_ORIGINAL_PRICE_FACT_TYPE,
-        "availability": OFFER_AVAILABILITY_FACT_TYPE,
-        "image_url": ASSET_IMAGE_URL_FACT_TYPE,
-    },
-    "ecommerce_listing": {
-        "title": PRODUCT_TITLE_FACT_TYPE,
-        "url": PRODUCT_URL_FACT_TYPE,
-        "price": OFFER_PRICE_FACT_TYPE,
-        "image_url": ASSET_IMAGE_URL_FACT_TYPE,
-    },
-    "job_listing": {
-        "title": "job.title",
-        "url": "job.url",
-        "apply_url": "job.apply_url",
-        "company": "job.company",
-        "location": "job.location",
-    },
-    "job_detail": {
-        "title": "job.title",
-        "url": "job.url",
-        "apply_url": "job.apply_url",
-        "company": "job.company",
-        "location": "job.location",
-        "job_type": "job.type",
-        "posted_date": "job.posted_date",
-        "description": "job.description",
-    },
-}
-
 ECOMMERCE_TYPED_STRING_FACT_TYPES = frozenset(
     {
         ASSET_IMAGE_URL_FACT_TYPE,

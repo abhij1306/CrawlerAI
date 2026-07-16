@@ -160,6 +160,38 @@ async def test_job_listing_identity_is_url_and_apply_url_stays_scalar() -> None:
 
 
 @pytest.mark.asyncio
+async def test_job_listing_url_required_even_when_not_requested() -> None:
+    # requested_fields omits "url", but a job-listing record is identified by
+    # url, so the compiler must still prompt for and require it (consistency
+    # between _requested_field_names and _identity_field). The model grounds it
+    # and the recipe compiles with url identity.
+    response = (
+        '{"record_root": "/html[1]/body[1]/ul[1]/li[1]", "fields": {'
+        '"title": "/html[1]/body[1]/ul[1]/li[1]/a[1]", '
+        '"url": "/html[1]/body[1]/ul[1]/li[1]/a[1]", '
+        '"apply_url": "/html[1]/body[1]/ul[1]/li[1]/a[2]"}}'
+    )
+    request = fixture_request_from_inputs(
+        Surface.JOB_LISTING,
+        _JOB_LISTING_HTML,
+        "https://jobs.test/careers",
+        max_records=10,
+        requested_fields=("title", "apply_url"),
+    )
+    result = await _compile(request, Surface.JOB_LISTING, response)
+
+    assert result.failure_code is None
+    assert result.candidate is not None
+    recipe = result.candidate.recipe
+    assert [binding.field for binding in recipe.identity] == ["url"]
+    execution = execute_recipe(request, recipe)
+    assert [row["url"] for row in execution.records] == [
+        "https://jobs.test/jobs/1",
+        "https://jobs.test/jobs/2",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_optional_ungrounded_binding_is_dropped() -> None:
     html = "<html><body><main><h1>Shoe</h1><a href='/p/1'>l</a></main></body></html>"
     response = (
