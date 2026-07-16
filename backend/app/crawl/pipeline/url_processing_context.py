@@ -24,6 +24,10 @@ class URLProcessingContext:
     requested_fields: list[str] = field(default_factory=list)
     surface: str = ""
     browser_escalation_count: int = 0
+    # Per-URL LEARN-ONCE latch (finding 5): learning is attempted at most once per
+    # URL across the HTTP pass and any browser retry, and only after the final
+    # attempt. Set the first time ``_maybe_learn_once`` actually attempts learning.
+    learn_once_attempted: bool = False
 
 
 @dataclass(slots=True)

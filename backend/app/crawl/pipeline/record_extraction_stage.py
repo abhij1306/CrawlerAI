@@ -5,7 +5,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.acquisition.acquirer import PageAcquisitionResult
+from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty
@@ -111,6 +111,24 @@ async def _extract_records_for_acquisition(
     return result, selector_rules
 
 
+def _browser_retry_pending(
+    acquisition_result: PageAcquisitionResult, result: ExtractionResult
+) -> bool:
+    """True when a browser retry will still run, so learning must be deferred.
+
+    Finding 5: learning fires only after the FINAL attempt. When the result
+    requests a browser retry and the browser has not been attempted yet, a retry
+    pass will re-run extraction; the post-browser pass is the single learn attempt.
+    """
+
+    retry_request = result.retry_request
+    if retry_request is None or not retry_request.required:
+        return False
+    return not PageEvidence.from_acquisition_result(
+        acquisition_result
+    ).browser_attempted
+
+
 async def _maybe_learn_once(
     context: _URLProcessingContext,
     *,
@@ -126,6 +144,17 @@ async def _maybe_learn_once(
     """
 
     from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
+
+    # Finding 5: at most one learn attempt per URL. The same context threads
+    # through the browser retry, so short-circuit once learning has been attempted.
+    if context.learn_once_attempted:
+        return
+    # Learn only after the FINAL attempt: if a browser retry is still pending, the
+    # post-browser pass is the single learn attempt (and, with finding 6, the
+    # HTTP-only first pass would not call the model anyway).
+    if _browser_retry_pending(acquisition_result, result):
+        return
+    context.learn_once_attempted = True
 
     runtime_snapshot = await _load_runtime_snapshot(context)
     request = request_from_acquisition_result(

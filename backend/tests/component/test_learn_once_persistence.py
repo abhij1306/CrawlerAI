@@ -341,3 +341,135 @@ async def test_successful_replay_resets_consecutive_drift(
         db_session, domain=domain, surface=_SURFACE_VALUE
     )
     assert len(payload["templates"]) == 1
+
+
+# --- Finding 5: one persisted recipe (not two) after a retry cycle -----------
+
+_LATCH_URL = "https://latch.example.invalid/products/trail-shoe-red"
+
+
+def _latch_acquisition_result(*, method: str):
+    from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
+    from app.acquisition.runtime_plan import AcquisitionIntent
+
+    return PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=0,
+            url=_LATCH_URL,
+            plan=AcquisitionIntent(surface=_SURFACE_VALUE),
+        ),
+        final_url=_LATCH_URL,
+        html=_DETAIL_HTML,
+        method=method,
+        status_code=200,
+        browser_diagnostics={"browser_attempted": method == "browser"},
+    )
+
+
+def _empty_result_with_retry(*, retry_required: bool):
+    from app.extraction.contracts import CapabilityRequest, ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    retry = (
+        CapabilityRequest(
+            required=True,
+            reason="empty_extraction",
+            required_artifacts=("rendered_html",),
+        )
+        if retry_required
+        else None
+    )
+    return ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        records=(),
+        verdict="empty",
+        retry_request=retry,
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_cycle_persists_exactly_one_recipe(
+    db_session: AsyncSession, test_user, monkeypatch
+) -> None:
+    # Finding 5: the HTTP pass (browser retry pending) must defer learning and
+    # the post-browser pass must be the single learn attempt, so a full retry
+    # cycle for one URL leaves exactly ONE persisted executable recipe — never
+    # two.
+    from sqlalchemy import func, select
+
+    from app.crawl.crud import create_crawl_run
+    from app.crawl.pipeline import learn_once, record_extraction_stage as stage
+    from app.crawl.pipeline.types import URLProcessingConfig
+    from app.crawl.pipeline.url_processing_context import URLProcessingContext
+    from app.models.extraction_memory import ExtractionRecipe
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": _LATCH_URL,
+            "surface": _SURFACE_VALUE,
+            "settings": {"respect_robots_txt": False, "llm_enabled": True},
+            "requested_fields": ["title", "price"],
+        },
+    )
+
+    calls: list[int] = []
+
+    async def _client(system_prompt: str, user_prompt: str) -> str:
+        calls.append(1)
+        return _RESPONSE
+
+    # Bind the compiler to a counting stub so a second learn attempt would be
+    # observable as a second model call and a second persisted recipe.
+    monkeypatch.setattr(
+        learn_once, "_model_client_for_run", lambda session, *, run_id: _client
+    )
+
+    context = URLProcessingContext(
+        session=db_session,
+        run=run,
+        url=_LATCH_URL,
+        config=URLProcessingConfig(max_records=10),
+        url_timeout_seconds=120.0,
+        started_at_monotonic=0.0,
+        requested_fields=["title", "price"],
+        surface=_SURFACE_VALUE,
+    )
+
+    # Pass 1 — HTTP acquisition, empty floors, browser retry still pending:
+    # learning is deferred (only the final attempt learns).
+    await stage._maybe_learn_once(
+        context,
+        acquisition_result=_latch_acquisition_result(method="curl_cffi"),
+        selector_rules=[],
+        result=_empty_result_with_retry(retry_required=True),
+    )
+    assert calls == []
+    assert context.learn_once_attempted is False
+
+    # Pass 2 — post-browser final attempt: the single learn attempt fires.
+    await stage._maybe_learn_once(
+        context,
+        acquisition_result=_latch_acquisition_result(method="browser"),
+        selector_rules=[],
+        result=_empty_result_with_retry(retry_required=False),
+    )
+    assert calls == [1]
+    assert context.learn_once_attempted is True
+
+    # Pass 3 — a repeat call threaded through the retry is latched off.
+    await stage._maybe_learn_once(
+        context,
+        acquisition_result=_latch_acquisition_result(method="browser"),
+        selector_rules=[],
+        result=_empty_result_with_retry(retry_required=False),
+    )
+    assert calls == [1]
+
+    # Exactly ONE executable recipe persisted for the whole retry cycle.
+    recipe_count = await db_session.scalar(
+        select(func.count()).select_from(ExtractionRecipe)
+    )
+    assert recipe_count == 1
