@@ -373,3 +373,37 @@ async def test_compiler_rejects_single_card_listing_page() -> None:
 
     assert result.candidate is None
     assert result.failure_code == "recipe_cardinality_changed"
+
+
+_SCOPED_FILLER = "price add to cart availability sku description " * 60
+_SCOPED_DETAIL_HTML = (
+    "<html><body>"
+    "<main>"
+    "<h1>Trail Shoe Red</h1>"
+    '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
+    '<span class="price">$129.99</span>'
+    f"<p>{_SCOPED_FILLER}</p>"
+    '<img src="/img/red.jpg">'
+    "</main>"
+    '<footer><span class="foot">Outside Region Title</span></footer>'
+    "</body></html>"
+)
+_FOOTER_PATH = "/html[1]/body[1]/footer[1]/span[1]"
+
+
+@pytest.mark.asyncio
+async def test_compiler_rejects_path_outside_scoped_map() -> None:
+    # Finding 9: the model may only ground onto paths in the scoped/capped map it
+    # was shown. A title path that is valid on the full page but lives outside the
+    # scoped region (a footer) must be rejected — no field grounds onto it, so the
+    # required title binding is missing and no recipe is returned.
+    response = (
+        '{"record_root": "", "fields": {'
+        f'"title": "{_FOOTER_PATH}", '
+        '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    )
+    request = _detail_request(html=_SCOPED_DETAIL_HTML)
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, response)
+
+    assert result.candidate is None
+    assert result.failure_code is not None

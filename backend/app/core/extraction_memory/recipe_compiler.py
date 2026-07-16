@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import OrderedDict
 from string import Template
 from typing import Any, Awaitable, Callable
 
@@ -46,7 +47,7 @@ from app.core.domain_utils import normalize_domain
 from app.core.shared.ids import stable_id
 from app.extraction.contracts import ExtractionRequest
 from app.extraction.documents import HtmlDocument
-from app.extraction.representation.flat_map import build_flat_map, build_scoped_flat_map
+from app.extraction.representation.flat_map import build_scoped_flat_map
 from app.extraction.surfaces import ListingSchema, Surface, SurfaceSpec
 
 # An injectable async model client: given system + user prompts, returns the raw
@@ -94,8 +95,13 @@ async def compile_recipe(
         )
     fields = _requested_field_names(request, surface_spec, listing_schema)
     scoped = build_scoped_flat_map(document)
-    flat_map = build_flat_map(document)
-    prompt = _render_user_prompt(request.surface, fields, scoped.flat_map)
+    # Finding 9: the grounding universe must be exactly the capped slice shown to
+    # the model, so a path the model never saw (beyond the cap or outside the
+    # scoped map) can never be "grounded" against the full page.
+    capped_flat_map = OrderedDict(
+        list(scoped.flat_map.items())[:CASCADE_RECIPE_COMPILER_MAX_FLAT_MAP_ENTRIES]
+    )
+    prompt = _render_user_prompt(request.surface, fields, capped_flat_map)
     raw = await model_client(CASCADE_RECIPE_COMPILER_SYSTEM_PROMPT, prompt)
     proposal = _parse_proposal(raw)
     if proposal is None:
@@ -106,7 +112,7 @@ async def compile_recipe(
         request,
         record_root_path=record_root_path,
         field_paths=field_paths,
-        flat_map_paths=tuple(flat_map.keys()),
+        flat_map_paths=tuple(capped_flat_map.keys()),
         document=document,
         is_listing=is_listing,
     )
