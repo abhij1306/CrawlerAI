@@ -7,6 +7,7 @@ import pytest
 
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
+from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.crawl.pipeline import extraction_loop
 from app.crawl.pipeline.retry import stage
 
@@ -32,7 +33,9 @@ def _result(method: str = "curl_cffi") -> PageAcquisitionResult:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_browser_retry_result_allows_only_one_escalation(monkeypatch) -> None:
+async def test_browser_retry_result_honors_configured_rung_bound(monkeypatch) -> None:
+    # The single-rung default (max_attempts=1) still caps escalation at one
+    # acquisition; the bound is the configured argument, not a hardcoded 1.
     calls = 0
 
     async def fake_build_request(context):
@@ -64,17 +67,70 @@ async def test_browser_retry_result_allows_only_one_escalation(monkeypatch) -> N
         context,
         fetched,
         retry_reason="empty_extraction",
+        max_attempts=1,
     )
     second = await stage._acquire_browser_retry_result(
         context,
         fetched,
         retry_reason="low_quality_extraction",
+        max_attempts=1,
     )
 
     assert first is not None
     assert second is None
     assert calls == 1
     assert context.browser_escalation_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
+    # With max_attempts == CAP the ladder acquires up to CAP browser rungs, and
+    # a browser-flagged result from an earlier rung does NOT block the next one.
+    calls = 0
+
+    async def fake_build_request(context):
+        return _request()
+
+    async def fake_acquire(request):
+        nonlocal calls
+        calls += 1
+        return _result("browser")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://example.com/item",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+    )
+    fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
+
+    results = []
+    for _ in range(CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP + 1):
+        results.append(
+            await stage._acquire_browser_retry_result(
+                context,
+                fetched,
+                retry_reason="empty_extraction",
+                max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP,
+            )
+        )
+        if results[-1] is not None:
+            fetched.acquisition_result = results[-1]
+
+    assert calls == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    assert context.browser_escalation_count == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    # The rung after the bump is exhausted -> honest stop.
+    assert results[-1] is None
 
 
 @pytest.mark.asyncio

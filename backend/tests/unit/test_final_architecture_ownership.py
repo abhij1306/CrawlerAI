@@ -157,7 +157,7 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 PACKAGE_LOC_BUDGETS = {
     "acquisition": 18_643,
-    "crawl": 9_601,
+    "crawl": 9_620,
     # LEARN-ONCE recipe tier adds the pure recipe primitives, compiler, evidence
     # bridge, and persistence release/drift logic under core/. Bumped once to
     # seat the new tier; the eval-gated cleanup slice consolidates it back down.
@@ -177,7 +177,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_219
+TOTAL_APP_LOC_BUDGET = 85_238
 
 
 def test_production_package_loc_budgets() -> None:
