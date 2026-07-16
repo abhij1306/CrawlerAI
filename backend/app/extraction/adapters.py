@@ -47,6 +47,7 @@ from app.extraction.jobs import (
 from app.core.config.cascade import (
     CASCADE_ECOMMERCE_DETAIL_ENABLED,
     CASCADE_ECOMMERCE_LISTING_ENABLED,
+    CASCADE_JOB_DETAIL_ENABLED,
     CASCADE_JOB_LISTING_ENABLED,
 )
 from app.extraction.cascade import run_detail_cascade, run_listing_cascade
@@ -212,6 +213,19 @@ def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
 
 
 def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
+    """Job-detail harvest: detail cascade when enabled, legacy otherwise.
+
+    Flag-ON routes through the SAME spec-driven detail cascade seam commerce
+    uses (structured JSON-LD JobPosting floor -> DOM floor), so JS-rendered job
+    pages are covered and structured+DOM fuse onto one subject. Job detail has
+    no commerce normalization, so the harvest is returned directly. Flag-OFF
+    calls the legacy inline collector. The flag is read at module scope so tests
+    can monkeypatch it.
+    """
+    if CASCADE_JOB_DETAIL_ENABLED:
+        return run_detail_cascade(
+            request, request.artifact_reader, _surface_spec(request)
+        )
     return _harvest_from_rows(
         Surface.JOB_DETAIL,
         tuple(collect_job_detail(request.capture, request.artifact_reader)),

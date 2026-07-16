@@ -19,6 +19,7 @@ from app.core.config.extraction_recipes import (
 )
 from app.extraction.collectors._helpers import (
     evidence,
+    html_doc,
     json_objects,
     loads_jsonish,
     text_without_non_text_descendants,
@@ -101,7 +102,7 @@ def wrong_surface_findings_for_job_listing(
 
 
 def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
-    doc = reader.document_store.html("html")
+    _, doc = html_doc(bundle, reader)
     structured = _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
     dom = _collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url)
     structured_subjects = {row.subject_id for row in structured}
@@ -112,6 +113,73 @@ def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Ev
             for row in dom
         ]
     return [*structured, *dom]
+
+
+class _JobStructuredCollector:
+    """Structured JSON-LD JobPosting floor as a cascade-shaped collector.
+
+    Reads the rendered-preferring document so JS-rendered job pages are covered,
+    then yields the JSON-LD JobPosting evidence via the shared collector.
+    """
+
+    collector_id = "job_jsonld"
+
+    def collect(
+        self, bundle: CaptureBundle, reader: ArtifactReader
+    ) -> tuple[Evidence, ...]:
+        _, doc = html_doc(bundle, reader)
+        return tuple(
+            _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
+        )
+
+
+class _JobDomCollector:
+    """DOM job-detail floor as a cascade-shaped collector.
+
+    Rebinds its rows onto the single structured JobPosting subject when exactly
+    one exists, preserving the legacy subject-unification so structured and DOM
+    evidence share one subject inside the detail cascade profile.
+    """
+
+    collector_id = "job_dom"
+
+    def collect(
+        self, bundle: CaptureBundle, reader: ArtifactReader
+    ) -> tuple[Evidence, ...]:
+        _, doc = html_doc(bundle, reader)
+        subject_id = _single_structured_job_subject(
+            bundle, doc, page_url=bundle.final_url
+        )
+        return tuple(
+            _collect_dom_job_evidence(
+                bundle, doc, page_url=bundle.final_url, subject_id=subject_id
+            )
+        )
+
+
+def job_detail_structured_collectors() -> tuple[object, ...]:
+    """Structured-source detail floor for job_detail (JSON-LD JobPosting)."""
+    return (_JobStructuredCollector(),)
+
+
+def job_detail_dom_collectors() -> tuple[object, ...]:
+    """DOM detail floor for job_detail, fused onto the structured subject."""
+    return (_JobDomCollector(),)
+
+
+def _single_structured_job_subject(
+    bundle: CaptureBundle,
+    doc: HtmlDocument,
+    *,
+    page_url: str,
+) -> str | None:
+    """The single structured JobPosting subject id, or ``None`` when absent or
+    ambiguous — the DOM floor only fuses onto an unambiguous structured subject."""
+    subjects = {
+        row.subject_id
+        for row in _collect_jsonld_job_evidence(bundle, doc, page_url=page_url)
+    }
+    return next(iter(subjects)) if len(subjects) == 1 else None
 
 
 def collect_job_listing(
@@ -292,8 +360,9 @@ def _collect_dom_job_evidence(
     doc: HtmlDocument,
     *,
     page_url: str,
+    subject_id: str | None = None,
 ) -> list[Evidence]:
-    subject_id = stable_id("subject", bundle.bundle_id, "job", page_url)
+    subject_id = subject_id or stable_id("subject", bundle.bundle_id, "job", page_url)
     rows: list[Evidence] = []
     for fact_type, value, selector, confidence in (
         ("job.title", _first_text(doc, JOB_DETAIL_TITLE_SELECTORS), "title", 0.72),
