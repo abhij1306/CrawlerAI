@@ -112,6 +112,53 @@ async def test_grounded_listing_recipe_replays_every_card() -> None:
     ]
 
 
+_JOB_LISTING_HTML = (
+    "<html><body><ul>"
+    '<li class="job"><a class="t" href="/jobs/1">Engineer</a>'
+    '<a class="apply" href="/apply/1">Apply</a><span class="co">Acme</span></li>'
+    '<li class="job"><a class="t" href="/jobs/2">Designer</a>'
+    '<a class="apply" href="/apply/2">Apply</a><span class="co">Acme</span></li>'
+    "</ul></body></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_job_listing_identity_is_url_and_apply_url_stays_scalar() -> None:
+    # A job-listing card carries two anchors: its own posting link (url) and the
+    # apply link (apply_url). Record identity must be ``url`` (finding 4) and each
+    # attribute binding must anchor to its exact grounded node so the two links
+    # do not collapse onto one list value (finding 8).
+    response = (
+        '{"record_root": "/html[1]/body[1]/ul[1]/li[1]", "fields": {'
+        '"title": "/html[1]/body[1]/ul[1]/li[1]/a[1]", '
+        '"url": "/html[1]/body[1]/ul[1]/li[1]/a[1]", '
+        '"apply_url": "/html[1]/body[1]/ul[1]/li[1]/a[2]", '
+        '"company": "/html[1]/body[1]/ul[1]/li[1]/span[1]"}}'
+    )
+    request = fixture_request_from_inputs(
+        Surface.JOB_LISTING,
+        _JOB_LISTING_HTML,
+        "https://jobs.test/careers",
+        max_records=10,
+        requested_fields=("title", "url", "apply_url", "company"),
+    )
+    result = await _compile(request, Surface.JOB_LISTING, response)
+
+    assert result.failure_code is None
+    assert result.candidate is not None
+    recipe = result.candidate.recipe
+    assert [binding.field for binding in recipe.identity] == ["url"]
+    execution = execute_recipe(request, recipe)
+    assert [row["url"] for row in execution.records] == [
+        "https://jobs.test/jobs/1",
+        "https://jobs.test/jobs/2",
+    ]
+    assert [row["apply_url"] for row in execution.records] == [
+        "https://jobs.test/apply/1",
+        "https://jobs.test/apply/2",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_optional_ungrounded_binding_is_dropped() -> None:
     html = "<html><body><main><h1>Shoe</h1><a href='/p/1'>l</a></main></body></html>"

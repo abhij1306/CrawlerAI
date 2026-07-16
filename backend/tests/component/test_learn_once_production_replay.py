@@ -31,7 +31,8 @@ _DETAIL_HTML = (
     "<html><body><main>"
     "<h1>Trail Shoe Red</h1>"
     '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
-    '<span class="price">$129.99</span>'
+    '<span class="price">129.99</span>'
+    '<span class="cur">USD</span>'
     "</main></body></html>"
 )
 _DETAIL_URL = "https://prod-replay.example.invalid/products/trail-shoe-red"
@@ -39,7 +40,8 @@ _SURFACE_VALUE = "ecommerce_detail"
 _RESPONSE = (
     '{"record_root": "", "fields": {'
     '"title": "/html[1]/body[1]/main[1]/h1[1]", '
-    '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    '"price": "/html[1]/body[1]/main[1]/span[1]", '
+    '"currency": "/html[1]/body[1]/main[1]/span[2]"}}'
 )
 
 

@@ -95,7 +95,6 @@ async def compile_recipe(
     is_listing = listing_schema is not None
     recipe = _build_recipe(
         request,
-        surface_spec=surface_spec,
         record_root_path=record_root_path,
         field_paths=field_paths,
         flat_map_paths=tuple(flat_map.keys()),
@@ -232,14 +231,13 @@ def _load_json_object(raw: str) -> dict[str, Any] | None:
 def _build_recipe(
     request: ExtractionRequest,
     *,
-    surface_spec: SurfaceSpec,
     record_root_path: str,
     field_paths: dict[str, str],
     flat_map_paths: tuple[str, ...],
     document: HtmlDocument,
     is_listing: bool,
 ) -> ExtractionRecipe | None:
-    identity_field = _identity_field(surface_spec, field_paths)
+    identity_field = _identity_field(field_paths, is_listing=is_listing)
     root_css, root_cardinality = _record_root_css(
         record_root_path, field_paths, is_listing=is_listing
     )
@@ -307,12 +305,13 @@ def _build_recipe(
     )
 
 
-def _identity_field(
-    surface_spec: SurfaceSpec, field_paths: dict[str, str]
-) -> str:
-    if surface_spec.domain == "jobs" and "apply_url" in field_paths:
-        return "apply_url"
-    if surface_spec.domain == "jobs" and "url" not in field_paths:
+def _identity_field(field_paths: dict[str, str], *, is_listing: bool) -> str:
+    # Listing records are identified by their own ``url`` (the card's canonical
+    # link); ``apply_url`` there is a normal non-identity field. Only a detail
+    # surface with no ``url`` may fall back to ``apply_url`` as its identity.
+    if is_listing:
+        return "url"
+    if "url" not in field_paths and "apply_url" in field_paths:
         return "apply_url"
     return "url"
 
@@ -406,8 +405,12 @@ def _field_binding(
     document: HtmlDocument,
 ) -> RecipeBinding | None:
     if field in _ATTRIBUTE_FIELDS:
-        # Attribute values are not in the flat map; locate structurally instead.
-        return _structural_attribute_binding(field, root_css, document)
+        # Attribute values are not in the flat-map text, but the model still
+        # grounded the exact node (e.g. url -> li/a[1], apply_url -> li/a[2]).
+        # Anchor to that node so sibling anchors/images do not collapse onto the
+        # same field; fall back to a structural selector only when the grounded
+        # path does not resolve.
+        return _attribute_binding(field, path, root_css=root_css, document=document)
     if path not in flat_map_paths:
         return None
     listing = root_css != "body"
@@ -426,6 +429,52 @@ def _field_binding(
         field=field,
         transform=_FIELD_TRANSFORMS.get(field),
     )
+
+
+def _attribute_binding(
+    field: str, path: str, *, root_css: str, document: HtmlDocument
+) -> RecipeBinding | None:
+    attribute = _ATTRIBUTE_FIELDS[field]
+    listing = root_css != "body"
+    css = (
+        _relative_css(_root_absolute(root_css), path)
+        if listing
+        else _absolute_css(path)
+    )
+    if css and _attribute_node_resolves(document, root_css, css, attribute, listing):
+        return RecipeBinding(
+            binding_id=f"field.{field}",
+            source="dom_attribute",
+            # Anchoring to the exact grounded node makes the value scalar: a
+            # single node carries a single attribute, so a sibling <a>/<img> in
+            # the same record can never fold into this field.
+            path=css,
+            scope="record.root" if listing else "document",
+            attribute=attribute,
+            cardinality="zero_or_one",
+            field=field,
+        )
+    # The grounded path did not resolve to a node carrying the attribute; fall
+    # back to the structural selector (best-effort, may be broad).
+    return _structural_attribute_binding(field, root_css, document)
+
+
+def _attribute_node_resolves(
+    document: HtmlDocument,
+    root_css: str,
+    css: str,
+    attribute: str,
+    listing: bool,
+) -> bool:
+    if listing:
+        nodes = [
+            node
+            for root in document.safe_css(root_css)
+            for node in root.safe_css(css)
+        ]
+    else:
+        nodes = list(document.safe_css(css))
+    return any(node.attribute(attribute) is not None for node in nodes)
 
 
 def _root_absolute(root_css: str) -> str:

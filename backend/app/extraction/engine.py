@@ -427,6 +427,28 @@ def _needs_contract_fallback(verdict: Verdict) -> bool:
     return verdict in {"empty", "partial"}
 
 
+def _recipe_fields_suppressed(
+    execution: RecipeExecutionResult, records: tuple[PublicRecord, ...]
+) -> bool:
+    """True when publication dropped a field the recipe grounded on this page.
+
+    Recipe replay only LOCATES evidence; publication decides what survives (a
+    price is suppressed when currency is unresolved). A grounded field missing
+    from the published record means the recipe-tier result is materially
+    degraded (drift). Fields the recipe never grounded reflect the page, not
+    degradation, so they are ignored.
+    """
+
+    empty = (None, "", [], {}, ())
+    published = records[0] if records else None
+    return any(
+        value not in empty
+        and (published is None or published.get(field) in empty)
+        for grounded in execution.records
+        for field, value in grounded.items()
+    )
+
+
 def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:
     return CollectorOutcome(
         collector_id="universal_model",
@@ -488,10 +510,15 @@ def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None
     attempt = _execute_attempt(
         request, adapter, recipe_harvest, stage_prefix="recipe_"
     )
-    # Drift: a stored recipe that grounds but yields no usable records (e.g. a
-    # weak verdict after publication contract suppression) falls through to the
-    # deterministic floors rather than returning a hollow recipe-tier result.
-    if not attempt.records:
+    # Drift: fall through to the deterministic/model floors rather than
+    # short-circuiting them with a degraded recipe-tier result when the recipe
+    # produced no publishable record at all, or when a field the recipe grounded
+    # on this page was lost/suppressed by publication (e.g. price dropped for
+    # currency_unresolved). A record that is merely partial because optional
+    # contract fields the page genuinely lacks (brand/description) is NOT drift:
+    # every field the recipe located still published, so replay is at least as
+    # complete as the deterministic floor would be for the same page.
+    if not attempt.records or _recipe_fields_suppressed(execution, attempt.records):
         return None
     stage_outcomes = (
         StageOutcome(stage="recipe_select", outcome="ran"),

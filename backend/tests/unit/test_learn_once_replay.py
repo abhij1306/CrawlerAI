@@ -16,7 +16,8 @@ _DETAIL_HTML = (
     "<html><body><main>"
     "<h1>Trail Shoe Red</h1>"
     '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
-    '<span class="price">$129.99</span>'
+    '<span class="price">129.99</span>'
+    '<span class="cur">USD</span>'
     '<img src="/img/red.jpg">'
     "</main></body></html>"
 )
@@ -24,7 +25,8 @@ _DETAIL_URL = "https://shop.test/products/trail-shoe-red"
 _DETAIL_RESPONSE = (
     '{"record_root": "", "fields": {'
     '"title": "/html[1]/body[1]/main[1]/h1[1]", '
-    '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+    '"price": "/html[1]/body[1]/main[1]/span[1]", '
+    '"currency": "/html[1]/body[1]/main[1]/span[2]"}}'
 )
 
 
@@ -154,6 +156,47 @@ async def test_drift_falls_through_to_deterministic_floors() -> None:
     result = extract(request)
 
     # Drift never yields a recipe-tier result; the engine falls through.
+    assert result.diagnostics.extractor_tier != "recipe"
+
+
+# A page whose price grounds but whose currency does not: publication suppresses
+# the price (currency_unresolved), so a field the recipe located is lost.
+_SUPPRESSED_HTML = (
+    "<html><body><main>"
+    "<h1>Trail Shoe Red</h1>"
+    '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
+    '<span class="price">129.99</span>'
+    '<img src="/img/red.jpg">'
+    "</main></body></html>"
+)
+_SUPPRESSED_RESPONSE = (
+    '{"record_root": "", "fields": {'
+    '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+    '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
+)
+
+
+@pytest.mark.asyncio
+async def test_replay_falls_through_when_grounded_field_is_suppressed() -> None:
+    # HIGH-11: the recipe grounds a price, but publication suppresses it because
+    # no currency resolves. The recipe-tier record is materially degraded versus
+    # what the recipe captured, so replay must return None and fall through to
+    # the deterministic/model floors rather than short-circuit them with a
+    # price-less recipe result.
+    def _suppressed_request(html: str = _SUPPRESSED_HTML):
+        return fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            html,
+            _DETAIL_URL,
+            requested_fields=("title", "price", "image"),
+        )
+
+    recipe = await _learn_recipe(_suppressed_request(), _SUPPRESSED_RESPONSE, [])
+    snapshot = _release_snapshot(recipe, surface="ecommerce_detail", url=_DETAIL_URL)
+    request = _suppressed_request().model_copy(update={"runtime_snapshot": snapshot})
+
+    result = extract(request)
+
     assert result.diagnostics.extractor_tier != "recipe"
 
 
