@@ -91,6 +91,55 @@ async def test_first_crawl_learns_once_then_replays_with_zero_model_calls() -> N
     assert result.recipe_execution is not None
 
 
+_PRICED_HTML = (
+    "<html><body><main>"
+    "<h1>Trail Shoe Red</h1>"
+    '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
+    '<span class="price">129.99</span>'
+    '<span class="cur">USD</span>'
+    '<span class="avail">InStock</span>'
+    '<img src="/img/red.jpg">'
+    "</main></body></html>"
+)
+_PRICED_RESPONSE = (
+    '{"record_root": "", "fields": {'
+    '"title": "/html[1]/body[1]/main[1]/h1[1]", '
+    '"price": "/html[1]/body[1]/main[1]/span[1]", '
+    '"currency": "/html[1]/body[1]/main[1]/span[2]", '
+    '"availability": "/html[1]/body[1]/main[1]/span[3]"}}'
+)
+
+
+@pytest.mark.asyncio
+async def test_replay_projects_priced_fields_through_resolver() -> None:
+    # CRITICAL 3: replay routes grounded values through the normal adapter
+    # resolve -> publish authority. Price/currency/availability/image_url must
+    # therefore publish exactly as deterministic evidence would — a regression
+    # that silently drops them (e.g. via a bypassing record projector) fails.
+    def _priced_request(html: str = _PRICED_HTML):
+        return fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            html,
+            _DETAIL_URL,
+            requested_fields=("title", "price", "currency", "availability", "image"),
+        )
+
+    recipe = await _learn_recipe(_priced_request(), _PRICED_RESPONSE, [])
+    snapshot = _release_snapshot(recipe, surface="ecommerce_detail", url=_DETAIL_URL)
+    request = _priced_request().model_copy(update={"runtime_snapshot": snapshot})
+
+    result = extract(request)
+
+    assert result.diagnostics.extractor_tier == "recipe"
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record.get("title") == "Trail Shoe Red"
+    assert str(record.get("price")) == "129.99"
+    assert record.get("currency") == "USD"
+    assert record.get("availability") == "in_stock"
+    assert record.get("image_url") == "https://shop.test/img/red.jpg"
+
+
 @pytest.mark.asyncio
 async def test_drift_falls_through_to_deterministic_floors() -> None:
     # Learn a recipe against the canonical page, then replay it against a page

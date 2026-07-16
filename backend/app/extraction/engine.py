@@ -29,6 +29,7 @@ from app.core.extraction_memory.recipe_contracts import (
     ExtractionRecipe,
     RecipeExecutionResult,
 )
+from app.core.extraction_memory.recipe_evidence import recipe_execution_evidence
 from app.core.extraction_memory.recipe_executor import execute_recipe
 from app.core.extraction_memory.templates import normalize_route
 from app.core.records.detail_outcome import normalized_detail_outcome
@@ -40,6 +41,7 @@ from app.extraction.contracts import (
     EntityGraph,
     Evidence,
     ExecutionManifestContext,
+    ExtractionMetrics,
     ExtractionRequest,
     ExtractionResult,
     FailureClassification,
@@ -64,7 +66,6 @@ from app.extraction.sentinel import (
     sentinel_sample_rate,
     should_sample_sentinel,
 )
-from app.extraction.publication import publish_recipe_execution
 from app.extraction.result_building import (
     assert_resolution_accounting,
     data_integrity_status,
@@ -196,6 +197,36 @@ def extract(
             stage_outcomes.extend(attempt.stage_outcomes)
             extractor_tier = "ml"
 
+    return _build_result(
+        request,
+        attempt,
+        stage_outcomes=tuple(stage_outcomes),
+        extractor_tier=extractor_tier,
+        manifest_template=compiled_template,
+        model_fallback=model_fallback,
+        sentinel_observations=sentinel_observations,
+    )
+
+
+def _build_result(
+    request: ExtractionRequest,
+    attempt: _ExtractionAttempt,
+    *,
+    stage_outcomes: tuple[StageOutcome, ...],
+    extractor_tier: Literal["deterministic", "recipe", "ml"],
+    manifest_template: dict[str, object] | None,
+    model_fallback: ModelFallbackResult | None = None,
+    sentinel_observations: tuple[SentinelObservation, ...] = (),
+    recipe_execution: RecipeExecutionResult | None = None,
+) -> ExtractionResult:
+    """Assemble the ExtractionResult from a resolved attempt.
+
+    Shared by the deterministic/model path and by LEARN-ONCE recipe replay, so
+    recipe replay flows through the SAME resolve -> publish authority and result
+    shape as deterministic evidence (CRITICAL 3): the only recipe-specific inputs
+    are ``extractor_tier="recipe"`` and ``recipe_execution``.
+    """
+
     harvest = attempt.harvest
     resolution = attempt.resolution
     publication = attempt.publication
@@ -240,31 +271,7 @@ def extract(
         publish_duration_ms=attempt.publish_duration_ms,
     )
     if model_fallback is not None:
-        extraction_metrics = extraction_metrics.model_copy(
-            update={
-                "universal_representation_build_count": int(
-                    model_fallback.representation_built
-                ),
-                "universal_model_invocation_count": int(model_fallback.invoked),
-                "universal_model_latency_ms": model_fallback.latency_ms,
-                "universal_model_service_failure_count": int(
-                    model_fallback.failure_code == "model_service_failure"
-                ),
-                "universal_model_ungrounded_rejection_count": (
-                    model_fallback.ungrounded_rejection_count
-                ),
-                "universal_model_ungrounded_rejection_rate": (
-                    model_fallback.ungrounded_rejection_count
-                    / model_fallback.prediction_count
-                    if model_fallback.prediction_count
-                    else 0.0
-                ),
-                "universal_model_cost_usd": model_fallback.cost_usd,
-                "universal_model_cost_per_1000_pages": (
-                    model_fallback.cost_usd * 1_000
-                ),
-            }
-        )
+        extraction_metrics = _model_fallback_metrics(extraction_metrics, model_fallback)
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -285,16 +292,17 @@ def extract(
         retry_request=retry,
         metrics=extraction_metrics,
         collector_outcomes=harvest.collector_outcomes,
-        stage_outcomes=tuple(stage_outcomes),
+        stage_outcomes=stage_outcomes,
         contract_outcomes=resolution.contract_outcomes,
         sentinel_observations=sentinel_observations,
-        manifest_context=_manifest_context(request, compiled_template),
+        manifest_context=_manifest_context(request, manifest_template),
         failure_classifications=failures,
+        recipe_execution=recipe_execution,
         diagnostics=_diagnostic_summary(
             verdict=verdict,
             records=records,
             evidence=harvest.evidence,
-            stage_outcomes=tuple(stage_outcomes),
+            stage_outcomes=stage_outcomes,
             field_states=field_states,
             findings=findings,
             failures=failures,
@@ -303,6 +311,34 @@ def extract(
             model_fallback=model_fallback,
             sentinel_observations=sentinel_observations,
         ),
+    )
+
+
+def _model_fallback_metrics(
+    extraction_metrics: ExtractionMetrics, model_fallback: ModelFallbackResult
+) -> ExtractionMetrics:
+    return extraction_metrics.model_copy(
+        update={
+            "universal_representation_build_count": int(
+                model_fallback.representation_built
+            ),
+            "universal_model_invocation_count": int(model_fallback.invoked),
+            "universal_model_latency_ms": model_fallback.latency_ms,
+            "universal_model_service_failure_count": int(
+                model_fallback.failure_code == "model_service_failure"
+            ),
+            "universal_model_ungrounded_rejection_count": (
+                model_fallback.ungrounded_rejection_count
+            ),
+            "universal_model_ungrounded_rejection_rate": (
+                model_fallback.ungrounded_rejection_count
+                / model_fallback.prediction_count
+                if model_fallback.prediction_count
+                else 0.0
+            ),
+            "universal_model_cost_usd": model_fallback.cost_usd,
+            "universal_model_cost_per_1000_pages": (model_fallback.cost_usd * 1_000),
+        }
     )
 
 
@@ -427,104 +463,47 @@ def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None
     except (TypeError, ValueError):
         return None
     execution = execute_recipe(request, recipe)
-    if not execution.records:
+    if execution.failure_code is not None or not execution.records:
         return None
-    try:
-        records, publish_findings = publish_recipe_execution(request, recipe, execution)
-    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
-        del exc
+    # CRITICAL 3: recipe replay only LOCATES evidence on the page. The grounded
+    # values become ordinary Evidence and flow through the SAME adapter
+    # resolve -> publish authority as deterministic evidence, so recipe replay
+    # can never mint records or bypass publication contracts (e.g. the
+    # currency-gated price). ``publication.py`` remains the single record maker.
+    evidence_rows = recipe_execution_evidence(request, recipe, execution)
+    if not evidence_rows:
         return None
-    if not records:
-        return None
-    return _recipe_result(
-        request,
-        recipe,
-        execution,
-        records=records,
-        findings=publish_findings,
-        template=template,
+    adapter = adapter_for(request.surface)
+    recipe_harvest = HarvestResult(
+        surface=request.surface,
+        evidence=evidence_rows,
+        collector_outcomes=(
+            CollectorOutcome(
+                collector_id="recipe_replay",
+                outcome="produced_evidence",
+                evidence_count=len(evidence_rows),
+            ),
+        ),
     )
-
-
-def _recipe_result(
-    request: ExtractionRequest,
-    recipe: ExtractionRecipe,
-    execution: RecipeExecutionResult,
-    *,
-    records: tuple[PublicRecord, ...],
-    findings: tuple[Finding, ...],
-    template: dict[str, object],
-) -> ExtractionResult:
-    roots = tuple(str(record.get("_subject_id") or "") for record in records)
-    target = TargetSelection(
-        status="resolved" if records else "missing",
-        root_entity_ids=roots,
-        selected_root_entity_id=roots[0] if roots else None,
+    attempt = _execute_attempt(
+        request, adapter, recipe_harvest, stage_prefix="recipe_"
     )
-    graph = EntityGraph(root_entity_ids=roots, entity_counts={"record": len(records)})
-    verdict = _assess(request, target, records, findings)
+    # Drift: a stored recipe that grounds but yields no usable records (e.g. a
+    # weak verdict after publication contract suppression) falls through to the
+    # deterministic floors rather than returning a hollow recipe-tier result.
+    if not attempt.records:
+        return None
     stage_outcomes = (
         StageOutcome(stage="recipe_select", outcome="ran"),
-        _stage_outcome("recipe_execute", len(records)),
+        *attempt.stage_outcomes,
     )
-    field_states = field_evidence_states(records, (), (), request)
-    transport_outcome = _capture_outcome(request, verdict, findings, records)
-    field_states = _terminal_detail_field_states(
-        request, field_states, transport_outcome=transport_outcome
-    )
-    retry = retry_request(verdict, records, request)
-    review_required = _review_required(
+    return _build_result(
         request,
-        verdict=verdict,
-        findings=findings,
-        field_states=field_states,
-        retry=retry,
-    )
-    failures = _failure_classifications(
-        request,
-        verdict=verdict,
-        records=records,
-        target=target,
-        findings=findings,
-        evidence=(),
-    )
-    return ExtractionResult(
-        surface=request.surface,
-        bundle_id=request.capture.bundle_id,
-        evidence=(),
-        graph=graph,
-        target=target,
-        findings=findings,
-        field_states=field_states,
-        transport_outcome=transport_outcome,
-        data_integrity=data_integrity_status(verdict, field_states, findings),
-        records=records,
-        verdict=verdict,
-        retry_request=retry,
-        metrics=metrics(
-            (),
-            graph,
-            target,
-            findings,
-            (),
-            records,
-            verdict,
-        ),
+        attempt,
         stage_outcomes=stage_outcomes,
-        manifest_context=_manifest_context(request, template),
-        failure_classifications=failures,
+        extractor_tier="recipe",
+        manifest_template=template,
         recipe_execution=execution,
-        diagnostics=_diagnostic_summary(
-            verdict=verdict,
-            records=records,
-            evidence=(),
-            stage_outcomes=stage_outcomes,
-            field_states=field_states,
-            findings=findings,
-            failures=failures,
-            review_required=review_required,
-            extractor_tier="recipe",
-        ),
     )
 
 

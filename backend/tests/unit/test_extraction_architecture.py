@@ -583,10 +583,10 @@ def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None
 
 
 def test_publication_is_the_only_typed_record_producer() -> None:
-    # Every surface record type (including the recipe-tier projection) must be
-    # instantiated in exactly one module: publication.py. The recipe replay
-    # path in engine.py delegates to publish_recipe_execution rather than
-    # constructing records itself.
+    # Every surface record type must be instantiated in exactly one module:
+    # publication.py. LEARN-ONCE recipe replay only produces Evidence and flows
+    # through the normal adapter resolve -> publish path, so publication.py
+    # remains the sole typed-record producer for recipe-tier output too.
     surface_models = {
         "CommerceDetailRecord",
         "CommerceListingRecord",
