@@ -27,6 +27,7 @@ from app.extraction.contracts import (
     CollectorOutcome,
     Evidence,
     ExtractionRequest,
+    FACT_TYPES,
     HarvestResult,
 )
 from app.extraction.listing_tier0 import (
@@ -39,6 +40,10 @@ from app.extraction.pipeline import (
     detail_recipe_requested_evidence,
     detail_structured_collectors,
     run_detail_collectors,
+)
+from app.extraction.jobs import (
+    job_detail_dom_collectors,
+    job_detail_structured_collectors,
 )
 from app.extraction.surfaces import ListingSchema, Surface, SurfaceSpec
 
@@ -130,17 +135,34 @@ DETAIL_FLOOR_ORDER: Final[tuple[str, ...]] = tuple(
     name for name, _ in _DETAIL_FLOOR_REGISTRY
 )
 
+# The job-detail floor order: structured JSON-LD JobPosting floor, then the DOM
+# floor fused onto the single structured subject. Same structured -> DOM order
+# as commerce; the collector groups differ (job.* facts, no commerce recipe
+# tail).
+_JOB_DETAIL_FLOOR_REGISTRY: Final[tuple[tuple[str, _DetailFloor], ...]] = (
+    ("structured", job_detail_structured_collectors),
+    ("dom", job_detail_dom_collectors),
+)
+
 # Per-surface detail collector profiles, keyed by ``spec.surface``. A one-record
 # surface is only supported when it has an entry here; this is the declarative,
-# spec-driven support table that replaces any ``surface ==`` branch. Slice 3
-# ships the ecommerce-detail profile (the commerce collector floors) ONLY —
-# routing job_detail here would falsely emit commerce facts, so it is
-# intentionally absent until Slice 4 adds the job-detail profile.
+# spec-driven support table that replaces any ``surface ==`` branch. Commerce
+# detail runs the commerce collector floors; job_detail runs the job floors.
 _DETAIL_SURFACE_PROFILES: Final[
     dict[Surface, tuple[tuple[str, _DetailFloor], ...]]
 ] = {
     Surface.ECOMMERCE_DETAIL: _DETAIL_FLOOR_REGISTRY,
+    Surface.JOB_DETAIL: _JOB_DETAIL_FLOOR_REGISTRY,
 }
+
+# Surfaces whose detail cascade runs the trailing commerce css-recipe /
+# requested-field tail after the deterministic floors. The tail collects
+# commerce recipe evidence, so it is commerce-only; job_detail is absent here
+# and its cascade skips the tail rather than pulling commerce facts. Spec-driven
+# membership test, not a ``surface ==`` branch.
+_DETAIL_RECIPE_TAIL_SURFACES: Final[frozenset[Surface]] = frozenset(
+    {Surface.ECOMMERCE_DETAIL}
+)
 
 DETAIL_SUPPORTED_SURFACES: Final[frozenset[Surface]] = frozenset(
     _DETAIL_SURFACE_PROFILES
@@ -182,19 +204,31 @@ def run_detail_cascade(
         )
     bundle: CaptureBundle = request.capture
     requested_fields = request.requested_fields
+    # Union the surface's admitted fact set with the shared commerce FACT_TYPES
+    # so commerce stays byte-identical (FACT_TYPES carries variant.option facts
+    # absent from COMMERCE_FACTS) while job_detail also admits its job.* facts.
+    allowed_facts = FACT_TYPES | spec.allowed_facts
     rows: list[Evidence] = []
     outcomes: list[CollectorOutcome] = []
     admitted = 0
     for _name, floor in profile:
         floor_rows, floor_outcomes, floor_admitted = run_detail_collectors(
-            floor(), bundle, reader, requested_fields=requested_fields
+            floor(),
+            bundle,
+            reader,
+            requested_fields=requested_fields,
+            allowed_facts=allowed_facts,
         )
         rows.extend(floor_rows)
         outcomes.extend(floor_outcomes)
         admitted += floor_admitted
-    tail_rows, tail_outcomes, tail_admitted = detail_recipe_requested_evidence(
-        bundle, reader, requested_fields
-    )
+    tail_rows: tuple[Evidence, ...] = ()
+    tail_outcomes: tuple[CollectorOutcome, ...] = ()
+    tail_admitted = 0
+    if spec.surface in _DETAIL_RECIPE_TAIL_SURFACES:
+        tail_rows, tail_outcomes, tail_admitted = detail_recipe_requested_evidence(
+            bundle, reader, requested_fields
+        )
     return HarvestResult(
         surface=spec.surface,
         evidence=(*rows, *tail_rows),

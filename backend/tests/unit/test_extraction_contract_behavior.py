@@ -1705,16 +1705,32 @@ def test_detail_cascade_seam_rejects_listing_spec() -> None:
         )
 
 
-def test_detail_cascade_seam_rejects_unsupported_one_record_surface() -> None:
-    """A one-record surface with no registered profile fails honestly.
+def test_detail_cascade_seam_supports_both_one_record_surfaces() -> None:
+    """Slice 4 registers the job_detail profile alongside ecommerce_detail.
 
-    Slice 3 ships ONLY the ecommerce-detail collector profile. job_detail is a
-    one-record surface but has no profile yet (Slice 4 adds it); routing it
-    through the ecommerce collectors would falsely emit commerce facts, so the
-    seam rejects it rather than returning wrong-surface evidence.
+    Both one-record surfaces now have a spec-driven collector profile, so both
+    are in ``DETAIL_SUPPORTED_SURFACES`` and route through the seam without any
+    ``surface ==`` branch.
     """
     assert Surface.ECOMMERCE_DETAIL in cascade.DETAIL_SUPPORTED_SURFACES
-    assert Surface.JOB_DETAIL not in cascade.DETAIL_SUPPORTED_SURFACES
+    assert Surface.JOB_DETAIL in cascade.DETAIL_SUPPORTED_SURFACES
+
+
+def test_detail_cascade_seam_rejects_unsupported_one_record_surface(
+    monkeypatch,
+) -> None:
+    """A one-record surface with no registered profile fails honestly.
+
+    A surface absent from ``_DETAIL_SURFACE_PROFILES`` has no collector profile;
+    routing it through another surface's collectors would falsely emit that
+    surface's facts, so the seam rejects it rather than returning wrong-surface
+    evidence. Exercised by monkeypatching job_detail out of the profile table.
+    """
+    monkeypatch.setattr(
+        cascade,
+        "_DETAIL_SURFACE_PROFILES",
+        {Surface.ECOMMERCE_DETAIL: cascade._DETAIL_FLOOR_REGISTRY},
+    )
     job_request = fixture_request_from_inputs(
         Surface.JOB_DETAIL, "<main><h1>Engineer</h1></main>", "https://jobs.test/e"
     )
@@ -1748,7 +1764,9 @@ def test_detail_cascade_invokes_registry_floors_in_order(monkeypatch) -> None:
 
     real_run = cascade.run_detail_collectors
 
-    def _instrumented_run(collectors, bundle, reader, *, requested_fields=()):
+    def _instrumented_run(
+        collectors, bundle, reader, *, requested_fields=(), allowed_facts=None
+    ):
         collector_batches.append(tuple(collectors))
         # Probe sentinels flow through here; emit one outcome per collector so
         # aggregation order is observable. Evidence stays empty (HarvestResult

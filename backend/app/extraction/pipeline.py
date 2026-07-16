@@ -108,15 +108,22 @@ def run_detail_collectors(
     reader: ArtifactReader,
     *,
     requested_fields: tuple[str, ...] = (),
+    allowed_facts: frozenset[str] = FACT_TYPES,
 ) -> tuple[tuple[Evidence, ...], tuple[CollectorOutcome, ...], int]:
     """Run one detail collector group, returning (rows, outcomes, admitted).
 
-    This is the extracted per-collector admission loop: FACT_TYPES-filtered
+    This is the extracted per-collector admission loop: fact-type-filtered
     evidence, budget-limited outcome forwarding, and per-collector source-object
     accounting. It is the SINGLE assembly primitive shared by the legacy inline
     harvest and the cascade seam, so a collector group produces byte-identical
     rows/outcomes/accounting regardless of which caller sequences it. The
     ordering of floors is owned by the cascade, not here.
+
+    ``allowed_facts`` is the surface's admitted fact-type universe. It defaults
+    to commerce ``FACT_TYPES`` so the commerce callers stay byte-identical; the
+    detail cascade passes the surface's own fact set (unioned with
+    ``FACT_TYPES``) so non-commerce surfaces such as job_detail admit their own
+    ``job.*`` facts instead of silently dropping them.
     """
     rows: list[Evidence] = []
     outcomes: list[CollectorOutcome] = []
@@ -128,7 +135,7 @@ def run_detail_collectors(
                 bundle, reader, requested_fields=requested_fields
             )
             collector_rows = tuple(
-                ev for ev in harvest.evidence if ev.fact_type in FACT_TYPES
+                ev for ev in harvest.evidence if ev.fact_type in allowed_facts
             )
             rows.extend(collector_rows)
             admitted_source_objects += harvest.admitted_source_objects
@@ -145,7 +152,9 @@ def run_detail_collectors(
             continue
         before = len(rows)
         rows.extend(
-            ev for ev in collector.collect(bundle, reader) if ev.fact_type in FACT_TYPES
+            ev
+            for ev in collector.collect(bundle, reader)
+            if ev.fact_type in allowed_facts
         )
         produced = len(rows) - before
         admitted_source_objects += len(
