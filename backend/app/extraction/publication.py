@@ -667,4 +667,3 @@ def _source_lineage(entry: PublicationEntry) -> dict[str, object]:
         source["canonicalizer_id"] = entry.canonicalization.canonicalizer_id
         source["canonicalizer_version"] = entry.canonicalization.canonicalizer_version
     return source
-
