@@ -291,3 +291,62 @@ def test_compiler_has_no_publication_persistence_or_model_imports() -> None:
     assert "PublicRecord" not in source
     assert ".publication" not in source
     assert "result.records" not in source
+
+
+def _http_only_request(surface: Surface, html: str, url: str, **kwargs):
+    """Build a request whose only HTML artifact is ``http_html`` (no rendered DOM)."""
+
+    from app.core.shared.ids import content_sha256, stable_id
+    from app.extraction.contracts import (
+        ArtifactRef,
+        CaptureBundle,
+        ExtractionRequest,
+        RequestContext,
+    )
+    from app.extraction.replay import MemoryArtifactReader
+
+    refs = (
+        ArtifactRef(
+            artifact_id="html",
+            artifact_type="http_html",
+            content_sha256=content_sha256(html),
+            storage_uri="memory://html",
+            media_type="text/html",
+        ),
+    )
+    bundle = CaptureBundle(
+        schema_version="capture.v1",
+        bundle_id=stable_id("bundle", url, html[:80]),
+        run_id=0,
+        requested_url=url,
+        final_url=url,
+        request_context=RequestContext(context_id=stable_id("ctx", url)),
+        artifacts=refs,
+        acquisition_outcome="ok",
+    )
+    reader = MemoryArtifactReader({"html": html})
+    return ExtractionRequest(
+        surface=surface,
+        capture=bundle,
+        artifact_reader=reader,
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_http_only_capture_never_calls_model_and_fails() -> None:
+    # Finding 6: an HTTP-only capture cannot satisfy the recipe's rendered-DOM
+    # capture requirement, so the compiler must reject BEFORE spending the single
+    # model call (the stub call counter stays at 0).
+    calls: list[int] = []
+    request = _http_only_request(
+        Surface.ECOMMERCE_DETAIL,
+        _DETAIL_HTML,
+        "https://shop.test/products/trail-shoe-red",
+        requested_fields=("title", "price", "image"),
+    )
+    result = await _compile(request, Surface.ECOMMERCE_DETAIL, _DETAIL_HTML, calls)
+
+    assert calls == []
+    assert result.candidate is None
+    assert result.failure_code == "recipe_capture_requirement_missing"

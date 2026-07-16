@@ -83,6 +83,14 @@ async def compile_recipe(
     document = _primary_document(request)
     if document is None:
         return _failure("recipe_root_not_found", "no html artifact to learn from")
+    # Finding 6: the recipe declares ``capture_requirements=("rendered_dom",)``, so a
+    # recipe learned from an HTTP-only capture can never replay. Reject BEFORE the
+    # single model call rather than spend it on a recipe that fails replay.
+    if not _has_rendered_html(request):
+        return _failure(
+            "recipe_capture_requirement_missing",
+            "no rendered_html artifact to learn a rendered-DOM recipe from",
+        )
     fields = _requested_field_names(request, surface_spec, listing_schema)
     scoped = build_scoped_flat_map(document)
     flat_map = build_flat_map(document)
@@ -136,6 +144,13 @@ async def compile_recipe(
 
 def _failure(code: str, detail: str) -> DiscoveryResult:
     return DiscoveryResult(failure_code=code, detail=detail)  # type: ignore[arg-type]
+
+
+def _has_rendered_html(request: ExtractionRequest) -> bool:
+    return any(
+        artifact.artifact_type == "rendered_html"
+        for artifact in request.capture.artifacts
+    )
 
 
 def _primary_document(request: ExtractionRequest) -> HtmlDocument | None:

@@ -73,6 +73,20 @@ def _model_client_for_run(
     return client
 
 
+def _has_rendered_capture(request: ExtractionRequest) -> bool:
+    """True when the capture carries a rendered-DOM artifact the recipe needs.
+
+    Mirrors the availability set consulted by
+    ``recipe_executor._check_capture_requirements`` for the ``rendered_dom``
+    requirement: an ``artifact_type == "rendered_html"`` artifact must exist.
+    """
+
+    return any(
+        artifact.artifact_type == "rendered_html"
+        for artifact in request.capture.artifacts
+    )
+
+
 def should_attempt_learn_once(
     *,
     surface: str,
@@ -118,6 +132,13 @@ async def learn_recipe_after_extraction(
         floors_empty=floors_empty,
         is_new_template=is_new_template,
     ):
+        return False
+
+    # Finding 6: the compiled recipe declares ``capture_requirements=("rendered_dom",)``
+    # and its replay fails with ``recipe_capture_requirement_missing`` when only an
+    # HTTP-only capture exists. Gate the model call on a rendered-DOM artifact so an
+    # HTTP-only first pass never burns an LLM request on a recipe that cannot replay.
+    if not _has_rendered_capture(request):
         return False
 
     client = model_client or _model_client_for_run(session, run_id=run_id)

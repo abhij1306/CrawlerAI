@@ -229,3 +229,66 @@ def test_learn_gate_respects_surface_allow_list() -> None:
         )
         is False
     )
+
+
+def _http_only_detail_request(html: str = _DETAIL_HTML):
+    from app.core.shared.ids import content_sha256, stable_id
+    from app.extraction.contracts import (
+        ArtifactRef,
+        CaptureBundle,
+        ExtractionRequest,
+        RequestContext,
+    )
+    from app.extraction.replay import MemoryArtifactReader
+
+    refs = (
+        ArtifactRef(
+            artifact_id="html",
+            artifact_type="http_html",
+            content_sha256=content_sha256(html),
+            storage_uri="memory://html",
+            media_type="text/html",
+        ),
+    )
+    bundle = CaptureBundle(
+        schema_version="capture.v1",
+        bundle_id=stable_id("bundle", _DETAIL_URL, html[:80]),
+        run_id=0,
+        requested_url=_DETAIL_URL,
+        final_url=_DETAIL_URL,
+        request_context=RequestContext(context_id=stable_id("ctx", _DETAIL_URL)),
+        artifacts=refs,
+        acquisition_outcome="ok",
+    )
+    return ExtractionRequest(
+        surface=Surface.ECOMMERCE_DETAIL,
+        capture=bundle,
+        artifact_reader=MemoryArtifactReader({"html": html}),
+        requested_fields=("title", "price", "image"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_learn_gate_returns_false_for_http_only_capture() -> None:
+    # Finding 6: an HTTP-only capture cannot ground a rendered-DOM recipe, so the
+    # learn seam must return an honest no-learn WITHOUT calling the model.
+    from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
+
+    request = _http_only_detail_request()
+    # Force the empty-floor precondition so the gate we exercise is the
+    # rendered-capture check, not the (separate) floors-empty gate.
+    result = extract(request).model_copy(update={"records": ()})
+
+    calls: list[int] = []
+    learned = await learn_recipe_after_extraction(
+        None,  # session unused on the no-learn path
+        request=request,
+        result=result,
+        run_id=None,
+        llm_enabled=True,
+        is_new_template=True,
+        model_client=_stub(_DETAIL_RESPONSE, calls),
+    )
+
+    assert learned is False
+    assert calls == []
