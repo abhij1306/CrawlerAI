@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass
 import hashlib
 import json
 import uuid
@@ -194,7 +195,29 @@ async def ensure_template(
             tech_signals=list(tech_signals or []),
             last_seen_run_id=run_id,
         )
-        session.add(row)
+        try:
+            # Concurrency-safe insert: a racing worker may create the same
+            # (domain, surface, fingerprint) row between the SELECT above and
+            # this flush. The unique index turns that into an IntegrityError we
+            # recover from by re-selecting the winner's row.
+            async with session.begin_nested():
+                session.add(row)
+                await session.flush()
+        except IntegrityError:
+            row = (
+                await session.execute(
+                    select(ExtractionTemplate).where(
+                        ExtractionTemplate.domain == normalized_domain,
+                        ExtractionTemplate.surface == surface,
+                        ExtractionTemplate.fingerprint == fingerprint,
+                    )
+                )
+            ).scalar_one()
+            row.route_pattern = route_pattern or row.route_pattern
+            row.tech_signals = list(tech_signals or row.tech_signals)
+            row.last_seen_run_id = run_id or row.last_seen_run_id
+            await session.flush()
+            return row
     else:
         row.route_pattern = route_pattern or row.route_pattern
         row.tech_signals = list(tech_signals or row.tech_signals)
@@ -561,6 +584,98 @@ async def _locked_active_executable_recipe(
     if recipe is None:
         return None
     return template, recipe
+
+
+@dataclass(frozen=True, slots=True)
+class LearnOnceClaim:
+    """A durable, transaction-scoped claim to compile ONE LEARN-ONCE recipe.
+
+    Returned by :func:`claim_learn_once_template` when the caller has won the
+    right to run the single model call for a ``(domain, surface, route)`` scope.
+    The claim is only valid for as long as the caller's transaction holds the
+    ``SELECT ... FOR UPDATE`` lock on ``template``; the model call and the
+    subsequent :func:`persist_learned_recipe` must run inside that same
+    transaction so the lock serializes concurrent workers.
+    """
+
+    template: ExtractionTemplate
+    domain: str
+    surface: str
+    route_pattern: str
+    fingerprint: str
+
+
+async def claim_learn_once_template(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    route_pattern: str,
+    fingerprint: str,
+    run_id: int | None = None,
+    tech_signals: list[str] | None = None,
+) -> LearnOnceClaim | None:
+    """Durably claim the right to compile ONE recipe for a template scope.
+
+    Finding 10: two concurrent URLs/runs can both read "no recipe" from the
+    per-run release snapshot and both compile — burning two model calls and
+    racing two writes. This turns that best-effort check into a strict,
+    transactional guarantee of exactly one compile per new template.
+
+    The template row is ``SELECT ... FOR UPDATE`` locked and its active
+    executable recipe re-checked under the lock. When an active recipe already
+    exists (learned by a prior run or by the worker that won this row lock),
+    ``None`` is returned and the caller must skip learning (honest no-learn).
+    Otherwise a :class:`LearnOnceClaim` is returned; the caller runs the single
+    model call and persists **inside the same transaction**. A second concurrent
+    worker BLOCKS on the same row's ``FOR UPDATE``; when it acquires the lock the
+    winner has already persisted, so its re-check sees the recipe and it skips —
+    the model is called exactly once per scope.
+    """
+
+    # Ensure the template row exists so there is a row to lock. ``ensure_template``
+    # is itself concurrency-safe (unique-index recovery).
+    template = await ensure_template(
+        session,
+        domain=domain,
+        surface=surface,
+        fingerprint=fingerprint,
+        route_pattern=route_pattern,
+        tech_signals=tech_signals,
+        run_id=run_id,
+    )
+    # Lock the template row for the duration of the caller's transaction. A racing
+    # worker for the same scope blocks here until the winner commits/rolls back.
+    locked = (
+        await session.execute(
+            select(ExtractionTemplate)
+            .where(ExtractionTemplate.id == template.id)
+            .with_for_update()
+        )
+    ).scalar_one()
+    # Re-check under the lock: if an executable recipe already exists for this
+    # scope the compile was already done — fail closed (no model call).
+    existing = (
+        await session.execute(
+            select(ExtractionRecipe.id)
+            .where(
+                ExtractionRecipe.template_id == locked.id,
+                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE,
+                ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return None
+    return LearnOnceClaim(
+        template=locked,
+        domain=normalize_domain(domain),
+        surface=surface,
+        route_pattern=route_pattern,
+        fingerprint=fingerprint,
+    )
 
 
 async def _recipe_is_operator_owned(

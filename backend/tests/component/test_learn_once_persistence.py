@@ -473,3 +473,101 @@ async def test_retry_cycle_persists_exactly_one_recipe(
         select(func.count()).select_from(ExtractionRecipe)
     )
     assert recipe_count == 1
+
+
+# --- Finding 10: durable transactional claim guarantees exactly one compile ---
+
+_CLAIM_URL = "https://claim.example.invalid/products/trail-shoe-red"
+
+
+async def _run_learn(session, calls, *, delay: float = 0.0):
+    import asyncio
+
+    from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
+    from app.extraction.contracts import ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    async def _client(system_prompt: str, user_prompt: str) -> str:
+        calls.append(1)
+        if delay:
+            await asyncio.sleep(delay)
+        return _RESPONSE
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        _DETAIL_HTML,
+        _CLAIM_URL,
+        requested_fields=("title", "price"),
+    )
+    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    learned = await learn_recipe_after_extraction(
+        session,
+        request=request,
+        result=empty,
+        run_id=None,
+        llm_enabled=True,
+        is_new_template=True,
+        model_client=_client,
+    )
+    if learned:
+        await session.commit()
+    else:
+        await session.rollback()
+    return learned
+
+
+@pytest.mark.asyncio
+async def test_sequential_second_claim_returns_none_without_compiling(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 10 (sequential): once a recipe is learned, a second learn attempt
+    # for the same scope claims nothing and never compiles.
+    from sqlalchemy import func, select
+
+    from app.models.extraction_memory import ExtractionRecipe
+
+    calls: list[int] = []
+    assert await _run_learn(db_session, calls) is True
+    assert await _run_learn(db_session, calls) is False
+    assert calls == [1]
+
+    recipe_count = await db_session.scalar(
+        select(func.count()).select_from(ExtractionRecipe)
+    )
+    assert recipe_count == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_claims_compile_exactly_once(
+    db_session: AsyncSession,
+) -> None:
+    # Finding 10 (true concurrency): two learn attempts for the SAME scope race
+    # the durable claim on two independent sessions/connections bound to the
+    # same schema. The template row lock serializes them so the compiler stub is
+    # invoked EXACTLY ONCE and exactly one active recipe exists.
+    import asyncio
+
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models.extraction_memory import ExtractionRecipe
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    calls: list[int] = []
+
+    async def _worker() -> bool:
+        async with session_factory() as session:
+            return await _run_learn(session, calls, delay=0.05)
+
+    results = await asyncio.gather(_worker(), _worker())
+
+    # Exactly one worker learned; the other failed closed (no model call raced).
+    assert sorted(results) == [False, True]
+    assert calls == [1]
+
+    recipe_count = await db_session.scalar(
+        select(func.count()).select_from(ExtractionRecipe)
+    )
+    assert recipe_count == 1

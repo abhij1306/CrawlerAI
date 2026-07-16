@@ -178,7 +178,7 @@ PACKAGE_LOC_BUDGETS = {
 # Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
 # bridge, persistence release/drift logic, engine replay). Tracked here so the
 # eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_119
+TOTAL_APP_LOC_BUDGET = 85_245
 
 
 def test_production_package_loc_budgets() -> None:

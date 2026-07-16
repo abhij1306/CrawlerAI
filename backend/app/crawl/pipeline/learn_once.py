@@ -33,6 +33,7 @@ from app.core.shared.ids import stable_id
 from app.extraction.contracts import ExtractionRequest, ExtractionResult
 from app.extraction.surfaces import listing_schema, parse_surface, surface_spec
 from app.persistence.extraction_memory import (
+    claim_learn_once_template,
     note_recipe_drift_failure,
     persist_learned_recipe,
 )
@@ -145,6 +146,30 @@ async def learn_recipe_after_extraction(
     if not _has_rendered_capture(request):
         return False
 
+    url = request.capture.final_url or request.capture.requested_url
+    domain = normalize_domain(url)
+    route_pattern = normalize_route(url, surface_value)
+    # Stable per (domain, surface, route) so equivalent pages share a template
+    # instead of minting a fresh one per crawl (recipe_id carries bundle_id).
+    fingerprint = stable_id("learn-once-template", domain, surface_value, route_pattern)
+
+    # Finding 10: a durable, transactional claim guarantees exactly ONE model
+    # call per new template. The snapshot-based ``is_new_template`` check is a
+    # per-run read that two concurrent URLs/runs can both pass, so acquire a
+    # template-scoped row lock and re-check the executable recipe under it. A
+    # losing/blocked worker sees the winner's persisted recipe once it acquires
+    # the lock and fails closed (honest no-learn, no model call).
+    claim = await claim_learn_once_template(
+        session,
+        domain=domain,
+        surface=surface_value,
+        route_pattern=route_pattern,
+        fingerprint=fingerprint,
+        run_id=run_id,
+    )
+    if claim is None:
+        return False
+
     client = model_client or _model_client_for_run(session, run_id=run_id)
     surface = parse_surface(surface_value)
     discovery = await compile_recipe(
@@ -156,13 +181,10 @@ async def learn_recipe_after_extraction(
     if discovery.candidate is None:
         return False
 
-    url = request.capture.final_url or request.capture.requested_url
-    domain = normalize_domain(url)
-    route_pattern = normalize_route(url, surface_value)
     recipe_payload = discovery.candidate.recipe.model_dump(mode="json")
-    # Stable per (domain, surface, route) so equivalent pages share a template
-    # instead of minting a fresh one per crawl (recipe_id carries bundle_id).
-    fingerprint = stable_id("learn-once-template", domain, surface_value, route_pattern)
+    # Persist under the held claim: the template row lock acquired by
+    # ``claim_learn_once_template`` is held for the whole compile+persist, so a
+    # concurrent worker for the same scope blocks until this transaction commits.
     await persist_learned_recipe(
         session,
         domain=domain,
