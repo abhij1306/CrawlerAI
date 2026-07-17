@@ -8,6 +8,7 @@ implementing the small HtmlDocument/HtmlNode interface used below.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -47,6 +48,8 @@ from app.core.records.url_identity import (
 
 _PRICE_SIGNAL = re.compile(CASCADE_LISTING_PRICE_SIGNAL_PATTERN, re.I)
 _ONCLICK_URL = re.compile(CASCADE_LISTING_ONCLICK_URL_PATTERN)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +216,8 @@ def _node_key(node: Any) -> str:
         if mem_id is not None:
             return f"node:{int(mem_id)}"
     except Exception:
-        pass
+        # Duck-typed nodes without identity/mem_id fall back to a content hash.
+        logger.debug("listing card node identity unavailable; hashing html")
     return (
         "html:"
         + hashlib.sha1(_html(node).encode("utf-8"), usedforsecurity=False).hexdigest()
@@ -226,7 +230,8 @@ def _is_hidden_self(node: Any) -> bool:
         if callable(method) and method():
             return True
     except Exception:
-        pass
+        # Nodes without a working is_hidden() are judged by attributes below.
+        logger.debug("listing card is_hidden probe failed; using attribute check")
     if _has_attribute(node, "hidden"):
         return True
     style = _attribute(node, "style").replace(" ", "").lower()

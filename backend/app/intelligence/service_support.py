@@ -45,6 +45,8 @@ async def _score_candidate_if_ready(
     session: AsyncSession,
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
+    *,
+    prompt_task_runner=None,
 ) -> bool:
     if candidate.candidate_crawl_run_id is None:
         return False
@@ -101,6 +103,7 @@ async def _score_candidate_if_ready(
         source_snapshot=source_snapshot,
         candidate_snapshot=candidate_snapshot,
         deterministic_result=result,
+        prompt_task_runner=prompt_task_runner,
     )
     reasons_raw = result.get("reasons")
     session.add(
@@ -135,6 +138,7 @@ async def _resolve_source_snapshot(
     *,
     raw: dict[str, object],
     llm_enabled: bool,
+    prompt_task_runner=None,
 ) -> dict[str, object]:
     snapshot = extract_product_snapshot(raw)
     if snapshot.get("brand") or not llm_enabled:
@@ -144,6 +148,7 @@ async def _resolve_source_snapshot(
         title=str(snapshot.get("title") or ""),
         url=str(snapshot.get("url") or ""),
         snippet=str(snapshot.get("description") or ""),
+        prompt_task_runner=prompt_task_runner,
     )
     if not brand:
         return snapshot
@@ -157,6 +162,7 @@ async def _backfill_candidate_brand(
     intelligence: dict[str, object],
     source_type: str,
     llm_enabled: bool,
+    prompt_task_runner=None,
 ) -> dict[str, object]:
     if not llm_enabled:
         return intelligence
@@ -168,6 +174,7 @@ async def _backfill_candidate_brand(
         title=str(canonical.get("title") or ""),
         url=str(canonical.get("url") or ""),
         snippet=str(canonical.get("snippet") or canonical.get("description") or ""),
+        prompt_task_runner=prompt_task_runner,
     )
     if not brand:
         return intelligence
@@ -185,12 +192,18 @@ async def _backfill_candidate_brand(
 
 
 async def _brand_inference_llm(
-    session: AsyncSession, *, title: str, url: str, snippet: str
+    session: AsyncSession,
+    *,
+    title: str,
+    url: str,
+    snippet: str,
+    prompt_task_runner=None,
 ) -> str:
     if not title and not url:
         return ""
+    runner = prompt_task_runner or run_prompt_task
     domain = source_domain(url)
-    result = await run_prompt_task(
+    result = await runner(
         session,
         task_type=PRODUCT_INTELLIGENCE_BRAND_INFERENCE_LLM_TASK,
         run_id=None,
@@ -223,6 +236,7 @@ async def _build_llm_enrichment(
     source_snapshot: dict[str, object],
     candidate_snapshot: dict[str, object],
     deterministic_result: dict[str, object],
+    prompt_task_runner=None,
 ) -> dict[str, object]:
     requested = bool((job.options or {}).get("llm_enrichment_enabled"))
     base: dict[str, object] = {
@@ -231,7 +245,8 @@ async def _build_llm_enrichment(
     }
     if not requested:
         return base
-    result = await run_prompt_task(
+    runner = prompt_task_runner or run_prompt_task
+    result = await runner(
         session,
         task_type=PRODUCT_INTELLIGENCE_LLM_TASK,
         run_id=candidate.candidate_crawl_run_id,
@@ -294,6 +309,7 @@ async def _persist_discovery_sources(
     source_rows: list[dict[str, object]],
     options: dict[str, object],
     resolved_snapshots: dict[int, dict[str, object]] | None,
+    prompt_task_runner=None,
 ) -> dict[int, int]:
     source_products_by_index: dict[int, ProductIntelligenceSourceProduct] = {}
     snapshots_lookup = resolved_snapshots or {}
@@ -308,6 +324,7 @@ async def _persist_discovery_sources(
             session,
             raw=_row_data_payload(row),
             llm_enabled=llm_enabled,
+            prompt_task_runner=prompt_task_runner,
         )
         source = ProductIntelligenceSourceProduct(
             job_id=job.id,

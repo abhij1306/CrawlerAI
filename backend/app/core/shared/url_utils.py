@@ -150,7 +150,9 @@ def asset_url_identity(value: object) -> tuple[str, str] | None:
         flags=re.IGNORECASE,
     )
     identity_path = re.sub(
-        r"(/image/upload/)(?:[^/]*(?:,|_|:)[^/]*/)+(global/)",
+        # First chunk excludes the separator chars so each transform segment
+        # parses one way only (no ambiguous nesting under the outer +).
+        r"(/image/upload/)(?:[^/,_:]*[,_:][^/]*/)+(global/)",
         r"\1\2",
         identity_path,
         flags=re.IGNORECASE,
@@ -209,17 +211,22 @@ def public_asset_delivery_url(value: object) -> str | None:
     return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 
 
+def _srcset_rank(descriptor: str, index: int) -> float:
+    """Numeric rank for a srcset descriptor; document order breaks malformed ones."""
+    if descriptor[-1:].casefold() in {"w", "x"}:
+        try:
+            return float(descriptor[:-1])
+        except ValueError:
+            return float(index)
+    return float(index)
+
+
 def largest_srcset_url(value: str) -> str:
     """Return the highest-resolution URL from a ``srcset``/``data-srcset`` list."""
-    ranked: list[tuple[float, int, str]] = []
-    for index, (url, descriptor) in enumerate(_srcset_candidates(value)):
-        rank = float(index)
-        if descriptor[-1:].casefold() in {"w", "x"}:
-            try:
-                rank = float(descriptor[:-1])
-            except ValueError:
-                pass
-        ranked.append((rank, index, url))
+    ranked = [
+        (_srcset_rank(descriptor, index), index, url)
+        for index, (url, descriptor) in enumerate(_srcset_candidates(value))
+    ]
     return max(ranked, default=(0.0, 0, ""))[2]
 
 

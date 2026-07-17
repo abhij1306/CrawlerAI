@@ -4,7 +4,6 @@ import contextlib
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from app.extraction.documents import HtmlDocument, HtmlNode
@@ -51,11 +50,18 @@ from app.intelligence.matching import (
     source_domain,
 )
 
-if TYPE_CHECKING:
-    from app.intelligence.discovery import DiscoveredCandidate
-
-
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class DiscoveredCandidate:
+    url: str
+    domain: str
+    source_type: str
+    query_used: str
+    search_rank: int
+    payload: dict[str, object] | None = None
+    query_order: int = 0
 
 
 @dataclass(slots=True)
@@ -65,9 +71,20 @@ class SearchResult:
 
 
 @contextlib.asynccontextmanager
-async def _google_native_session():
-    """Open one real-Chrome page on google.com and reuse it across multiple queries."""
-    runtime = await get_browser_runtime(browser_engine=GOOGLE_NATIVE_BROWSER_ENGINE)
+async def _google_native_session(
+    *,
+    browser_runtime_getter=None,
+    page_html_getter=None,
+):
+    """Open one real-Chrome page on google.com and reuse it across multiple queries.
+
+    The runtime getters default to this module's imports but can be injected by
+    the caller (``discovery.google_native_session``) so test monkeypatches on the
+    ``discovery`` module take effect here without cross-module attribute writes.
+    """
+    runtime_getter = browser_runtime_getter or get_browser_runtime
+    html_getter = page_html_getter or get_page_html
+    runtime = await runtime_getter(browser_engine=GOOGLE_NATIVE_BROWSER_ENGINE)
     blocked = False
 
     async with runtime.page(domain=source_domain(GOOGLE_NATIVE_HOME_URL)) as page:
@@ -119,7 +136,7 @@ async def _google_native_session():
                     + int(GOOGLE_NATIVE_TYPING_EXTRA_WAIT_MS)
                 )
 
-                html = await get_page_html(page)
+                html = await html_getter(page)
                 current_url = _page_url(page)
             except Exception as exc:
                 logger.warning(

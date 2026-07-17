@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import re
-from dataclasses import dataclass
 from typing import Awaitable, Callable
 from urllib.parse import parse_qs, urlsplit
 
@@ -55,8 +54,8 @@ from app.core.config.product_intelligence import (
     product_intelligence_settings,
 )
 from app.intelligence.candidate_urls import candidate_dedupe_key, clean_result_url
-import app.intelligence.discovery_support as discovery_support
 from app.intelligence.discovery_support import (
+    DiscoveredCandidate,
     _candidate_has_shopping_group,
     _candidate_matches_product,
     _candidate_model_token_match,
@@ -66,6 +65,7 @@ from app.intelligence.discovery_support import (
     _domain_allowed,
     _domain_matches,
     _google_native_blocked,
+    _google_native_session,
     _identity_field,
     _identity_token_match,
     _join_query_parts,
@@ -83,17 +83,6 @@ from app.intelligence.matching import normalize_brand, source_domain
 logger = logging.getLogger(__name__)
 
 QueryRunner = Callable[[str, int], Awaitable[list["SearchResult"]]]
-
-
-@dataclass(slots=True)
-class DiscoveredCandidate:
-    url: str
-    domain: str
-    source_type: str
-    query_used: str
-    search_rank: int
-    payload: dict[str, object] | None = None
-    query_order: int = 0
 
 
 def build_search_queries(
@@ -720,7 +709,11 @@ parse_serpapi_immersive_results = _parse_serpapi_immersive_results
 
 @contextlib.asynccontextmanager
 async def google_native_session():
-    discovery_support.get_browser_runtime = get_browser_runtime
-    discovery_support.get_page_html = get_page_html
-    async with discovery_support._google_native_session() as run_query:
+    # Getters are passed through (not read inside discovery_support) so test
+    # monkeypatches on ``app.intelligence.discovery.get_browser_runtime`` /
+    # ``get_page_html`` still take effect.
+    async with _google_native_session(
+        browser_runtime_getter=get_browser_runtime,
+        page_html_getter=get_page_html,
+    ) as run_query:
         yield run_query

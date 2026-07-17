@@ -195,7 +195,13 @@ def _url_domain(value: Any) -> str:
 
 def _is_google_redirect(value: Any) -> bool:
     raw = str(value or "").lower()
-    return "grounding-api-redirect" in raw or "vertexaisearch.cloud.google.com" in raw
+    if "grounding-api-redirect" in raw:
+        return True
+    try:
+        host = urlparse(raw).hostname or ""
+    except ValueError:
+        return False
+    return host == "vertexaisearch.cloud.google.com"
 
 
 def citation_domain(citation: dict[str, Any]) -> str:

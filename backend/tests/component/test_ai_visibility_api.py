@@ -23,7 +23,11 @@ async def test_best_and_less_preset_comes_from_backend_owner(
     body = response.json()
     assert body["benchmark_mode"] == "controlled_localized"
     assert body["language_code"] == "en-AU"
-    assert "bestlesscomau.zendesk.com" in body["unintended_domains"]
+    # Exact-match membership (not substring) so static analysis doesn't read
+    # this as URL-substring sanitization.
+    assert any(
+        domain == "bestlesscomau.zendesk.com" for domain in body["unintended_domains"]
+    )
     assert len(body["prompts"]) == 25
 
 
