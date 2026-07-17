@@ -75,12 +75,10 @@ async def load_record_artifacts(
     result_roots: dict[int, str] = {}
     if url_result_id is not None:
         url_result = await session.get(CrawlUrlResult, int(url_result_id))
-    else:
-        url_result = None
-    if url_result_id is not None and url_result is not None:
-        result_roots[int(url_result_id)] = str(
-            getattr(url_result, "manifest_uri", "") or ""
-        ).strip()
+        if url_result is not None:
+            result_roots[int(url_result_id)] = str(
+                getattr(url_result, "manifest_uri", "") or ""
+            ).strip()
     return _artifacts_from_batch(
         record,
         repository=repository,

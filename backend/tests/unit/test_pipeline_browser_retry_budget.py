@@ -193,8 +193,12 @@ async def test_browser_retry_network_rung_preserves_authorized_plan(
         assert result is not None
         fetched.acquisition_result = result
 
+    # Finding 5: when network_payloads is required, EVERY browser rung —
+    # including the first one after an HTTP-first result — captures network
+    # payloads. Previously the first rung ran with capture off and burned an
+    # attempt producing an artifact that could not satisfy the requirement.
     assert [request.policy.capture_network for request in requests] == [
-        "off",
+        CAPTURE_NETWORK_ALL_SMALL_JSON,
         CAPTURE_NETWORK_ALL_SMALL_JSON,
     ]
     for request in requests:

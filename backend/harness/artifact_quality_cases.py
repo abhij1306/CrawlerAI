@@ -11,7 +11,6 @@ from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import fixture_request_from_inputs
 
 EMPTY_VALUES: tuple[object, ...] = (None, "", [], {}, ())
-OFFER_FIELDS = frozenset({"price", "currency", "availability"})
 __all__ = [
     "audit_artifact_quality_cases",
     "load_artifact_quality_cases",

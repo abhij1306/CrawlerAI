@@ -16,11 +16,16 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 # intelligence/matching, schemas/crawl) dropped below the 700-line threshold
 # and left the ledger; most survivors shrank.
 OVERSIZED_MODULE_DEBT = {
+    # Closeout hardening (readiness terminal states, escalation diagnostics,
+    # coderabbit findings 1-7): browser_readiness re-entered the ledger at the
+    # threshold edge; extraction collectors shrank with the srcset helper
+    # dedup; extraction_memory grew with the bounded persist lock-wait seam.
+    "acquisition/browser_readiness.py": 702,
     "acquisition/browser_recovery.py": 724,
-    "acquisition/browser_result_builder.py": 725,
+    "acquisition/browser_result_builder.py": 740,
     "core/config/extraction_rules/_detail.py": 1026,
     "enrichment/service.py": 714,
-    "extraction/collectors/dom.py": 1100,
+    "extraction/collectors/dom.py": 1062,
     "extraction/collectors/js_state.py": 914,
     "extraction/collectors/jsonld.py": 783,
     "extraction/contracts.py": 856,
@@ -33,7 +38,7 @@ OVERSIZED_MODULE_DEBT = {
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 1169,
+    "persistence/extraction_memory.py": 1215,
 }
 # SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
 # into _listing_discovery_signals/_listing_readiness_verdict and left the
@@ -153,24 +158,24 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 
 PACKAGE_LOC_BUDGETS = {
-    # SLICE-6 closeout reconciliation: every package except core ratcheted down
-    # to measured actuals after the cascade refactor/reformat.
-    "acquisition": 16_808,
-    "crawl": 9_072,
-    # SLICE-6: core grew (20_585 -> 20_749) with the listing readiness spec and
-    # discovery/network provenance config. Tracked for the next cleanup slice.
-    "core": 20_749,
+    # Closeout hardening reconciliation: acquisition/crawl/core/intelligence
+    # grew slightly with readiness terminal states, the bounded persist
+    # lock-wait, and the discovery dependency-injection seams; extraction
+    # ratcheted DOWN with the srcset helper dedup.
+    "acquisition": 16_828,
+    "crawl": 9_082,
+    "core": 20_761,
     "enrichment": 2_057,
     "connectors": 2_444,
-    "intelligence": 3_247,
-    "extraction": 16_475,
+    "intelligence": 3_277,
+    "extraction": 16_437,
     "evaluation": 2_009,
 }
-# SLICE-6 closeout: total grew (85_727 -> 86_288) with the listing readiness
-# classification, bounded escalation diagnostics, and diagnose.v3 provenance.
-# Package-level budgets above were ratcheted down wherever the refactor shrank
-# code; the next cleanup slice should drive this back below 86k.
-TOTAL_APP_LOC_BUDGET = 86_288
+# Closeout hardening: total grew (86_288 -> 86_376) with the coderabbit
+# findings (bounded lock-wait seam + typed error, readiness terminal states,
+# fast-finalize status gate) and the cyclic-import-busting injection seams.
+# The next cleanup slice should drive this back below 86k.
+TOTAL_APP_LOC_BUDGET = 86_376
 
 
 def test_production_package_loc_budgets() -> None:

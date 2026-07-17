@@ -97,10 +97,21 @@ class ListingCardDiagnostics:
     def from_mapping(cls, value: object) -> "ListingCardDiagnostics":
         if not isinstance(value, dict):
             return cls()
+
+        def _count(raw: object) -> int:
+            # Persisted diagnostics may carry legacy/malformed values ("unknown");
+            # coerce defensively rather than crash the readiness read path.
+            if raw is None or not isinstance(raw, (int, float, str)):
+                return 0
+            try:
+                return max(0, int(raw))
+            except (TypeError, ValueError):
+                return 0
+
         raw_reasons = value.get("rejection_reasons")
         reasons = (
             tuple(
-                (str(reason), max(0, int(count)))
+                (str(reason), _count(count))
                 for reason, count in list(raw_reasons.items())[
                     :CASCADE_READINESS_REJECTION_REASON_LIMIT
                 ]
@@ -123,9 +134,9 @@ class ListingCardDiagnostics:
             if isinstance(row, dict) and str(row.get("reason") or "").strip()
         )
         return cls(
-            card_count=max(0, int(value.get("card_count") or 0)),
-            admitted_count=max(0, int(value.get("admitted_count") or 0)),
-            rejected_count=max(0, int(value.get("rejected_count") or 0)),
+            card_count=_count(value.get("card_count")),
+            admitted_count=_count(value.get("admitted_count")),
+            rejected_count=_count(value.get("rejected_count")),
             rejection_reasons=reasons,
             rejection_samples=samples,
         )

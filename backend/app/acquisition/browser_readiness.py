@@ -567,10 +567,14 @@ async def probe_browser_readiness(
             detail_hints=detail_hints,
             detail_title_matches_url=detail_title_matches_url,
         )
+        if is_ready:
+            readiness_terminal_state = "ready"
     else:
         is_ready = visible_text_length >= int(
             crawler_runtime_settings.browser_readiness_visible_text_min
         )
+        if is_ready:
+            readiness_terminal_state = "ready"
     return {
         "url": url,
         "surface": surface,

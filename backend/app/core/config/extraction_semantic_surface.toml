@@ -20,10 +20,10 @@ post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-# SLICE-6 closeout reconciliation: ratcheted down to measured actuals after
-# the cascade refactor/reformat. Only surfaces.py grew (258 -> 270) for the
-# listing readiness spec fields.
-physical_loc_budget = 16475
+# Closeout hardening reconciliation: ratcheted down to measured actuals —
+# collectors/dom.py shrank (1100 -> 1062) when its copy-pasted srcset
+# helpers were deduplicated into core/shared/url_utils.
+physical_loc_budget = 16437
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -31,7 +31,7 @@ default_module_cyclomatic_complexity_budget = 20
 "adapters.py" = 564
 "cascade.py" = 212
 "collectors/_helpers.py" = 233
-"collectors/dom.py" = 1100
+"collectors/dom.py" = 1062
 "collectors/js_state.py" = 914
 "collectors/jsonld.py" = 783
 "collectors/metadata.py" = 188

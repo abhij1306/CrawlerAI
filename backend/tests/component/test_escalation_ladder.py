@@ -271,14 +271,16 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
         result=_empty_result(with_retry=True),
     )
 
+    # Finding 5: network_payloads is required, so the FIRST browser rung
+    # already escalates capture_network — the ladder no longer burns a rung on
+    # a capture-off browser attempt before reaching the network bundle.
     assert [request.policy.capture_network for request in requests] == [
-        "off",
         CAPTURE_NETWORK_ALL_SMALL_JSON,
     ]
     assert fetched.acquisition_result.network_payloads[0]["body"] == payload
     escalation = fetched.acquisition_result.acquisition_diagnostics["escalation"]
-    assert escalation["rung"] == 2
-    assert escalation["attempt"] == 2
+    assert escalation["rung"] == 1
+    assert escalation["attempt"] == 1
     assert escalation["max_attempts"] == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
     assert escalation["capability_requests"][-1]["required_artifacts"] == [
         "rendered_html",

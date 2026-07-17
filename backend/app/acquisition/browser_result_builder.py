@@ -675,6 +675,25 @@ def build_browser_artifacts(
     return artifacts
 
 
+def _ready_probe_finalizes_surface(
+    probe: dict[str, object],
+    *,
+    normalized_surface: str,
+    min_detail_hints: int,
+    min_listing_items: int,
+) -> bool:
+    """Surface-specific evidence check for one ready (non-empty) probe."""
+    if "detail" in normalized_surface:
+        if bool(probe.get("structured_data_present")):
+            return True
+        return _object_int(probe.get("detail_hint_count")) >= min_detail_hints
+    if "listing" in normalized_surface:
+        if _object_int(probe.get("listing_card_count")) >= min_listing_items:
+            return True
+        return _object_int(probe.get("matched_listing_selectors")) > 0
+    return True
+
+
 def _ready_probe_supports_fast_finalize(
     readiness_probes: list[dict[str, object]],
     *,
@@ -704,23 +723,21 @@ def _ready_probe_supports_fast_finalize(
         if not isinstance(probe, dict) or not bool(probe.get("is_ready")):
             continue
         if probe.get("readiness_terminal_state") == "ready_empty":
-            return True
+            # A legitimate empty result only fast-finalizes on a successful
+            # response; 404/5xx shells must follow normal error handling.
+            if 200 <= int(status_code or 0) < 300:
+                return True
+            continue
         visible_text_length = _object_int(probe.get("visible_text_length"))
         if visible_text_length < min_visible_text:
             continue
-        if "detail" in normalized_surface:
-            if bool(probe.get("structured_data_present")):
-                return True
-            if _object_int(probe.get("detail_hint_count")) >= min_detail_hints:
-                return True
-            continue
-        if "listing" in normalized_surface:
-            if _object_int(probe.get("listing_card_count")) >= min_listing_items:
-                return True
-            if _object_int(probe.get("matched_listing_selectors")) > 0:
-                return True
-            continue
-        return True
+        if _ready_probe_finalizes_surface(
+            probe,
+            normalized_surface=normalized_surface,
+            min_detail_hints=min_detail_hints,
+            min_listing_items=min_listing_items,
+        ):
+            return True
     return False
 
 

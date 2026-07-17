@@ -183,9 +183,11 @@ async def _acquire_browser_retry_result(
         "prefer_browser": True,
         "retry_reason": retry_reason,
     }
-    if (
-        context.browser_escalation_count > 0 or browser_attempted
-    ) and "network_payloads" in required_artifacts:
+    # Whenever the retry needs network payloads, capture them — including the
+    # FIRST browser rung after an HTTP-only fetch (browser_escalation_count == 0
+    # and browser_attempted False), which would otherwise render without capture
+    # and burn a rung.
+    if "network_payloads" in required_artifacts:
         profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine

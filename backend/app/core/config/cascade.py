@@ -38,9 +38,11 @@ CASCADE_LISTING_MIN_REPEATED_RECORDS: Final[int] = 2
 CASCADE_READINESS_REJECTION_SAMPLE_LIMIT: Final[int] = 5
 CASCADE_READINESS_REJECTION_REASON_LIMIT: Final[int] = 10
 CASCADE_LISTING_SHELL_PATTERNS: Final[tuple[str, ...]] = (
+    # Only transient loading / app-hydration states. Permanent search-UI chrome
+    # ("Search jobs", "Find products") must NOT be listed: it coexists with a
+    # legitimately empty result page and would block the ready_empty outcome.
     r"\bloading(?:\s+(?:more\s+)?results)?\b",
     r"\bplease wait\b",
-    r"\b(?:search|find)\s+(?:for\s+)?(?:jobs|products|items)\b",
     r"\b(?:open|continue|load|view)\s+(?:this\s+)?(?:page\s+)?in\s+(?:the\s+)?app\b",
     r"\bdownload\s+(?:our|the)\s+app\b",
 )

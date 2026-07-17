@@ -47,7 +47,7 @@ async def test_repeated_admitted_cards_are_ready_with_uniform_diagnostics() -> N
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "text",
-    ["Loading results, please wait", "Search jobs", "Continue this page in the app"],
+    ["Loading results, please wait", "Continue this page in the app"],
 )
 async def test_listing_shells_are_observations_not_ready(text: str) -> None:
     probe = await probe_browser_readiness(
@@ -61,6 +61,24 @@ async def test_listing_shells_are_observations_not_ready(text: str) -> None:
     assert probe["ready_empty"] is False
     assert probe["shell_detected"] is True
     assert probe["readiness_terminal_state"] == "shell_rejected"
+
+
+@pytest.mark.asyncio
+async def test_permanent_search_chrome_is_not_a_shell() -> None:
+    # Finding 3: "Search jobs" is permanent search-UI chrome that coexists with
+    # legitimate empty results. It must NOT shell-reject the page — the probe
+    # keeps observing (no cards, no no-results text) instead of terminally
+    # rejecting a page that could still settle into a valid empty result.
+    probe = await probe_browser_readiness(
+        _Page("https://jobs.test/search"),
+        url="https://jobs.test/search",
+        surface="job_listing",
+        html="<html><body><main>Search jobs</main></body></html>",
+    )
+
+    assert probe["is_ready"] is False
+    assert probe["shell_detected"] is False
+    assert probe["readiness_terminal_state"] == "observing"
 
 
 @pytest.mark.asyncio

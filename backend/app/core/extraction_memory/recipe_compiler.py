@@ -62,7 +62,6 @@ _ATTRIBUTE_FIELDS: dict[str, str] = {
     "apply_url": "href",
     "image_url": "src",
 }
-_URL_FIELDS: tuple[str, ...] = ("url", "apply_url")
 # Text fields that carry a dedicated transform so re-read values are canonical.
 _FIELD_TRANSFORMS: dict[str, str] = {
     "price": "dom_price",

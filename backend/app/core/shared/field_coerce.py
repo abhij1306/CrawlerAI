@@ -17,13 +17,11 @@ from app.core.config.extraction_rules import (
     NOISY_PRODUCT_ATTRIBUTE_KEYS,
     OPTION_VALUE_NOISE_WORDS,
     PRICE_VALUE_FIELDS as PRICE_VALUE_FIELDS,
+    # Read dynamically by field_coerce_dispatch via module attribute.
     RATING_RE as RATING_RE,
     REVIEW_COUNT_RE as _REVIEW_COUNT_RE,
     SIZE_REJECT_TOKENS,
     SMALL_NUMERIC_PATTERN,
-    STRUCTURED_MULTI_FIELDS as STRUCTURED_MULTI_FIELDS,
-    STRUCTURED_OBJECT_FIELDS as STRUCTURED_OBJECT_FIELDS,
-    STRUCTURED_OBJECT_LIST_FIELDS as STRUCTURED_OBJECT_LIST_FIELDS,
     TRACKING_PIXEL_PATTERN,
     URL_FIELDS as URL_FIELDS,
     VARIANT_COLOR_CODELIKE_TOKEN_PATTERN,
@@ -49,7 +47,6 @@ from app.core.records.field_policy import (
 from app.core.records.normalizers import normalize_record_fields
 from app.core.shared.coerce_primitives import (
     coerce_int as _coerce_int,
-    is_blank as is_blank,
     object_dict as _object_dict,
     object_list as _object_list,
     safe_int as _safe_int,
@@ -72,7 +69,6 @@ from app.core.shared.field_coerce_price import (
     extract_price_text as extract_price_text,
 )
 from app.core.shared.field_coerce_text import (
-    coerce_brand_text as coerce_brand_text,
     infer_brand_from_product_url as infer_brand_from_product_url,
     infer_brand_from_title_host as infer_brand_from_title_host,
     infer_brand_from_title_marker as infer_brand_from_title_marker,
@@ -85,11 +81,8 @@ from app.core.shared.field_coerce_url import (
     strip_tracking_query_params as strip_tracking_query_params,
 )
 from app.core.shared.field_surface import (
-    ALL_CANONICAL_FIELDS as ALL_CANONICAL_FIELDS,
     clean_record as clean_record,
-    surface_alias_lookup as surface_alias_lookup,
     surface_fields as surface_fields,
-    validate_record_for_surface as validate_record_for_surface,
 )
 from app.core.shared.regex_patterns import compile_regex_patterns
 

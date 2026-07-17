@@ -10,7 +10,7 @@ import uuid
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, func, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
@@ -493,6 +493,31 @@ async def create_candidate_release_snapshot(
     return row
 
 
+class LearnOncePersistLockTimeout(RuntimeError):
+    """A learned-recipe persist could not acquire its row locks in time.
+
+    Raised (after rolling back the session) when the bounded lock wait in
+    :func:`persist_learned_recipe` expires because a peer holds the template or
+    recipe row. Callers must treat this as an honest no-learn — the claim
+    seam's PROVISIONAL marker ages out via its TTL, so the scope stays
+    re-claimable — and never error the crawl.
+    """
+
+
+def _is_lock_timeout_error(exc: DBAPIError) -> bool:
+    """True when a DBAPI error is Postgres ``lock_not_available`` (55P03).
+
+    asyncpg's ``LockNotAvailableError`` translates to a generic
+    :class:`DBAPIError` (not ``OperationalError``), so matching on the
+    SQLSTATE is the only reliable way to recognize an expired
+    ``SET LOCAL lock_timeout`` across drivers.
+    """
+
+    return getattr(exc.orig, "sqlstate", None) == "55P03" or isinstance(
+        exc, OperationalError
+    )
+
+
 async def persist_learned_recipe(
     session: AsyncSession,
     *,
@@ -510,6 +535,10 @@ async def persist_learned_recipe(
     The executable recipe payload is stored on its own recipe layer/kind so it
     never mingles with selector-rule layers. Confidence lives in the payload so
     version ordering can prefer the most-confident recipe without a new column.
+
+    Raises :class:`LearnOncePersistLockTimeout` when the bounded row-lock wait
+    expires (contention with a concurrent writer); the session is rolled back
+    before raising so the connection is returned to the pool clean.
     """
 
     template = await ensure_template(
@@ -520,16 +549,6 @@ async def persist_learned_recipe(
         route_pattern=route_pattern,
         tech_signals=tech_signals,
         run_id=run_id,
-    )
-    # Deadlock ordering: every writer for this scope locks template THEN recipe
-    # (``claim_learn_once_template`` and ``_locked_active_executable_recipe`` do
-    # the same). Without this, a concurrent claimant holding the template row
-    # and waiting on the recipe row can deadlock against this transaction
-    # holding the recipe row from ``upsert_recipe``'s FOR UPDATE.
-    await session.execute(
-        select(ExtractionTemplate.id)
-        .where(ExtractionTemplate.id == template.id)
-        .with_for_update()
     )
     payload = dict(recipe_payload)
     payload["_confidence"] = float(confidence)
@@ -542,20 +561,53 @@ async def persist_learned_recipe(
             return existing
         return payload
 
-    recipe, _compiled = await upsert_recipe(
-        session,
-        template=template,
-        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
-        kind=EXTRACTION_RECIPE_KIND_EXECUTABLE,
-        payload=payload,
-        merge_payload=merge_payload,
-    )
-    # Finding 6: the claim seam may have pre-created this row as a PROVISIONAL
-    # learn-attempt marker. A grounded compile promotes it to ACTIVE so it enters
-    # the release payload (release payloads only surface ACTIVE executables).
-    if recipe.status != EXTRACTION_MEMORY_STATUS_ACTIVE:
-        recipe.status = EXTRACTION_MEMORY_STATUS_ACTIVE
-        await session.flush()
+    # Finding 7: bound every row-lock wait below with the same ``SET LOCAL
+    # lock_timeout`` used by ``claim_learn_once_template`` so a persist blocked
+    # by a peer fails closed within the configured bound instead of hanging a
+    # pooled connection indefinitely.
+    try:
+        await session.execute(
+            text(
+                f"SET LOCAL lock_timeout = '{CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS}ms'"
+            )
+        )
+        # Deadlock ordering: every writer for this scope locks template THEN
+        # recipe (``claim_learn_once_template`` and
+        # ``_locked_active_executable_recipe`` do the same). Without this, a
+        # concurrent claimant holding the template row and waiting on the
+        # recipe row can deadlock against this transaction holding the recipe
+        # row from ``upsert_recipe``'s FOR UPDATE.
+        await session.execute(
+            select(ExtractionTemplate.id)
+            .where(ExtractionTemplate.id == template.id)
+            .with_for_update()
+        )
+        recipe, _compiled = await upsert_recipe(
+            session,
+            template=template,
+            layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+            kind=EXTRACTION_RECIPE_KIND_EXECUTABLE,
+            payload=payload,
+            merge_payload=merge_payload,
+        )
+        # Finding 6: the claim seam may have pre-created this row as a
+        # PROVISIONAL learn-attempt marker. A grounded compile promotes it to
+        # ACTIVE so it enters the release payload (release payloads only
+        # surface ACTIVE executables).
+        if recipe.status != EXTRACTION_MEMORY_STATUS_ACTIVE:
+            recipe.status = EXTRACTION_MEMORY_STATUS_ACTIVE
+            await session.flush()
+    except DBAPIError as exc:
+        if not _is_lock_timeout_error(exc):
+            raise
+        # Lock wait exceeded ``lock_timeout`` — a peer holds the row. Fail
+        # closed: roll back and surface a typed error the caller maps to an
+        # honest no-learn.
+        await session.rollback()
+        raise LearnOncePersistLockTimeout(
+            f"persist_learned_recipe lock wait exceeded "
+            f"{CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS}ms for {domain}/{surface}"
+        ) from exc
     return template, recipe
 
 
@@ -736,7 +788,9 @@ async def claim_learn_once_template(
                 .with_for_update()
             )
         ).scalar_one_or_none()
-    except OperationalError:
+    except DBAPIError as exc:
+        if not _is_lock_timeout_error(exc):
+            raise
         # Lock wait exceeded ``lock_timeout`` — a peer holds the row. Fail closed.
         await session.rollback()
         return None
