@@ -170,15 +170,22 @@ async def _acquire_browser_retry_result(
             f"Skipping browser retry for {context.url}: required artifacts already captured",
         )
         return None
+    remaining_budget = remaining_url_budget_seconds(context)
+    if remaining_budget <= 0.0:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Skipping browser retry for {context.url}: URL time budget exhausted",
+        )
+        return None
     profile_updates: dict[str, object] = {
         "fetch_mode": "browser_only",
         "prefer_browser": True,
         "retry_reason": retry_reason,
     }
     if (
-        (context.browser_escalation_count > 0 or browser_attempted)
-        and "network_payloads" in required_artifacts
-    ):
+        context.browser_escalation_count > 0 or browser_attempted
+    ) and "network_payloads" in required_artifacts:
         profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
@@ -186,7 +193,7 @@ async def _acquire_browser_retry_result(
         (await build_acquisition_request(context)).with_profile_updates(
             **profile_updates
         ),
-        attempt_timeout_seconds=remaining_url_budget_seconds(context),
+        attempt_timeout_seconds=remaining_budget,
     )
     session = getattr(context, "session", None)
     commit = getattr(session, "commit", None) if session is not None else None
@@ -198,37 +205,65 @@ async def _acquire_browser_retry_result(
             "warning",
             "Skipping browser retry pre-acquire commit: context.session is missing or has no async commit API",
         )
+    # The typed attempt is recorded before acquisition so failed/timed-out
+    # rungs — the most important ones — still appear in diagnose.v3.
+    context.browser_escalation_count += 1
+    rung_max_attempts = max(1, max_attempts)
+    attempt = EscalationAttemptDiagnostics(
+        rung=context.browser_escalation_count,
+        attempt=context.browser_escalation_count,
+        max_attempts=rung_max_attempts,
+        reason=retry_reason,
+        required_artifacts=tuple(required_artifacts),
+        capture_network=request.policy.capture_network if request.policy else None,
+    )
+    context.escalation_attempts.append(attempt.model_dump(mode="json"))
     try:
         from app.crawl.pipeline import extraction_loop
 
         acquire_impl = getattr(extraction_loop, "acquire", acquire)
-        context.browser_escalation_count += 1
         browser_result = await acquire_impl(request)
-        attempt = EscalationAttemptDiagnostics(
-            rung=context.browser_escalation_count,
-            attempt=context.browser_escalation_count,
-            max_attempts=max(1, max_attempts),
-            reason=retry_reason,
-            required_artifacts=tuple(required_artifacts),
-            capture_network=request.policy.capture_network,
-        ).model_dump(mode="json")
-        attempts = getattr(context, "escalation_attempts", None)
-        if not isinstance(attempts, list):
-            attempts = []
-            setattr(context, "escalation_attempts", attempts)
-        attempts.append(attempt)
+        context.escalation_attempts[-1] = replace_escalation_outcome(
+            attempt, outcome="acquired"
+        )
         diagnostics = dict(browser_result.acquisition_diagnostics or {})
         diagnostics["escalation"] = {
-            "rung": context.browser_escalation_count,
-            "attempt": context.browser_escalation_count,
-            "max_attempts": max(1, max_attempts),
-            "capability_requests": list(attempts),
+            "rung": attempt.rung,
+            "attempt": attempt.attempt,
+            "max_attempts": rung_max_attempts,
+            "capability_requests": list(context.escalation_attempts),
         }
         browser_result.acquisition_diagnostics = diagnostics
         return browser_result
     except asyncio.CancelledError:
+        context.escalation_attempts[-1] = replace_escalation_outcome(
+            attempt, outcome="cancelled"
+        )
         raise
     except Exception as exc:
+        outcome = (
+            "timeout"
+            if isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+            else "failed"
+        )
+        context.escalation_attempts[-1] = replace_escalation_outcome(
+            attempt,
+            outcome=outcome,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        # The failed rung must stay visible in diagnose.v3: the original
+        # acquisition result is what gets published, so the escalation history
+        # (including this failure) is attached to it.
+        failed_diagnostics = dict(
+            getattr(acquisition_result, "acquisition_diagnostics", None) or {}
+        )
+        failed_diagnostics["escalation"] = {
+            "rung": attempt.rung,
+            "attempt": attempt.attempt,
+            "max_attempts": rung_max_attempts,
+            "capability_requests": list(context.escalation_attempts),
+        }
+        acquisition_result.acquisition_diagnostics = failed_diagnostics
         _merge_browser_diagnostics(
             acquisition_result,
             build_failed_browser_diagnostics(
@@ -251,15 +286,25 @@ async def _acquire_browser_retry_result(
         return None
 
 
+def replace_escalation_outcome(
+    attempt: EscalationAttemptDiagnostics,
+    *,
+    outcome: str,
+    error: str | None = None,
+) -> dict[str, object]:
+    return attempt.model_copy(update={"outcome": outcome, "error": error}).model_dump(
+        mode="json"
+    )
+
+
 def _required_retry_artifacts_present(
     acquisition_result,
     required_artifacts: tuple[str, ...],
 ) -> bool:
     available = set()
-    if (
-        PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
-        and str(getattr(acquisition_result, "html", "") or "")
-    ):
+    if PageEvidence.from_acquisition_result(
+        acquisition_result
+    ).browser_attempted and str(getattr(acquisition_result, "html", "") or ""):
         available.add("rendered_html")
     if list(getattr(acquisition_result, "network_payloads", []) or []):
         available.add("network_payloads")

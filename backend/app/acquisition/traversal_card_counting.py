@@ -26,6 +26,7 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 if TYPE_CHECKING:
     from app.acquisition.traversal_types import TraversalResult
 
+
 async def page_snapshot(page: Page, *, surface: str) -> dict[str, Any]:
     snapshot = await page.evaluate(
         """

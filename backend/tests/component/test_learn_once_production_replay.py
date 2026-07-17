@@ -197,10 +197,8 @@ async def test_recipe_tier_replay_resets_drift_counter(
 
     from app.models.extraction_memory import ExtractionRecipe
 
-    stored = (
-        await db_session.execute(select(ExtractionRecipe))
-    ).scalars().all()
+    stored = (await db_session.execute(select(ExtractionRecipe))).scalars().all()
     payloads = [r.payload.get("_stale_after_failures") for r in stored]
-    assert any(
-        isinstance(p, dict) and p.get("failure_count") == 0 for p in payloads
-    ), payloads
+    assert any(isinstance(p, dict) and p.get("failure_count") == 0 for p in payloads), (
+        payloads
+    )

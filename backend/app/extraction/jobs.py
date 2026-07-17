@@ -515,7 +515,9 @@ def _first_text(doc: HtmlDocument, selectors: tuple[str, ...]) -> str | None:
         node = doc.css_first(selector)
         if node is None or node.is_hidden():
             continue
-        text = _clean_text(node.attribute("content") or text_without_non_text_descendants(node))
+        text = _clean_text(
+            node.attribute("content") or text_without_non_text_descendants(node)
+        )
         if text:
             return text
     return None

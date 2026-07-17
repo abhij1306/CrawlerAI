@@ -134,13 +134,13 @@ def test_canonical_url_artifacts_publish_minimal_extraction(tmp_path: Path) -> N
     )
 
     result_dir = tmp_path / published.result_root
-    assert (result_dir / "source.html").is_file()
-    assert (result_dir / "result.json").is_file()
+    assert (result_dir / "page.html").is_file()
+    assert (result_dir / "record.json").is_file()
     assert (result_dir / "diagnose.json").is_file()
     assert not (result_dir / "manifest.json").exists()
     assert not (result_dir / "screenshot.png").exists()
     files = sorted(result_dir.iterdir(), key=lambda p: p.name)
-    assert [f.name for f in files] == ["diagnose.json", "result.json", "source.html"]
+    assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
 
 
 def test_diagnose_artifact_is_capped(tmp_path: Path, monkeypatch) -> None:
@@ -242,7 +242,7 @@ async def test_record_artifact_reader_rejects_tampered_canonical_bundle(
 ) -> None:
     published = _publish_record_reader_fixture(tmp_path)
     repository = ArtifactRepository(root_dir=tmp_path)
-    page_uri = f"{published.result_root}/source.html"
+    page_uri = f"{published.result_root}/page.html"
     repository.resolve_uri(page_uri).write_text("tampered", encoding="utf-8")
     record = SimpleNamespace(
         id=27,
@@ -380,7 +380,7 @@ def _publish_record_reader_fixture(
 def test_canonical_url_artifacts_publish_compact_bundle(
     tmp_path: Path,
 ) -> None:
-    """Publisher emits exactly 3 files: source.html, result.json, diagnose.json."""
+    """Publisher emits exactly 3 files: page.html, record.json, diagnose.json."""
     acquisition = SimpleNamespace(
         final_url="https://example.test/products/widget",
         html="<html><h1>Widget</h1></html>",
@@ -443,15 +443,15 @@ def test_canonical_url_artifacts_publish_compact_bundle(
     repository = ArtifactRepository(root_dir=tmp_path)
     assert published.result_root == "runs/7/results/9"
     result_dir = tmp_path / published.result_root
-    assert (result_dir / "source.html").is_file()
-    assert (result_dir / "result.json").is_file()
+    assert (result_dir / "page.html").is_file()
+    assert (result_dir / "record.json").is_file()
     assert (result_dir / "diagnose.json").is_file()
     assert not (result_dir / "manifest.json").exists()
     assert not (result_dir / "screenshot.png").exists()
     files = sorted(result_dir.iterdir(), key=lambda p: p.name)
-    assert [f.name for f in files] == ["diagnose.json", "result.json", "source.html"]
+    assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
 
-    records_payload = repository.read_json(f"{published.result_root}/result.json")
+    records_payload = repository.read_json(f"{published.result_root}/record.json")
     assert records_payload["records"] == [{"title": "Widget"}]
     assert records_payload["record_count"] == 1
 

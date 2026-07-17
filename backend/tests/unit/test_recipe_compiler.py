@@ -18,7 +18,7 @@ COMPILER_PATH = APP_ROOT / "core" / "extraction_memory" / "recipe_compiler.py"
 
 _DETAIL_HTML = (
     "<html><body><main>"
-    '<h1>Trail Shoe Red</h1>'
+    "<h1>Trail Shoe Red</h1>"
     '<a href="/products/trail-shoe-red" rel="canonical">self</a>'
     '<span class="price">$129.99</span>'
     '<img src="/img/red.jpg">'
@@ -81,7 +81,9 @@ async def test_grounded_detail_recipe_is_accepted_with_one_model_call() -> None:
         '"title": "/html[1]/body[1]/main[1]/h1[1]", '
         '"price": "/html[1]/body[1]/main[1]/span[1]"}}'
     )
-    result = await _compile(_detail_request(), Surface.ECOMMERCE_DETAIL, response, calls)
+    result = await _compile(
+        _detail_request(), Surface.ECOMMERCE_DETAIL, response, calls
+    )
 
     assert len(calls) == 1
     assert result.failure_code is None
@@ -237,8 +239,7 @@ async def test_required_ungrounded_field_yields_no_recipe() -> None:
     # No <a href> on the page -> the required url identity cannot ground.
     html = "<html><body><main><h1>Trail Shoe</h1><span>$5</span></main></body></html>"
     response = (
-        '{"record_root": "", "fields": {'
-        '"title": "/html[1]/body[1]/main[1]/h1[1]"}}'
+        '{"record_root": "", "fields": {"title": "/html[1]/body[1]/main[1]/h1[1]"}}'
     )
     result = await _compile(
         _detail_request(html=html), Surface.ECOMMERCE_DETAIL, response
@@ -591,7 +592,9 @@ def test_is_ancestor_or_descendant_or_equal_direction() -> None:
         _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/div[3]", entry) is False
     )
     # sibling leaf under shared ancestor
-    assert _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/a[405]", entry) is False
+    assert (
+        _is_ancestor_or_descendant_or_equal("/html[1]/body[1]/a[405]", entry) is False
+    )
 
 
 @pytest.mark.asyncio

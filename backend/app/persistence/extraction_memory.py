@@ -521,6 +521,16 @@ async def persist_learned_recipe(
         tech_signals=tech_signals,
         run_id=run_id,
     )
+    # Deadlock ordering: every writer for this scope locks template THEN recipe
+    # (``claim_learn_once_template`` and ``_locked_active_executable_recipe`` do
+    # the same). Without this, a concurrent claimant holding the template row
+    # and waiting on the recipe row can deadlock against this transaction
+    # holding the recipe row from ``upsert_recipe``'s FOR UPDATE.
+    await session.execute(
+        select(ExtractionTemplate.id)
+        .where(ExtractionTemplate.id == template.id)
+        .with_for_update()
+    )
     payload = dict(recipe_payload)
     payload["_confidence"] = float(confidence)
     payload["_route_pattern"] = route_pattern
@@ -703,7 +713,9 @@ async def claim_learn_once_template(
     # fail closed (skip learning) rather than block a pooled connection.
     try:
         await session.execute(
-            text(f"SET LOCAL lock_timeout = '{CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS}ms'")
+            text(
+                f"SET LOCAL lock_timeout = '{CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS}ms'"
+            )
         )
         locked = (
             await session.execute(

@@ -643,7 +643,7 @@ def _job_retry_request(
     )
     if not ((verdict in {"empty", "error"} and not records) or shell):
         return None
-    required_artifacts = ("rendered_html",)
+    required_artifacts: tuple[str, ...] = ("rendered_html",)
     if not any(row.collector_id == "job_jsonld" for row in evidence):
         required_artifacts = ("rendered_html", "network_payloads")
     return RetryRequest(

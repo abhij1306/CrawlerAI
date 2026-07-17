@@ -68,7 +68,9 @@ def _clean_str(value: object) -> str | None:
     return text or None
 
 
-def _coerce_choice(value: object, allowed: set[str], *, default: str) -> str:
+def _coerce_choice(
+    value: object, allowed: set[str] | frozenset[str], *, default: str
+) -> str:
     normalized = str(value or "").strip().lower()
     return normalized if normalized in allowed else default
 

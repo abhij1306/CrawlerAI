@@ -8,6 +8,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.listing_cards import (
     ListingCard,
+    ListingCardDiagnostics,
     card_is_admitted,
     card_quality_score,
     card_rejection_reason,
@@ -48,13 +49,7 @@ def card_diagnostics_from_html(
     surface: str,
 ) -> dict[str, object]:
     if not str(html or "").strip():
-        return {
-            "card_count": 0,
-            "admitted_count": 0,
-            "rejected_count": 0,
-            "rejection_reasons": {},
-            "rejection_samples": [],
-        }
+        return ListingCardDiagnostics().as_dict()
     return select_listing_cards_with_diagnostics(
         LexborHTMLParser(str(html)),
         surface=listing_surface_spec(surface),
@@ -62,7 +57,9 @@ def card_diagnostics_from_html(
     ).diagnostics.as_dict()
 
 
-def card_identities_from_html(html: str, *, page_url: str, surface: str) -> tuple[str, ...]:
+def card_identities_from_html(
+    html: str, *, page_url: str, surface: str
+) -> tuple[str, ...]:
     return tuple(
         card.identity
         for card in cards_from_html(html, page_url=page_url, surface=surface)
@@ -94,7 +91,9 @@ def card_fragments_from_html(
     )
 
 
-async def count_listing_cards(page: Any, *, surface: str, allow_heuristic: bool = True) -> int:
+async def count_listing_cards(
+    page: Any, *, surface: str, allow_heuristic: bool = True
+) -> int:
     """Count the same admitted identities readiness and extraction consume."""
 
     del allow_heuristic

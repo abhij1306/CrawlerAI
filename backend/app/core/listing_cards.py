@@ -36,7 +36,10 @@ from app.core.config.extraction_rules import (
     LISTING_UTILITY_URL_TOKENS,
 )
 from app.core.config.selectors import CARD_SELECTORS_BY_ROOT_ENTITY
-from app.core.records.field_url_normalization import same_site, strip_tracking_query_params
+from app.core.records.field_url_normalization import (
+    same_site,
+    strip_tracking_query_params,
+)
 from app.core.records.url_identity import (
     listing_detail_like_path,
     listing_url_is_structural,
@@ -211,9 +214,10 @@ def _node_key(node: Any) -> str:
             return f"node:{int(mem_id)}"
     except Exception:
         pass
-    return "html:" + hashlib.sha1(
-        _html(node).encode("utf-8"), usedforsecurity=False
-    ).hexdigest()
+    return (
+        "html:"
+        + hashlib.sha1(_html(node).encode("utf-8"), usedforsecurity=False).hexdigest()
+    )
 
 
 def _is_hidden_self(node: Any) -> bool:
@@ -254,9 +258,14 @@ def _candidate_nodes(node: Any) -> tuple[Any, ...]:
 def _raw_url_candidates(node: Any, *, page_url: str) -> tuple[tuple[Any, str], ...]:
     candidates: list[tuple[Any, str]] = []
     for candidate in _candidate_nodes(node):
-        for attribute in (*LISTING_CARD_URL_ATTRS, *CASCADE_LISTING_RECORD_URL_ATTRIBUTES):
+        for attribute in (
+            *LISTING_CARD_URL_ATTRS,
+            *CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
+        ):
             value = _attribute(candidate, attribute)
-            if value and not value.lower().startswith(("#", "javascript:", "mailto:", "tel:")):
+            if value and not value.lower().startswith(
+                ("#", "javascript:", "mailto:", "tel:")
+            ):
                 candidates.append((candidate, _resolve_listing_url(page_url, value)))
     for candidate in (node, *_css(node, "*")):
         for attribute in CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES:
@@ -354,10 +363,7 @@ def _record_url_is_admissible(
     page = urlparse(page_url)
     if parsed.scheme not in {"http", "https"} or parsed.path in {"", "/"}:
         return False
-    if (
-        parsed.path.rstrip("/") == page.path.rstrip("/")
-        and parsed.query == page.query
-    ):
+    if parsed.path.rstrip("/") == page.path.rstrip("/") and parsed.query == page.query:
         return False
     if not bool(getattr(surface, "off_host_records_allowed", False)) and not same_site(
         page_url, url
@@ -392,7 +398,9 @@ def canonicalize_identity_url(url: str) -> str:
 
     cleaned = strip_tracking_query_params(url) or str(url or "").strip()
     parsed = urlparse(cleaned)
-    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True)
+    query = urlencode(
+        sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True
+    )
     return urlunparse(parsed._replace(query=query, fragment=""))
 
 
@@ -460,7 +468,10 @@ def card_rejection_reason(
     if _uses_visual_evidence(surface) and selector in generic_selectors:
         if not _css(node, "img, picture, source") and not _PRICE_SIGNAL.search(text):
             return "weak_generic_card"
-    if card_quality_score(node, surface=surface, page_url=page_url, selector=selector) < 2:
+    if (
+        card_quality_score(node, surface=surface, page_url=page_url, selector=selector)
+        < 2
+    ):
         return "insufficient_quality"
     return None
 
@@ -472,9 +483,12 @@ def card_is_admitted(
     page_url: str,
     selector: str,
 ) -> bool:
-    return card_rejection_reason(
-        node, surface=surface, page_url=page_url, selector=selector
-    ) is None
+    return (
+        card_rejection_reason(
+            node, surface=surface, page_url=page_url, selector=selector
+        )
+        is None
+    )
 
 
 def select_listing_cards(

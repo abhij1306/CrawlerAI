@@ -305,15 +305,21 @@ async def test_successful_replay_resets_consecutive_drift(
     # fail, fail, success (reset), fail, fail — never reaches 3 consecutive.
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
@@ -322,15 +328,21 @@ async def test_successful_replay_resets_consecutive_drift(
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
@@ -499,7 +511,9 @@ async def _run_learn(session, calls, *, delay: float = 0.0):
         _CLAIM_URL,
         requested_fields=("title", "price"),
     )
-    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    empty = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty"
+    )
     learned = await learn_recipe_after_extraction(
         session,
         request=request,
@@ -603,7 +617,9 @@ async def _run_learn_no_candidate(session, calls, *, delay: float = 0.0):
         _CLAIM_URL,
         requested_fields=("title", "price"),
     )
-    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    empty = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty"
+    )
     learned = await learn_recipe_after_extraction(
         session,
         request=request,
@@ -778,8 +794,11 @@ async def test_reset_caller_clears_drift_between_scattered_misses(
     for _ in range(2):
         assert (
             await note_recipe_drift_failure(
-                db_session, domain=domain, surface=_SURFACE_VALUE,
-                route_pattern=route_pattern, threshold=3,
+                db_session,
+                domain=domain,
+                surface=_SURFACE_VALUE,
+                route_pattern=route_pattern,
+                threshold=3,
             )
             is False
         )
@@ -796,8 +815,11 @@ async def test_reset_caller_clears_drift_between_scattered_misses(
     for _ in range(2):
         assert (
             await note_recipe_drift_failure(
-                db_session, domain=domain, surface=_SURFACE_VALUE,
-                route_pattern=route_pattern, threshold=3,
+                db_session,
+                domain=domain,
+                surface=_SURFACE_VALUE,
+                route_pattern=route_pattern,
+                threshold=3,
             )
             is False
         )
@@ -834,17 +856,24 @@ async def test_reset_caller_ignores_non_recipe_and_empty_results(
 
     for _ in range(2):
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
 
     # An empty recipe-tier result and a non-recipe result must NOT reset.
     await reset_recipe_drift_after_successful_replay(
-        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
         result=_recipe_tier_result(records=()),
     )
     await reset_recipe_drift_after_successful_replay(
-        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
         result=ExtractionResult(
             surface=Surface.ECOMMERCE_DETAIL,
             records=({"title": "x"},),
@@ -856,8 +885,11 @@ async def test_reset_caller_ignores_non_recipe_and_empty_results(
     # The counter was never reset, so the third consecutive miss suspends.
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is True
     )
@@ -885,13 +917,9 @@ async def test_operator_label_on_sibling_template_does_not_exempt(
 
     # A SIBLING template (same domain + surface, different route/fingerprint)
     # that carries the operator ownership label.
-    sibling_route = normalize_route(
-        "https://shop.test/category/shoes", _SURFACE_VALUE
-    )
+    sibling_route = normalize_route("https://shop.test/category/shoes", _SURFACE_VALUE)
     assert sibling_route != route_pattern
-    sibling_fp = stable_id(
-        "learn-once-template", domain, _SURFACE_VALUE, sibling_route
-    )
+    sibling_fp = stable_id("learn-once-template", domain, _SURFACE_VALUE, sibling_route)
     sibling_template, _sib_recipe = await _persist_recipe(
         db_session,
         domain=domain,
@@ -923,6 +951,8 @@ async def test_operator_label_on_sibling_template_does_not_exempt(
     ]
     await db_session.commit()
     assert outcomes == [False, False, True]
+
+
 # --- Finding 15: LEARN-ONCE never accumulates detached (run_id NULL) snapshots
 
 

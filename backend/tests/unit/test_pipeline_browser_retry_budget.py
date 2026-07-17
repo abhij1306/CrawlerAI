@@ -61,6 +61,7 @@ async def test_browser_retry_result_honors_configured_rung_bound(monkeypatch) ->
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
 
@@ -112,6 +113,7 @@ async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
 
@@ -136,7 +138,9 @@ async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_browser_retry_network_rung_preserves_authorized_plan(monkeypatch) -> None:
+async def test_browser_retry_network_rung_preserves_authorized_plan(
+    monkeypatch,
+) -> None:
     requests: list[AcquisitionRequest] = []
 
     async def fake_build_request(context):
@@ -174,6 +178,7 @@ async def test_browser_retry_network_rung_preserves_authorized_plan(monkeypatch)
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
 
@@ -231,6 +236,7 @@ async def test_browser_retry_failure_preserves_original_http_result(
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     fetched = SimpleNamespace(acquisition_result=original, url_metrics={})
 
@@ -274,6 +280,7 @@ async def test_initial_browser_without_network_payloads_runs_network_retry(
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     fetched = SimpleNamespace(acquisition_result=_result("browser"), url_metrics={})
 
@@ -324,6 +331,7 @@ async def test_initial_browser_skips_when_required_artifacts_already_present(
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
     )
     acquisition_result = _result("browser")
     acquisition_result.network_payloads = network_payloads

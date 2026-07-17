@@ -42,6 +42,8 @@ _DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
     str(key): tuple(map(str, value or ()))
     for key, value in (BROWSER_DETAIL_READINESS_HINTS or {}).items()
 }
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractableContentSignals:
     detail: bool
@@ -353,6 +355,146 @@ async def wait_for_listing_readiness(
     }
 
 
+def _card_count(diagnostics: dict[str, object]) -> int:
+    raw = diagnostics.get("card_count")
+    return raw if isinstance(raw, int) else 0
+
+
+async def _rendered_fragment_card_diagnostics(
+    page: Any, *, url: str, surface: str
+) -> dict[str, object]:
+    """Card diagnostics over the rendered fragments extraction also reads.
+
+    Uses the same capture as ``LISTING_HTML_ARTIFACT_IDS``'s rendered-fragment
+    artifact so a shadow-DOM/JS board that only materializes cards in the
+    fragment capture is counted identically by readiness and extraction.
+    """
+
+    from app.acquisition.browser_recovery import capture_rendered_listing_fragments
+
+    try:
+        fragments = await capture_rendered_listing_fragments(
+            page,
+            surface=surface,
+            limit=int(crawler_runtime_settings.rendered_listing_card_capture_limit),
+        )
+    except Exception:
+        return {}
+    if not fragments:
+        return {}
+    return card_diagnostics_from_html(
+        "<main>" + "\n".join(fragments) + "</main>",
+        page_url=str(getattr(page, "url", "") or url),
+        surface=surface,
+    )
+
+
+async def _listing_discovery_signals(
+    page: Any,
+    *,
+    url: str,
+    surface: str,
+    html_text: str,
+    listing_override: dict[str, object] | None,
+) -> tuple[dict[str, object], int, int]:
+    """Card diagnostics, card count, and override-selector matches for listings."""
+
+    listing_card_diagnostics = card_diagnostics_from_html(
+        html_text,
+        page_url=str(getattr(page, "url", "") or url),
+        surface=surface,
+    )
+    listing_card_count = _card_count(listing_card_diagnostics)
+    if listing_card_count == 0:
+        # Coordinate with extraction's artifact set: a JS/shadow-DOM board
+        # can render its cards only in the fragments extraction later reads
+        # through LISTING_HTML_ARTIFACT_IDS. Count the same rendered
+        # fragments here so readiness and extraction agree.
+        fragment_diagnostics = await _rendered_fragment_card_diagnostics(
+            page, url=url, surface=surface
+        )
+        fragment_count = _card_count(fragment_diagnostics)
+        if fragment_count > 0:
+            listing_card_diagnostics = fragment_diagnostics
+            listing_card_count = fragment_count
+    raw_override_selectors = (
+        listing_override.get("selectors")
+        if isinstance(listing_override, dict)
+        else None
+    )
+    selectors = (
+        [
+            str(selector or "").strip()
+            for selector in raw_override_selectors
+            if str(selector or "").strip()
+        ]
+        if isinstance(raw_override_selectors, Iterable)
+        and not isinstance(raw_override_selectors, (str, bytes))
+        else []
+    )
+    matched_listing_selectors = await count_matching_selectors(
+        page, selectors=selectors
+    )
+    return listing_card_diagnostics, listing_card_count, matched_listing_selectors
+
+
+def _listing_readiness_verdict(
+    analysis: HtmlAnalysis, spec: Any, listing_card_count: int
+) -> tuple[bool, bool, bool, str]:
+    """(is_ready, ready_empty, shell_detected, terminal_state) for listings."""
+
+    normalized_visible_text = analysis.normalized_text.casefold()
+    no_results_detected = any(
+        re.search(pattern, normalized_visible_text, re.I)
+        for pattern in spec.readiness_no_results_patterns
+    )
+    shell_detected = any(
+        re.search(pattern, normalized_visible_text, re.I)
+        for pattern in spec.readiness_shell_patterns
+    )
+    repeated_cards = listing_card_count >= max(
+        1, int(spec.readiness_min_repeated_records)
+    )
+    # Shell evidence overrides a broad no-results match: a hydrating SPA with
+    # stale "no results" copy must keep observing, not fast-finalize as empty.
+    ready_empty = bool(
+        not repeated_cards and no_results_detected and not shell_detected
+    )
+    is_ready = bool(repeated_cards or ready_empty)
+    if repeated_cards:
+        terminal_state = "ready"
+    elif ready_empty:
+        terminal_state = "ready_empty"
+    elif shell_detected:
+        terminal_state = "shell_rejected"
+    else:
+        terminal_state = "observing"
+    return is_ready, ready_empty, shell_detected, terminal_state
+
+
+def _detail_readiness_verdict(
+    analysis: HtmlAnalysis,
+    *,
+    visible_text_length: int,
+    structured_data_present: bool,
+    detail_like: bool,
+    detail_hints: int,
+    detail_title_matches_url: bool,
+) -> bool:
+    enough_text = visible_text_length >= int(
+        crawler_runtime_settings.browser_readiness_visible_text_min
+    )
+    has_identity = bool(
+        analysis.h1_present
+        or detail_hints >= int(crawler_runtime_settings.detail_field_signal_min_count)
+        or detail_title_matches_url
+    )
+    return bool(
+        (structured_data_present and enough_text)
+        or (detail_like and has_identity and enough_text)
+    )
+
+
 async def probe_browser_readiness(
     page: Any,
     *,
@@ -399,63 +541,32 @@ async def probe_browser_readiness(
     ready_empty = False
     shell_detected = False
     if is_listing:
-        listing_card_diagnostics = card_diagnostics_from_html(
-            html_text or "",
-            page_url=str(getattr(page, "url", "") or url),
-            surface=surface,
-        )
-        listing_card_count = int(listing_card_diagnostics.get("card_count") or 0)
-        raw_override_selectors = (
-            listing_override.get("selectors")
-            if isinstance(listing_override, dict)
-            else None
-        )
-        matched_listing_selectors = await count_matching_selectors(
+        (
+            listing_card_diagnostics,
+            listing_card_count,
+            matched_listing_selectors,
+        ) = await _listing_discovery_signals(
             page,
-            selectors=[
-                str(selector or "").strip()
-                for selector in raw_override_selectors
-                if str(selector or "").strip()
-            ]
-            if isinstance(raw_override_selectors, Iterable)
-            and not isinstance(raw_override_selectors, (str, bytes))
-            else [],
+            url=url,
+            surface=surface,
+            html_text=html_text or "",
+            listing_override=listing_override,
         )
-    if is_detail:
-        enough_text = visible_text_length >= int(
-            crawler_runtime_settings.browser_readiness_visible_text_min
+        (
+            is_ready,
+            ready_empty,
+            shell_detected,
+            readiness_terminal_state,
+        ) = _listing_readiness_verdict(analysis, spec, listing_card_count)
+    elif is_detail:
+        is_ready = _detail_readiness_verdict(
+            analysis,
+            visible_text_length=visible_text_length,
+            structured_data_present=structured_data_present,
+            detail_like=detail_like,
+            detail_hints=detail_hints,
+            detail_title_matches_url=detail_title_matches_url,
         )
-        has_identity = bool(
-            analysis.h1_present
-            or detail_hints
-            >= int(crawler_runtime_settings.detail_field_signal_min_count)
-            or detail_title_matches_url
-        )
-        is_ready = bool(
-            (structured_data_present and enough_text)
-            or (detail_like and has_identity and enough_text)
-        )
-    elif is_listing:
-        normalized_visible_text = analysis.normalized_text.casefold()
-        no_results_detected = any(
-            re.search(pattern, normalized_visible_text, re.I)
-            for pattern in spec.readiness_no_results_patterns
-        )
-        shell_detected = any(
-            re.search(pattern, normalized_visible_text, re.I)
-            for pattern in spec.readiness_shell_patterns
-        )
-        repeated_cards = listing_card_count >= max(
-            1, int(spec.readiness_min_repeated_records)
-        )
-        ready_empty = bool(not repeated_cards and no_results_detected)
-        is_ready = bool(repeated_cards or ready_empty)
-        if repeated_cards:
-            readiness_terminal_state = "ready"
-        elif ready_empty:
-            readiness_terminal_state = "ready_empty"
-        elif shell_detected:
-            readiness_terminal_state = "shell_rejected"
     else:
         is_ready = visible_text_length >= int(
             crawler_runtime_settings.browser_readiness_visible_text_min

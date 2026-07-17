@@ -92,4 +92,3 @@ def test_diagnose_v3_explains_listing_discovery_without_raw_payloads() -> None:
     serialized = str(discovery)
     assert "private@example.test" not in serialized
     assert "token=secret" not in serialized
-

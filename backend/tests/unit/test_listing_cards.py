@@ -52,11 +52,15 @@ def test_selection_admission_identity_and_count_are_one_contract() -> None:
         page_url="https://shop.test/collections/all",
         surface="ecommerce_listing",
     ) == tuple(card.identity for card in cards)
-    assert count_cards_from_html(
-        html,
-        page_url="https://shop.test/collections/all",
-        surface="ecommerce_listing",
-    ) == len(cards) == 1
+    assert (
+        count_cards_from_html(
+            html,
+            page_url="https://shop.test/collections/all",
+            surface="ecommerce_listing",
+        )
+        == len(cards)
+        == 1
+    )
 
 
 def test_quality_gate_rejects_weak_commerce_but_allows_off_host_jobs() -> None:
@@ -109,12 +113,8 @@ def test_stable_identity_strips_configured_tracking_and_sorts_query() -> None:
     reordered = stable_url_identity("https://jobs.test/job?sort=date&id=123")
 
     assert first == second == "url:shop.test/products/one?page=2"
-    assert reordered == stable_url_identity(
-        "https://jobs.test/job?id=123&sort=date"
-    )
-    assert reordered != stable_url_identity(
-        "https://jobs.test/job?id=456&sort=date"
-    )
+    assert reordered == stable_url_identity("https://jobs.test/job?id=123&sort=date")
+    assert reordered != stable_url_identity("https://jobs.test/job?id=456&sort=date")
 
 
 def test_collection_link_before_product_link_uses_product_identity() -> None:

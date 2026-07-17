@@ -48,9 +48,7 @@ def _context() -> URLProcessingContext:
     )
 
 
-def _empty_result(
-    *, retry_required: bool, max_attempts: int = 1
-) -> ExtractionResult:
+def _empty_result(*, retry_required: bool, max_attempts: int = 1) -> ExtractionResult:
     retry = (
         CapabilityRequest(
             required=True,

@@ -46,9 +46,7 @@ async def test_learn_once_client_makes_exactly_one_provider_request(
     monkeypatch.setattr(provider_client, "record_failure", fake_record_failure)
     monkeypatch.setattr(provider_client, "record_success", fake_record_success)
     monkeypatch.setattr(learn_once, "resolve_run_config", fake_resolve_run_config)
-    monkeypatch.setattr(
-        learn_once, "resolve_provider_api_key", lambda **_kwargs: "key"
-    )
+    monkeypatch.setattr(learn_once, "resolve_provider_api_key", lambda **_kwargs: "key")
 
     client = learn_once._model_client_for_run(None, run_id=None)
     result = await client("system", "user")

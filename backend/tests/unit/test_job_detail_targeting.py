@@ -93,9 +93,7 @@ def test_job_detail_ambiguous_when_no_url_match() -> None:
     result = extract(request)
 
     assert result.verdict != "success"
-    assert any(
-        finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings
-    )
+    assert any(finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings)
 
 
 def test_query_string_ids_are_distinguished() -> None:
@@ -131,6 +129,4 @@ def test_shared_query_id_stays_ambiguous() -> None:
     result = extract(request)
 
     assert result.verdict != "success"
-    assert any(
-        finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings
-    )
+    assert any(finding.rule_id == "AMBIGUOUS_JOB_ROOT" for finding in result.findings)

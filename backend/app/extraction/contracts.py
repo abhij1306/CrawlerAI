@@ -495,9 +495,7 @@ class CapabilityRequest(FrozenModel):
         "network_floor_missing",
     ]
     required_artifacts: tuple[str, ...] = ()
-    max_attempts: int = Field(
-        default=1, ge=1, le=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
-    )
+    max_attempts: int = Field(default=1, ge=1, le=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP)
 
 
 RetryRequest = CapabilityRequest

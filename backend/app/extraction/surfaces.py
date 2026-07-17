@@ -177,9 +177,7 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         supports_variants=False,
         supports_traversal=False,
         structured_types=frozenset({"JobPosting"}),
-        record_signal_facts=frozenset(
-            {"job.location", "job.apply_url", "job.company"}
-        ),
+        record_signal_facts=frozenset({"job.location", "job.apply_url", "job.company"}),
         min_record_signals=1,
         off_host_records_allowed=True,
     ),
@@ -213,9 +211,7 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
             "opportunityId",
             "requisitionId",
         ),
-        record_signal_facts=frozenset(
-            {"job.location", "job.apply_url", "job.company"}
-        ),
+        record_signal_facts=frozenset({"job.location", "job.apply_url", "job.company"}),
         min_record_signals=1,
         off_host_records_allowed=True,
         readiness_shell_patterns=CASCADE_LISTING_SHELL_PATTERNS,
@@ -240,7 +236,7 @@ def surface_spec(value: Surface | str) -> SurfaceSpec:
     return SURFACE_SPECS[surface]
 
 
-_LISTING_SURFACE_ALIASES = {
+_LISTING_SURFACE_ALIASES: dict[str, Surface] = {
     **{
         spec.domain: spec.surface
         for spec in SURFACE_SPECS.values()

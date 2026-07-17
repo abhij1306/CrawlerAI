@@ -14,6 +14,8 @@ real code.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,7 +87,9 @@ async def test_job_ladder_climbs_two_real_retry_rungs(
         url=_JOB_URL,
         config=URLProcessingConfig(),
         url_timeout_seconds=120.0,
-        started_at_monotonic=0.0,
+        # A real clock anchor: the ladder's budget guard measures elapsed time
+        # from this value, so 0.0 would read as an already-exhausted budget.
+        started_at_monotonic=time.monotonic(),
         requested_fields=["title"],
         surface="job_detail",
     )
@@ -101,7 +105,9 @@ async def test_job_ladder_climbs_two_real_retry_rungs(
     # The retry request is produced by real ``_job_retry_request`` code.
     assert first_result.retry_request is not None
     assert first_result.retry_request.required is True
-    assert first_result.retry_request.max_attempts == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    assert (
+        first_result.retry_request.max_attempts == CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
+    )
 
     result = await stage.retry_extraction_request_with_browser(
         context, fetched, result=first_result

@@ -100,9 +100,12 @@ async def test_escalation_ladder_climbs_then_exhausts_honestly(monkeypatch) -> N
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
         session=None,
     )
-    fetched = SimpleNamespace(acquisition_result=_acquisition("curl_cffi"), url_metrics={})
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
 
     result = await stage.retry_extraction_request_with_browser(
         context,
@@ -159,9 +162,12 @@ async def test_escalation_ladder_stops_when_verdict_satisfied(monkeypatch) -> No
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
         session=None,
     )
-    fetched = SimpleNamespace(acquisition_result=_acquisition("curl_cffi"), url_metrics={})
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
 
     result = await stage.retry_extraction_request_with_browser(
         context,
@@ -219,7 +225,9 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
             max_records=1,
         )
         network_refs = [
-            ref for ref in request.capture.artifacts if ref.artifact_type == "network_json"
+            ref
+            for ref in request.capture.artifacts
+            if ref.artifact_type == "network_json"
         ]
         if not network_refs:
             return _empty_result(with_retry=True), []
@@ -250,9 +258,12 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
+        escalation_attempts=[],
         session=None,
     )
-    fetched = SimpleNamespace(acquisition_result=_acquisition("curl_cffi"), url_metrics={})
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
 
     result = await stage.retry_extraction_request_with_browser(
         context,
@@ -277,3 +288,206 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
         CAPTURE_NETWORK_ALL_SMALL_JSON
     )
     assert result.verdict == "success"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_escalation_skips_acquisition_when_url_budget_is_exhausted(
+    monkeypatch,
+) -> None:
+    acquire_calls = 0
+
+    async def fake_build_request(context):
+        return _request()
+
+    async def fake_acquire(request):
+        nonlocal acquire_calls
+        acquire_calls += 1
+        return _acquisition("browser")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://jobs.test/j/1",
+        # Started long enough ago that the URL budget is already spent.
+        url_timeout_seconds=1.0,
+        started_at_monotonic=time.monotonic() - 10.0,
+        requested_fields=[],
+        browser_escalation_count=0,
+        escalation_attempts=[],
+        session=None,
+    )
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
+    original = _empty_result(with_retry=True)
+
+    result = await stage.retry_extraction_request_with_browser(
+        context,
+        fetched,
+        result=original,
+    )
+
+    # Budget-exhausted skip: no acquisition attempted, no rung consumed, no
+    # phantom failure diagnostics, and the original result returned honestly.
+    assert acquire_calls == 0
+    assert context.browser_escalation_count == 0
+    assert context.escalation_attempts == []
+    assert result is original
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_failed_escalation_rung_is_recorded_with_typed_outcome(
+    monkeypatch,
+) -> None:
+    async def fake_build_request(context):
+        return _request()
+
+    async def fake_acquire(request):
+        raise TimeoutError("browser acquisition timed out")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://jobs.test/j/1",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+        escalation_attempts=[],
+        session=None,
+    )
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
+
+    result = await stage.retry_extraction_request_with_browser(
+        context,
+        fetched,
+        result=_empty_result(with_retry=True),
+    )
+
+    # The failed rung — the most important one — must survive into the
+    # escalation history on the published (original) acquisition result.
+    assert result.verdict == "empty"
+    assert len(context.escalation_attempts) == 1
+    attempt = context.escalation_attempts[0]
+    assert attempt["rung"] == 1
+    assert attempt["outcome"] == "timeout"
+    assert "TimeoutError" in attempt["error"]
+    escalation = fetched.acquisition_result.acquisition_diagnostics["escalation"]
+    assert escalation["capability_requests"] == [attempt]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_exhausted_url_budget_skips_acquisition_without_counting_rung(
+    monkeypatch,
+) -> None:
+    acquire_calls = 0
+
+    async def fake_build_request(context):
+        raise AssertionError("request must not be built when the budget is spent")
+
+    async def fake_acquire(request):
+        nonlocal acquire_calls
+        acquire_calls += 1
+        return _acquisition("browser")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://jobs.test/j/1",
+        # Started long ago: remaining_url_budget_seconds() is clamped to 0.0.
+        url_timeout_seconds=1.0,
+        started_at_monotonic=time.monotonic() - 60.0,
+        requested_fields=[],
+        browser_escalation_count=0,
+        escalation_attempts=[],
+        session=None,
+    )
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
+
+    result = await stage.retry_extraction_request_with_browser(
+        context,
+        fetched,
+        result=_empty_result(with_retry=True),
+    )
+
+    # Skipped as budget-exhausted: no acquisition, no rung consumed, no
+    # phantom escalation attempt recorded.
+    assert acquire_calls == 0
+    assert context.browser_escalation_count == 0
+    assert context.escalation_attempts == []
+    assert result.verdict == "empty"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_failed_escalation_rung_stays_visible_in_diagnostics(
+    monkeypatch,
+) -> None:
+    async def fake_build_request(context):
+        return _request()
+
+    async def fake_acquire(request):
+        raise TimeoutError("browser acquisition timed out")
+
+    async def fake_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
+    monkeypatch.setattr(stage, "acquire", fake_acquire)
+    monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
+    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+
+    context = SimpleNamespace(
+        url="https://jobs.test/j/1",
+        url_timeout_seconds=120.0,
+        started_at_monotonic=time.monotonic(),
+        requested_fields=[],
+        browser_escalation_count=0,
+        escalation_attempts=[],
+        session=None,
+    )
+    fetched = SimpleNamespace(
+        acquisition_result=_acquisition("curl_cffi"), url_metrics={}
+    )
+
+    result = await stage.retry_extraction_request_with_browser(
+        context,
+        fetched,
+        result=_empty_result(with_retry=True),
+    )
+
+    # The failed rung is typed, has a terminal outcome, and is attached to the
+    # original acquisition result so diagnose.v3 shows the failure.
+    assert result.verdict == "empty"
+    assert len(context.escalation_attempts) == 1
+    attempt = context.escalation_attempts[0]
+    assert attempt["rung"] == 1
+    assert attempt["outcome"] == "timeout"
+    assert "TimeoutError" in attempt["error"]
+    escalation = fetched.acquisition_result.acquisition_diagnostics["escalation"]
+    assert escalation["capability_requests"] == [attempt]

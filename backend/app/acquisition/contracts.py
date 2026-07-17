@@ -86,3 +86,7 @@ class EscalationAttemptDiagnostics(FrozenModel):
     reason: str = Field(min_length=1)
     required_artifacts: tuple[str, ...] = ()
     capture_network: str | None = None
+    outcome: Literal["started", "acquired", "failed", "timeout", "cancelled"] = (
+        "started"
+    )
+    error: str | None = None

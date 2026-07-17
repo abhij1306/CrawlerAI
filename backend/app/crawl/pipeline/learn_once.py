@@ -107,7 +107,9 @@ def should_attempt_learn_once(
     not-yet-learned template, and a surface on the per-surface allow-list.
     """
 
-    if not (CASCADE_LEARN_ONCE_TIER_ENABLED and CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL):
+    if not (
+        CASCADE_LEARN_ONCE_TIER_ENABLED and CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL
+    ):
         return False
     if not (llm_enabled and floors_empty and is_new_template):
         return False

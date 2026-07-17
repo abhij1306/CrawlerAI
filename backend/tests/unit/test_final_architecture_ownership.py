@@ -10,36 +10,37 @@ from radon.complexity import cc_visit
 pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
+# SLICE-6 closeout reconciliation: measured against the working tree after the
+# cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,
+# browser_pool, cookie_store, browser_attempt_runner, intelligence/discovery,
+# intelligence/matching, schemas/crawl) dropped below the 700-line threshold
+# and left the ledger; most survivors shrank.
 OVERSIZED_MODULE_DEBT = {
-    "acquisition/browser_capture.py": 752,
-    "acquisition/browser_pool.py": 720,
-    "acquisition/browser_recovery.py": 722,
-    "acquisition/browser_result_builder.py": 714,
-    "acquisition/cookie_store.py": 713,
-    "acquisition/fetch/browser_attempt_runner.py": 726,
-    "core/config/extraction_rules/_detail.py": 1032,
-    "enrichment/service.py": 760,
-    "extraction/collectors/dom.py": 1187,
-    "extraction/collectors/jsonld.py": 834,
-    "extraction/collectors/js_state.py": 988,
-    "extraction/contracts.py": 1024,
-    # LEARN-ONCE recipe tier: engine.py gained recipe replay + shared result
-    # building. Kept in lockstep with the extraction_semantic_surface.toml
-    # manifest budget (engine.py 1023 -> 1099).
-    "extraction/engine.py": 1099,
-    "extraction/entities.py": 932,
+    "acquisition/browser_recovery.py": 724,
+    "acquisition/browser_result_builder.py": 725,
+    "core/config/extraction_rules/_detail.py": 1026,
+    "enrichment/service.py": 714,
+    "extraction/collectors/dom.py": 1100,
+    "extraction/collectors/js_state.py": 914,
+    "extraction/collectors/jsonld.py": 783,
+    "extraction/contracts.py": 856,
+    "extraction/engine.py": 1059,
+    "extraction/entities.py": 850,
     "extraction/pipeline.py": 781,
-    "extraction/resolution/__init__.py": 2044,
+    "extraction/resolution/__init__.py": 1931,
     "extraction/result_building.py": 738,
-    "extraction/validation.py": 786,
-    "intelligence/discovery.py": 726,
-    "intelligence/matching.py": 749,
+    "extraction/validation.py": 743,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 1157,
-    "schemas/crawl.py": 747,
+    "persistence/extraction_memory.py": 1169,
 }
+# SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
+# into _listing_discovery_signals/_listing_readiness_verdict and left the
+# ledger. Four entries grew with the brand/field-state consolidation and are
+# tracked for the next cleanup slice: infer_brand_from_product_url 69 -> 86,
+# infer_brand_from_page_identity 38 -> 39, field_evidence_states 41 -> 46,
+# projection_field_states 70 -> 78.
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
     ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
@@ -49,7 +50,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_page_helpers.py", "_select_primary_browser_html"): 22,
     ("acquisition/browser_readiness.py", "analyze_extractable_content"): 35,
     ("acquisition/browser_readiness.py", "_has_detail_dom_signals"): 22,
-    ("acquisition/browser_readiness.py", "probe_browser_readiness"): 30,
     ("acquisition/platform_policy.py", "detect_platform_family"): 24,
     ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 26,
     ("core/records/confidence.py", "_field_penalties"): 23,
@@ -65,8 +65,8 @@ COMPLEX_FUNCTION_DEBT = {
     ("core/records/url_identity.py", "_short_numeric_product_asset_conflicts"): 28,
     ("core/shared/field_coerce.py", "sanitize_option_scalar"): 32,
     ("core/shared/field_coerce_dispatch.py", "coerce_field_value"): 54,
-    ("core/shared/field_coerce_text.py", "infer_brand_from_page_identity"): 38,
-    ("core/shared/field_coerce_text.py", "infer_brand_from_product_url"): 69,
+    ("core/shared/field_coerce_text.py", "infer_brand_from_page_identity"): 39,
+    ("core/shared/field_coerce_text.py", "infer_brand_from_product_url"): 86,
     ("core/shared/text_coerce.py", "is_title_noise"): 22,
     ("core/shared/url_utils.py", "extract_urls"): 25,
     ("core/extraction_memory/contract_runtime.py", "match_template"): 23,
@@ -99,8 +99,8 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/resolution/__init__.py", "_semantic_derived_facts"): 25,
     ("extraction/resolution/__init__.py", "_brand_from_title"): 22,
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
-    ("extraction/result_building.py", "field_evidence_states"): 41,
-    ("extraction/result_building.py", "projection_field_states"): 70,
+    ("extraction/result_building.py", "field_evidence_states"): 46,
+    ("extraction/result_building.py", "projection_field_states"): 78,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
@@ -153,28 +153,24 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 
 PACKAGE_LOC_BUDGETS = {
-    "acquisition": 18_643,
-    "crawl": 9_620,
-    # LEARN-ONCE recipe tier adds the pure recipe primitives, compiler, evidence
-    # bridge, and persistence release/drift logic under core/. Bumped once to
-    # seat the new tier; the eval-gated cleanup slice consolidates it back down.
-    "core": 20_585,
-    "enrichment": 2_245,
-    "connectors": 2_767,
-    "intelligence": 3_659,
-    # LEARN-ONCE recipe replay + shared result building grew engine.py; kept in
-    # lockstep with the extraction_semantic_surface.toml manifest bump.
-    "extraction": 16_600,
-    # Phase 7 documented feature exception: the grounded LLM repair adapter
-    # (app/evaluation/llm_repair.py) is a net-new offline producer. It never
-    # runs in the hot path and cannot publish or activate values; the budget is
-    # bumped once to seat it beside the existing offline evaluation harness.
-    "evaluation": 2_295,
+    # SLICE-6 closeout reconciliation: every package except core ratcheted down
+    # to measured actuals after the cascade refactor/reformat.
+    "acquisition": 16_808,
+    "crawl": 9_072,
+    # SLICE-6: core grew (20_585 -> 20_749) with the listing readiness spec and
+    # discovery/network provenance config. Tracked for the next cleanup slice.
+    "core": 20_749,
+    "enrichment": 2_057,
+    "connectors": 2_444,
+    "intelligence": 3_247,
+    "extraction": 16_475,
+    "evaluation": 2_009,
 }
-# Bumped for the LEARN-ONCE recipe tier (recipe primitives, compiler, evidence
-# bridge, persistence release/drift logic, engine replay). Tracked here so the
-# eval-gated cleanup slice can drive it back down.
-TOTAL_APP_LOC_BUDGET = 85_727
+# SLICE-6 closeout: total grew (85_727 -> 86_288) with the listing readiness
+# classification, bounded escalation diagnostics, and diagnose.v3 provenance.
+# Package-level budgets above were ratcheted down wherever the refactor shrank
+# code; the next cleanup slice should drive this back below 86k.
+TOTAL_APP_LOC_BUDGET = 86_288
 
 
 def test_production_package_loc_budgets() -> None:

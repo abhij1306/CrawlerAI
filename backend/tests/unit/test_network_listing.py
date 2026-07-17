@@ -36,7 +36,11 @@ def test_repeated_array_materializes_same_host_records() -> None:
     payload = {
         "body": {
             "results": [
-                {"name": "Kettle", "url": "https://shop.test/p/kettle-1", "price": "29"},
+                {
+                    "name": "Kettle",
+                    "url": "https://shop.test/p/kettle-1",
+                    "price": "29",
+                },
                 {"name": "Mixer", "url": "https://shop.test/p/mixer-2", "price": "59"},
             ]
         }

@@ -3,8 +3,8 @@
 One writer, exactly three files per URL result under
 ``runs/{run_id}/results/{url_result_id}/``:
 
-- ``source.html`` — the acquired HTML, written once.
-- ``result.json`` — the public record(s) (shape unchanged from the records API).
+- ``page.html`` — the acquired HTML, written once.
+- ``record.json`` — the public record(s) (shape unchanged from the records API).
 - ``diagnose.json`` — self-contained, bounded root-cause artifact (see
   :mod:`app.observability.diagnose`).
 
@@ -52,7 +52,7 @@ def publish_url_result_artifacts(
         repository,
         run_id=run_id,
         url_result_id=url_result_id,
-        name="source.html",
+        name="page.html",
         content=html,
     )
 
@@ -61,7 +61,7 @@ def publish_url_result_artifacts(
         repository,
         run_id=run_id,
         url_result_id=url_result_id,
-        name="result.json",
+        name="record.json",
         payload={"records": records, "record_count": int(record_count or 0)},
     )
 

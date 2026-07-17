@@ -369,14 +369,13 @@ def _readiness_summary(
         discovery.get("is_ready")
     ):
         terminal_state = "timed_out"
+    probes = browser.get("readiness_probes")
     return {
         "terminal_state": terminal_state or "not_observed",
         "is_ready": bool(discovery.get("is_ready")),
         "ready_empty": bool(discovery.get("ready_empty")),
         "shell_detected": bool(discovery.get("shell_detected")),
-        "probe_count": len(browser.get("readiness_probes") or ())
-        if isinstance(browser.get("readiness_probes"), (list, tuple))
-        else 0,
+        "probe_count": len(probes) if isinstance(probes, (list, tuple)) else 0,
         "last_stage": discovery.get("stage"),
     }
 
@@ -396,6 +395,8 @@ def _bounded_escalation(diagnostics: Mapping[str, object]) -> dict[str, object]:
             if isinstance(row.get("required_artifacts"), (list, tuple))
             else [],
             "capture_network": _preview(row.get("capture_network")),
+            "outcome": _preview(row.get("outcome")) if row.get("outcome") else None,
+            "error": _preview(row.get("error")) if row.get("error") else None,
         }
         for row in (
             list(raw_requests)[:DIAGNOSE_ESCALATION_ATTEMPT_LIMIT]

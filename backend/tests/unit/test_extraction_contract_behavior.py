@@ -1782,7 +1782,12 @@ def test_detail_cascade_invokes_registry_floors_in_order(monkeypatch) -> None:
     monkeypatch.setattr(
         cascade,
         "_DETAIL_SURFACE_PROFILES",
-        {Surface.ECOMMERCE_DETAIL: (("structured", _structured_probe), ("dom", _dom_probe))},
+        {
+            Surface.ECOMMERCE_DETAIL: (
+                ("structured", _structured_probe),
+                ("dom", _dom_probe),
+            )
+        },
     )
     monkeypatch.setattr(cascade, "run_detail_collectors", _instrumented_run)
     monkeypatch.setattr(
@@ -1880,9 +1885,7 @@ def _detail_snapshot(result):
         (_DOM_ONLY_DETAIL_HTML, _DOM_ONLY_URL),
     ],
 )
-def test_commerce_detail_flag_on_off_are_byte_identical(
-    monkeypatch, html, url
-) -> None:
+def test_commerce_detail_flag_on_off_are_byte_identical(monkeypatch, html, url) -> None:
     """Flag ON (cascade) and OFF (legacy) publish byte-identical output.
 
     Covers both a structured-rich fixture and an adversarial DOM-only fixture
@@ -1904,8 +1907,7 @@ def test_dom_only_detail_cascade_carries_record_without_structured() -> None:
     """Adversarial DOM-only capture: structured floor empty, DOM floor holds."""
     monkeypatch_free = _detail_result(_DOM_ONLY_DETAIL_HTML, _DOM_ONLY_URL)
     by_id = {
-        row.collector_id: row.outcome
-        for row in monkeypatch_free.collector_outcomes
+        row.collector_id: row.outcome for row in monkeypatch_free.collector_outcomes
     }
     assert by_id.get("jsonld") == "no_match"
     assert by_id.get("dom") == "produced_evidence"

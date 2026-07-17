@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urljoin
 
 from app.acquisition.browser_capture import PlaywrightError, PlaywrightTimeoutError
@@ -54,7 +55,7 @@ class TraversalGainState:
 @dataclass(slots=True)
 class TraversalStep:
     status: str
-    snapshot: dict[str, int] | None = None
+    snapshot: dict[str, Any] | None = None
 
 
 def effective_scroll_limit(max_scrolls: int) -> int:
@@ -91,11 +92,11 @@ async def run_scroll_step(
 async def wait_for_load_more_card_gain(
     page,
     *,
-    previous: dict[str, int],
+    previous: dict[str, Any],
     surface: str,
     max_records: int | None,
     deadline_at: float | None,
-) -> dict[str, int] | None:
+) -> dict[str, Any] | None:
     previous_count = int(previous.get("card_count", 0))
     timeout_ms = remaining_timeout_ms(
         deadline_at,
@@ -105,7 +106,7 @@ async def wait_for_load_more_card_gain(
         return None
     poll_ms = max(1, int(crawler_runtime_settings.pagination_post_click_poll_ms))
     waited_ms = 0
-    best: dict[str, int] | None = None
+    best: dict[str, Any] | None = None
     while waited_ms < timeout_ms:
         step_ms = min(poll_ms, max(1, timeout_ms - waited_ms))
         await page.wait_for_timeout(step_ms)
@@ -127,7 +128,7 @@ async def wait_for_load_more_card_gain(
 async def advance_load_more(
     page,
     *,
-    previous: dict[str, int],
+    previous: dict[str, Any],
     surface: str,
     max_records: int | None,
     result: TraversalResult,
@@ -214,12 +215,12 @@ def _resolved_paginate_cycle(
 async def settle_thin_initial_listing(
     page,
     *,
-    previous: dict[str, int],
+    previous: dict[str, Any],
     result: TraversalResult,
     surface: str,
     deadline_at: float | None,
     on_event,
-) -> dict[str, int] | None:
+) -> dict[str, Any] | None:
     if result.progress_events > 0 or result.iterations > 0:
         return None
     current_count = int(previous.get("card_count", 0))
@@ -249,7 +250,7 @@ async def settle_thin_initial_listing(
 async def advance_paginate(
     page,
     *,
-    previous: dict[str, int],
+    previous: dict[str, Any],
     result: TraversalResult,
     surface: str,
     deadline_at: float | None,

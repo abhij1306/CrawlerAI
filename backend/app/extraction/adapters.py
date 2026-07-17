@@ -179,7 +179,7 @@ def _harvest_listing_surface(
     surface: Surface,
     *,
     enabled: bool,
-    legacy_collector: Callable[[CaptureBundle, ArtifactReader], object],
+    legacy_collector: Callable[[CaptureBundle, ArtifactReader], list[Evidence]],
 ) -> HarvestResult:
     """Shared listing harvest: cascade when enabled, legacy collector otherwise.
 

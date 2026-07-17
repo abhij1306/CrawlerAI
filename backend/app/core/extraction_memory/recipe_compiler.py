@@ -39,6 +39,7 @@ from app.core.extraction_memory.recipe_contracts import (
     ExtractionRecipe,
     RecipeBinding,
     RecipeCandidate,
+    RecipeCardinality,
     RecipeScope,
 )
 from app.core.extraction_memory.recipe_executor import execute_recipe
@@ -208,9 +209,7 @@ def _requested_field_names(
     surface_spec: SurfaceSpec,
     listing_schema: ListingSchema | None,
 ) -> tuple[str, ...]:
-    descriptors = CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS.get(
-        surface_spec.domain, {}
-    )
+    descriptors = CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS.get(surface_spec.domain, {})
     # Keep the prompted required identity consistent with _identity_field, which
     # keys on is_listing: a listing record is always identified by its own
     # ``url`` (apply_url is a normal field there). A detail surface may use
@@ -230,9 +229,7 @@ def _requested_field_names(
     return tuple(ordered)
 
 
-def _render_user_prompt(
-    surface: Surface, fields: tuple[str, ...], flat_map
-) -> str:
+def _render_user_prompt(surface: Surface, fields: tuple[str, ...], flat_map) -> str:
     domain = "jobs" if surface.value.startswith("job") else "commerce"
     descriptors = CASCADE_RECIPE_COMPILER_FIELD_DESCRIPTORS.get(domain, {})
     field_lines = "\n".join(
@@ -305,9 +302,7 @@ def _build_recipe(
         required=True,
         # Listing surfaces must ground at least the configured min-repeated-records
         # count; a singleton root is not a record set (finding 7).
-        min_count=(
-            CASCADE_LISTING_MIN_REPEATED_RECORDS if is_listing else 1
-        ),
+        min_count=(CASCADE_LISTING_MIN_REPEATED_RECORDS if is_listing else 1),
     )
     fields: dict[str, tuple[RecipeBinding, ...]] = {}
     for field, path in field_paths.items():
@@ -384,7 +379,7 @@ def _record_root_css(
     field_paths: dict[str, str],
     *,
     is_listing: bool,
-) -> tuple[str | None, str]:
+) -> tuple[str | None, RecipeCardinality]:
     if not is_listing:
         # Single-record surfaces bind fields to the document; the record root is
         # a stable structural anchor (``body``) resolving to exactly one node.
@@ -426,7 +421,7 @@ def _relative_css(root_path: str, absolute_path: str) -> str | None:
     abs_segments = _path_segments(absolute_path)
     if len(abs_segments) <= len(root_segments):
         return None
-    tail = abs_segments[len(root_segments):]
+    tail = abs_segments[len(root_segments) :]
     return _segments_to_css(tail) or None
 
 
@@ -510,7 +505,11 @@ def _field_binding(
     if path not in flat_map_paths:
         return None
     listing = root_css != "body"
-    css = _relative_css(_root_absolute(root_css), path) if listing else _absolute_css(path)
+    css = (
+        _relative_css(_root_absolute(root_css), path)
+        if listing
+        else _absolute_css(path)
+    )
     if not css:
         return None
     if listing and not _resolves_under_root(document, root_css, css):
@@ -612,9 +611,7 @@ def _attribute_node_resolves(
 ) -> bool:
     if listing:
         nodes = [
-            node
-            for root in document.safe_css(root_css)
-            for node in root.safe_css(css)
+            node for root in document.safe_css(root_css) for node in root.safe_css(css)
         ]
     else:
         nodes = list(document.safe_css(css))

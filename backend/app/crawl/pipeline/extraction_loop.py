@@ -495,7 +495,7 @@ async def _publish_url_result_artifacts(
         verdict=verdict,
     )
     # The result-root path *is* the artifact contract: the reader opens
-    # source.html / result.json / diagnose.json by fixed name beneath it.
+    # page.html / record.json / diagnose.json by fixed name beneath it.
     url_result.manifest_uri = published.result_root
     url_result.bundle_id = published.bundle_id
     url_result.verdict = verdict

@@ -400,11 +400,10 @@ def _recipe_fields_suppressed(
     degradation, so they are ignored.
     """
 
-    empty = (None, "", [], {}, ())
+    empty: tuple[object, ...] = (None, "", [], {}, ())
     published = records[0] if records else None
     return any(
-        value not in empty
-        and (published is None or published.get(field) in empty)
+        value not in empty and (published is None or published.get(field) in empty)
         for grounded in execution.records
         for field, value in grounded.items()
     )
@@ -468,9 +467,7 @@ def _replay_active_recipe(request: ExtractionRequest) -> ExtractionResult | None
             ),
         ),
     )
-    attempt = _execute_attempt(
-        request, adapter, recipe_harvest, stage_prefix="recipe_"
-    )
+    attempt = _execute_attempt(request, adapter, recipe_harvest, stage_prefix="recipe_")
     # Drift: fall through to the deterministic/model floors rather than
     # short-circuiting them with a degraded recipe-tier result when the recipe
     # produced no publishable record at all, or when a field the recipe grounded

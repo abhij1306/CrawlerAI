@@ -52,12 +52,11 @@ def test_url_result_writes_exactly_three_coordinated_files(tmp_path: Path) -> No
     root = tmp_path / published.result_root
     assert sorted(path.name for path in root.iterdir()) == [
         "diagnose.json",
-        "result.json",
-        "source.html",
+        "page.html",
+        "record.json",
     ]
     diagnosis = json.loads((root / "diagnose.json").read_text(encoding="utf-8"))
     assert diagnosis["schema_version"] == "diagnose.v3"
     assert diagnosis["discovery"]["readiness"]["terminal_state"] == "ready_empty"
     assert diagnosis["discovery"]["listing_verdict"] == "listing_detection_failed"
     assert diagnosis["discovery"]["record_count"] == 0
-
