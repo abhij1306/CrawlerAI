@@ -10,6 +10,8 @@ export type HistoryItem = {
   created_at: string;
   label?: string;
   meta?: string;
+  deletable?: boolean;
+  cancellable?: boolean;
 };
 
 const STATUS_TONE_MAP: Record<string, 'success' | 'danger' | 'neutral' | 'warning' | 'info'> = {
@@ -28,6 +30,8 @@ export function HistoryDrawer({
   items,
   activeId,
   onSelect,
+  onDelete: _onDelete,
+  onCancel: _onCancel,
   title = 'Run History',
 }: Readonly<{
   open: boolean;
@@ -35,6 +39,8 @@ export function HistoryDrawer({
   items: HistoryItem[];
   activeId?: number | null;
   onSelect: (id: number) => void;
+  onDelete?: (id: number) => void;
+  onCancel?: (id: number) => void;
   title?: string;
 }>) {
   return (
