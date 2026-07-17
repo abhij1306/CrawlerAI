@@ -73,9 +73,7 @@ class AcquisitionPolicy:
                 field_name="locality_profile",
             ),
             capture_screenshot=bool(payload.get("capture_screenshot", False)),
-            capture_network=_normalized_capture_network(
-                payload.get("capture_network")
-            ),
+            capture_network=_normalized_capture_network(payload.get("capture_network")),
             host_memory_ttl_seconds=_optional_positive_int(
                 payload.get("host_memory_ttl_seconds")
             ),
@@ -255,9 +253,7 @@ def _normalized_capture_network(value: object) -> str:
     normalized = str(value or CAPTURE_NETWORK_OFF).strip().lower()
     if normalized in CAPTURE_NETWORK_VALUES:
         return normalized
-    raise ValueError(
-        f"capture_network must be one of {sorted(CAPTURE_NETWORK_VALUES)}"
-    )
+    raise ValueError(f"capture_network must be one of {sorted(CAPTURE_NETWORK_VALUES)}")
 
 
 __all__ = ["AcquisitionPolicy"]

@@ -119,9 +119,7 @@ def recipe_execution_evidence(
     surface admissible facts, never arbitrary keys.
     """
 
-    fact_types = RECIPE_FIELD_FACT_TYPES_BY_SURFACE.get(
-        request.surface.value, {}
-    )
+    fact_types = RECIPE_FIELD_FACT_TYPES_BY_SURFACE.get(request.surface.value, {})
     field_bindings = _field_bindings(recipe)
     rows: list[Evidence] = []
     for index, record in enumerate(execution.records[: request.max_records]):
@@ -252,9 +250,7 @@ def _build_row(
         subject_id=subject_id,
         parent_subject_id=parent_subject_id,
     )
-    return row.model_copy(
-        update={"surface": request.surface, "subject_id": subject_id}
-    )
+    return row.model_copy(update={"surface": request.surface, "subject_id": subject_id})
 
 
 def _default_artifact_id(bundle) -> str:

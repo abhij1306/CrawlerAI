@@ -33,6 +33,7 @@ from app.core.shared.ids import stable_id
 from app.extraction.contracts import ExtractionRequest, ExtractionResult
 from app.extraction.surfaces import listing_schema, parse_surface, surface_spec
 from app.persistence.extraction_memory import (
+    LearnOncePersistLockTimeout,
     claim_learn_once_template,
     note_recipe_drift_failure,
     persist_learned_recipe,
@@ -107,7 +108,9 @@ def should_attempt_learn_once(
     not-yet-learned template, and a surface on the per-surface allow-list.
     """
 
-    if not (CASCADE_LEARN_ONCE_TIER_ENABLED and CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL):
+    if not (
+        CASCADE_LEARN_ONCE_TIER_ENABLED and CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL
+    ):
         return False
     if not (llm_enabled and floors_empty and is_new_template):
         return False
@@ -183,19 +186,26 @@ async def learn_recipe_after_extraction(
         return False
 
     recipe_payload = discovery.candidate.recipe.model_dump(mode="json")
-    # Persist under the held claim: the template row lock acquired by
-    # ``claim_learn_once_template`` is held for the whole compile+persist, so a
-    # concurrent worker for the same scope blocks until this transaction commits.
-    await persist_learned_recipe(
-        session,
-        domain=domain,
-        surface=surface_value,
-        route_pattern=route_pattern,
-        fingerprint=fingerprint,
-        recipe_payload=recipe_payload,
-        confidence=_LEARNED_RECIPE_CONFIDENCE,
-        run_id=run_id,
-    )
+    # The claim committed (and released its row lock) before the model call —
+    # the durable PROVISIONAL marker, not a held lock, enforces exactly-once.
+    # ``persist_learned_recipe`` therefore re-acquires the template lock with a
+    # bounded wait; on contention it raises instead of blocking indefinitely.
+    try:
+        await persist_learned_recipe(
+            session,
+            domain=domain,
+            surface=surface_value,
+            route_pattern=route_pattern,
+            fingerprint=fingerprint,
+            recipe_payload=recipe_payload,
+            confidence=_LEARNED_RECIPE_CONFIDENCE,
+            run_id=run_id,
+        )
+    except LearnOncePersistLockTimeout:
+        # Bounded lock wait expired against a contending writer: honest
+        # no-learn (session already rolled back). The claim's PROVISIONAL
+        # marker ages out via its TTL, so the scope stays re-claimable.
+        return False
     # No detached snapshot: the persisted recipe flows into the next run's
     # unified release payload via ``build_release_payload`` at run creation.
     return True

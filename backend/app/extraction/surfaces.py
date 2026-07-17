@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from app.core.config.cascade import (
+    CASCADE_LISTING_MIN_REPEATED_RECORDS,
+    CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY,
+    CASCADE_LISTING_SHELL_PATTERNS,
+)
+
 
 class Surface(str, Enum):
     ECOMMERCE_LISTING = "ecommerce_listing"
@@ -34,6 +40,9 @@ class SurfaceSpec:
     record_signal_facts: frozenset[str] = frozenset()
     min_record_signals: int = 1
     off_host_records_allowed: bool = False
+    readiness_min_repeated_records: int = CASCADE_LISTING_MIN_REPEATED_RECORDS
+    readiness_shell_patterns: tuple[str, ...] = ()
+    readiness_no_results_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -153,6 +162,10 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         record_signal_facts=frozenset({"offer.price", "asset.image_url"}),
         min_record_signals=1,
         off_host_records_allowed=False,
+        readiness_shell_patterns=CASCADE_LISTING_SHELL_PATTERNS,
+        readiness_no_results_patterns=CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY[
+            "product"
+        ],
     ),
     Surface.JOB_DETAIL: SurfaceSpec(
         surface=Surface.JOB_DETAIL,
@@ -164,9 +177,7 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
         supports_variants=False,
         supports_traversal=False,
         structured_types=frozenset({"JobPosting"}),
-        record_signal_facts=frozenset(
-            {"job.location", "job.apply_url", "job.company"}
-        ),
+        record_signal_facts=frozenset({"job.location", "job.apply_url", "job.company"}),
         min_record_signals=1,
         off_host_records_allowed=True,
     ),
@@ -200,11 +211,13 @@ SURFACE_SPECS: dict[Surface, SurfaceSpec] = {
             "opportunityId",
             "requisitionId",
         ),
-        record_signal_facts=frozenset(
-            {"job.location", "job.apply_url", "job.company"}
-        ),
+        record_signal_facts=frozenset({"job.location", "job.apply_url", "job.company"}),
         min_record_signals=1,
         off_host_records_allowed=True,
+        readiness_shell_patterns=CASCADE_LISTING_SHELL_PATTERNS,
+        readiness_no_results_patterns=CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY[
+            "job"
+        ],
     ),
 }
 
@@ -223,7 +236,7 @@ def surface_spec(value: Surface | str) -> SurfaceSpec:
     return SURFACE_SPECS[surface]
 
 
-_LISTING_SURFACE_ALIASES = {
+_LISTING_SURFACE_ALIASES: dict[str, Surface] = {
     **{
         spec.domain: spec.surface
         for spec in SURFACE_SPECS.values()

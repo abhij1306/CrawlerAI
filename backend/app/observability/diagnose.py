@@ -21,6 +21,21 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from app.acquisition.acquirer import PageEvidence
+from app.core.config.diagnose import (
+    DIAGNOSE_COLLECTORS_LIMIT,
+    DIAGNOSE_CONTRACTS_LIMIT,
+    DIAGNOSE_ESCALATION_ATTEMPT_LIMIT,
+    DIAGNOSE_EVIDENCE_DISPOSITIONS_LIMIT,
+    DIAGNOSE_FIELDS_LIMIT,
+    DIAGNOSE_FINDINGS_LIMIT,
+    DIAGNOSE_NETWORK_PROVENANCE_LIMIT,
+    DIAGNOSE_PREVIEW_LIMIT,
+    DIAGNOSE_REJECTED_PER_FIELD_LIMIT,
+    DIAGNOSE_SCHEMA_VERSION,
+    DIAGNOSE_STAGES_LIMIT,
+    DIAGNOSE_VARIANT_DROPS_LIMIT,
+)
+from app.core.listing_cards import ListingCardDiagnostics
 from app.core.config import field_mappings
 from app.core.config.extraction_rules import (
     DETAIL_CAPTURE_NOT_FOUND_OUTCOME,
@@ -38,16 +53,16 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 
-SCHEMA_VERSION = "diagnose.v2"
-_PREVIEW_LIMIT = 120
-_FIELDS_LIMIT = 100
-_REJECTED_PER_FIELD_LIMIT = 10
-_VARIANT_DROPS_LIMIT = 200
-_COLLECTORS_LIMIT = 50
-_STAGES_LIMIT = 50
-_CONTRACTS_LIMIT = 100
-_FINDINGS_LIMIT = 100
-_EVIDENCE_DISPOSITIONS_LIMIT = 500
+SCHEMA_VERSION = DIAGNOSE_SCHEMA_VERSION
+_PREVIEW_LIMIT = DIAGNOSE_PREVIEW_LIMIT
+_FIELDS_LIMIT = DIAGNOSE_FIELDS_LIMIT
+_REJECTED_PER_FIELD_LIMIT = DIAGNOSE_REJECTED_PER_FIELD_LIMIT
+_VARIANT_DROPS_LIMIT = DIAGNOSE_VARIANT_DROPS_LIMIT
+_COLLECTORS_LIMIT = DIAGNOSE_COLLECTORS_LIMIT
+_STAGES_LIMIT = DIAGNOSE_STAGES_LIMIT
+_CONTRACTS_LIMIT = DIAGNOSE_CONTRACTS_LIMIT
+_FINDINGS_LIMIT = DIAGNOSE_FINDINGS_LIMIT
+_EVIDENCE_DISPOSITIONS_LIMIT = DIAGNOSE_EVIDENCE_DISPOSITIONS_LIMIT
 
 
 def build_diagnosis(
@@ -56,6 +71,8 @@ def build_diagnosis(
     extraction_result: ExtractionResult,
     rejected_public_fields: Mapping[str, object] | None = None,
     variant_drops: Sequence[Mapping[str, object]] | None = None,
+    record_count: int | None = None,
+    listing_verdict: str | None = None,
 ) -> dict[str, object]:
     rejected_public = {
         str(key): value for key, value in dict(rejected_public_fields or {}).items()
@@ -144,6 +161,12 @@ def build_diagnosis(
             capture_outcome=_known_capture_outcome(
                 getattr(extraction_result, "transport_outcome", "")
             ),
+        ),
+        "discovery": _discovery_section(
+            acquisition_result,
+            extraction_result=extraction_result,
+            record_count=record_count,
+            listing_verdict=listing_verdict,
         ),
         "metrics": extraction_result.metrics.model_dump(mode="json"),
         "fields": [
@@ -303,6 +326,123 @@ def _acquisition_capture_outcome(acquisition_result: Any, blocked: bool) -> str:
     if isinstance(status_code, int) and status_code >= 500:
         return "error"
     return "ok"
+
+
+def _discovery_section(
+    acquisition_result: Any,
+    *,
+    extraction_result: ExtractionResult,
+    record_count: int | None,
+    listing_verdict: str | None,
+) -> dict[str, object]:
+    browser = _mapping(getattr(acquisition_result, "browser_diagnostics", {}))
+    discovery = _mapping(browser.get("listing_discovery"))
+    card_diagnostics = ListingCardDiagnostics.from_mapping(
+        discovery.get("listing_card_diagnostics")
+    )
+    acquisition_diagnostics = _mapping(
+        getattr(acquisition_result, "acquisition_diagnostics", {})
+    )
+    readiness = _readiness_summary(browser, discovery)
+    records = getattr(extraction_result, "records", ()) or ()
+    authoritative_record_count = (
+        max(0, int(record_count)) if record_count is not None else len(records)
+    )
+    return {
+        "listing_verdict": str(
+            listing_verdict or getattr(extraction_result, "verdict", "") or ""
+        ),
+        "record_count": authoritative_record_count,
+        **card_diagnostics.as_dict(),
+        "readiness": readiness,
+        "escalation": _bounded_escalation(acquisition_diagnostics),
+        "network": _network_summary(acquisition_result, browser),
+    }
+
+
+def _readiness_summary(
+    browser: Mapping[str, object], discovery: Mapping[str, object]
+) -> dict[str, object]:
+    listing_readiness = _mapping(browser.get("listing_readiness"))
+    terminal_state = str(discovery.get("readiness_terminal_state") or "").strip()
+    if listing_readiness.get("status") in {"timed_out", "timeout"} and not bool(
+        discovery.get("is_ready")
+    ):
+        terminal_state = "timed_out"
+    probes = browser.get("readiness_probes")
+    return {
+        "terminal_state": terminal_state or "not_observed",
+        "is_ready": bool(discovery.get("is_ready")),
+        "ready_empty": bool(discovery.get("ready_empty")),
+        "shell_detected": bool(discovery.get("shell_detected")),
+        "probe_count": len(probes) if isinstance(probes, (list, tuple)) else 0,
+        "last_stage": discovery.get("stage"),
+    }
+
+
+def _bounded_escalation(diagnostics: Mapping[str, object]) -> dict[str, object]:
+    escalation = _mapping(diagnostics.get("escalation"))
+    raw_requests = escalation.get("capability_requests")
+    requests = [
+        {
+            "rung": row.get("rung"),
+            "attempt": row.get("attempt"),
+            "max_attempts": row.get("max_attempts"),
+            "reason": _preview(row.get("reason")),
+            "required_artifacts": [
+                _preview(value) for value in row.get("required_artifacts", ())
+            ]
+            if isinstance(row.get("required_artifacts"), (list, tuple))
+            else [],
+            "capture_network": _preview(row.get("capture_network")),
+            "outcome": _preview(row.get("outcome")) if row.get("outcome") else None,
+            "error": _preview(row.get("error")) if row.get("error") else None,
+        }
+        for row in (
+            list(raw_requests)[:DIAGNOSE_ESCALATION_ATTEMPT_LIMIT]
+            if isinstance(raw_requests, (list, tuple))
+            else []
+        )
+        if isinstance(row, Mapping)
+    ]
+    return {
+        "rung": escalation.get("rung"),
+        "attempt": escalation.get("attempt"),
+        "max_attempts": escalation.get("max_attempts"),
+        "capability_requests": requests,
+        "truncated": bool(
+            isinstance(raw_requests, (list, tuple))
+            and len(raw_requests) > DIAGNOSE_ESCALATION_ATTEMPT_LIMIT
+        ),
+    }
+
+
+def _network_summary(
+    acquisition_result: Any, browser: Mapping[str, object]
+) -> dict[str, object]:
+    payloads = list(getattr(acquisition_result, "network_payloads", ()) or ())
+    provenance = []
+    for index, payload in enumerate(payloads[:DIAGNOSE_NETWORK_PROVENANCE_LIMIT]):
+        if not isinstance(payload, Mapping):
+            continue
+        provenance.append(
+            {
+                "payload_index": index,
+                "endpoint_type": _preview(payload.get("endpoint_type")),
+                "status": payload.get("status"),
+                "content_type": _preview(payload.get("content_type")),
+                "body_kind": type(payload.get("body")).__name__,
+            }
+        )
+    capture_count = browser.get("network_payload_count")
+    return {
+        "capture_count": int(capture_count)
+        if isinstance(capture_count, (int, float))
+        else len(payloads),
+        "payload_count": len(payloads),
+        "provenance": provenance,
+        "truncated": len(payloads) > DIAGNOSE_NETWORK_PROVENANCE_LIMIT,
+    }
 
 
 def _field_section(

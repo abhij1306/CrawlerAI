@@ -223,6 +223,11 @@ async def test_extraction_stage_releases_db_session_after_selector_read(
         url="https://example.com/products/widget",
         surface="ecommerce_detail",
         requested_fields=[],
+        browser_escalation_count=0,
+        escalation_attempts=[],
+        # This test only asserts session release around the extraction thread;
+        # the LEARN-ONCE gate is latched off (it has its own component tests).
+        learn_once_attempted=True,
     )
     acquisition_result = PageAcquisitionResult(
         request=SimpleNamespace(url=context.url),

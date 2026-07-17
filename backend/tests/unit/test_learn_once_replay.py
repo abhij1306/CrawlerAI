@@ -148,7 +148,9 @@ async def test_drift_falls_through_to_deterministic_floors() -> None:
     # whose DOM has drifted so the stored xpaths no longer ground.
     recipe = await _learn_recipe(_detail_request(), _DETAIL_RESPONSE, [])
     snapshot = _release_snapshot(recipe, surface="ecommerce_detail", url=_DETAIL_URL)
-    drifted_html = "<html><body><section><div><p>Nothing here</p></div></section></body></html>"
+    drifted_html = (
+        "<html><body><section><div><p>Nothing here</p></div></section></body></html>"
+    )
     request = _detail_request(html=drifted_html).model_copy(
         update={"runtime_snapshot": snapshot}
     )

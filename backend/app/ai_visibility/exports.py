@@ -349,11 +349,11 @@ def _limitation_lines():
         "## Limitations",
         "",
         "- A single grounded API surface is not a proxy for all AI answer engines; "
-        "provider APIs and consumer applications retrieve and route differently.",
+        + "provider APIs and consumer applications retrieve and route differently.",
         "- Grounded answers vary by date, index freshness and location; results are "
-        "a point-in-time snapshot. Immediate repetitions measure short-term binary "
-        "consistency, not statistical confidence or day-to-day volatility.",
+        + "a point-in-time snapshot. Immediate repetitions measure short-term binary "
+        + "consistency, not statistical confidence or day-to-day volatility.",
         "- Only explicit citations are scored; a mention without a citation is "
-        "recorded as a mention, not a source.",
+        + "recorded as a mention, not a source.",
         "",
     ]

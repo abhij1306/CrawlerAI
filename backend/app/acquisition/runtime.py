@@ -4,7 +4,6 @@ import asyncio
 import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-import logging
 from typing import Any, cast
 
 import httpx
@@ -25,8 +24,6 @@ from app.core.records.network_resolution import (
 )
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
-
-logger = logging.getLogger(__name__)
 
 _SHARED_HTTP_CLIENTS: dict[tuple[str | None, str], httpx.AsyncClient] = {}
 _SHARED_HTTP_CLIENT_LOCK = asyncio.Lock()

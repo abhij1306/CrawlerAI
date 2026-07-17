@@ -915,9 +915,7 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
     future = await build_release_payload(
         db_session, domain=template.domain, surface="ecommerce_detail"
     )
-    future_fingerprints = {
-        row["fingerprint"] for row in future["templates"]
-    }
+    future_fingerprints = {row["fingerprint"] for row in future["templates"]}
     assert template.fingerprint not in future_fingerprints
     # The suspended template held the only selector rules, so future crawls fall
     # through to the floors.

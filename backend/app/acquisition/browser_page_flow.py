@@ -162,6 +162,7 @@ async def navigate_browser_page(
         attempts.append(("commit", fallback_timeout_ms))
     navigation_strategy = navigation_wait_until
     navigation_started_at = time.perf_counter()
+    response = None
     try:
         for index, (strategy, attempt_timeout_ms) in enumerate(attempts):
             navigation_strategy = strategy

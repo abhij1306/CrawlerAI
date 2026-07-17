@@ -175,11 +175,11 @@ def score_surface(
     total_tp = sum(m.tp for m in per_field.values())
     total_fp = sum(m.fp for m in per_field.values())
     total_fn = sum(m.fn for m in per_field.values())
-    field_precision = 1.0 if (total_tp + total_fp) == 0 else total_tp / (
-        total_tp + total_fp
+    field_precision = (
+        1.0 if (total_tp + total_fp) == 0 else total_tp / (total_tp + total_fp)
     )
-    field_recall = 1.0 if (total_tp + total_fn) == 0 else total_tp / (
-        total_tp + total_fn
+    field_recall = (
+        1.0 if (total_tp + total_fn) == 0 else total_tp / (total_tp + total_fn)
     )
 
     grounding_rate = (
@@ -191,7 +191,9 @@ def score_surface(
         1.0 if not cases else fixtures_with_correct_boundary / len(cases)
     )
     exact_match_rate = (
-        1.0 if total_aligned_records == 0 else exact_record_matches / total_aligned_records
+        1.0
+        if total_aligned_records == 0
+        else exact_record_matches / total_aligned_records
     )
 
     return SurfaceReport(

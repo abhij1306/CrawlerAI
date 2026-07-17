@@ -124,9 +124,7 @@ def _select_subject_by_url(
         if _subject_declares_url(row):
             codes_by_subject[row.subject_id] |= _subject_url_codes(row.value)
     matched = [
-        subject_id
-        for subject_id in graph
-        if codes_by_subject[subject_id] & wanted
+        subject_id for subject_id in graph if codes_by_subject[subject_id] & wanted
     ]
     return matched[0] if len(matched) == 1 else None
 

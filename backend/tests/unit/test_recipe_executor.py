@@ -421,7 +421,9 @@ def test_listing_recipe_single_card_root_fails_cardinality() -> None:
     # Finding 7: a listing recipe whose record root grounds to a single card is
     # not a record set; the executor must fail_cardinality even though a lone
     # card would otherwise satisfy the required bindings.
-    result = execute_recipe(_listing_request(_ONE_CARD_HTML), _listing_recipe(min_count=2))
+    result = execute_recipe(
+        _listing_request(_ONE_CARD_HTML), _listing_recipe(min_count=2)
+    )
     assert result.records == ()
     assert result.failure_code == "recipe_cardinality_changed"
 

@@ -7,11 +7,11 @@ import inspect
 import logging
 import re
 from collections import OrderedDict, deque
-from collections.abc import Mapping
+from collections.abc import AsyncGenerator, Generator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -19,6 +19,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.ai_visibility import router as ai_visibility_router
 from app.api.auth import router as auth_router
@@ -225,15 +226,19 @@ async def _public_auth_session(request: Request):
     if inspect.isawaitable(value):
         value = await value
     if inspect.isasyncgen(value):
-        session = await anext(value)
+        # mypy 2.x narrows isasyncgen to AsyncGeneratorType[object, Never];
+        # cast to the dependency's real shape (an async session generator).
+        agen = cast("AsyncGenerator[AsyncSession, None]", value)
+        session = await anext(agen)
         try:
             yield session
         finally:
-            await value.aclose()
+            await agen.aclose()
         return
     if inspect.isgenerator(value):
+        gen = cast("Generator[AsyncSession, None, None]", value)
         try:
-            session = value.send(None)
+            session = gen.send(None)
         except StopIteration as exc:
             raise RuntimeError("Database session dependency did not yield") from exc
         if session is None:
@@ -241,7 +246,7 @@ async def _public_auth_session(request: Request):
         try:
             yield session
         finally:
-            value.close()
+            gen.close()
         return
     yield value
 

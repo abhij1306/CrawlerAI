@@ -65,9 +65,7 @@ _FLOOR_REGISTRY: Final[tuple[tuple[str, _Floor], ...]] = (
     ("dom", collect_dom_listing),
 )
 
-LISTING_FLOOR_ORDER: Final[tuple[str, ...]] = tuple(
-    name for name, _ in _FLOOR_REGISTRY
-)
+LISTING_FLOOR_ORDER: Final[tuple[str, ...]] = tuple(name for name, _ in _FLOOR_REGISTRY)
 
 
 @dataclass(frozen=True)
@@ -148,9 +146,7 @@ _JOB_DETAIL_FLOOR_REGISTRY: Final[tuple[tuple[str, _DetailFloor], ...]] = (
 # surface is only supported when it has an entry here; this is the declarative,
 # spec-driven support table that replaces any ``surface ==`` branch. Commerce
 # detail runs the commerce collector floors; job_detail runs the job floors.
-_DETAIL_SURFACE_PROFILES: Final[
-    dict[Surface, tuple[tuple[str, _DetailFloor], ...]]
-] = {
+_DETAIL_SURFACE_PROFILES: Final[dict[Surface, tuple[tuple[str, _DetailFloor], ...]]] = {
     Surface.ECOMMERCE_DETAIL: _DETAIL_FLOOR_REGISTRY,
     Surface.JOB_DETAIL: _JOB_DETAIL_FLOOR_REGISTRY,
 }

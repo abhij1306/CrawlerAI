@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -108,7 +109,8 @@ async def _run_optimistic_wait(context: _SettleContext) -> None:
         context.phase_timings_ms["optimistic_wait"] = 0
         return
     started_at = time.perf_counter()
-    try:
+    # Timeout here is expected: readiness falls through to the next settle stage.
+    with contextlib.suppress(PlaywrightTimeoutError):
         await context.page.wait_for_function(
             "({visibleTextMin}) => String((document.body && (document.body.innerText || document.body.textContent)) || '').trim().length >= Number(visibleTextMin || 0)",
             arg={
@@ -118,8 +120,6 @@ async def _run_optimistic_wait(context: _SettleContext) -> None:
             },
             timeout=wait_ms,
         )
-    except PlaywrightTimeoutError:
-        pass
     context.phase_timings_ms["optimistic_wait"] = context.elapsed_ms(started_at)
     await context.refresh_probe("after_optimistic_wait")
 
@@ -136,13 +136,12 @@ async def _run_detail_payload_settle(
     if not context.is_detail or settle_ms <= 0 or skip_reason == "fast_path_ready":
         return
     started_at = time.perf_counter()
-    try:
+    # Best-effort settle: a timeout just means we proceed with what loaded.
+    with contextlib.suppress(PlaywrightTimeoutError):
         await context.page.wait_for_load_state(
             "networkidle",
             timeout=min(int(context.timeout_seconds * 1000), settle_ms),
         )
-    except PlaywrightTimeoutError:
-        pass
     context.phase_timings_ms["detail_payload_settle"] = context.elapsed_ms(started_at)
 
 
@@ -224,7 +223,8 @@ async def _run_generic_detail_readiness(context: _SettleContext) -> dict[str, ob
     started_at = time.perf_counter()
     max_wait_ms = max(0, int(context.settings.surface_readiness_max_wait_ms or 0))
     if max_wait_ms > 0:
-        try:
+        # Timeout tolerated: the status below reports it via the fresh probe.
+        with contextlib.suppress(PlaywrightTimeoutError):
             await context.page.wait_for_function(
                 """() => Boolean(
                     document.querySelector('h1')
@@ -235,8 +235,6 @@ async def _run_generic_detail_readiness(context: _SettleContext) -> dict[str, ob
                 )""",
                 timeout=min(int(context.timeout_seconds * 1000), max_wait_ms),
             )
-        except PlaywrightTimeoutError:
-            pass
     context.phase_timings_ms["readiness_wait"] = context.elapsed_ms(started_at)
     await context.refresh_probe("after_generic_detail_readiness")
     return {

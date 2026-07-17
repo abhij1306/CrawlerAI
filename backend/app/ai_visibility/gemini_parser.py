@@ -45,7 +45,6 @@ from app.ai_visibility.contracts import (
 from app.ai_visibility.normalization import normalize_domain
 
 _DROP_STEP_TYPES = frozenset({"thought"})
-_SANITIZE_STEP_STRIP_KEYS = frozenset({"signature", "thought", "thought_summary"})
 
 
 def _step_type(step: dict[str, Any]) -> str:

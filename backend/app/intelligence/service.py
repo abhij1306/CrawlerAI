@@ -43,7 +43,6 @@ from app.intelligence.matching import (
     build_search_result_intelligence,
     is_private_label,
 )
-import app.intelligence.service_support as service_support
 from app.intelligence.service_support import (
     _as_float_or_default,
     _as_int,
@@ -68,17 +67,21 @@ from app.intelligence.service_support import (
 logger = logging.getLogger(__name__)
 
 
+# ``run_prompt_task`` is passed through to the support module (rather than read
+# there directly) so test monkeypatches on this module keep taking effect.
+
+
 async def _resolve_source_snapshot(
     session: AsyncSession,
     *,
     raw: dict[str, object],
     llm_enabled: bool,
 ) -> dict[str, object]:
-    service_support.run_prompt_task = run_prompt_task
     return await _support_resolve_source_snapshot(
         session,
         raw=raw,
         llm_enabled=llm_enabled,
+        prompt_task_runner=run_prompt_task,
     )
 
 
@@ -90,13 +93,13 @@ async def _backfill_candidate_brand(
     source_type: str,
     llm_enabled: bool,
 ) -> dict[str, object]:
-    service_support.run_prompt_task = run_prompt_task
     return await _support_backfill_candidate_brand(
         session,
         source=source,
         intelligence=intelligence,
         source_type=source_type,
         llm_enabled=llm_enabled,
+        prompt_task_runner=run_prompt_task,
     )
 
 
@@ -105,8 +108,9 @@ async def _score_candidate_if_ready(
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
 ) -> bool:
-    service_support.run_prompt_task = run_prompt_task
-    return await _support_score_candidate_if_ready(session, job, candidate)
+    return await _support_score_candidate_if_ready(
+        session, job, candidate, prompt_task_runner=run_prompt_task
+    )
 
 
 async def create_product_intelligence_job(
@@ -455,7 +459,6 @@ async def _persist_discovery_job(
     session.add(job)
     await session.flush()
 
-    service_support.run_prompt_task = run_prompt_task
     source_product_ids_by_index = await _persist_discovery_sources(
         session,
         job=job,
@@ -463,6 +466,7 @@ async def _persist_discovery_job(
         source_rows=source_rows,
         options=options,
         resolved_snapshots=resolved_snapshots,
+        prompt_task_runner=run_prompt_task,
     )
     await _persist_discovery_candidates(
         session,

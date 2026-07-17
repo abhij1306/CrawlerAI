@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from app.acquisition.dom_runtime import (
     get_page_html,
@@ -57,10 +58,10 @@ logger = logging.getLogger(__name__)
 
 def _observe_unique_cards(
     result: TraversalResult,
-    snapshot: dict[str, object],
+    snapshot: dict[str, Any],
     *,
     additive_fallback: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Convert a page snapshot into total unique cards observed by traversal."""
 
     observed = dict(snapshot)
@@ -233,8 +234,8 @@ async def _record_traversal_progress(
     label: str,
     step: int,
     step_limit: int,
-    previous: dict[str, int],
-    current: dict[str, int],
+    previous: dict[str, Any],
+    current: dict[str, Any],
     max_records: int | None,
 ) -> int:
     previous_count = int(previous.get("card_count", 0))
@@ -478,9 +479,7 @@ async def _run_paginate_traversal(
         if step.status != "ok" or step.snapshot is None:
             _set_stop_reason(result, step.status, surface=surface)
             break
-        current = _observe_unique_cards(
-            result, step.snapshot, additive_fallback=True
-        )
+        current = _observe_unique_cards(result, step.snapshot, additive_fallback=True)
         if not _paginate_snapshot_progressed(previous, current):
             _set_stop_reason(result, "paginate_no_progress", surface=surface)
             break

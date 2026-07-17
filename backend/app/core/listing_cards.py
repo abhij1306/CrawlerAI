@@ -8,7 +8,9 @@ implementing the small HtmlDocument/HtmlNode interface used below.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
@@ -20,6 +22,8 @@ from app.core.config.cascade import (
     CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES,
     CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
     CASCADE_LISTING_VISUAL_RECORD_SIGNAL_SUFFIXES,
+    CASCADE_READINESS_REJECTION_REASON_LIMIT,
+    CASCADE_READINESS_REJECTION_SAMPLE_LIMIT,
 )
 from app.core.config.extraction_recipes import (
     LISTING_CARD_SELECTORS_BY_ROOT_ENTITY,
@@ -33,7 +37,10 @@ from app.core.config.extraction_rules import (
     LISTING_UTILITY_URL_TOKENS,
 )
 from app.core.config.selectors import CARD_SELECTORS_BY_ROOT_ENTITY
-from app.core.records.field_url_normalization import same_site, strip_tracking_query_params
+from app.core.records.field_url_normalization import (
+    same_site,
+    strip_tracking_query_params,
+)
 from app.core.records.url_identity import (
     listing_detail_like_path,
     listing_url_is_structural,
@@ -41,6 +48,8 @@ from app.core.records.url_identity import (
 
 _PRICE_SIGNAL = re.compile(CASCADE_LISTING_PRICE_SIGNAL_PATTERN, re.I)
 _ONCLICK_URL = re.compile(CASCADE_LISTING_ONCLICK_URL_PATTERN)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +63,89 @@ class ListingCard:
     url: str
     url_node: Any
     quality_score: int
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardRejectionSample:
+    reason: str
+    selector: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"reason": self.reason, "selector": self.selector}
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardDiagnostics:
+    """Bounded discovery accounting shared by readiness and diagnose.v3."""
+
+    card_count: int = 0
+    admitted_count: int = 0
+    rejected_count: int = 0
+    rejection_reasons: tuple[tuple[str, int], ...] = ()
+    rejection_samples: tuple[ListingCardRejectionSample, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "card_count": self.card_count,
+            "admitted_count": self.admitted_count,
+            "rejected_count": self.rejected_count,
+            "rejection_reasons": dict(self.rejection_reasons),
+            "rejection_samples": [row.as_dict() for row in self.rejection_samples],
+        }
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "ListingCardDiagnostics":
+        if not isinstance(value, dict):
+            return cls()
+
+        def _count(raw: object) -> int:
+            # Persisted diagnostics may carry legacy/malformed values ("unknown");
+            # coerce defensively rather than crash the readiness read path.
+            if raw is None or not isinstance(raw, (int, float, str)):
+                return 0
+            try:
+                return max(0, int(raw))
+            except (TypeError, ValueError):
+                return 0
+
+        raw_reasons = value.get("rejection_reasons")
+        reasons = (
+            tuple(
+                (str(reason), _count(count))
+                for reason, count in list(raw_reasons.items())[
+                    :CASCADE_READINESS_REJECTION_REASON_LIMIT
+                ]
+                if str(reason).strip()
+            )
+            if isinstance(raw_reasons, dict)
+            else ()
+        )
+        raw_samples = value.get("rejection_samples")
+        samples = tuple(
+            ListingCardRejectionSample(
+                reason=str(row.get("reason") or "")[:64],
+                selector=str(row.get("selector") or "")[:120],
+            )
+            for row in (
+                list(raw_samples)[:CASCADE_READINESS_REJECTION_SAMPLE_LIMIT]
+                if isinstance(raw_samples, list)
+                else []
+            )
+            if isinstance(row, dict) and str(row.get("reason") or "").strip()
+        )
+        return cls(
+            card_count=_count(value.get("card_count")),
+            admitted_count=_count(value.get("admitted_count")),
+            rejected_count=_count(value.get("rejected_count")),
+            rejection_reasons=reasons,
+            rejection_samples=samples,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardSelection:
+    cards: tuple[ListingCard, ...]
+    diagnostics: ListingCardDiagnostics
 
 
 def _root_entity(surface: object) -> str:
@@ -135,10 +227,12 @@ def _node_key(node: Any) -> str:
         if mem_id is not None:
             return f"node:{int(mem_id)}"
     except Exception:
-        pass
-    return "html:" + hashlib.sha1(
-        _html(node).encode("utf-8"), usedforsecurity=False
-    ).hexdigest()
+        # Duck-typed nodes without identity/mem_id fall back to a content hash.
+        logger.debug("listing card node identity unavailable; hashing html")
+    return (
+        "html:"
+        + hashlib.sha1(_html(node).encode("utf-8"), usedforsecurity=False).hexdigest()
+    )
 
 
 def _is_hidden_self(node: Any) -> bool:
@@ -147,7 +241,8 @@ def _is_hidden_self(node: Any) -> bool:
         if callable(method) and method():
             return True
     except Exception:
-        pass
+        # Nodes without a working is_hidden() are judged by attributes below.
+        logger.debug("listing card is_hidden probe failed; using attribute check")
     if _has_attribute(node, "hidden"):
         return True
     style = _attribute(node, "style").replace(" ", "").lower()
@@ -179,9 +274,14 @@ def _candidate_nodes(node: Any) -> tuple[Any, ...]:
 def _raw_url_candidates(node: Any, *, page_url: str) -> tuple[tuple[Any, str], ...]:
     candidates: list[tuple[Any, str]] = []
     for candidate in _candidate_nodes(node):
-        for attribute in (*LISTING_CARD_URL_ATTRS, *CASCADE_LISTING_RECORD_URL_ATTRIBUTES):
+        for attribute in (
+            *LISTING_CARD_URL_ATTRS,
+            *CASCADE_LISTING_RECORD_URL_ATTRIBUTES,
+        ):
             value = _attribute(candidate, attribute)
-            if value and not value.lower().startswith(("#", "javascript:", "mailto:", "tel:")):
+            if value and not value.lower().startswith(
+                ("#", "javascript:", "mailto:", "tel:")
+            ):
                 candidates.append((candidate, _resolve_listing_url(page_url, value)))
     for candidate in (node, *_css(node, "*")):
         for attribute in CASCADE_LISTING_RECORD_ONCLICK_ATTRIBUTES:
@@ -279,10 +379,7 @@ def _record_url_is_admissible(
     page = urlparse(page_url)
     if parsed.scheme not in {"http", "https"} or parsed.path in {"", "/"}:
         return False
-    if (
-        parsed.path.rstrip("/") == page.path.rstrip("/")
-        and parsed.query == page.query
-    ):
+    if parsed.path.rstrip("/") == page.path.rstrip("/") and parsed.query == page.query:
         return False
     if not bool(getattr(surface, "off_host_records_allowed", False)) and not same_site(
         page_url, url
@@ -317,7 +414,9 @@ def canonicalize_identity_url(url: str) -> str:
 
     cleaned = strip_tracking_query_params(url) or str(url or "").strip()
     parsed = urlparse(cleaned)
-    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True)
+    query = urlencode(
+        sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True
+    )
     return urlunparse(parsed._replace(query=query, fragment=""))
 
 
@@ -385,7 +484,10 @@ def card_rejection_reason(
     if _uses_visual_evidence(surface) and selector in generic_selectors:
         if not _css(node, "img, picture, source") and not _PRICE_SIGNAL.search(text):
             return "weak_generic_card"
-    if card_quality_score(node, surface=surface, page_url=page_url, selector=selector) < 2:
+    if (
+        card_quality_score(node, surface=surface, page_url=page_url, selector=selector)
+        < 2
+    ):
         return "insufficient_quality"
     return None
 
@@ -397,9 +499,12 @@ def card_is_admitted(
     page_url: str,
     selector: str,
 ) -> bool:
-    return card_rejection_reason(
-        node, surface=surface, page_url=page_url, selector=selector
-    ) is None
+    return (
+        card_rejection_reason(
+            node, surface=surface, page_url=page_url, selector=selector
+        )
+        is None
+    )
 
 
 def select_listing_cards(
@@ -411,9 +516,36 @@ def select_listing_cards(
 ) -> tuple[ListingCard, ...]:
     """Select admitted, identity-unique cards in selector/document order."""
 
+    return select_listing_cards_with_diagnostics(
+        document,
+        surface=surface,
+        page_url=page_url,
+        limit=limit,
+    ).cards
+
+
+def select_listing_cards_with_diagnostics(
+    document: Any,
+    *,
+    surface: object,
+    page_url: str,
+    limit: int | None = None,
+) -> ListingCardSelection:
+    """Select cards and account for every unique candidate exactly once."""
+
     selected: list[ListingCard] = []
     seen_nodes: set[str] = set()
     seen_identities: set[str] = set()
+    rejected = Counter[str]()
+    samples: list[ListingCardRejectionSample] = []
+
+    def reject(reason: str, selector: str) -> None:
+        rejected[reason] += 1
+        if len(samples) < CASCADE_READINESS_REJECTION_SAMPLE_LIMIT:
+            samples.append(
+                ListingCardRejectionSample(reason=reason, selector=selector[:120])
+            )
+
     for selector in derive_card_selectors(surface):
         for index, node in enumerate(_css(document, selector)):
             node_key = _node_key(node)
@@ -424,6 +556,7 @@ def select_listing_cards(
                 node, surface=surface, page_url=page_url, selector=selector
             )
             if reason is not None:
+                reject(reason, selector)
                 continue
             url_node, url = canonical_record_url(
                 node, surface=surface, page_url=page_url
@@ -432,6 +565,7 @@ def select_listing_cards(
                 node, surface=surface, page_url=page_url
             )
             if identity in seen_identities:
+                reject("duplicate_identity", selector)
                 continue
             seen_identities.add(identity)
             selected.append(
@@ -448,8 +582,30 @@ def select_listing_cards(
                 )
             )
             if limit is not None and len(selected) >= max(0, int(limit)):
-                return tuple(selected)
-    return tuple(selected)
+                return _card_selection(selected, rejected, samples)
+    return _card_selection(selected, rejected, samples)
+
+
+def _card_selection(
+    selected: list[ListingCard],
+    rejected: Counter[str],
+    samples: list[ListingCardRejectionSample],
+) -> ListingCardSelection:
+    reasons = tuple(
+        sorted(rejected.items(), key=lambda item: (-item[1], item[0]))[
+            :CASCADE_READINESS_REJECTION_REASON_LIMIT
+        ]
+    )
+    return ListingCardSelection(
+        cards=tuple(selected),
+        diagnostics=ListingCardDiagnostics(
+            card_count=len(selected),
+            admitted_count=len(selected),
+            rejected_count=sum(rejected.values()),
+            rejection_reasons=reasons,
+            rejection_samples=tuple(samples),
+        ),
+    )
 
 
 def unique_card_count(cards: Any) -> int:
@@ -466,6 +622,9 @@ def unique_card_count(cards: Any) -> int:
 
 __all__ = [
     "ListingCard",
+    "ListingCardDiagnostics",
+    "ListingCardRejectionSample",
+    "ListingCardSelection",
     "card_is_admitted",
     "card_quality_score",
     "card_rejection_reason",
@@ -473,6 +632,7 @@ __all__ = [
     "canonicalize_identity_url",
     "derive_card_selectors",
     "select_listing_cards",
+    "select_listing_cards_with_diagnostics",
     "stable_card_identity",
     "stable_url_identity",
     "unique_card_count",

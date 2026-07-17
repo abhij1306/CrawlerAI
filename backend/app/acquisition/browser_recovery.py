@@ -780,9 +780,11 @@ async def capture_rendered_listing_fragments(
         return []
     if not isinstance(snapshot, list):
         return []
-    candidate_html = "<main>" + "\n".join(
-        str(item).strip() for item in snapshot if str(item or "").strip()
-    ) + "</main>"
+    candidate_html = (
+        "<main>"
+        + "\n".join(str(item).strip() for item in snapshot if str(item or "").strip())
+        + "</main>"
+    )
     return list(
         card_fragments_from_html(
             candidate_html,

@@ -159,7 +159,7 @@ async def test_drift_suspends_recipe_after_threshold(db_session: AsyncSession) -
     fingerprint = stable_id(
         "learn-once-template", domain, _SURFACE_VALUE, route_pattern
     )
-    template, _recipe = await _persist_recipe(
+    await _persist_recipe(
         db_session, domain=domain, route_pattern=route_pattern, fingerprint=fingerprint
     )
     await db_session.commit()
@@ -305,15 +305,21 @@ async def test_successful_replay_resets_consecutive_drift(
     # fail, fail, success (reset), fail, fail — never reaches 3 consecutive.
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
@@ -322,15 +328,21 @@ async def test_successful_replay_resets_consecutive_drift(
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is False
     )
@@ -499,7 +511,9 @@ async def _run_learn(session, calls, *, delay: float = 0.0):
         _CLAIM_URL,
         requested_fields=("title", "price"),
     )
-    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    empty = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty"
+    )
     learned = await learn_recipe_after_extraction(
         session,
         request=request,
@@ -603,7 +617,9 @@ async def _run_learn_no_candidate(session, calls, *, delay: float = 0.0):
         _CLAIM_URL,
         requested_fields=("title", "price"),
     )
-    empty = ExtractionResult(surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty")
+    empty = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL, records=(), verdict="empty"
+    )
     learned = await learn_recipe_after_extraction(
         session,
         request=request,
@@ -778,8 +794,11 @@ async def test_reset_caller_clears_drift_between_scattered_misses(
     for _ in range(2):
         assert (
             await note_recipe_drift_failure(
-                db_session, domain=domain, surface=_SURFACE_VALUE,
-                route_pattern=route_pattern, threshold=3,
+                db_session,
+                domain=domain,
+                surface=_SURFACE_VALUE,
+                route_pattern=route_pattern,
+                threshold=3,
             )
             is False
         )
@@ -796,8 +815,11 @@ async def test_reset_caller_clears_drift_between_scattered_misses(
     for _ in range(2):
         assert (
             await note_recipe_drift_failure(
-                db_session, domain=domain, surface=_SURFACE_VALUE,
-                route_pattern=route_pattern, threshold=3,
+                db_session,
+                domain=domain,
+                surface=_SURFACE_VALUE,
+                route_pattern=route_pattern,
+                threshold=3,
             )
             is False
         )
@@ -834,17 +856,24 @@ async def test_reset_caller_ignores_non_recipe_and_empty_results(
 
     for _ in range(2):
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
 
     # An empty recipe-tier result and a non-recipe result must NOT reset.
     await reset_recipe_drift_after_successful_replay(
-        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
         result=_recipe_tier_result(records=()),
     )
     await reset_recipe_drift_after_successful_replay(
-        db_session, url=_DETAIL_URL, surface=_SURFACE_VALUE,
+        db_session,
+        url=_DETAIL_URL,
+        surface=_SURFACE_VALUE,
         result=ExtractionResult(
             surface=Surface.ECOMMERCE_DETAIL,
             records=({"title": "x"},),
@@ -856,8 +885,11 @@ async def test_reset_caller_ignores_non_recipe_and_empty_results(
     # The counter was never reset, so the third consecutive miss suspends.
     assert (
         await note_recipe_drift_failure(
-            db_session, domain=domain, surface=_SURFACE_VALUE,
-            route_pattern=route_pattern, threshold=3,
+            db_session,
+            domain=domain,
+            surface=_SURFACE_VALUE,
+            route_pattern=route_pattern,
+            threshold=3,
         )
         is True
     )
@@ -885,13 +917,9 @@ async def test_operator_label_on_sibling_template_does_not_exempt(
 
     # A SIBLING template (same domain + surface, different route/fingerprint)
     # that carries the operator ownership label.
-    sibling_route = normalize_route(
-        "https://shop.test/category/shoes", _SURFACE_VALUE
-    )
+    sibling_route = normalize_route("https://shop.test/category/shoes", _SURFACE_VALUE)
     assert sibling_route != route_pattern
-    sibling_fp = stable_id(
-        "learn-once-template", domain, _SURFACE_VALUE, sibling_route
-    )
+    sibling_fp = stable_id("learn-once-template", domain, _SURFACE_VALUE, sibling_route)
     sibling_template, _sib_recipe = await _persist_recipe(
         db_session,
         domain=domain,
@@ -923,6 +951,8 @@ async def test_operator_label_on_sibling_template_does_not_exempt(
     ]
     await db_session.commit()
     assert outcomes == [False, False, True]
+
+
 # --- Finding 15: LEARN-ONCE never accumulates detached (run_id NULL) snapshots
 
 
@@ -962,3 +992,108 @@ async def test_learn_cycle_creates_no_detached_release_snapshot(
         .where(ExtractionReleaseSnapshot.run_id.is_(None))
     )
     assert detached == 0
+
+# --- Finding 7 (persist path): bounded, fail-closed lock wait -----------------
+
+
+@pytest.mark.asyncio
+async def test_persist_lock_wait_is_bounded_and_fails_closed(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Finding 7: a persist racing a writer that HOLDS the template row must not
+    # wait indefinitely. With the bound shrunk to 200ms, the blocked persist
+    # must exit within the configured bound (not hang), roll back, and raise
+    # the typed error the learn seam maps to an honest no-learn.
+    import asyncio
+    import time
+
+    from sqlalchemy import select, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    import app.persistence.extraction_memory as extraction_memory
+    from app.models.extraction_memory import ExtractionTemplate
+    from app.persistence.extraction_memory import (
+        LearnOncePersistLockTimeout,
+        ensure_template,
+    )
+
+    monkeypatch.setattr(
+        extraction_memory, "CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS", 200
+    )
+
+    domain = "shop.test"
+    route_pattern = normalize_route(_DETAIL_URL, _SURFACE_VALUE)
+    fingerprint = stable_id(
+        "learn-once-template", domain, _SURFACE_VALUE, route_pattern
+    )
+    # Create the template up front so the contending holder has a row to lock.
+    template = await ensure_template(
+        db_session,
+        domain=domain,
+        surface=_SURFACE_VALUE,
+        fingerprint=fingerprint,
+        route_pattern=route_pattern,
+    )
+    await db_session.commit()
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+
+    holder_acquired = asyncio.Event()
+    release_holder = asyncio.Event()
+
+    async def _hold_template_lock() -> None:
+        # A peer writer holding the template row lock across its transaction —
+        # the exact contention persist_learned_recipe must bound against.
+        async with session_factory() as holder:
+            await holder.execute(
+                select(ExtractionTemplate.id)
+                .where(ExtractionTemplate.id == template.id)
+                .with_for_update()
+            )
+            holder_acquired.set()
+            await release_holder.wait()
+            await holder.rollback()
+
+    holder_task = asyncio.create_task(_hold_template_lock())
+    await asyncio.wait_for(holder_acquired.wait(), timeout=5)
+
+    recipe = await _learned_recipe()
+    started = time.monotonic()
+    try:
+        async with session_factory() as blocked:
+            with pytest.raises(LearnOncePersistLockTimeout):
+                await persist_learned_recipe(
+                    blocked,
+                    domain=domain,
+                    surface=_SURFACE_VALUE,
+                    route_pattern=route_pattern,
+                    fingerprint=fingerprint,
+                    recipe_payload=recipe.model_dump(mode="json"),
+                    confidence=0.75,
+                )
+            elapsed = time.monotonic() - started
+            # Exited within the configured bound (200ms) plus slack — it did
+            # NOT wait for the holder, which is still holding the lock.
+            assert elapsed < 3.0
+            # Fail-closed rollback left the session clean and usable.
+            assert (await blocked.execute(text("SELECT 1"))).scalar_one() == 1
+    finally:
+        release_holder.set()
+        await holder_task
+
+    # Once the holder releases, the same scope persists normally: the timeout
+    # is a bounded wait, not a permanent failure.
+    template_after, stored = await persist_learned_recipe(
+        db_session,
+        domain=domain,
+        surface=_SURFACE_VALUE,
+        route_pattern=route_pattern,
+        fingerprint=fingerprint,
+        recipe_payload=recipe.model_dump(mode="json"),
+        confidence=0.75,
+    )
+    await db_session.commit()
+    assert template_after.id == template.id
+    assert stored.status == "active"

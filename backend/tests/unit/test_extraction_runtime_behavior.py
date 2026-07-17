@@ -565,10 +565,8 @@ def test_field_contract_registry_marks_default_detail_fields_critical() -> None:
 def test_evidence_is_immutable() -> None:
     result = _extract("ecommerce_detail", HTML, "https://shop.test/products/trail-shoe")
     item = result.evidence[0]
-    try:
+    with pytest.raises((ValidationError, TypeError)):
         item.value = "changed"  # type: ignore[misc]
-    except (ValidationError, TypeError):
-        pass
     assert isinstance(item, Evidence)
     assert item.value != "changed"
 

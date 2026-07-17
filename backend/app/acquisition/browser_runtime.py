@@ -41,11 +41,13 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 logger = logging.getLogger(__name__)
 
 block_unneeded_route = _block_unneeded_route
+# Re-exported for component tests exercising the acquisition facade.
 _real_chrome_candidate_paths = real_chrome_candidate_paths
 
 __all__ = [
     "_browser_storage_state_is_persistable",
     "_display_proxy",
+    "_real_chrome_candidate_paths",
     "SharedBrowserRuntime",
     "NetworkPayloadReadResult",
     "browser_fetch",

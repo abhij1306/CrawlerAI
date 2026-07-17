@@ -33,6 +33,34 @@ CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP: Final[int] = 2
 # structured corroboration, never DOM-only).
 CASCADE_LISTING_MIN_REPEATED_RECORDS: Final[int] = 2
 
+# Browser readiness is driven by the canonical SurfaceSpec rather than surface
+# string checks. Patterns are generic UI states, never host/platform names.
+CASCADE_READINESS_REJECTION_SAMPLE_LIMIT: Final[int] = 5
+CASCADE_READINESS_REJECTION_REASON_LIMIT: Final[int] = 10
+CASCADE_LISTING_SHELL_PATTERNS: Final[tuple[str, ...]] = (
+    # Only transient loading / app-hydration states. Permanent search-UI chrome
+    # ("Search jobs", "Find products") must NOT be listed: it coexists with a
+    # legitimately empty result page and would block the ready_empty outcome.
+    r"\bloading(?:\s+(?:more\s+)?results)?\b",
+    r"\bplease wait\b",
+    r"\b(?:open|continue|load|view)\s+(?:this\s+)?(?:page\s+)?in\s+(?:the\s+)?app\b",
+    r"\bdownload\s+(?:our|the)\s+app\b",
+)
+CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY: Final[
+    dict[str, tuple[str, ...]]
+] = {
+    "product": (
+        r"\bno products? (?:were )?found\b",
+        r"\bno (?:matching )?(?:products?|items?|results)\b",
+        r"\b0 products?\b",
+    ),
+    "job": (
+        r"\bno jobs? (?:were )?found\b",
+        r"\bno (?:open )?(?:jobs?|positions?|vacancies|opportunities)\b",
+        r"\b0 jobs?\b",
+    ),
+}
+
 # --- Cascade tier enable flags ---------------------------------------------
 
 # Structured-source and DOM floors are always on; they are the deterministic
@@ -298,6 +326,10 @@ CASCADE_LISTING_ONCLICK_URL_PATTERN: Final[str] = (
 __all__ = [
     "CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP",
     "CASCADE_LISTING_MIN_REPEATED_RECORDS",
+    "CASCADE_READINESS_REJECTION_SAMPLE_LIMIT",
+    "CASCADE_READINESS_REJECTION_REASON_LIMIT",
+    "CASCADE_LISTING_SHELL_PATTERNS",
+    "CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY",
     "CASCADE_ADAPTER_FLOOR_ENABLED",
     "CASCADE_STRUCTURED_FLOOR_ENABLED",
     "CASCADE_DOM_FLOOR_ENABLED",

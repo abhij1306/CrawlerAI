@@ -97,7 +97,9 @@ def _raw_product_variation_urls(html_text: str) -> tuple[str, ...]:
 
 def _normalize_candidate_url(page_url: str, raw_url: str) -> str:
     value = html.unescape(raw_url).replace("\\/", "/").strip()
-    value = re.sub(r"(?:\\?[\"'}\]]+)+$", "", value)
+    # One optional backslash per trailing junk char (not per run) keeps the
+    # pattern free of nested quantifiers (ReDoS) while trimming the same text.
+    value = re.sub(r"(?:\\?[\"'}\]])+$", "", value)
     return urljoin(page_url, value)
 
 

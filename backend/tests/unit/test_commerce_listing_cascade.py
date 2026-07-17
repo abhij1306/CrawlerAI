@@ -73,9 +73,7 @@ def test_structured_floor_produces_records_with_zero_model_calls() -> None:
     assert result.evidence
     collectors = {row.collector_id for row in result.evidence}
     assert collectors == {"listing_structured_floor"}
-    titles = {
-        row.value for row in result.evidence if row.fact_type == "product.title"
-    }
+    titles = {row.value for row in result.evidence if row.fact_type == "product.title"}
     assert titles == {"Aida Dress", "Mira Dress"}
     # No model collector ever appears in a deterministic floor run.
     assert not any("model" in cid or "llm" in cid for cid in collectors)
@@ -96,9 +94,7 @@ def test_cascade_reports_floors_in_structured_network_dom_order() -> None:
     result = _run(_STRUCTURED_HTML)
     assert result.floor_order == ("structured", "network", "dom")
     assert LISTING_FLOOR_ORDER == ("structured", "network", "dom")
-    reported = tuple(
-        outcome.collector_id for outcome in result.collector_outcomes
-    )
+    reported = tuple(outcome.collector_id for outcome in result.collector_outcomes)
     assert reported == (
         "listing_structured_floor",
         "listing_network_floor",
