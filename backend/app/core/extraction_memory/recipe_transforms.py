@@ -136,9 +136,9 @@ def _attribute_availability(value: Any) -> str | None:
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     selectable = state.get("selectable") if isinstance(state, dict) else None
-    if selectable in {False, 0, "0", "false", "False"}:
+    if selectable in {False, "0", "false", "False"}:  # bool==int: False also matches 0
         return "out_of_stock"
-    if selectable in {True, 1, "1", "true", "True"}:
+    if selectable in {True, "1", "true", "True"}:  # True also matches 1
         return "in_stock"
     return None
 
