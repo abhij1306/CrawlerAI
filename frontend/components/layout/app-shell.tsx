@@ -150,6 +150,8 @@ function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAdmin: bo
           variant="ghost"
           size="icon"
           onClick={() => setCollapsed((value) => !value)}
+          aria-controls="app-sidebar-navigation"
+          aria-expanded={!collapsed}
           aria-label="Expand sidebar"
           title="Expand sidebar"
           className="size-7 rounded-md"

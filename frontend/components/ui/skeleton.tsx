@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 export function Skeleton({ className }: Readonly<{ className?: string }>) {
   return (
     <div
-      className={cn('animate-pulse rounded-md bg-background-alt', className)}
+      className={cn('skeleton animate-pulse rounded-md bg-background-alt', className)}
       aria-hidden="true"
     />
   );

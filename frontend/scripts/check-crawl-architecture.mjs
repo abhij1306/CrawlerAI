@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
 
 const root = process.cwd();
 
@@ -55,33 +54,10 @@ function read(relativePath) {
 }
 
 function dynamicallyImportsHeavyCrawlScreens(content) {
-  const source = ts.createSourceFile(
-    'app/crawl/page-view.tsx',
-    content,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const requiredImports = new Set([
-    '../../components/crawl/crawl-config-screen',
-    '../../components/crawl/crawl-run-screen',
-  ]);
-  const discoveredImports = new Set();
-
-  function visit(node) {
-    if (
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-      node.arguments.length === 1 &&
-      ts.isStringLiteral(node.arguments[0])
-    ) {
-      discoveredImports.add(node.arguments[0].text);
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(source);
-  return [...requiredImports].some((modulePath) => discoveredImports.has(modulePath));
+  const cleaned = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const pattern =
+    /\bimport\s*\(\s*['"]\.\.\/\.\.\/components\/crawl\/crawl-(?:config|run)-screen['"]\s*\)/;
+  return pattern.test(cleaned);
 }
 
 function findNextRouterArtifacts() {
