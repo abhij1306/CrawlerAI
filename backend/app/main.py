@@ -468,10 +468,10 @@ async def correlation_middleware(request: Request, call_next) -> Response:
     token = set_correlation_id(correlation_id)
     try:
         response = await call_next(request)
+        response.headers[request_id_header] = correlation_id
+        return response
     finally:
         reset_correlation_id(token)
-    response.headers[request_id_header] = correlation_id
-    return response
 
 
 @app.exception_handler(PublicApiError)

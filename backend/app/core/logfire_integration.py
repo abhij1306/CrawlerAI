@@ -57,10 +57,52 @@ def configure_logfire() -> bool:
     return True
 
 
+def _patch_opentelemetry_fastapi() -> None:
+    """Apply safety patch for opentelemetry-instrumentation-fastapi _IncludedRouter bug."""
+    try:
+        import opentelemetry.instrumentation.fastapi as otel_fastapi
+        from starlette.routing import Match, Route
+
+        def patched_get_route_details(scope: dict[str, Any]) -> str | None:
+            app = scope.get("app")
+            if app is None:
+                return None
+            route = None
+
+            for starlette_route in getattr(app, "routes", []):
+                try:
+                    match, _ = (
+                        Route.matches(starlette_route, scope)
+                        if isinstance(starlette_route, Route)
+                        else starlette_route.matches(scope)
+                    )
+                except Exception:
+                    continue
+                if match == Match.FULL:
+                    try:
+                        route = starlette_route.path
+                    except AttributeError:
+                        route = scope.get("path")
+                    break
+                if match == Match.PARTIAL:
+                    try:
+                        route = starlette_route.path
+                    except AttributeError:
+                        route = scope.get("path")
+            return route
+
+        otel_fastapi._get_route_details = patched_get_route_details
+        logger.debug("Successfully patched opentelemetry.instrumentation.fastapi")
+    except Exception:
+        logger.debug("Optional opentelemetry patch not applied; library may not be present")
+
+
 def instrument_fastapi(app: FastAPI) -> bool:
     """Instrument FastAPI requests when Logfire is enabled."""
     if _LogfireState.fastapi_instrumented or not configure_logfire():
         return _LogfireState.fastapi_instrumented
+
+    _patch_opentelemetry_fastapi()
 
     import logfire
 
