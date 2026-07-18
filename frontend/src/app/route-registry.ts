@@ -128,7 +128,7 @@ export const appRoutes: readonly AppRoute[] = [
       title: 'Domain Memory',
       description: 'Inspect run profiles, grounded learning, and extraction contracts by domain.',
     },
-    nav: { group: 'Memory', label: 'Domain Memory', icon: DatabaseZap },
+    nav: { group: 'Intelligence', label: 'Domain Memory', icon: DatabaseZap },
   },
   {
     id: 'admin-users',
@@ -148,7 +148,7 @@ export const appRoutes: readonly AppRoute[] = [
   },
 ];
 
-const groupOrder = ['Primary', 'Intelligence', 'Memory', 'Admin'] as const;
+const groupOrder = ['Primary', 'Intelligence', 'Admin'] as const;
 
 export const navGroups = groupOrder.map((label) => ({
   label,

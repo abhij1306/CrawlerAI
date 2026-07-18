@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ReactNode, RefObject } from 'react';
 
 import { Button } from './button';
@@ -34,20 +34,25 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
   useEffect(() => {
     const dialog = dialogRef.current;
     dialog?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !pending) {
+      if (event.key === 'Escape' && !pendingRef.current) {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
       }
     }
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [dialogRef, onCancel, pending]);
+  }, [dialogRef]);
 
   return (
     <div className={overlayClassName}>

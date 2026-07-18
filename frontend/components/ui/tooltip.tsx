@@ -4,6 +4,10 @@ import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
+/**
+ * Tooltip — Portal-based positioning to prevent clipping.
+ * Styled with Searchify's dense bg-well, text-xs, and border-strong tokens.
+ */
 export function Tooltip({
   children,
   content,
@@ -89,15 +93,15 @@ export function Tooltip({
               id={tooltipId}
               role="tooltip"
               className={cn(
-                'pointer-events-none fixed w-max max-w-[min(420px,calc(100vw-24px))]',
-                'bg-panel border-border-strong rounded-md border px-2 py-1.5',
-                'text-foreground z-[200] text-sm leading-normal font-medium break-words',
+                'pointer-events-none fixed w-max max-w-[min(320px,calc(100vw-24px))]',
+                'bg-well border border-border-strong rounded-md px-2 py-1 shadow-sm',
+                'text-foreground z-[200] text-xs leading-normal font-medium break-words',
               )}
               style={{ left: `${position.left}px`, top: `${position.top}px` }}
             >
               {content}
               <div
-                className="absolute -bottom-[6px] size-2.5 border-r border-b border-border-strong bg-panel"
+                className="bg-well absolute -bottom-[5px] size-2.5 border-r border-b border-border-strong"
                 style={{
                   left: align === 'start' ? '12px' : '50%',
                   transform: align === 'start' ? 'rotate(45deg)' : 'translateX(-50%) rotate(45deg)',
@@ -110,3 +114,4 @@ export function Tooltip({
     </div>
   );
 }
+export const TooltipProvider = ({ children }: { children: ReactNode }) => children;

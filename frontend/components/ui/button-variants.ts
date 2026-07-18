@@ -1,28 +1,39 @@
 import { cva } from 'class-variance-authority';
 
+/**
+ * Button CVA — token-driven surfaces. Variants map to semantic bridged
+ * tokens only. Sizes use the control-height tokens via bridged
+ * `h-*` utilities defined in globals.css.
+ */
 export const buttonVariants = cva(
-  'ui-button focus-ring inline-flex h-[var(--button-height)] items-center justify-center gap-1.5 rounded-md border px-[var(--button-padding-x)] text-sm font-sans font-medium leading-none whitespace-nowrap no-underline transition-[background-color,color,border-color,box-shadow] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale',
+  'focus-ring inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border font-sans font-medium leading-none no-underline transition-[background-color,color,border-color,box-shadow] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
-        action: 'button-action-surface',
-        download: 'button-download-surface',
-        destructive: 'button-destructive-surface',
-        neutral: 'button-neutral-surface',
-        quiet: 'button-quiet-surface',
-        topbar: 'button-topbar-surface',
-        underline: 'button-link-surface',
-        primary: 'button-action-surface',
-        accent: 'button-action-surface',
-        secondary: 'button-neutral-surface',
-        ghost: 'button-quiet-surface',
-        danger: 'button-destructive-surface',
+        primary: 'border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
+        secondary:
+          'border-border-strong bg-panel text-foreground hover:bg-background-alt hover:border-border-strong',
+        neutral: 'border-border bg-background-alt text-foreground hover:bg-well',
+        ghost:
+          'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
+        destructive: 'border-transparent bg-danger text-accent-fg hover:opacity-90',
+        topbar:
+          'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
+        underline:
+          'underline text-accent hover:text-accent-hover border-transparent bg-transparent',
+        // Backwards compatibility aliases
+        action: 'border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
+        accent: 'border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
+        quiet:
+          'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
+        download: 'border-border bg-background-alt text-foreground hover:bg-well',
+        danger: 'border-transparent bg-danger text-accent-fg hover:opacity-90',
       },
       size: {
-        sm: 'ui-button-sm',
-        md: 'ui-button-md',
-        lg: 'ui-button-lg',
-        icon: 'w-[var(--button-height)] px-0',
+        sm: 'h-[var(--control-height-sm)] px-2.5 text-xs',
+        md: 'h-[var(--control-height)] px-3.5 text-sm',
+        lg: 'h-[var(--control-height-lg)] px-4 text-base',
+        icon: 'size-[var(--control-height)] px-0',
       },
     },
     defaultVariants: {

@@ -918,6 +918,19 @@ html[data-theme='dark'] .focus-ring:focus-visible {
    .ui-button-{sm|lg}    — size overrides
    .button-*-surface     — one surface per variant
 ═══════════════════════════════════════════════════════════════════════ */
+/* Bulletproof white font for solid interactive controls and buttons */
+button.bg-accent,
+button.bg-danger,
+button.bg-success,
+a.bg-accent,
+a.bg-danger,
+a.bg-success,
+[role='button'].bg-accent,
+[role='button'].bg-danger,
+[role='button'].bg-success {
+  color: var(--accent-fg) !important;
+}
+
 .ui-button {
   --_h: var(--btn-height);
   --_fs: var(--btn-font-size);

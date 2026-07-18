@@ -56,9 +56,10 @@ export function useRunRecordSelection({
     () => selectedIds.filter((id) => visibleRecordIds.has(id)),
     [selectedIds, visibleRecordIds],
   );
+  const visibleSelectedSet = useMemo(() => new Set(visibleSelectedIds), [visibleSelectedIds]);
   const selectedRecords = useMemo(
-    () => visibleRecords.filter((record) => visibleSelectedIds.includes(record.id)),
-    [visibleRecords, visibleSelectedIds],
+    () => visibleRecords.filter((record) => visibleSelectedSet.has(record.id)),
+    [visibleRecords, visibleSelectedSet],
   );
   const batchSourceRecords = tableRecords.length ? tableRecords : records;
   const selectAllVisibleTableRecords = useCallback(

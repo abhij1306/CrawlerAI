@@ -2,8 +2,15 @@ packages:
   - .
 
 overrides:
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.1
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.5
   vitest: 4.1.9
 
 allowBuilds:
   msw: true
+
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600 # ignore trust downgrades for packages older than 1 year (pre-provenance packages like semver@6)
+trustLockfile: false
+minimumReleaseAgeExclude:
+  - lucide-react@1.25.0
+  - react-hook-form@7.82.0

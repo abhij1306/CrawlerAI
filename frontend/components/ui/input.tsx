@@ -1,23 +1,27 @@
-import type { ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithoutRef, Ref } from 'react';
 
 import { cn } from '../../lib/utils';
-import { inputVariants, textareaVariants } from './input-variants';
 
-export function Input(props: ComponentPropsWithoutRef<'input'>) {
-  const normalizedProps =
-    props.type === 'file'
-      ? props
-      : 'value' in props
-        ? { ...props, value: props.value ?? '' }
-        : props;
+/** 34px control-height input; focus = --focus-ring via `.focus-ring`. */
+export const inputClasses =
+  'focus-ring h-[var(--control-height)] w-full rounded-md border border-border-strong bg-panel px-2.5 text-sm leading-normal text-foreground transition-[border-color,box-shadow] placeholder:text-subtle hover:border-accent-border focus:border-accent disabled:cursor-not-allowed disabled:opacity-50';
 
-  return <input {...normalizedProps} className={cn(inputVariants, normalizedProps.className)} />;
+export const textareaClasses =
+  'focus-ring min-h-[96px] w-full resize-y rounded-md border border-border-strong bg-panel px-3 py-2 text-sm leading-normal text-foreground transition-[border-color,box-shadow] placeholder:text-subtle hover:border-accent-border focus:border-accent disabled:cursor-not-allowed disabled:opacity-50';
+
+export function Input({
+  className,
+  ref,
+  ...props
+}: Readonly<ComponentPropsWithoutRef<'input'> & { ref?: Ref<HTMLInputElement> }>) {
+  return <input ref={ref} className={cn(inputClasses, className)} {...props} />;
 }
 
-export function Textarea(props: ComponentPropsWithoutRef<'textarea'>) {
-  const normalizedProps = 'value' in props ? { ...props, value: props.value ?? '' } : props;
-
-  return (
-    <textarea {...normalizedProps} className={cn(textareaVariants, normalizedProps.className)} />
-  );
+export function Textarea({
+  className,
+  ref,
+  ...props
+}: Readonly<ComponentPropsWithoutRef<'textarea'> & { ref?: Ref<HTMLTextAreaElement> }>) {
+  return <textarea ref={ref} className={cn(textareaClasses, className)} {...props} />;
 }
+export { inputClasses as inputVariants, textareaClasses as textareaVariants };

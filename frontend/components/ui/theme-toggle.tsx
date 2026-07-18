@@ -7,8 +7,7 @@ type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'crawlerai-theme';
 const THEME_TRANSITION_ATTR = 'data-theme-transition';
 
-// skipcq: JS-0067
-export function ThemeToggle({ compact }: Readonly<{ compact?: boolean }>) {
+export function ThemeToggle({ className }: Readonly<{ className?: string }>) {
   const theme = useSyncExternalStore(subscribeTheme, readTheme, () => 'light');
 
   function toggleTheme() {
@@ -20,9 +19,9 @@ export function ThemeToggle({ compact }: Readonly<{ compact?: boolean }>) {
     <Button
       type="button"
       onClick={toggleTheme}
-      variant="neutral"
+      variant="ghost"
       size="icon"
-      className={compact ? 'theme-toggle-compact' : undefined}
+      className={className}
       aria-label="Toggle color theme"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
     >

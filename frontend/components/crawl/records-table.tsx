@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import type { CrawlRecord } from '../../lib/api/types';
@@ -184,6 +184,7 @@ export const RecordsTable = memo(function RecordsTable({
   const windowedRecords = records.slice(startIndex, endIndex);
   const topSpacerPx = startIndex * rowHeightPx;
   const bottomSpacerPx = Math.max(0, (totalCount - endIndex) * rowHeightPx);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   useEffect(() => {
     if (!containerNode || typeof ResizeObserver === 'undefined') {
@@ -246,7 +247,6 @@ export const RecordsTable = memo(function RecordsTable({
             </div>
           ) : null}
           {dataColumns.map((col, idx) => {
-            const colKey = col.toLowerCase();
             const isFirstData = idx === 0;
             const isLastData = idx === dataColumns.length - 1;
             return (
@@ -254,10 +254,7 @@ export const RecordsTable = memo(function RecordsTable({
                 key={col}
                 role="columnheader"
                 aria-colindex={1 + (hasImageCol ? 1 : 0) + idx + 1}
-                className={cn(
-                  'flex shrink-0 items-center px-5 whitespace-nowrap',
-                  PRICE_KEYS.has(colKey) && 'justify-end text-right',
-                )}
+                className="flex shrink-0 items-center px-5 whitespace-nowrap"
                 style={headerCellStyle(
                   getDataColumnWidth(col),
                   isFirstData ? pinnedDataLeft : undefined,
@@ -278,7 +275,7 @@ export const RecordsTable = memo(function RecordsTable({
             <div aria-hidden className="pointer-events-none" style={{ height: topSpacerPx }} />
           ) : null}
           {windowedRecords.map((record, windowIndex) => {
-            const isSelected = selectedIds.includes(record.id);
+            const isSelected = selectedSet.has(record.id);
             const imageSrc = imageCol ? stringifyCell(readRecordValue(record, imageCol)) : '';
 
             return (

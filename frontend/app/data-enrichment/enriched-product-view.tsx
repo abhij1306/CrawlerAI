@@ -41,7 +41,12 @@ export function EnrichedProductSidebar({
   const scrollFrameRef = useRef<number | null>(null);
   const shouldVirtualize = products.length > 80;
   const virtualRowHeightPx = rowHeightPx + rowGapPx;
-  const productWindowKey = `${products.length}:${products[0]?.id ?? ''}:${products.at(-1)?.id ?? ''}`;
+  const productWindowKey = products.map((p) => p.id).join(',');
+  const [prevWindowKey, setPrevWindowKey] = useState(productWindowKey);
+  if (productWindowKey !== prevWindowKey) {
+    setPrevWindowKey(productWindowKey);
+    setScrollTop(0);
+  }
   const visibleRange = useMemo(() => {
     if (!shouldVirtualize) {
       return { start: 0, end: products.length, topSpacer: 0, bottomSpacer: 0 };
@@ -85,7 +90,6 @@ export function EnrichedProductSidebar({
   );
 
   useEffect(() => {
-    setScrollTop(0);
     scrollContainer?.scrollTo({ top: 0 });
   }, [productWindowKey, scrollContainer]);
 

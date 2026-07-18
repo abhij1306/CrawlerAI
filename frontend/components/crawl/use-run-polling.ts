@@ -46,9 +46,9 @@ export function useTerminalSync(
   const terminalSyncRef = useRef<string | null>(null);
   const liveRunIdRef = useRef<number | null>(null);
   const queriesRef = useRef(queries);
+  queriesRef.current = queries;
 
   useEffect(() => {
-    queriesRef.current = queries;
     if (!run) {
       liveRunIdRef.current = null;
       terminalSyncRef.current = null;
@@ -70,7 +70,7 @@ export function useTerminalSync(
     terminalSyncRef.current = syncKey;
 
     void Promise.allSettled(queriesRef.current.map((query) => query.refetch()));
-  }, [run, terminal, queries]);
+  }, [run, terminal]);
 }
 
 export function useTerminalRecordSync({

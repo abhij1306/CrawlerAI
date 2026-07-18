@@ -56,6 +56,7 @@ export function DomainWorkspace({
   const [openReport, setOpenReport] = useState(true);
 
   useEffect(() => setPrompts(project.prompts), [project.prompts, project.updated_at]);
+  useEffect(() => setRepetitions(project.default_repetitions), [project.default_repetitions]);
 
   const providerStatus = providers.find((item) => item.provider === provider);
   const domain = project.owned_domains[0] || project.name;

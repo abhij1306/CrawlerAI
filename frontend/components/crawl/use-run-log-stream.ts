@@ -214,7 +214,10 @@ export function useRunLogStream({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cursorRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
-  const liveStartedAtRef = useRef(Date.now());
+  const liveStartedAtRef = useRef(-1);
+  if (liveStartedAtRef.current === -1) {
+    liveStartedAtRef.current = Date.now();
+  }
   const wasLiveRef = useRef(false);
 
   const {

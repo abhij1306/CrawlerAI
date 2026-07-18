@@ -34,7 +34,7 @@ export function RequireSession() {
             Refresh to retry, or sign in again if the session expired.
           </p>
           <div className="mt-4 flex justify-center">
-            <ThemeToggle compact />
+            <ThemeToggle />
           </div>
         </div>
       </div>

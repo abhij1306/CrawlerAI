@@ -1,11 +1,11 @@
 ---
-version: "2.0"
-name: "CrawlerAI Design System v2"
+version: "3.0"
+name: "CrawlerAI Design System v3"
 description: >
-  Canonical frontend design system mirrored from frontend/app/globals.css.
-  Warm stone light theme, warm charcoal dark theme, rust accent, 4px grid,
-  retained font stack, shared component primitives, and WCAG-aware motion and
-  contrast rules.
+  Canonical frontend design system aligned with the Searchify Reference model.
+  Warm stone light theme, warm charcoal dark theme, blue-violet brand accent,
+  dense spacing scale, CVA-driven atoms, slot-based layouts, and fully
+  accessible input fields.
 themes:
   light:
     background-base: "#f2f0ec"
@@ -20,9 +20,10 @@ themes:
     text-secondary: "#443d36"
     text-muted: "#68614f"
     text-subtle: "#948d7e"
-    accent: "#c2410c"
-    accent-hover: "#9a3412"
-    accent-text: "#9a3412"
+    accent: "#3557f6"
+    accent-hover: "#5575ff"
+    accent-subtle: "rgba(53, 87, 246, 0.08)"
+    accent-text: "#3557f6"
   dark:
     background-base: "#0d0c0a"
     background-alt: "#131110"
@@ -36,9 +37,10 @@ themes:
     text-secondary: "#c0b6ab"
     text-muted: "#a5998a"
     text-subtle: "#78706a"
-    accent: "#c2410c"
-    accent-hover: "#d9581e"
-    accent-text: "#ffa875"
+    accent: "#5575ff"
+    accent-hover: "#3557f6"
+    accent-subtle: "rgba(85, 117, 255, 0.12)"
+    accent-text: "#5575ff"
 semantic:
   success:
     light: "#059669 on #ecfdf5"
@@ -126,11 +128,11 @@ spacing:
     20: "80px"
   content-gutter: "32px desktop, 16px at <=480px"
   card-padding: "20px"
-  control-height-sm: "28px"
-  control-height: "32px"
-  control-height-lg: "36px"
-  table-header-height: "38px"
-  table-row-height: "44px"
+  control-height-sm: "30px"
+  control-height: "34px"
+  control-height-lg: "38px"
+  table-header-height: "32px"
+  table-row-height: "40px"
 radius:
   xs: "3px"
   sm: "5px"
@@ -141,134 +143,117 @@ radius:
   full: "9999px"
 components:
   buttons:
-    base: "36px default shell, semibold 14px text, inset highlight, xs shadow"
-    action: "solid rust fill"
-    download: "elevated secondary surface with accent-text foreground"
-    destructive: "panel/elevated surface with danger border"
-    neutral: "stone neutral surface"
-    quiet: "transparent ghost with accent-subtle hover"
-    topbar: "transparent shell action"
-    link: "inline accent text link"
-  segmented:
-    root: "sunken mixed background, 1px border, inset depth"
-    workspace-tabs: "rounded segmented tabs with accent-tinted active state"
-  alerts:
-    base: "md radius, 12px x 16px padding, no shadow"
-  code:
-    block: "alt surface, bordered, mono, wrapped"
-    terminal: "panel surface, mono, 320px max height"
-    json-dark: "always dark VS Code style syntax palette"
+    base: "CVA-driven inline-flex, 1.5px gap, rounded-md, control height scaling, focus-ring"
+    primary: "Solid accent fill with accent-fg text and hover state adjustments"
+    secondary: "Strong border with panel bg and background-alt hover"
+    neutral: "Standard border with background-alt bg and well hover"
+    ghost: "Transparent background with background-alt hover and text-secondary foreground"
+    destructive: "Solid danger fill with accent-fg text"
+    underline: "Inline accent-text link with active underline highlight"
+  badges:
+    base: "Type-safe discriminated union styling on status, sentiment, run-status, and citations"
+    status: "Mapped to success, warning, danger, and info semantic border sets"
+    sentiment: "Border-free chip mapped to positive, neutral, and negative metrics"
+    classification: "Citation classification chips mapped to owned, competitor, and third-party sources"
+    run-status: "Draft, queued, running, analyzing, completed, partial, failed, or cancelled runs"
+  cards:
+    base: "Compounded slots utilizing header, title, description, content, and footer parts"
+    styling: "10px rounded borders, border-border base, bg-panel container, shadow-card"
+  inputs:
+    base: "Consolidated input and textarea structures utilizing self-contained styles"
+    paddings: "34px control height for input, min-96px for resizable textarea"
+  fields:
+    base: "Dual layout architecture resolving implicit vs explicit form associations"
+    render-prop: "Provides accessible ID links and ARIA attributes for inputs"
+    nested: "Implicit label element wrapping, enabling backward compatibility and test queries"
   tables:
-    compact: "38px headers, 44px rows, uppercase headers, light-mode outer border"
-    commerce: "sticky header, 44px image rhythm, mono price/url values"
-  metrics:
-    pulse-strip: "4-column grid, 2-column on small screens, top accent reveal on hover"
-  skeleton:
-    shimmer: "2.2s linear sweep"
+    dense: "32px sticky header heights, 40px row heights, and right-aligned numeric column support"
+  tooltips:
+    base: "Custom portal-based coordinate placement formatted onto dense bg-well and text-xs metrics"
+  skeletons:
+    base: "Animate-pulse with bg-background-alt shimmer mapping"
 accessibility:
-  focus: "2.5px accent focus outline and tokenized focus ring"
-  reduced-motion: "collapse animation and transition duration to 1ms"
-  forced-colors: "explicit focus outline and button border support"
-  print: "remove decorative motion/skeleton treatments"
+  focus: "2.5px focus outline and tokenized .focus-ring utility"
+  reduced-motion: "Collapses transition and animation timings to 1ms"
+  forced-colors: "Enforces strong outlines and explicit border visibility in high contrast modes"
 compatibility:
-  tailwind: "Uses @theme inline token bridge for Tailwind v4 utilities"
-  aliases: "Deprecated backward-compat token aliases still exist; prefer canonical names"
+  tailwind: "Bridged via CSS variables mapping directly to Tailwind v4 @theme declarations"
+  react-router: "Navigation layouts utilize react-router-dom Link primitives rather than Next.js imports"
 ---
 
 # Overview
 
-`frontend/app/globals.css` is source of truth. This file defines CrawlerAI Design System v2. Old blue light-theme refresh spec is stale. Current system uses warm stone surfaces, rust accent, shared tokens, and same theme logic in both raw CSS and Tailwind utility bridge.
+`frontend/app/globals.css` is the canonical design system source of truth. Version 3.0 aligns CrawlerAI directly with the modern **Searchify Reference design model**. All components, spacing metrics, density parameters, and typography sizes conform to a highly optimized, high-density dashboard system while fully preserving CrawlerAI's specific warm-stone/charcoal branding and blue-violet accent values.
 
 # Theme Model
 
 Light theme is warm stone:
 
-- `bg-base` `#f2f0ec`
-- `bg-alt` `#e7e4de`
-- `bg-panel` `#faf8f4`
-- `bg-elevated` `#ffffff`
-- `bg-well` `#dad6cf`
+- `bg-base`: `#f2f0ec`
+- `bg-alt`: `#e7e4de`
+- `bg-panel`: `#faf8f4`
+- `bg-elevated`: `#ffffff`
+- `bg-well`: `#dad6cf`
 
 Dark theme is warm charcoal:
 
-- `bg-base` `#0d0c0a`
-- `bg-alt` `#131110`
-- `bg-panel` `#1a1714`
-- `bg-elevated` `#222019`
-- `bg-well` `#2b2822`
+- `bg-base`: `#0d0c0a`
+- `bg-alt`: `#131110`
+- `bg-panel`: `#1a1714`
+- `bg-elevated`: `#222019`
+- `bg-well`: `#2b2822`
 
-Accent stays rust in both themes. Primary token is `--accent: #c2410c`. Use accent for active state, primary action, selected tabs, focus cues, and visual emphasis. Use semantic status tokens for success, warning, danger, and info. Do not hardcode alternate status colors in page code.
+The brand accent is blue-violet:
+
+- Light theme accent: `#3557f6` (hover: `#5575ff`)
+- Dark theme accent: `#5575ff` (hover: `#3557f6`)
+
+Use the accent for active statuses, primary button actions, active nav states, selections, and primary focus indicators. Do not hardcode raw hex values in individual page files; always refer to the semantic bridged variable names.
 
 # Typography
 
-Three font families are active and intentional:
+The font system utilizes three active families:
 
-- `Public Sans` for product UI and body copy
-- `Bricolage Grotesque` for display and heading hierarchy
-- `JetBrains Mono` for metrics, prices, ids, logs, URLs, and code
+- `Public Sans` for standard operator controls, layouts, and body copy.
+- `Bricolage Grotesque` for display and heading hierarchies.
+- `JetBrains Mono` for metrics, table figures, crawl run identifiers, log files, URLs, and code blocks.
 
-Type system has four tiers:
-
-- `T1 Display`: bold display and KPI values
-- `T2 Heading`: page and section titles in display face
-- `T3 Body`: readable operator text and controls
-- `T4 Label`: uppercase tracked labels, captions, column headers
-
-Canonical scale:
-
-- `11px`, `12px`, `14px`, `15px`, `18px`, `22px`, `30px`
-
-Use mono with tabular numerals for technical values. Body copy stays in sans. Headings and subheadings use display font.
+Use mono with tabular numerals for numeric data. Headings and subheadings use the display face.
 
 # Spacing And Shape
 
-System runs on strict 4px grid. Canonical spacing tokens are `4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80`.
+The layout aligns on a strict 4px grid. Standard space steps are `4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80`.
 
-Core rhythm:
+Core dimensions:
 
-- Content gutter: `32px`, reduced to `16px` on very small screens
-- Card padding: `20px`
-- Control heights: `28px`, `32px`, `36px`
-- Table header height: `38px`
-- Table row height: `44px`
+- Content gutter: `32px` desktop, shrinking dynamically on smaller viewports.
+- Card padding: `20px` (`--card-padding`).
+- Control heights: Small `30px`, Standard `34px`, Large `38px`.
+- Table header height: `32px` (`--table-header-height`).
+- Table row height: `40px` (`--table-row-height`).
 
-Canonical radii:
+Borders and Radii:
 
-- `3px`, `5px`, `7px`, `10px`, `14px`, `20px`, `9999px`
+- Standard Card: `10px` (`--radius-lg`).
+- Standard Button / Input: `6px` (`--radius-md`).
 
 # Component Primitives
 
-Prefer shared primitives over page-local styling.
+Component primitives are self-contained, type-safe structures built inside `components/ui`:
 
-- Buttons: use `.ui-button` with surface modifiers. Default button shell is 36px high, semibold, lightly inset, and token-driven.
-- Segmented controls: use `.segmented-root` or `.workspace-tabs`. Active tabs use accent-tinted fill and accent-border cues.
-- Alerts: use `.alert-surface` plus semantic variant.
-- Code blocks: use `.code-block`. Crawl terminal uses `.crawl-terminal` and keeps mono context. JSON dark blocks stay VS Code dark regardless of app theme.
-- Tables: use `.compact-data-table` for shared data tables. Commerce table extends same rhythm with sticky headers and fixed image cell sizing.
-- Metrics: use `.metric-pulse-*` strip for dashboard KPI cards.
-- Skeletons: use shimmer loader token set, not ad hoc gray boxes.
+- **Button**: Powered by CVA in `button-variants.ts` and exported in `button.tsx`. Provides aliases for deprecated variants (`accent`, `action`, `download`, `quiet`) to prevent breaks during layout refactors.
+- **Badge**: Uses discriminated unions matching specific metadata contexts (status, sentiment, classification, run-status) with fallbacks for legacy `tone` and `flat` parameters.
+- **Card**: Slot-based compound elements (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`) with `animate` parameters.
+- **Input**: Consolidated, self-contained elements with direct ref-forwarding.
+- **Field**: Multi-style wrapper supporting modern render props (passing IDs and ARIA tags to children) and implicit nested label fallback structures.
+- **Table**: Dense analytical table featuring sticky headers and built-in numerical right-alignments.
+- **Tooltip**: Stable custom SPA portals styled using dense `bg-well` and `text-xs` parameters.
+- **Skeleton**: Simple, high-performance Tailwind-pulse divs.
 
 # Motion And Accessibility
 
-Motion is small and purposeful:
+Motion transitions are optimized for snappy desktop feedback:
 
-- `fade-in`
-- `dropdown-in`
-- `dropdown-in-up`
-- `spin`
-- stagger delays up to `250ms`
-
-Accessibility rules are built into globals:
-
-- keyboard focus uses accent outline and tokenized focus ring
-- reduced motion collapses animation and transition timing to `1ms`
-- forced-colors mode adds strong visible outlines and button borders
-- print strips decorative animation and skeleton visuals
-
-# Implementation Rules
-
-- Treat `frontend/app/globals.css` as canonical design token source.
-- Prefer canonical token names such as `--bg-panel`, `--btn-primary-bg`, `--table-row-height`.
-- Backward-compat aliases still exist, but new code should not depend on deprecated names.
-- Use Tailwind utilities only through bridged tokens when possible.
-- Do not reintroduce old blue palette, old light-only spec, or "preserve old dark theme" assumptions. Both light and dark themes are now explicitly defined in the system.
+- Focus states utilize the unified `.focus-ring` utility.
+- Reduced-motion flags scale transition durations down to `1ms` dynamically.
+- Print media rules completely bypass skeletons and loading animations to ensure clear output.
