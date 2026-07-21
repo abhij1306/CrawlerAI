@@ -7,9 +7,9 @@
 
 ## Executive Summary
 
-CrawlerAI has **strong foundations**: Argon2id password hashing, pinned-HS256 JWT with token-version invalidation, HMAC-hashed API keys, per-route auth dependencies (verified on all 105 routes), a solid IP-filter in `url_safety.py`, strict TypeScript with zero `any`, a single well-built API transport, virtualized record tables, 1,726 backend + 138 frontend tests with zero skips.
+CrawlerAI has **strong foundations**: Argon2id password hashing, pinned-HS256 JWT with token-version invalidation, HMAC-hashed API keys, per-route auth dependencies (verified on all 102 router-mounted API routes; the unauthenticated infrastructure/docs endpoints are covered in §1.13), a solid IP-filter in `url_safety.py`, strict TypeScript with zero `any`, a single well-built API transport, virtualized record tables, 1,726 backend + 138 frontend tests with zero skips.
 
-The audit found **72 issues: 3 critical, 19 high, 31 medium, 15 low, 4 info**.
+The audit found **87 issues: 3 critical, 24 high, 38 medium, 21 low, 1 info** (counts derived from the numbered findings in §§1–7).
 
 **The three things to fix first:**
 
@@ -28,6 +28,8 @@ The audit found **72 issues: 3 critical, 19 high, 31 medium, 15 low, 4 info**.
 ---
 
 ## Severity Index
+
+This index lists all 3 critical and all 24 high findings (entries 1–27). The remaining 38 medium, 21 low, and 1 info findings are numbered in §§1–7; totals everywhere in this report derive from those numbered findings.
 
 | # | Severity | Area | Finding |
 |---|----------|------|---------|
@@ -65,7 +67,7 @@ The audit found **72 issues: 3 critical, 19 high, 31 medium, 15 low, 4 info**.
 
 ## 1. Backend — Security
 
-Audited ~70 files across auth, API keys, SSRF defenses, injection, secrets, web hardening, dependencies. All 105 routes programmatically checked for auth deps (only `/api/auth/login` and `/api/auth/register` are intentionally open). JWT expiry enforcement and IP-filter encodings verified live in the project venv.
+Audited ~70 files across auth, API keys, SSRF defenses, injection, secrets, web hardening, dependencies. Route-auth baseline: all 102 route handlers mounted via APIRouter under `app/api/` were programmatically checked for auth deps (only `/api/auth/login` and `/api/auth/register` are intentionally open). Outside that set, 4 infrastructure endpoints defined directly in `main.py` (`/health/live`, `/health/ready`, `/api/health`, `/api/metrics`) plus FastAPI's default `/docs` and `/openapi.json` are unauthenticated by design — see §1.13. JWT expiry enforcement and IP-filter encodings verified live in the project venv.
 
 ### 1.1 CRITICAL — SSRF: fetch transports follow redirects without re-validating targets
 - **Files:** `acquisition/runtime.py:274-275,308,381-388`, `crawl/crud.py:75`, `core/url_safety.py`, `acquisition/fetch/planned_http.py`
@@ -123,7 +125,7 @@ Audited ~70 files across auth, API keys, SSRF defenses, injection, secrets, web 
 - **Fix:** `min_length=12`; `role: Literal['admin','user']`. **Effort: S.**
 
 ### 1.13 LOW — Unauthenticated `/api/metrics`, `/docs`, health endpoints
-- **Files:** `main.py:143,572-593,305-311`. Recon value for a multi-tenant SaaS.
+- **Files:** `main.py:572-593` (`/health/live`, `/health/ready`, `/api/health`, `/api/metrics` defined directly on the app), `main.py:143` (FastAPI default `/docs` + `/openapi.json`). These sit **outside** the 102 router-mounted routes in this section's auth baseline — total unauthenticated surface = login, register, these 4 infra endpoints, and the docs pair. Recon value for a multi-tenant SaaS.
 - **Fix:** Bind metrics to localhost/shared secret; `docs_url=None` outside dev. **Effort: S.**
 
 ### 1.14 LOW — Dependency hygiene
@@ -233,7 +235,7 @@ Method: vulture 2.16 (conf 60/80) + repo-wide grep verification of every candida
 - **Fix:** Delete 8 routes + 3 wrappers. **Effort: S.**
 
 ### 3.3 HIGH — 48 confirmed dead module-level functions (~1.5–2k LOC, 30 files)
-- Includes: 8 unused accessors in `acquisition/platform_policy.py` (`browser_first_domains`, `platform_js_state_extractors`, …), `ensure_default_admin` (superseded by `bootstrap_admin_user`, main.py:124), `selector_payload_from_rules`, `shutdown_robots_policy`, `run_grounded_repair`, `reset_knowledge_graph`, dead helpers in `events.py`/`runtime_helpers.py`/`field_coerce.py` etc. Full list in the agent JSON (`/code/.plans/workflow/results/audit-be-deadcode.json`). No dynamic-dispatch risk found.
+- Includes: 8 unused accessors in `acquisition/platform_policy.py` (`browser_first_domains`, `platform_js_state_extractors`, …), `ensure_default_admin` (superseded by `bootstrap_admin_user`, main.py:124), `selector_payload_from_rules`, `shutdown_robots_policy`, `run_grounded_repair`, `reset_knowledge_graph`, dead helpers in `events.py`/`runtime_helpers.py`/`field_coerce.py` etc. (The full 48-symbol list with per-symbol grep evidence was verified during the audit session; representative sample quoted here.) No dynamic-dispatch risk found.
 - **Fix:** Delete all 48; update CODEBASE_MAP descriptions. **Effort: M.**
 
 ### 3.4 MEDIUM — api/knowledge.py compat surface: 4/10 endpoints unwired; 2 test-only
@@ -532,7 +534,7 @@ One fetch chokepoint; strict typing; 138 unit + 6 e2e tests, 0 skipped; windowed
 
 ## 10. Appendix
 
-- **Per-agent structured results (JSON):** `/code/.plans/workflow/results/audit-{be-security,be-deadcode,be-scale,be-maintain,fe-security,fe-deadcode,fe-maintain}.json`
+- **Per-agent structured results:** the 7 audit agents (be-security, be-deadcode, be-scale, be-maintain, fe-security, fe-deadcode, fe-maintain) produced structured JSON outputs in the audit session; those session artifacts are not committed. This report is the self-contained evidence record — every finding cites repository-relative file:line references verifiable against commit `f2f8755`.
 - **Backend totals:** 370 py files / ~96k LOC; 134 test files / 1,726 tests; 105 API routes; 10 files >800 LOC; 138 `except Exception` (52 silent); 0 bare excepts; 0 skipped tests; 182 confirmed dead symbols; 25 duplicate module basenames.
 - **Frontend totals:** 187 ts/tsx / 26,461 LOC (22,318 non-test); 22 unit test files (138 tests, all pass) + 2 e2e specs; 0 explicit `any`; `tsc --noEmit` clean; `pnpm audit` clean; 164/164 files reachable from entry; 21 unused exports; 7 duplicate blocks (~300 LOC).
 - **Method note:** findings marked CONFIRMED were verified by two independent methods (tool + grep) or by direct code reading with quoted evidence; SUSPECTED items are labeled as such. No code was modified during the audit.
