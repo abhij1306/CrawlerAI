@@ -61,8 +61,11 @@ function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSPro
     fontWeight: 'var(--table-header-weight)',
     letterSpacing: 'var(--table-header-tracking)',
     textTransform: 'uppercase',
-    // React omits `undefined` style values, so this drops the fixed maxWidth.
-    ...(isLast ? { maxWidth: undefined, flexGrow: 1, flexShrink: 1 } : {}),
+    // React omits `undefined` style values; dropping the fixed sizing lets the
+    // last (1fr) header cell stretch with its grid track like the body cells.
+    ...(isLast
+      ? { width: undefined, minWidth: undefined, maxWidth: undefined, flexGrow: 1, flexShrink: 1 }
+      : {}),
   };
 }
 

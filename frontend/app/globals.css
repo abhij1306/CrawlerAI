@@ -438,11 +438,7 @@ body {
   min-height: 100dvh;
   margin: 0;
   background-color: var(--bg-base);
-  /*
-   * FIX: was rgba(53, 87, 246, 0.045) — hardcoded accent.
-   * Now uses CSS var so it responds to theme. Dark mode strips
-   * the radial glow entirely (see override below).
-   */
+  /* Refined-minimal: flat surfaces — no background imagery in either theme. */
   background-image: none;
   background-position: center top;
   /* background-attachment: fixed applied via @supports below (iOS Safari jank fix) */
@@ -467,11 +463,6 @@ body {
   html[data-theme='dark'] body {
     background-attachment: fixed;
   }
-}
-
-/* Dark mode: warm ambient dark background gradient mesh */
-html[data-theme='dark'] body {
-  background-image: none;
 }
 
 h1,
