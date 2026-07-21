@@ -8,7 +8,7 @@ import {
 } from './form-fields';
 import { CrawlActionButtons } from './crawl-action-buttons';
 import { TabBar } from '../ui/patterns';
-import { Badge, Card, Textarea } from '../ui/primitives';
+import { Card, Textarea } from '../ui/primitives';
 
 type CrawlTargetCardProps = {
   crawlTab: CrawlTab;
@@ -81,11 +81,12 @@ export function CrawlTargetCard({
 
   return (
     <Card className="section-card overflow-hidden p-0">
-      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-        <span className="type-heading-3">Target URL</span>
-        <Badge tone="accent" className="h-5 px-1.5 text-xs font-medium">
+      <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
+        <span className="text-sm font-semibold">Target URL</span>
+        <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-xs font-medium text-accent-text">
+          <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
           {activeTabLabel}
-        </Badge>
+        </span>
       </header>
       <div className="space-y-5 px-6 pt-4 pb-6">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">

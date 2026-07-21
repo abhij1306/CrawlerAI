@@ -497,18 +497,18 @@ export function FieldEditorHeader() {
     <div className="hidden items-center gap-2 px-3 py-1.5 xl:grid xl:grid-cols-[24px_minmax(140px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto]">
       <div />
       <div className="flex items-center gap-1.5">
-        <span className="field-label">Field</span>
+        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">Field</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="field-label">CSS</span>
+        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">CSS</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="field-label">XPath</span>
+        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">XPath</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="field-label">Regex</span>
+        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">Regex</span>
       </div>
-      <span className="field-label text-right">Actions</span>
+      <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted text-right">Actions</span>
     </div>
   );
 }

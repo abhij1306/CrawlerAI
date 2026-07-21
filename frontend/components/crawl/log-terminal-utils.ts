@@ -20,49 +20,33 @@ export type LogStage = 'acquisition' | 'extraction' | 'normalize' | 'persistence
 
 export interface LogStageConfig {
   label: string;
-  borderClass: string;
-  chipClass: string;
   textOnlyClass: string;
-  panelClass: string;
 }
 
 const DISPLAY_LOG_STAGES: LogStage[] = ['acquisition', 'extraction', 'normalize', 'persistence'];
 
+/* Refined-minimal logs: stage = colored text, no filled chip
+   (sample .log-stage — info-text/accent-text tiers, muted for system). */
 export const STAGE_CONFIG: Record<LogStage, LogStageConfig> = {
   acquisition: {
     label: 'Acquire',
-    borderClass: 'border-info/30',
-    chipClass: 'bg-info text-white font-medium',
-    textOnlyClass: 'text-info font-medium',
-    panelClass: 'border-info/20 bg-info-bg',
+    textOnlyClass: 'text-info-text font-medium',
   },
   extraction: {
     label: 'Extract',
-    borderClass: 'border-accent/30',
-    chipClass: 'bg-accent text-accent-fg font-medium',
-    textOnlyClass: 'text-accent font-medium',
-    panelClass: 'border-accent/20 bg-accent-subtle',
+    textOnlyClass: 'text-accent-text font-medium',
   },
   normalize: {
     label: 'Normalize',
-    borderClass: 'border-warning/30',
-    chipClass: 'bg-warning text-white font-bold',
-    textOnlyClass: 'text-warning font-bold',
-    panelClass: 'border-warning/20 bg-warning-bg',
+    textOnlyClass: 'text-warning-text font-medium',
   },
   persistence: {
     label: 'Persist',
-    borderClass: 'border-info/30',
-    chipClass: 'bg-info text-white font-bold',
-    textOnlyClass: 'text-info font-bold',
-    panelClass: 'border-info/20 bg-info-bg',
+    textOnlyClass: 'text-success-text font-medium',
   },
   system: {
     label: 'Run',
-    borderClass: 'border-border-strong',
-    chipClass: 'bg-zinc-700 text-white font-medium',
     textOnlyClass: 'text-muted font-medium',
-    panelClass: 'border-border bg-subtle-panel-bg',
   },
 };
 

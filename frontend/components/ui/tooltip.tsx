@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 
 /**
  * Tooltip — Portal-based positioning to prevent clipping.
- * Styled with the dense bg-well (panel-strong), text-xs, and border-strong tokens.
+ * Styled with the dense panel-strong surface, text-xs, and border-strong tokens.
  */
 export function Tooltip({
   children,

@@ -23,7 +23,7 @@ const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
 
 const SELECT_COLUMN_WIDTH = 48;
 const IMAGE_COLUMN_WIDTH = 80;
-const HEADER_HEIGHT = 32;
+const HEADER_HEIGHT = 30;
 
 function getDataColumnWidth(col: string) {
   const colKey = col.toLowerCase();
@@ -57,8 +57,7 @@ function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSPro
     ...(left === undefined ? {} : { left }),
     zIndex: left === undefined ? 60 : 90,
     height: HEADER_HEIGHT,
-    background:
-      'linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt))',
+    background: 'var(--bg-base)',
     color: 'var(--text-muted)',
     fontFamily: 'var(--table-header-font-family)',
     fontSize: 'var(--table-header-font-size)',
@@ -90,7 +89,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
   if (TITLE_KEYS.has(colKey)) {
     return (
       <span
-        className="block max-w-[320px] truncate font-medium"
+        className="block max-w-[320px] truncate text-secondary"
         style={{ fontSize: 'var(--table-font-size)' }}
       >
         {raw}
@@ -100,7 +99,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
   if (PRICE_KEYS.has(colKey)) {
     return (
       <span
-        className="font-bold text-foreground tabular-nums"
+        className="font-mono font-semibold text-foreground tabular-nums"
         style={{ fontSize: 'var(--table-font-size)' }}
       >
         {raw}
@@ -202,7 +201,7 @@ export const RecordsTable = memo(function RecordsTable({
   }, [containerNode]);
 
   return (
-    <div className="surface-muted relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border shadow-card">
+    <div className="relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden">
       <div
         ref={setContainerRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -214,13 +213,12 @@ export const RecordsTable = memo(function RecordsTable({
         <div
           role="row"
           aria-rowindex={1}
-          className="sticky top-0 z-[100] grid border-b border-border-strong"
+          className="sticky top-0 z-[100] grid border-b border-border"
           style={{
             minWidth: totalTableWidth,
             height: HEADER_HEIGHT,
             gridTemplateColumns,
-            background:
-              'linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt))',
+            background: 'var(--bg-base)',
           }}
         >
           <div
@@ -284,7 +282,7 @@ export const RecordsTable = memo(function RecordsTable({
                 role="row"
                 aria-rowindex={startIndex + windowIndex + 2}
                 className={cn(
-                  'group grid h-[var(--table-row-height)] border-b border-divider bg-panel transition-colors hover:bg-accent-subtle/45 hover:shadow-[inset_3px_0_0_var(--accent)]',
+                  'group grid h-[var(--table-row-height)] border-b border-divider bg-panel transition-colors hover:bg-background',
                   isSelected && 'bg-accent/[0.04]',
                 )}
                 style={{ gridTemplateColumns }}

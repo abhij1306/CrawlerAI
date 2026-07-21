@@ -34,8 +34,8 @@ export function RunLiveWorkspace({
 }: Readonly<RunLiveWorkspaceProps>) {
   return (
     <Card className="section-card overflow-hidden">
-      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-4">
-        <span className="type-label-mono flex items-center gap-2 text-secondary">
+      <header className="flex h-9 items-center justify-between border-b border-border bg-background px-4">
+        <span className="type-label-mono flex items-center gap-2 text-muted">
           Live Log Stream
           {socketOnline ? (
             <span

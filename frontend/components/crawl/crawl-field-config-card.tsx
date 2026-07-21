@@ -39,8 +39,8 @@ export function CrawlFieldConfigCard({
 }: Readonly<CrawlFieldConfigCardProps>) {
   return (
     <Card className="section-card overflow-hidden p-0 xl:col-span-2">
-      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-        <span className="type-heading-3">Field Configuration</span>
+      <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
+        <span className="text-sm font-semibold">Field Configuration</span>
         <div className="flex items-center gap-2">
           <Button
             variant="quiet"

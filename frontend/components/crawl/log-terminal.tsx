@@ -651,7 +651,7 @@ export const LogTerminal = memo(function LogTerminal({
                     severityTone(group, index),
                   )}
                 >
-                  <div className="text-xs font-medium text-muted opacity-60">
+                  <div className="font-mono text-xs text-subtle">
                     {(group.index ?? siteOrdinalByKey.get(group.key) ?? index + 1)
                       .toString()
                       .padStart(2, '0')}
@@ -671,7 +671,7 @@ export const LogTerminal = memo(function LogTerminal({
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="block truncate text-xs font-normal text-info underline-offset-4 hover:underline"
+                        className="block truncate text-xs font-normal text-info-text underline-offset-4 hover:underline"
                         title={group.url}
                       >
                         {formatShortUrlLabel(group.url)}
@@ -681,7 +681,7 @@ export const LogTerminal = memo(function LogTerminal({
                   {!isRunEventGroup ? (
                     <>
                       <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-[color-mix(in_srgb,var(--bg-alt)_50%,transparent)] px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary shadow-sm"
+                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
                         title="Fields Extracted"
                       >
                         <Database className="size-3 shrink-0 text-muted" />
@@ -692,7 +692,7 @@ export const LogTerminal = memo(function LogTerminal({
                         </span>
                       </div>
                       <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-[color-mix(in_srgb,var(--bg-alt)_50%,transparent)] px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary shadow-sm"
+                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
                         title="Confidence Score"
                       >
                         <CheckCircle2
@@ -712,7 +712,7 @@ export const LogTerminal = memo(function LogTerminal({
                         </span>
                       </div>
                       <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-[color-mix(in_srgb,var(--bg-alt)_50%,transparent)] px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary shadow-sm"
+                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
                         title="Duration"
                       >
                         <Clock className="size-3 shrink-0 text-muted" />

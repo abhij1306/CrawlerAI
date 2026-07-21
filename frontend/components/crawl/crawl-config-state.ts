@@ -14,7 +14,7 @@ export type CrawlConfigScreenProps = {
 };
 
 export const RUN_SETUP_ROW_CLASS =
-  'grid gap-2 md:grid-cols-[110px_minmax(0,1fr)] md:items-center md:gap-3';
+  'grid min-h-11 gap-2 border-t border-border-subtle py-1.5 first:border-t-0 md:grid-cols-[110px_minmax(0,1fr)] md:items-center md:gap-3';
 export const RUN_SETUP_CONTROL_CLASS = 'flex md:justify-self-end w-full md:w-auto';
 export const RUN_SETUP_LABEL_CLASS = 'flex min-w-0 h-[var(--control-height)] items-center gap-3';
 export const ADVANCED_CONTROL_ROW_CLASS =

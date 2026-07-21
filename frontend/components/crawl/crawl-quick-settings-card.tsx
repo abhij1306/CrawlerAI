@@ -1,7 +1,7 @@
 import { Globe, Info, SlidersHorizontal, Sparkles } from 'lucide-react';
 
 import type { CrawlDomain, CrawlSurface } from '../../lib/api/types';
-import { Badge, Card, Dropdown, Textarea, Toggle, Tooltip } from '../ui/primitives';
+import { Card, Dropdown, Textarea, Toggle, Tooltip } from '../ui/primitives';
 import { TabBar } from '../ui/patterns';
 import type { StudioMode } from './crawl-config-logic';
 import { surfaceLabel } from './crawl-config-logic';
@@ -49,16 +49,17 @@ export function CrawlQuickSettingsCard({
     <div className="h-full xl:self-stretch">
       <div className="h-full xl:sticky xl:top-[68px]">
         <Card className="section-card h-full overflow-hidden p-0">
-          <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-            <span className="type-heading-3">Crawl Settings</span>
-            <Badge tone="accent" className="h-5 px-1.5 text-xs font-medium">
+          <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
+            <span className="text-sm font-semibold">Crawl Settings</span>
+            <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-xs font-medium text-accent-text">
+              <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
               {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
-            </Badge>
+            </span>
           </header>
-          <div className="page-stack px-6 pt-4 pb-6">
+          <div className="flex flex-col px-6 pt-4 pb-6">
             <div className={RUN_SETUP_ROW_CLASS}>
               <div className={RUN_SETUP_LABEL_CLASS}>
-                <Globe className="size-4 shrink-0 text-accent" />
+                <Globe className="size-4 shrink-0 text-muted" />
                 <div className="type-body-sm font-semibold text-foreground">Domain</div>
               </div>
               <Dropdown<CrawlDomain>
@@ -75,11 +76,11 @@ export function CrawlQuickSettingsCard({
             </div>
             <div className={RUN_SETUP_ROW_CLASS}>
               <div className={RUN_SETUP_LABEL_CLASS}>
-                <SlidersHorizontal className="size-4 shrink-0 text-accent" />
+                <SlidersHorizontal className="size-4 shrink-0 text-muted" />
                 <div className="flex items-center gap-1.5">
                   <div className="type-body-sm font-semibold text-foreground">Mode</div>
                   <Tooltip content="Advanced Mode exposes the full fetch, locality, diagnostics, and selector controls.">
-                    <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
+                    <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
                   </Tooltip>
                 </div>
               </div>
@@ -97,12 +98,12 @@ export function CrawlQuickSettingsCard({
               />
             </div>
 
-            <div className="flex h-[var(--control-height)] items-center justify-between gap-3">
+            <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border-subtle py-1.5">
               <div className="flex items-center gap-2">
-                <Sparkles className="size-4 shrink-0 text-accent" />
+                <Sparkles className="size-4 shrink-0 text-muted" />
                 <span className="type-body-sm font-semibold text-foreground">LLM Processing</span>
                 <Tooltip content="Per-run enrichment only. This does not overwrite saved domain defaults.">
-                  <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
+                  <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
                 </Tooltip>
               </div>
               <Toggle
@@ -112,25 +113,23 @@ export function CrawlQuickSettingsCard({
               />
             </div>
 
-            <div className="border-t border-border pt-4">
-              <div className="flex h-[var(--control-height)] items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Globe className="size-4 shrink-0 text-accent" />
-                  <span className="type-body-sm font-semibold text-foreground">Proxy List</span>
-                  <Tooltip content={'Example:\nhttp://host:port\nhttp://user:pass@host:port'}>
-                    <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
-                  </Tooltip>
-                </div>
-                <Toggle
-                  checked={proxyEnabled}
-                  onChange={onProxyEnabledChange}
-                  ariaLabel="Proxy List enabled"
-                />
+            <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border-subtle py-1.5">
+              <div className="flex items-center gap-2">
+                <Globe className="size-4 shrink-0 text-muted" />
+                <span className="type-body-sm font-semibold text-foreground">Proxy List</span>
+                <Tooltip content={'Example:\nhttp://host:port\nhttp://user:pass@host:port'}>
+                  <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
+                </Tooltip>
               </div>
+              <Toggle
+                checked={proxyEnabled}
+                onChange={onProxyEnabledChange}
+                ariaLabel="Proxy List enabled"
+              />
             </div>
 
             {proxyEnabled ? (
-              <div className="ml-8 flex flex-col gap-4">
+              <div className="mt-3 ml-8 flex flex-col gap-4">
                 <div className="type-body-sm font-semibold text-foreground">Proxy URLs</div>
                 <Textarea
                   value={proxyInput}
@@ -143,7 +142,7 @@ export function CrawlQuickSettingsCard({
             ) : null}
 
             {singleUrlMode && savedProfileLoaded ? (
-              <div className="type-body leading-relaxed text-secondary">
+              <div className="type-body mt-4 leading-relaxed text-secondary">
                 Saved domain profile active:{' '}
                 <span className="type-label-mono text-foreground">{savedProfileDomain}</span> ·{' '}
                 {surfaceLabel(surface)}
