@@ -182,8 +182,11 @@ function StageChip({ stage, showIcon = true }: { stage: LogStage; showIcon?: boo
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 text-xs tracking-wide uppercase',
-        config.textOnlyClass,
+        'inline-flex items-center gap-1 font-medium uppercase',
+        // Exactly one font-size class per stage: twMerge doesn't know text-2xs,
+        // so a base size + override would both survive the merge.
+        stage === 'system' ? 'font-mono text-2xs tracking-[0.1em]' : 'text-xs tracking-wide',
+        config.textClass,
       )}
     >
       {showIcon ? <Icon className="size-3" /> : null}

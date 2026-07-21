@@ -5,7 +5,7 @@ import { queryKeys } from '@/api/query-keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search } from 'lucide-react';
 
-import { Button, Dropdown, Input } from '../../components/ui/primitives';
+import { Button, Card, Dropdown, Input } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import {
   DataRegionEmpty,
@@ -110,42 +110,44 @@ export default function RunsPage() {
       />
 
       {/* ── Filters ── */}
-      <div className="grid gap-4 md:grid-cols-[minmax(320px,1fr)_200px_auto_auto] md:items-center">
-        <div className="relative min-w-0">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" />
-          <Input
-            placeholder="Filter by domain or URL…"
-            value={domainFilter}
-            onChange={(e) => dispatch({ type: 'domainFilterChanged', value: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') applyFilters();
-            }}
-            className="mono-body pl-8"
+      <Card className="p-[10px_12px]">
+        <div className="grid gap-4 md:grid-cols-[minmax(320px,1fr)_200px_auto_auto] md:items-center">
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" />
+            <Input
+              placeholder="Filter by domain or URL…"
+              value={domainFilter}
+              onChange={(e) => dispatch({ type: 'domainFilterChanged', value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyFilters();
+              }}
+              className="mono-body pl-8"
+            />
+          </div>
+          <Dropdown<StatusFilter>
+            ariaLabel="Filter by status"
+            value={statusFilter}
+            onChange={(value) => dispatch({ type: 'statusFilterChanged', value })}
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'running', label: 'Running' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'paused', label: 'Paused' },
+              { value: 'failed', label: 'Failed' },
+              { value: 'killed', label: 'Killed' },
+              { value: 'proxy_exhausted', label: 'Proxy Exhausted' },
+            ]}
+            className="w-full md:w-[200px]"
           />
+          <Button onClick={applyFilters} size="sm">
+            Filter
+          </Button>
+          <Button variant="quiet" onClick={resetFilters} size="sm">
+            Reset
+          </Button>
         </div>
-        <Dropdown<StatusFilter>
-          ariaLabel="Filter by status"
-          value={statusFilter}
-          onChange={(value) => dispatch({ type: 'statusFilterChanged', value })}
-          options={[
-            { value: '', label: 'All statuses' },
-            { value: 'completed', label: 'Completed' },
-            { value: 'running', label: 'Running' },
-            { value: 'pending', label: 'Pending' },
-            { value: 'paused', label: 'Paused' },
-            { value: 'failed', label: 'Failed' },
-            { value: 'killed', label: 'Killed' },
-            { value: 'proxy_exhausted', label: 'Proxy Exhausted' },
-          ]}
-          className="w-full md:w-[200px]"
-        />
-        <Button onClick={applyFilters} size="sm">
-          Filter
-        </Button>
-        <Button variant="quiet" onClick={resetFilters} size="sm">
-          Reset
-        </Button>
-      </div>
+      </Card>
 
       {actionError ? <InlineAlert message={actionError} /> : null}
 

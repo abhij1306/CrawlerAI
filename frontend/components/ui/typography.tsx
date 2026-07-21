@@ -8,8 +8,8 @@ export function Title({
 }: Readonly<{ children: ReactNode; kicker?: string; className?: string }>) {
   return (
     <div className={cn('space-y-1', className)}>
-      {kicker ? <p className="type-label m-0 mb-1.5">{kicker}</p> : null}
-      <h1 className="type-heading-1 m-0 text-foreground">{children}</h1>
+      {kicker ? <p className="type-kicker m-0 mb-1.5">{kicker}</p> : null}
+      <h1 className="type-auth-title m-0">{children}</h1>
     </div>
   );
 }

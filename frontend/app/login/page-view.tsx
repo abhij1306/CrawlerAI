@@ -32,12 +32,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div>
       <div className="space-y-3">
         <Title kicker="Auth">Sign in</Title>
         <Subtitle>Use your crawler workspace credentials.</Subtitle>
       </div>
-      <form className="grid gap-4" onSubmit={onSubmit}>
+      <form className="mt-6 grid gap-3.5" onSubmit={onSubmit}>
         <Field label="Email">
           <Input
             type="email"

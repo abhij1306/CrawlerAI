@@ -23,7 +23,10 @@ const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
 
 const SELECT_COLUMN_WIDTH = 48;
 const IMAGE_COLUMN_WIDTH = 80;
-const HEADER_HEIGHT = 30;
+// Virtualization constants — must match --table-header-height / --table-row-height
+// in globals.css (CSS vars can't feed the windowing math; keep in sync manually).
+export const HEADER_HEIGHT = 30;
+export const ROW_HEIGHT = 38;
 
 function getDataColumnWidth(col: string) {
   const colKey = col.toLowerCase();
@@ -44,17 +47,11 @@ function fixedColumnStyle(width: number, left?: number): CSSProperties {
   };
 }
 
-// skipcq: JS-0067
 function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSProperties {
-  const baseStyle = fixedColumnStyle(width, left);
-  if (isLast) {
-    delete baseStyle.maxWidth;
-  }
   return {
-    ...baseStyle,
+    ...fixedColumnStyle(width, left),
     position: 'sticky',
     top: 0,
-    ...(left === undefined ? {} : { left }),
     zIndex: left === undefined ? 60 : 90,
     height: HEADER_HEIGHT,
     background: 'var(--bg-base)',
@@ -64,7 +61,8 @@ function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSPro
     fontWeight: 'var(--table-header-weight)',
     letterSpacing: 'var(--table-header-tracking)',
     textTransform: 'uppercase',
-    ...(isLast ? { flexGrow: 1, flexShrink: 1 } : {}),
+    // React omits `undefined` style values, so this drops the fixed maxWidth.
+    ...(isLast ? { maxWidth: undefined, flexGrow: 1, flexShrink: 1 } : {}),
   };
 }
 
@@ -163,7 +161,7 @@ export const RecordsTable = memo(function RecordsTable({
     (hasImageCol ? IMAGE_COLUMN_WIDTH : 0) +
     dataColumns.reduce((sum, col) => sum + getDataColumnWidth(col), 0);
 
-  const rowHeightPx = 40;
+  const rowHeightPx = ROW_HEIGHT;
   const overscanRows = 8;
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(560);

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import { Button } from '../ui/primitives';
 import type { FieldRow, FieldRowMessageTone } from './form-fields';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
@@ -147,6 +149,16 @@ export function ActionButton({
     >
       {label}
     </Button>
+  );
+}
+
+/** The one approved tint chip in the refined-minimal sample (mockup .chip/.cdot). */
+export function StudioChip({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-xs font-medium text-accent-text">
+      <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
+      {children}
+    </span>
   );
 }
 

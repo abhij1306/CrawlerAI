@@ -25,14 +25,9 @@ const toneText = {
 
 // Refined-minimal: semantic tones are dot + colored text (no tint pill).
 // Only `neutral` keeps a subtle chip box for id/count chips.
-const toneBox = {
+const toneBox: Partial<Record<keyof typeof toneText, string>> = {
   neutral: 'rounded-full border border-border bg-panel px-2 py-0.5',
-  success: 'border-transparent bg-transparent',
-  warning: 'border-transparent bg-transparent',
-  danger: 'border-transparent bg-transparent',
-  accent: 'border-transparent bg-transparent',
-  info: 'border-transparent bg-transparent',
-} as const;
+};
 
 /**
  * Badge — discriminated on `variant` so each family only accepts its own
@@ -72,7 +67,7 @@ function badgeClasses(props: BadgeProps): string {
   const flat = props.flat ?? false;
 
   if (flat) {
-    return cn('border-transparent bg-transparent', toneText[tone]);
+    return toneText[tone];
   }
 
   return cn(toneText[tone], toneBox[tone]);

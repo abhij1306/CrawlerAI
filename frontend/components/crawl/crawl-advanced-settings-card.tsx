@@ -5,6 +5,7 @@ import { Card, Tooltip } from '../ui/primitives';
 import { CrawlAdvancedDiagnostics } from './crawl-advanced-diagnostics';
 import { CrawlAdvancedExecution } from './crawl-advanced-execution';
 import { CrawlAdvancedLimits } from './crawl-advanced-limits';
+import { SECTION_CARD_HEADER_CLASS, SECTION_CARD_TITLE_CLASS } from './crawl-config-state';
 
 type ProfileUpdater = (current: DomainRunProfile) => DomainRunProfile;
 
@@ -27,12 +28,12 @@ export function CrawlAdvancedSettingsCard({
 }: Readonly<Props>) {
   return (
     <Card className="section-card overflow-visible p-0 xl:col-span-2">
-      <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
-        <span className="flex items-center gap-1.5 text-sm font-semibold">
+      <header className={SECTION_CARD_HEADER_CLASS}>
+        <span className={`flex items-center gap-1.5 ${SECTION_CARD_TITLE_CLASS}`}>
           <SlidersHorizontal className="size-3.5" /> Advanced Settings
         </span>
         <Tooltip content="Fine-tune fetch, limits, locality, and diagnostics for this exploratory run.">
-          <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
+          <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
         </Tooltip>
       </header>
       <div className="grid gap-0 p-6 xl:grid-cols-3 xl:divide-x xl:divide-[var(--border)]">

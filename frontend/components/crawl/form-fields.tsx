@@ -142,7 +142,7 @@ export function SliderRow({
           type="button"
           onClick={onReset}
           aria-label={`Reset ${label}`}
-          className="hover:text-foreground text-muted transition-colors"
+          className="text-muted transition-colors hover:text-foreground"
         >
           <RotateCcw className="size-3" aria-hidden="true" />
         </button>
@@ -492,23 +492,26 @@ export function ManualFieldEditor({
   );
 }
 
+const FIELD_EDITOR_COLUMN_HEADER_CLASS =
+  'text-2xs font-semibold uppercase tracking-[0.07em] text-muted';
+
 export function FieldEditorHeader() {
   return (
     <div className="hidden items-center gap-2 px-3 py-1.5 xl:grid xl:grid-cols-[24px_minmax(140px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto]">
       <div />
       <div className="flex items-center gap-1.5">
-        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">Field</span>
+        <span className={FIELD_EDITOR_COLUMN_HEADER_CLASS}>Field</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">CSS</span>
+        <span className={FIELD_EDITOR_COLUMN_HEADER_CLASS}>CSS</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">XPath</span>
+        <span className={FIELD_EDITOR_COLUMN_HEADER_CLASS}>XPath</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted">Regex</span>
+        <span className={FIELD_EDITOR_COLUMN_HEADER_CLASS}>Regex</span>
       </div>
-      <span className="text-2xs font-semibold uppercase tracking-[0.07em] text-muted text-right">Actions</span>
+      <span className={`${FIELD_EDITOR_COLUMN_HEADER_CLASS} text-right`}>Actions</span>
     </div>
   );
 }

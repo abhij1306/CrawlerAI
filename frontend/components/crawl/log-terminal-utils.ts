@@ -20,33 +20,33 @@ export type LogStage = 'acquisition' | 'extraction' | 'normalize' | 'persistence
 
 export interface LogStageConfig {
   label: string;
-  textOnlyClass: string;
+  textClass: string;
 }
 
 const DISPLAY_LOG_STAGES: LogStage[] = ['acquisition', 'extraction', 'normalize', 'persistence'];
 
-/* Refined-minimal logs: stage = colored text, no filled chip
-   (sample .log-stage — info-text/accent-text tiers, muted for system). */
+/* Refined-minimal logs: stage = colored text, no filled chip (sample
+   .log-stage — semantic *-text tokens; .stage-run is mono + subtle). */
 export const STAGE_CONFIG: Record<LogStage, LogStageConfig> = {
   acquisition: {
     label: 'Acquire',
-    textOnlyClass: 'text-info-text font-medium',
+    textClass: 'text-info-text',
   },
   extraction: {
     label: 'Extract',
-    textOnlyClass: 'text-accent-text font-medium',
+    textClass: 'text-accent-text',
   },
   normalize: {
     label: 'Normalize',
-    textOnlyClass: 'text-warning-text font-medium',
+    textClass: 'text-warning-text',
   },
   persistence: {
     label: 'Persist',
-    textOnlyClass: 'text-success-text font-medium',
+    textClass: 'text-success-text',
   },
   system: {
     label: 'Run',
-    textOnlyClass: 'text-muted font-medium',
+    textClass: 'text-subtle',
   },
 };
 

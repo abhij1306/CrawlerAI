@@ -1,4 +1,6 @@
+import { StudioChip } from './shared';
 import type { CategoryMode, CrawlTab, PdpMode } from './shared';
+import { SECTION_CARD_HEADER_CLASS, SECTION_CARD_TITLE_CLASS } from './crawl-config-state';
 import { parseLines } from '../../lib/crawl/format';
 import {
   AdditionalFieldInput,
@@ -81,12 +83,9 @@ export function CrawlTargetCard({
 
   return (
     <Card className="section-card overflow-hidden p-0">
-      <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
-        <span className="text-sm font-semibold">Target URL</span>
-        <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-xs font-medium text-accent-text">
-          <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
-          {activeTabLabel}
-        </span>
+      <header className={SECTION_CARD_HEADER_CLASS}>
+        <span className={SECTION_CARD_TITLE_CLASS}>Target URL</span>
+        <StudioChip>{activeTabLabel}</StudioChip>
       </header>
       <div className="space-y-5 px-6 pt-4 pb-6">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">

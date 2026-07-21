@@ -9,7 +9,11 @@ import {
   RUN_SETUP_CONTROL_CLASS,
   RUN_SETUP_LABEL_CLASS,
   RUN_SETUP_ROW_CLASS,
+  RUN_SETUP_TOGGLE_ROW_CLASS,
+  SECTION_CARD_HEADER_CLASS,
+  SECTION_CARD_TITLE_CLASS,
 } from './crawl-config-state';
+import { StudioChip } from './shared';
 import { DOMAIN_OPTIONS } from './domain-surface-config';
 
 type CrawlQuickSettingsCardProps = {
@@ -49,12 +53,9 @@ export function CrawlQuickSettingsCard({
     <div className="h-full xl:self-stretch">
       <div className="h-full xl:sticky xl:top-[68px]">
         <Card className="section-card h-full overflow-hidden p-0">
-          <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
-            <span className="text-sm font-semibold">Crawl Settings</span>
-            <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-xs font-medium text-accent-text">
-              <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
-              {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
-            </span>
+          <header className={SECTION_CARD_HEADER_CLASS}>
+            <span className={SECTION_CARD_TITLE_CLASS}>Crawl Settings</span>
+            <StudioChip>{studioMode === 'advanced' ? 'Advanced' : 'Quick'}</StudioChip>
           </header>
           <div className="flex flex-col px-6 pt-4 pb-6">
             <div className={RUN_SETUP_ROW_CLASS}>
@@ -80,7 +81,7 @@ export function CrawlQuickSettingsCard({
                 <div className="flex items-center gap-1.5">
                   <div className="type-body-sm font-semibold text-foreground">Mode</div>
                   <Tooltip content="Advanced Mode exposes the full fetch, locality, diagnostics, and selector controls.">
-                    <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
+                    <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
                   </Tooltip>
                 </div>
               </div>
@@ -98,12 +99,12 @@ export function CrawlQuickSettingsCard({
               />
             </div>
 
-            <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border-subtle py-1.5">
+            <div className={RUN_SETUP_TOGGLE_ROW_CLASS}>
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 shrink-0 text-muted" />
                 <span className="type-body-sm font-semibold text-foreground">LLM Processing</span>
                 <Tooltip content="Per-run enrichment only. This does not overwrite saved domain defaults.">
-                  <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
+                  <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
                 </Tooltip>
               </div>
               <Toggle
@@ -113,12 +114,12 @@ export function CrawlQuickSettingsCard({
               />
             </div>
 
-            <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border-subtle py-1.5">
+            <div className={RUN_SETUP_TOGGLE_ROW_CLASS}>
               <div className="flex items-center gap-2">
                 <Globe className="size-4 shrink-0 text-muted" />
                 <span className="type-body-sm font-semibold text-foreground">Proxy List</span>
                 <Tooltip content={'Example:\nhttp://host:port\nhttp://user:pass@host:port'}>
-                  <Info className="text-subtle size-3.5 cursor-help transition-colors hover:text-secondary" />
+                  <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
                 </Tooltip>
               </div>
               <Toggle

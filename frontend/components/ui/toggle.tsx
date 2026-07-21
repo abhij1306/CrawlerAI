@@ -21,7 +21,7 @@ export function Toggle({
       <span
         className={cn(
           'toggle-thumb-shadow inline-block h-[14px] w-[14px] rounded-full transition-transform',
-          checked ? 'translate-x-[14px]' : 'translate-x-[2px]',
+          checked ? 'translate-x-[16px]' : 'translate-x-[2px]',
           'toggle-thumb',
         )}
       />

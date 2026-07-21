@@ -35,6 +35,16 @@ export function RunWorkspaceShell({
   );
 }
 
+// Refined-minimal run-workspace chips: 24px radius-999 pills; duration is a
+// neutral panel chip, verdict/quality carry a semantic tint (mockup .chip-success).
+const TINT_BOX = {
+  success: 'border-success-border bg-success-bg text-success-text',
+  warning: 'border-warning-border bg-warning-bg text-warning-text',
+  danger: 'border-danger-border bg-danger-bg text-danger-text',
+} as const;
+const NEUTRAL_MUTED_BOX = 'border-border bg-panel text-muted';
+const NEUTRAL_PANEL_BOX = 'border-border bg-panel text-secondary';
+
 export function RunSummaryChips({
   duration,
   verdict,
@@ -46,24 +56,22 @@ export function RunSummaryChips({
 }>) {
   const normalizedVerdict = verdict.toLowerCase();
   const normalizedQuality = quality.toLowerCase();
-  // Refined-minimal run-workspace chips: 24px radius-999 pills; duration is a
-  // neutral panel chip, verdict/quality carry a semantic tint (mockup .chip-success).
   const verdictBox =
     normalizedVerdict === 'success'
-      ? 'border-success-border bg-success-bg text-success-text'
+      ? TINT_BOX.success
       : normalizedVerdict === 'partial'
-        ? 'border-warning-border bg-warning-bg text-warning-text'
-        : 'border-danger-border bg-danger-bg text-danger-text';
+        ? TINT_BOX.warning
+        : TINT_BOX.danger;
   const qualityBox =
     normalizedQuality === 'high'
-      ? 'border-success-border bg-success-bg text-success-text'
+      ? TINT_BOX.success
       : normalizedQuality === 'medium'
-        ? 'border-warning-border bg-warning-bg text-warning-text'
+        ? TINT_BOX.warning
         : normalizedQuality === 'low'
-          ? 'border-danger-border bg-danger-bg text-danger-text'
-          : 'border-border bg-panel text-muted';
+          ? TINT_BOX.danger
+          : NEUTRAL_MUTED_BOX;
   const chips = [
-    { key: 'duration', value: duration, icon: Clock, box: 'border-border bg-panel text-secondary' },
+    { key: 'duration', value: duration, icon: Clock, box: NEUTRAL_PANEL_BOX },
     { key: 'verdict', value: verdict, icon: CheckCircle2, box: verdictBox },
     { key: 'quality', value: quality, icon: Award, box: qualityBox },
   ];

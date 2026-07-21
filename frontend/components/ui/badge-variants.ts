@@ -5,7 +5,7 @@
  *
  * Refined-minimal: statuses are a 6px dot + colored text — no tint pill,
  * no pill border (approved sample: refined-minimal-dashboard/runs-history).
- * All maps therefore render on a transparent box; tone lives in the text
+ * Maps therefore carry no box classes; tone lives in the text
  * (and the `bg-current` dot) only.
  *
  * Families:
@@ -17,36 +17,36 @@
  */
 
 export const statusBadge = {
-  success: 'bg-transparent text-success-text border-transparent',
-  warning: 'bg-transparent text-warning-text border-transparent',
-  danger: 'bg-transparent text-danger-text border-transparent',
-  info: 'bg-transparent text-info-text border-transparent',
+  success: 'text-success-text',
+  warning: 'text-warning-text',
+  danger: 'text-danger-text',
+  info: 'text-info-text',
 } as const;
 
 export const sentimentBadge = {
-  positive: 'bg-transparent text-success-text border-transparent',
-  neutral: 'bg-transparent text-secondary border-transparent',
-  negative: 'bg-transparent text-danger-text border-transparent',
+  positive: 'text-success-text',
+  neutral: 'text-secondary',
+  negative: 'text-danger-text',
 } as const;
 
 export const classificationBadge = {
-  owned: 'bg-transparent text-info-text border-transparent',
-  competitor: 'bg-transparent text-warning-text border-transparent',
-  'third-party': 'bg-transparent text-secondary border-transparent',
+  owned: 'text-info-text',
+  competitor: 'text-warning-text',
+  'third-party': 'text-secondary',
 } as const;
 
 export const runStatusBadge = {
-  draft: 'bg-transparent text-muted border-transparent',
-  queued: 'bg-transparent text-muted border-transparent',
-  running: 'bg-transparent text-accent-text border-transparent',
-  analyzing: 'bg-transparent text-accent-text border-transparent',
-  completed: 'bg-transparent text-success-text border-transparent',
-  partial: 'bg-transparent text-warning-text border-transparent',
-  failed: 'bg-transparent text-danger-text border-transparent',
-  cancelled: 'bg-transparent text-muted border-transparent',
+  draft: 'text-muted',
+  queued: 'text-muted',
+  running: 'text-accent-text',
+  analyzing: 'text-accent-text',
+  completed: 'text-success-text',
+  partial: 'text-warning-text',
+  failed: 'text-danger-text',
+  cancelled: 'text-muted',
 } as const;
 
-export const neutralBadge = 'bg-transparent text-secondary border-transparent';
+export const neutralBadge = 'text-secondary';
 
 export type StatusValue = keyof typeof statusBadge;
 export type SentimentValue = keyof typeof sentimentBadge;

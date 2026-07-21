@@ -4,6 +4,7 @@ import { InlineAlert } from '../ui/patterns';
 import { Button, Card } from '../ui/primitives';
 import { FieldEditorHeader, ManualFieldEditor, type FieldRow } from './form-fields';
 import type { FieldRowMessageTone } from './shared';
+import { SECTION_CARD_HEADER_CLASS, SECTION_CARD_TITLE_CLASS } from './crawl-config-state';
 
 type FieldMessages = Record<string, { tone: FieldRowMessageTone; message: string }>;
 type SetFieldRows = (next: FieldRow[] | ((current: FieldRow[]) => FieldRow[])) => void;
@@ -39,8 +40,8 @@ export function CrawlFieldConfigCard({
 }: Readonly<CrawlFieldConfigCardProps>) {
   return (
     <Card className="section-card overflow-hidden p-0 xl:col-span-2">
-      <header className="flex h-[38px] items-center justify-between border-b border-border bg-background px-5">
-        <span className="text-sm font-semibold">Field Configuration</span>
+      <header className={SECTION_CARD_HEADER_CLASS}>
+        <span className={SECTION_CARD_TITLE_CLASS}>Field Configuration</span>
         <div className="flex items-center gap-2">
           <Button
             variant="quiet"
