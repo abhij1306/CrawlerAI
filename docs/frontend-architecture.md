@@ -68,8 +68,9 @@ Primary files:
 - `src/app/route-registry.ts`
 - `src/app/auth-guards.tsx`
 - `src/main.tsx`
-- `components/layout/app-shell.module.css`
-- `components/layout/auth-shell.module.css`
+- `components/layout/sidebar.tsx` (rail/expanded sidebar, nav, theme toggle)
+- `components/layout/logo-mark.tsx`
+- `components/layout/use-workspace-reset.ts`
 - `components/layout/auth-session-query.ts`
 - `components/layout/top-bar-context.tsx`
 - `components/ui/patterns.tsx` for shared operator-page section shells used across non-crawl app surfaces
@@ -226,15 +227,15 @@ Primary files:
 - `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, and `dialog.tsx` for typed primitive owners
 - `components/ui/primitives.tsx` as the compatibility barrel plus dropdown, toggle, tooltip, skeleton, and field helpers
 - `components/ui/patterns.tsx` for shared operator-page patterns
-- `components/ui/table.module.css` for compact and commerce table styling
+- `components/ui/table.tsx` for typed table primitives (`Table`, `TableHeader`, `TableRow`, `TableCell`) styled with semantic Tailwind tokens; `components/crawl/records-table.tsx` for the virtualized crawl-records grid
 - `app/product-intelligence/product-intelligence-components.tsx`, `product-intelligence-results.tsx`, and `product-intelligence-candidate-card.tsx` for Product Intelligence local UI pieces, result summaries, source-vs-candidate comparison rows, confidence reason chips, and URL selection actions; crawl result screens can prefill Product Intelligence from both listing and ecommerce detail records
 
 Global CSS policy:
 
-- `app/globals.css` owns tokens, reset, shared browser defaults, animations, and cross-feature utilities only.
-- App/auth shell CSS lives under `components/layout/`.
-- Crawl Studio feature CSS lives under `components/crawl/`.
-- Table CSS lives under `components/ui/table.module.css`.
+- `app/globals.css` owns the design tokens (light/dark), the `@theme inline` bridge that maps them onto Tailwind utilities, reset, shared browser defaults, animations, and the small cross-feature class layer (focus ring, type scale, card/table/terminal classes) only.
+- App/auth shell styling lives in `components/layout/` as token-based Tailwind classes (no shell CSS modules).
+- Crawl Studio feature components style via the same semantic tokens under `components/crawl/`.
+- Table styling lives in `components/ui/table.tsx`; there is no table CSS module.
 - New JSX should use semantic Tailwind tokens such as `bg-background`, `text-muted`, `border-border`, and `shadow-card`. Raw `bg-[var(--...)]`, `text-[var(--...)]`, `border-[var(--...)]`, and `shadow-[var(--...)]` escapes are blocked by `frontend/scripts/check-token-escapes.mjs`.
 - JSX accessibility rules `label-has-associated-control` and `prefer-tag-over-role` are globally active. Narrow file overrides are allowed only where existing primitives intentionally emulate native controls.
 
@@ -353,7 +354,7 @@ Policy and CI checks:
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.
-- `components/ui/table.module.css` owns compact and commerce table styling while table call sites keep grep-friendly class names during migration.
+- `components/ui/table.tsx` owns table primitive styling (semantic Tailwind tokens); call sites compose the typed primitives directly.
 - When backend record contracts change, update `lib/api/types.ts` and this doc together.
 
 ## 9. Companion Docs
