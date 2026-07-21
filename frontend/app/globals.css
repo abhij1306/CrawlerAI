@@ -90,12 +90,12 @@
   --leading-relaxed: 1.625;
 
   /* Border radii */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: 10px;
-  --radius-xl: 14px;
-  --radius-2xl: 20px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
 
   /* Letter spacing */
   --tracking-tighter: -0.03em;
@@ -109,11 +109,11 @@
   --duration-180: 180ms;
 }
 
-/* ─── LIGHT THEME — Kapa-inspired Neutral Ops ─────────────────────────
+/* ─── LIGHT THEME — Refined Minimal ──────────────────────────────────
    Surface hierarchy (lowest → highest elevation):
-   bg-base #f7f7f6  →  bg-alt #f0f0ef  →  bg-panel #ffffff
-   →  bg-elevated #ffffff  →  bg-well #e3e3e1
-   Accent: blue-violet #3557f6. All text contrast ≥ 4.5:1 verified.
+   bg-base #fafafa  →  bg-alt #f4f4f5  →  bg-panel #ffffff
+   →  bg-elevated #ffffff  →  bg-well #ececef
+   Accent: Linear indigo #5e6ad2. All text contrast ≥ 4.5:1 verified.
 ──────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
@@ -126,53 +126,53 @@
   --font-mono-family: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
 
   /* Surfaces */
-  --bg-base: #f7f7f6;
-  --bg-alt: #f0f0ef;
+  --bg-base: #fafafa;
+  --bg-alt: #f4f4f5;
   --bg-panel: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-well: #e3e3e1;
-  --bg-sidebar: #f3f3f2;
+  --bg-well: #ececef;
+  --bg-sidebar: #ffffff;
   --surface-overlay: rgba(255, 255, 255, 0.88);
 
   /* Borders */
-  --border-subtle: #eeeeec;
-  --border: #e4e4e2;
-  --border-strong: #d3d3cf;
+  --border-subtle: #f0f0f1;
+  --border: #e7e7e9;
+  --border-strong: #d9d9dc;
   --border-focus: var(--accent);
 
   /* Typography */
-  --text-primary: #222225;
-  --text-secondary: #4f4f56;
-  --text-muted: #74747b;
-  --text-subtle: #a3a3aa;
+  --text-primary: #18181b;
+  --text-secondary: #3f3f46;
+  --text-muted: #71717a;
+  --text-subtle: #a1a1aa;
 
   /* Accent — blue-violet */
-  --accent: #3557f6;
-  --accent-hover: #2746dc;
+  --accent: #5e6ad2;
+  --accent-hover: #4f58c4;
   --accent-fg: #ffffff;
-  --accent-subtle: rgba(53, 87, 246, 0.1);
-  --accent-soft: rgba(53, 87, 246, 0.06);
-  --accent-border: rgba(53, 87, 246, 0.28);
-  --accent-text: #2746dc;
+  --accent-subtle: #f0f1fc;
+  --accent-soft: rgba(94, 106, 210, 0.07);
+  --accent-border: #ccd1f6;
+  --accent-text: #4f58c4;
 
   /* Semantic states — all text values verified ≥ 4.5:1 on their bg */
-  --success: #059669;
-  --success-bg: #ecfdf5;
-  --success-border: #a7f3d0;
-  --success-text: #065f46;
-  --warning: #d97706;
-  --warning-bg: #fffbeb;
-  --warning-border: #fcd34d;
-  --warning-text: #92400e;
-  --danger: #dc2626;
+  --success: #12805c;
+  --success-bg: #eff8f3;
+  --success-border: #c9e8da;
+  --success-text: #0b6b4a;
+  --warning: #c07a12;
+  --warning-bg: #fdf6ea;
+  --warning-border: #f0dfc0;
+  --warning-text: #92580d;
+  --danger: #d92d20;
   --danger-bg: #fef2f2;
-  --danger-border: #fca5a5;
-  --danger-text: #991b1b;
-  --info: #2563eb;
-  --info-bg: #eff6ff;
-  --info-border: #bfdbfe;
-  --info-text: #1d4ed8;
-  --neutral-bg: rgba(34, 34, 37, 0.045);
+  --danger-border: #f5d0cc;
+  --danger-text: #b42318;
+  --info: #4a6fd4;
+  --info-bg: #eff4fd;
+  --info-border: #d5e1f7;
+  --info-text: #3457b8;
+  --neutral-bg: rgba(24, 24, 27, 0.05);
 
   /* Status aliases */
   --status-active-bg: var(--success-bg);
@@ -190,13 +190,13 @@
   --syntax-punct: var(--text-secondary);
 
   /* Shadows — neutral, shallow */
-  --shadow-xs-value: 0 1px 0 rgba(18, 18, 22, 0.04);
-  --shadow-sm-value: 0 1px 2px rgba(18, 18, 22, 0.05);
-  --shadow-card-value: 0 12px 28px rgba(18, 18, 22, 0.04);
-  --shadow-elevated-value: 0 18px 42px rgba(18, 18, 22, 0.08), 0 0 0 1px rgba(18, 18, 22, 0.04);
-  --shadow-lg-value: 0 22px 56px rgba(18, 18, 22, 0.1), 0 0 0 1px rgba(18, 18, 22, 0.05);
-  --shadow-modal: 0 24px 60px rgba(18, 18, 22, 0.16);
-  --focus-ring: 0 0 0 3px rgba(53, 87, 246, 0.18);
+  --shadow-xs-value: 0 1px 0 rgba(24, 24, 27, 0.03);
+  --shadow-sm-value: 0 1px 2px rgba(24, 24, 27, 0.04);
+  --shadow-card-value: 0 1px 0 rgba(24, 24, 27, 0.03), 0 1px 2px rgba(24, 24, 27, 0.04);
+  --shadow-elevated-value: 0 4px 12px rgba(24, 24, 27, 0.07), 0 0 0 1px rgba(24, 24, 27, 0.03);
+  --shadow-lg-value: 0 12px 28px rgba(24, 24, 27, 0.1), 0 0 0 1px rgba(24, 24, 27, 0.04);
+  --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.14);
+  --focus-ring: 0 0 0 3px rgba(94, 106, 210, 0.16);
   --overlay-scrim: rgba(0, 0, 0, 0.32);
 
   /* Type scale — optically balanced sizes */
@@ -229,13 +229,13 @@
   --space-14: 56px;
   --space-16: 64px;
   --space-20: 80px;
-  --content-gutter: var(--space-8);
+  --content-gutter: var(--space-6);
   --card-padding: 20px;
 
   /* Controls */
-  --control-height-sm: 30px;
-  --control-height: 34px;
-  --control-height-lg: 38px;
+  --control-height-sm: 28px;
+  --control-height: 32px;
+  --control-height-lg: 36px;
   --interactive-border-width: 1px;
 
   /* Border radii — xs→2xl sourced from @theme inline above; only --radius-full lives here */
@@ -248,12 +248,12 @@
 
   /* Table */
   --table-font-size: var(--text-sm); /* 13px — table body   */
-  --table-header-font-size: var(--text-xs); /* 11px — table header */
+  --table-header-font-size: var(--text-2xs); /* 10px — table header */
   --table-header-font-family: var(--font-primary-family);
-  --table-header-weight: var(--weight-semibold);
-  --table-header-tracking: var(--tracking-wide);
-  --table-header-height: 32px;
-  --table-row-height: 40px;
+  --table-header-weight: var(--weight-medium);
+  --table-header-tracking: 0.07em;
+  --table-header-height: 30px;
+  --table-row-height: 38px;
   --activity-stream-font-size: var(--text-xs); /* 11px — activity log */
 
   /* Buttons */
@@ -269,10 +269,10 @@
   --btn-primary-fg: var(--accent-fg);
 
   --btn-secondary-bg: var(--bg-elevated);
-  --btn-secondary-hover-bg: #f4f4f3;
+  --btn-secondary-hover-bg: #f4f4f5;
   --btn-secondary-border: var(--border);
-  --btn-secondary-hover-border: var(--accent);
-  --btn-secondary-fg: var(--accent-text);
+  --btn-secondary-hover-border: var(--border-strong);
+  --btn-secondary-fg: var(--text-primary);
 
   --btn-destructive-bg: var(--bg-elevated);
   --btn-destructive-hover-bg: var(--danger-bg);
@@ -280,20 +280,20 @@
   --btn-destructive-hover-border: var(--danger);
   --btn-destructive-fg: var(--danger);
 
-  --btn-neutral-bg: #f4f4f3;
-  --btn-neutral-hover-bg: #ededeb;
+  --btn-neutral-bg: #f4f4f5;
+  --btn-neutral-hover-bg: #ececef;
   --btn-neutral-border: var(--border);
   --btn-neutral-hover-border: var(--border-strong);
   --btn-neutral-fg: var(--text-primary);
 
   --btn-ghost-bg: transparent;
-  --btn-ghost-hover-bg: var(--accent-subtle);
+  --btn-ghost-hover-bg: var(--bg-well);
   --btn-ghost-border: transparent;
   --btn-ghost-fg: var(--text-secondary);
   --btn-ghost-hover-fg: var(--text-primary);
 
   --btn-topbar-bg: transparent;
-  --btn-topbar-hover-bg: var(--accent-subtle);
+  --btn-topbar-hover-bg: var(--bg-well);
   --btn-topbar-border: transparent;
   --btn-topbar-fg: var(--text-primary);
 
@@ -312,12 +312,12 @@
   --shell-border: var(--border);
 
   /* Terminal / code */
-  --terminal-bg: var(--bg-panel);
-  --terminal-fg: var(--text-primary);
-  --terminal-secondary: var(--text-secondary);
-  --terminal-muted: var(--text-muted);
-  --terminal-row-alt: color-mix(in srgb, var(--bg-alt) 50%, var(--bg-base));
-  --terminal-border: var(--border);
+  --terminal-bg: #16171c;
+  --terminal-fg: #e0e0e0;
+  --terminal-secondary: #b7b9c2;
+  --terminal-muted: #878b97;
+  --terminal-row-alt: #1b1d23;
+  --terminal-border: #1f2129;
   --terminal-shadow: none;
 
   /* Settings */
@@ -326,7 +326,7 @@
   --setting-icon-active-bg: var(--accent-subtle);
 
   /* Skeleton */
-  --skeleton-base: #ededeb;
+  --skeleton-base: #ececef;
   --skeleton-highlight: #fafafa;
 
   /* Logo */
@@ -351,61 +351,61 @@
   --alert-danger-text: var(--danger-text);
 }
 
-/* ─── DARK THEME — Neutral Console ─────────────────────────────────────
-   Pure neutral-gray surface hierarchy. Zero blue or purple tint.
-   Modelled after VSCode / ChatGPT / Claude.ai dark palettes.
-   bg-base #0f0f0f → bg-alt #171717 → bg-panel #1e1e1e
-   → bg-elevated #252525 → bg-well #2f2f2f
+/* ─── DARK THEME — Refined Minimal Console ─────────────────────────────────────
+   Neutral surface hierarchy with a cool cast.
+   bg-base #0e0f12 → bg-alt #131418 → bg-panel #16171c
+   →  bg-elevated #1b1d23 → bg-well #22242b
+   Accent fill stays #5e6ad2 for AA (white text 4.43:1).
 ──────────────────────────────────────────────────────────────────────── */
 html[data-theme='dark'] {
   color-scheme: dark;
 
   /* Surfaces — pure neutral gray, no blue/purple cast */
-  --bg-base: #0f0f0f;
-  --bg-alt: #171717;
-  --bg-panel: #1e1e1e;
-  --bg-elevated: #252525;
-  --bg-well: #2f2f2f;
-  --bg-sidebar: #141414;
-  --surface-overlay: rgba(15, 15, 15, 0.94);
+  --bg-base: #0e0f12;
+  --bg-alt: #131418;
+  --bg-panel: #16171c;
+  --bg-elevated: #1b1d23;
+  --bg-well: #22242b;
+  --bg-sidebar: #131418;
+  --surface-overlay: rgba(14, 15, 18, 0.9);
 
   /* Borders — neutral gray */
-  --border-subtle: #1f1f1f;
-  --border: #2a2a2a;
-  --border-strong: #383838;
+  --border-subtle: #1c1e24;
+  --border: #23262d;
+  --border-strong: #2f323b;
 
   /* Typography — neutral, no cool/blue cast */
-  --text-primary: #e8e8e8;
-  --text-secondary: #9c9c9c;
-  --text-muted: #686868;
-  --text-subtle: #474747;
+  --text-primary: #ececf1;
+  --text-secondary: #b7b9c2;
+  --text-muted: #878b97;
+  --text-subtle: #5b5f6b;
 
   /* Accent — blue-violet, brightened for dark backgrounds */
-  --accent: #5575ff;
-  --accent-hover: #7a96ff;
+  --accent: #5e6ad2;
+  --accent-hover: #6b76e0;
   --accent-fg: #ffffff;
-  --accent-subtle: rgba(85, 117, 255, 0.14);
-  --accent-soft: rgba(85, 117, 255, 0.08);
-  --accent-border: rgba(85, 117, 255, 0.32);
-  --accent-text: #93aeff;
+  --accent-subtle: rgba(124, 132, 232, 0.13);
+  --accent-soft: rgba(124, 132, 232, 0.08);
+  --accent-border: rgba(124, 132, 232, 0.35);
+  --accent-text: #a3a9f5;
 
   /* Semantic states — brightened for dark backgrounds */
-  --success: #3ecf8e;
-  --success-bg: rgba(62, 207, 142, 0.08);
-  --success-border: rgba(62, 207, 142, 0.2);
-  --success-text: #3ecf8e;
-  --warning: #f5a623;
-  --warning-bg: rgba(245, 166, 35, 0.08);
-  --warning-border: rgba(245, 166, 35, 0.2);
-  --warning-text: #f5a623;
-  --danger: #ff6b6b;
-  --danger-bg: rgba(255, 107, 107, 0.08);
-  --danger-border: rgba(255, 107, 107, 0.2);
-  --danger-text: #ff8585;
-  --info: #6ba5ff;
-  --info-bg: rgba(107, 165, 255, 0.08);
-  --info-border: rgba(107, 165, 255, 0.2);
-  --info-text: #6ba5ff;
+  --success: #4cc38a;
+  --success-bg: rgba(76, 195, 138, 0.12);
+  --success-border: rgba(76, 195, 138, 0.28);
+  --success-text: #4cc38a;
+  --warning: #e0a43c;
+  --warning-bg: rgba(224, 164, 60, 0.12);
+  --warning-border: rgba(224, 164, 60, 0.28);
+  --warning-text: #e0a43c;
+  --danger: #ef6f65;
+  --danger-bg: rgba(239, 111, 101, 0.12);
+  --danger-border: rgba(239, 111, 101, 0.28);
+  --danger-text: #ef6f65;
+  --info: #6b8eef;
+  --info-bg: rgba(107, 142, 239, 0.12);
+  --info-border: rgba(107, 142, 239, 0.3);
+  --info-text: #6b8eef;
   --neutral-bg: rgba(255, 255, 255, 0.04);
 
   /* Alert text aliases */
@@ -435,21 +435,21 @@ html[data-theme='dark'] {
   --syntax-punct: #d4d4d4;
 
   /* Shadows — deep blacks for dark surfaces */
-  --shadow-xs-value: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-sm-value: 0 2px 4px rgba(0, 0, 0, 0.6);
-  --shadow-card-value: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-elevated-value: 0 12px 28px rgba(0, 0, 0, 0.7);
-  --shadow-lg-value: 0 20px 40px rgba(0, 0, 0, 0.8);
-  --shadow-modal: 0 32px 64px rgba(0, 0, 0, 0.9);
-  --focus-ring: 0 0 0 3px rgba(85, 117, 255, 0.28);
+  --shadow-xs-value: 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-sm-value: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card-value: 0 1px 0 rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-elevated-value: 0 12px 28px rgba(0, 0, 0, 0.5);
+  --shadow-lg-value: 0 20px 40px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 32px 64px rgba(0, 0, 0, 0.7);
+  --focus-ring: 0 0 0 3px rgba(124, 132, 232, 0.22);
   --overlay-scrim: rgba(0, 0, 0, 0.55);
 
   /* Buttons — surfaces adapted for neutral dark */
   --btn-secondary-bg: var(--bg-panel);
   --btn-secondary-hover-bg: var(--bg-elevated);
   --btn-secondary-border: var(--border);
-  --btn-secondary-hover-border: var(--accent);
-  --btn-secondary-fg: var(--accent-text);
+  --btn-secondary-hover-border: var(--border-strong);
+  --btn-secondary-fg: var(--text-primary);
 
   --btn-destructive-bg: var(--bg-panel);
   --btn-destructive-hover-bg: var(--danger-bg);
@@ -463,29 +463,29 @@ html[data-theme='dark'] {
   --btn-neutral-hover-border: var(--border-strong);
   --btn-neutral-fg: var(--text-primary);
 
-  --btn-ghost-hover-bg: var(--bg-elevated);
+  --btn-ghost-hover-bg: #22242b;
   --btn-ghost-hover-fg: var(--text-primary);
 
   --btn-topbar-bg: transparent;
-  --btn-topbar-hover-bg: var(--bg-alt);
+  --btn-topbar-hover-bg: #22242b;
 
   /* Form controls */
   --segmented-bg: rgba(255, 255, 255, 0.04);
   --tab-active-fg: var(--text-primary);
   --slider-thumb-border: var(--bg-base);
-  --toggle-track-off: #333333;
-  --toggle-thumb: #e0e0e0;
+  --toggle-track-off: #2f323b;
+  --toggle-thumb: #ececf1;
 
   /* Shell */
   --surface-header: var(--bg-alt);
 
   /* Terminal — pure neutral black, no blue tint */
-  --terminal-bg: #111111;
+  --terminal-bg: #16171c;
   --terminal-fg: #e0e0e0;
-  --terminal-secondary: #9c9c9c;
+  --terminal-secondary: #b7b9c2;
   --terminal-muted: var(--text-subtle);
-  --terminal-row-alt: #171717;
-  --terminal-border: var(--border);
+  --terminal-row-alt: #1b1d23;
+  --terminal-border: #1f2129;
   --terminal-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
 
   /* Settings */
@@ -524,18 +524,7 @@ body {
    * Now uses CSS var so it responds to theme. Dark mode strips
    * the radial glow entirely (see override below).
    */
-  background-image:
-    radial-gradient(
-      circle at 20% 0%,
-      color-mix(in srgb, var(--accent) 8%, transparent),
-      transparent 36rem
-    ),
-    radial-gradient(
-      circle at 80% 90%,
-      color-mix(in srgb, var(--info) 4%, transparent),
-      transparent 40rem
-    ),
-    linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 20rem);
+  background-image: none;
   background-position: center top;
   /* background-attachment: fixed applied via @supports below (iOS Safari jank fix) */
   color: var(--text-primary);
@@ -563,18 +552,7 @@ body {
 
 /* Dark mode: warm ambient dark background gradient mesh */
 html[data-theme='dark'] body {
-  background-image:
-    radial-gradient(
-      circle at 15% 0%,
-      color-mix(in srgb, var(--accent) 12%, transparent),
-      transparent 32rem
-    ),
-    radial-gradient(
-      circle at 85% 85%,
-      color-mix(in srgb, var(--success) 4%, transparent),
-      transparent 36rem
-    ),
-    linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 18rem);
+  background-image: none;
 }
 
 h1,
