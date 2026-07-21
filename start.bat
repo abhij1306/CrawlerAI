@@ -84,8 +84,7 @@ goto :eof
 
 REM ------------------------------------------------------------------
 :check_redis
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "try { $u = [Uri]'%~1'; $port = if ($u.Port -gt 0) { $u.Port } else { 6380 }; $c = New-Object System.Net.Sockets.TcpClient($u.Host, $port); $c.Close(); exit 0 } catch { exit 1 }"
+"%ROOT%backend\.venv\Scripts\python.exe" -c "import socket, urllib.parse; u=urllib.parse.urlparse('%~1'); s=socket.create_connection((u.hostname, u.port or 6380), timeout=2); s.close()" >nul 2>&1
 exit /b %errorlevel%
 
 :kill_window
@@ -94,7 +93,7 @@ exit /b 0
 
 :kill_port
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$port = %~1; Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+    "$port = %~1; Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { $p = Get-Process -Id $_ -ErrorAction SilentlyContinue; if ($p -and $p.ProcessName -notmatch 'docker|wsl|vpnkit') { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }" >nul 2>&1
 exit /b 0
 
 :kill_celery_workers
