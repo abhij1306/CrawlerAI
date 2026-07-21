@@ -3,10 +3,10 @@ import type { HTMLAttributes, ReactNode, Ref, TdHTMLAttributes, ThHTMLAttributes
 import { cn } from '../../lib/utils';
 
 /**
- * Dense analytics table:
- *  - sticky 32px header (--table-header-height), --text-xs uppercase, tracking-wide
- *  - 40px rows (--table-row-height), --text-sm cells
- *  - hover row highlight, tabular numerals for numeric columns (add `numeric`)
+ * Dense analytics table (refined-minimal):
+ *  - sticky 30px header (--table-header-height), --text-2xs uppercase, 0.07em tracking
+ *  - 38px rows (--table-row-height), --text-sm secondary-text cells
+ *  - neutral row hover, tabular numerals for numeric columns (add `numeric`)
  * The wrapper is scroll-capable so the sticky header pins on vertical scroll.
  */
 export function Table({
@@ -64,7 +64,7 @@ export function TableRow({
     <tr
       {...props}
       className={cn(
-        'h-[var(--table-row-height)] border-b border-border-subtle bg-panel transition-colors hover:bg-accent-soft',
+        'h-[var(--table-row-height)] border-b border-border-subtle bg-panel transition-colors hover:bg-background',
         className,
       )}
     >
@@ -83,7 +83,7 @@ export function TableHead({
     <th
       {...props}
       className={cn(
-        'sticky top-0 z-10 h-[var(--table-header-height)] border-b border-border bg-background-alt px-3 align-middle text-[length:var(--table-header-font-size)] font-semibold uppercase tracking-wide text-muted',
+        'sticky top-0 z-10 h-[var(--table-header-height)] border-b border-border bg-background px-3 align-middle text-[length:var(--table-header-font-size)] font-semibold uppercase tracking-[0.07em] text-muted',
         numeric ? 'text-right tabular-nums' : 'text-left',
         className,
       )}
@@ -103,7 +103,7 @@ export function TableCell({
     <td
       {...props}
       className={cn(
-        'px-3 py-0 align-middle text-foreground',
+        'px-3 py-0 align-middle text-secondary',
         numeric ? 'text-right tabular-nums' : 'text-left',
         className,
       )}

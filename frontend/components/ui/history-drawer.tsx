@@ -14,13 +14,13 @@ export type HistoryItem = {
   cancellable?: boolean;
 };
 
-const STATUS_TONE_MAP: Record<string, 'success' | 'danger' | 'neutral' | 'warning' | 'info'> = {
+const STATUS_TONE_MAP: Record<string, 'success' | 'danger' | 'neutral' | 'warning' | 'accent'> = {
   complete: 'success',
   completed: 'success',
   success: 'success',
   failed: 'danger',
   error: 'danger',
-  running: 'info',
+  running: 'accent',
   pending: 'neutral',
 };
 

@@ -62,7 +62,7 @@ export function ConfirmDialog({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         tabIndex={-1}
-        className="card-gradient relative m-0 w-[min(420px,100%)] rounded-lg border border-border p-5"
+        className="card-gradient relative m-0 w-[min(420px,100%)] rounded-xl border border-border p-5"
       >
         <h2 id={titleId} className="m-0 text-base leading-snug font-semibold text-foreground">
           {title}

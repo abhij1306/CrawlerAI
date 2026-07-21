@@ -16,20 +16,22 @@ import {
 
 const toneText = {
   neutral: 'text-muted',
-  success: 'text-success',
-  warning: 'text-warning',
-  danger: 'text-danger',
-  accent: 'text-accent',
-  info: 'text-info',
+  success: 'text-success-text',
+  warning: 'text-warning-text',
+  danger: 'text-danger-text',
+  accent: 'text-accent-text',
+  info: 'text-info-text',
 } as const;
 
+// Refined-minimal: semantic tones are dot + colored text (no tint pill).
+// Only `neutral` keeps a subtle chip box for id/count chips.
 const toneBox = {
-  neutral: 'border-border bg-background-alt',
-  success: 'border-success-border bg-success-bg',
-  warning: 'border-warning-border bg-warning-bg',
-  danger: 'border-danger-border bg-danger-bg',
-  accent: 'border-accent-border bg-accent-soft',
-  info: 'border-info-border bg-info-bg',
+  neutral: 'rounded-full border border-border bg-panel px-2 py-0.5',
+  success: 'border-transparent bg-transparent',
+  warning: 'border-transparent bg-transparent',
+  danger: 'border-transparent bg-transparent',
+  accent: 'border-transparent bg-transparent',
+  info: 'border-transparent bg-transparent',
 } as const;
 
 /**
@@ -90,7 +92,10 @@ export function Badge(props: Readonly<BadgeProps>) {
   return (
     <span className={cn(badgeBase, badgeClasses(props), className)} {...rest}>
       <span
-        className={cn('size-1 rounded-full bg-current', props.tone === 'accent' && 'animate-pulse')}
+        className={cn(
+          'size-1.5 rounded-full bg-current',
+          props.tone === 'accent' && 'animate-pulse',
+        )}
         aria-hidden
       />
       {children}

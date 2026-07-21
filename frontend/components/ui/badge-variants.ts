@@ -1,7 +1,12 @@
 /**
  * Badge token maps. Each family maps a value → bridged semantic token
- * classes (bg + text + border). No raw hex; all classes resolve to the
- * `@theme inline` bridge in globals.css.
+ * classes. No raw hex; all classes resolve to the `@theme inline` bridge
+ * in globals.css.
+ *
+ * Refined-minimal: statuses are a 6px dot + colored text — no tint pill,
+ * no pill border (approved sample: refined-minimal-dashboard/runs-history).
+ * All maps therefore render on a transparent box; tone lives in the text
+ * (and the `bg-current` dot) only.
  *
  * Families:
  *  - status:         success | warning | danger | info
@@ -12,42 +17,42 @@
  */
 
 export const statusBadge = {
-  success: 'bg-success-bg text-success-text border-success-border',
-  warning: 'bg-warning-bg text-warning-text border-warning-border',
-  danger: 'bg-danger-bg text-danger-text border-danger-border',
-  info: 'bg-info-bg text-info-text border-info-border',
+  success: 'bg-transparent text-success-text border-transparent',
+  warning: 'bg-transparent text-warning-text border-transparent',
+  danger: 'bg-transparent text-danger-text border-transparent',
+  info: 'bg-transparent text-info-text border-transparent',
 } as const;
 
 export const sentimentBadge = {
-  positive: 'bg-sentiment-positive-bg text-sentiment-positive-text border-transparent',
-  neutral: 'bg-sentiment-neutral-bg text-sentiment-neutral-text border-transparent',
-  negative: 'bg-sentiment-negative-bg text-sentiment-negative-text border-transparent',
+  positive: 'bg-transparent text-success-text border-transparent',
+  neutral: 'bg-transparent text-secondary border-transparent',
+  negative: 'bg-transparent text-danger-text border-transparent',
 } as const;
 
 export const classificationBadge = {
-  owned: 'bg-citation-owned-bg text-citation-owned-text border-transparent',
-  competitor: 'bg-citation-competitor-bg text-citation-competitor-text border-transparent',
-  'third-party': 'bg-citation-third-party-bg text-citation-third-party-text border-transparent',
+  owned: 'bg-transparent text-info-text border-transparent',
+  competitor: 'bg-transparent text-warning-text border-transparent',
+  'third-party': 'bg-transparent text-secondary border-transparent',
 } as const;
 
 export const runStatusBadge = {
-  draft: 'bg-run-draft-bg text-run-draft border-transparent',
-  queued: 'bg-run-queued-bg text-run-queued border-transparent',
-  running: 'bg-run-running-bg text-run-running border-transparent',
-  analyzing: 'bg-run-analyzing-bg text-run-analyzing border-transparent',
-  completed: 'bg-run-completed-bg text-run-completed border-transparent',
-  partial: 'bg-run-partial-bg text-run-partial border-transparent',
-  failed: 'bg-run-failed-bg text-run-failed border-transparent',
-  cancelled: 'bg-run-cancelled-bg text-run-cancelled border-transparent',
+  draft: 'bg-transparent text-muted border-transparent',
+  queued: 'bg-transparent text-muted border-transparent',
+  running: 'bg-transparent text-accent-text border-transparent',
+  analyzing: 'bg-transparent text-accent-text border-transparent',
+  completed: 'bg-transparent text-success-text border-transparent',
+  partial: 'bg-transparent text-warning-text border-transparent',
+  failed: 'bg-transparent text-danger-text border-transparent',
+  cancelled: 'bg-transparent text-muted border-transparent',
 } as const;
 
-export const neutralBadge = 'bg-neutral-bg text-secondary border-transparent';
+export const neutralBadge = 'bg-transparent text-secondary border-transparent';
 
 export type StatusValue = keyof typeof statusBadge;
 export type SentimentValue = keyof typeof sentimentBadge;
 export type ClassificationValue = keyof typeof classificationBadge;
 export type RunStatusValue = keyof typeof runStatusBadge;
 
-/** Shared pill shape/typography for every badge family. */
+/** Shared typography for every badge family (dot + text, no pill anatomy). */
 export const badgeBase =
-  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-2xs font-semibold leading-[1.4] tracking-wide capitalize';
+  'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium capitalize';

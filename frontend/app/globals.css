@@ -50,6 +50,12 @@
   --color-info: var(--info);
   --color-info-bg: var(--info-bg);
   --color-info-border: var(--info-border);
+  /* Semantic text tiers (dot + colored-text statuses — no tint pills) */
+  --color-success-text: var(--success-text);
+  --color-warning-text: var(--warning-text);
+  --color-danger-text: var(--danger-text);
+  --color-info-text: var(--info-text);
+  --color-accent-text: var(--accent-text);
 
   /* Component specifics */
   --color-subtle-panel: var(--bg-alt);

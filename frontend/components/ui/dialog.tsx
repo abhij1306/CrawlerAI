@@ -30,7 +30,7 @@ export function AppDialog({
         <DialogPrimitive.Overlay className="overlay-scrim fixed inset-0 z-[100]" />
         <DialogPrimitive.Content
           className={cn(
-            'fixed top-1/2 left-1/2 z-[101] flex max-h-[85vh] w-[640px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-border bg-background-elevated shadow-xl focus:outline-none',
+            'fixed top-1/2 left-1/2 z-[101] flex max-h-[85vh] w-[640px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-background-elevated shadow-elevated focus:outline-none',
             className,
           )}
         >

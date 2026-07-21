@@ -11,12 +11,11 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary: 'border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
-        secondary:
-          'border-border-strong bg-panel text-foreground hover:bg-background-alt hover:border-border-strong',
-        neutral: 'border-border bg-background-alt text-foreground hover:bg-well',
+        secondary: 'border-border-strong bg-panel text-foreground hover:bg-background-alt',
+        neutral: 'border-border bg-background-alt text-foreground hover:bg-panel-strong',
         ghost:
           'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
-        destructive: 'border-transparent bg-danger text-accent-fg hover:opacity-90',
+        destructive: 'border-transparent bg-transparent text-danger-text hover:bg-danger-bg',
         topbar:
           'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
         underline:
@@ -26,8 +25,8 @@ export const buttonVariants = cva(
         accent: 'border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
         quiet:
           'border-transparent bg-transparent text-secondary hover:bg-background-alt hover:text-foreground',
-        download: 'border-border bg-background-alt text-foreground hover:bg-well',
-        danger: 'border-transparent bg-danger text-accent-fg hover:opacity-90',
+        download: 'border-border bg-background-alt text-foreground hover:bg-panel-strong',
+        danger: 'border-transparent bg-transparent text-danger-text hover:bg-danger-bg',
       },
       size: {
         sm: 'h-[var(--control-height-sm)] px-2.5 text-xs',

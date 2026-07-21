@@ -46,37 +46,42 @@ export function RunSummaryChips({
 }>) {
   const normalizedVerdict = verdict.toLowerCase();
   const normalizedQuality = quality.toLowerCase();
-  const verdictTone =
+  // Refined-minimal run-workspace chips: 24px radius-999 pills; duration is a
+  // neutral panel chip, verdict/quality carry a semantic tint (mockup .chip-success).
+  const verdictBox =
     normalizedVerdict === 'success'
-      ? 'text-success'
+      ? 'border-success-border bg-success-bg text-success-text'
       : normalizedVerdict === 'partial'
-        ? 'text-warning'
-        : 'text-danger';
-  const qualityTone =
+        ? 'border-warning-border bg-warning-bg text-warning-text'
+        : 'border-danger-border bg-danger-bg text-danger-text';
+  const qualityBox =
     normalizedQuality === 'high'
-      ? 'text-success'
+      ? 'border-success-border bg-success-bg text-success-text'
       : normalizedQuality === 'medium'
-        ? 'text-warning'
+        ? 'border-warning-border bg-warning-bg text-warning-text'
         : normalizedQuality === 'low'
-          ? 'text-danger'
-          : 'text-muted';
+          ? 'border-danger-border bg-danger-bg text-danger-text'
+          : 'border-border bg-panel text-muted';
   const chips = [
-    { key: 'duration', value: duration, icon: Clock, tone: 'text-secondary' },
-    { key: 'verdict', value: verdict, icon: CheckCircle2, tone: verdictTone },
-    { key: 'quality', value: quality, icon: Award, tone: qualityTone },
+    { key: 'duration', value: duration, icon: Clock, box: 'border-border bg-panel text-secondary' },
+    { key: 'verdict', value: verdict, icon: CheckCircle2, box: verdictBox },
+    { key: 'quality', value: quality, icon: Award, box: qualityBox },
   ];
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {chips.map((chip) => {
         const Icon = chip.icon;
         return (
           <div
             key={chip.key}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background-alt px-2.5 py-1"
+            className={cn(
+              'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5',
+              chip.box,
+            )}
           >
-            <Icon className={cn('size-3.5 shrink-0', chip.tone)} aria-hidden="true" />
-            <span className={cn('type-body-sm tabular-nums', chip.tone)}>{chip.value}</span>
+            <Icon className="size-3 shrink-0" aria-hidden="true" />
+            <span className="text-xs font-medium tabular-nums">{chip.value}</span>
           </div>
         );
       })}
