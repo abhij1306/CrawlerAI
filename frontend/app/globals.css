@@ -318,13 +318,14 @@
   --shell-muted: var(--text-muted);
   --shell-border: var(--border);
 
-  /* Terminal / code */
-  --terminal-bg: #16171c;
-  --terminal-fg: #e0e0e0;
-  --terminal-secondary: #b7b9c2;
-  --terminal-muted: #878b97;
-  --terminal-row-alt: #1b1d23;
-  --terminal-border: #1f2129;
+  /* Terminal / code — theme-aware light (approved run-workspace-logs sample;
+     supersedes the WU-0 "dark island both themes" note for the light theme) */
+  --terminal-bg: var(--bg-panel);
+  --terminal-fg: var(--text-primary);
+  --terminal-secondary: var(--text-secondary);
+  --terminal-muted: var(--text-muted);
+  --terminal-row-alt: color-mix(in srgb, var(--bg-alt) 50%, var(--bg-base));
+  --terminal-border: var(--border);
   --terminal-shadow: none;
 
   /* Settings */

@@ -142,11 +142,7 @@ export function KVTile({
 }
 
 export function MetricPulse({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <div className="grid grid-cols-4 gap-3 overflow-hidden rounded-xl border border-border bg-transparent p-3 shadow-card max-sm:grid-cols-2">
-      {children}
-    </div>
-  );
+  return <div className="grid grid-cols-4 gap-3 max-sm:grid-cols-2">{children}</div>;
 }
 
 export function MetricPulseItem({
@@ -163,13 +159,9 @@ export function MetricPulseItem({
   pulse?: boolean;
 }>) {
   return (
-    <div className="group/metric relative flex flex-col gap-2 rounded-lg border border-border-subtle bg-panel px-5 py-4 transition-all duration-180 hover:border-border-strong hover:bg-background-elevated">
-      <div
-        className="absolute top-4 right-4 h-2 w-2 rounded-full bg-accent opacity-0 transition-opacity duration-180 group-hover/metric:opacity-100"
-        aria-hidden="true"
-      />
-      <div className="text-2xs flex items-center gap-2 font-sans font-semibold tracking-wider text-muted uppercase">
-        {Icon && <Icon className="size-3.5" />}
+    <div className="relative flex flex-col gap-2 rounded-lg border border-border bg-panel px-4 py-3.5 shadow-card">
+      <div className="flex items-center gap-2 text-xs font-medium tracking-[0.07em] text-muted uppercase">
+        {Icon && <Icon className="size-3.5 text-subtle" />}
         {label}
         {pulse ? (
           <div
@@ -178,7 +170,7 @@ export function MetricPulseItem({
           />
         ) : null}
       </div>
-      <div className="font-mono text-2xl leading-none font-bold tracking-tighter text-foreground tabular-nums">
+      <div className="text-[27px] leading-none font-semibold tracking-[-0.03em] text-foreground tabular-nums">
         {value}
       </div>
       {trend ? <div className="mt-auto">{trend}</div> : null}
@@ -188,7 +180,7 @@ export function MetricPulseItem({
 
 export function MetricPulseSkeleton() {
   return (
-    <div className="relative flex flex-col gap-2 rounded-lg border border-border-subtle bg-panel px-5 py-4 transition-all duration-180">
+    <div className="relative flex flex-col gap-2 rounded-lg border border-border bg-panel px-4 py-3.5 shadow-card">
       <Skeleton className="h-3 w-16" />
       <Skeleton className="mt-2 h-8 w-24" />
     </div>

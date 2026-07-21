@@ -39,7 +39,7 @@ function DomainBar({
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={domain}>
         {domain}
       </span>
-      <div className="h-2 w-28 overflow-hidden rounded-full bg-background-alt">
+      <div className="h-1 w-28 overflow-hidden rounded-full bg-background-alt">
         <div
           className="h-full rounded-full bg-accent transition-[width] duration-700"
           style={{ width: `${pct}%` }}
@@ -79,10 +79,10 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
       className="group flex items-center gap-3 rounded-lg p-2 no-underline transition-colors hover:bg-background-alt"
     >
       <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
-      <span className="type-body min-w-0 flex-1 truncate font-medium text-foreground transition-colors group-hover:text-accent">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
         {domain || `Run #${run.id}`}
       </span>
-      <span className="type-body-sm w-24 text-right whitespace-nowrap text-secondary tabular-nums">
+      <span className="w-24 text-right text-sm whitespace-nowrap text-muted tabular-nums">
         {recordCount.toLocaleString()} rec
       </span>
       <div className="flex w-28 justify-start">
@@ -207,7 +207,7 @@ function RunStatusDistribution({
   }
   return (
     <div className="space-y-4">
-      <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-background-alt">
+      <div className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-background-alt">
         {entries.map(([status, count]) => (
           <StatusSegment key={status} status={status} count={count} total={total} />
         ))}
@@ -221,7 +221,7 @@ function RunStatusDistribution({
             <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
               {statusLabel(status)}
             </Badge>
-            <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
+            <span className="text-foreground font-mono text-sm tabular-nums">{count}</span>
           </div>
         ))}
       </div>

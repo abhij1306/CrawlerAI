@@ -36,7 +36,7 @@ export function Field({
   if (isRenderProp) {
     return (
       <div className={cn('grid gap-1.5', className)}>
-        <label htmlFor={id} className="text-xs font-medium text-secondary">
+        <label htmlFor={id} className="text-sm font-medium text-secondary">
           {label}
           {required ? <span className="ml-0.5 text-danger">*</span> : null}
         </label>
@@ -51,7 +51,7 @@ export function Field({
           </span>
         ) : null}
         {error ? (
-          <span id={errorId} role="alert" className="text-xs text-danger">
+          <span id={errorId} role="alert" className="text-xs text-danger-text">
             {error}
           </span>
         ) : null}
@@ -62,14 +62,14 @@ export function Field({
   // Backwards compatibility fallback with native implicit labeling
   return (
     <label className={cn('grid gap-1.5 cursor-text', className)}>
-      <span className="text-xs font-medium text-secondary">
+      <span className="text-sm font-medium text-secondary">
         {label}
         {required ? <span className="ml-0.5 text-danger">*</span> : null}
       </span>
       {children}
       {hint && !error ? <span className="text-xs text-muted">{hint}</span> : null}
       {error ? (
-        <span role="alert" className="text-xs text-danger">
+        <span role="alert" className="text-xs text-danger-text">
           {error}
         </span>
       ) : null}

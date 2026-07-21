@@ -29,7 +29,7 @@ export function RunRow({
             <Tooltip content={run.url} align="start">
               <Link
                 to={`/crawl?run_id=${run.id}`}
-                className="link-accent text-primary block max-w-[280px] truncate font-medium no-underline transition-colors"
+                className="link-accent block max-w-[280px] truncate font-medium no-underline transition-colors"
               >
                 {domain || `Run #${run.id}`}
               </Link>
@@ -80,7 +80,7 @@ export function RunRow({
       </TableCell>
 
       <TableCell className="text-right">
-        <span className={cn('tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}>
+        <span className={cn('tabular-nums', recordCount > 0 ? 'text-foreground' : 'text-subtle')}>
           {recordCount > 0 ? recordCount.toLocaleString() : '—'}
         </span>
       </TableCell>
@@ -91,7 +91,7 @@ export function RunRow({
 
       <TableCell className="text-right whitespace-nowrap">
         <div className="flex items-center justify-end gap-1.5 px-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-          <Button variant="action" size="sm" asChild>
+          <Button variant="secondary" size="sm" asChild>
             <Link to={`/crawl?run_id=${run.id}`}>
               Open
               <ArrowRightCircle className="ml-1 size-3" />

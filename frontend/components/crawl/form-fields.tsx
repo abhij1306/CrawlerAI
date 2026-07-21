@@ -142,7 +142,7 @@ export function SliderRow({
           type="button"
           onClick={onReset}
           aria-label={`Reset ${label}`}
-          className="hover:text-primary text-muted transition-colors"
+          className="hover:text-foreground text-muted transition-colors"
         >
           <RotateCcw className="size-3" aria-hidden="true" />
         </button>

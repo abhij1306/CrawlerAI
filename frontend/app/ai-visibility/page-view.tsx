@@ -943,7 +943,7 @@ function statusTone(
     case 'completed':
       return 'success';
     case 'running':
-      return 'info';
+      return 'accent';
     case 'degraded':
       return 'warning';
     case 'cancelled':

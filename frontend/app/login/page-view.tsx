@@ -47,6 +47,7 @@ export default function LoginPage() {
               setEmail(event.target.value);
             }}
             placeholder="name@company.com"
+            className="h-[var(--control-height-lg)]"
             required
           />
         </Field>
@@ -59,12 +60,13 @@ export default function LoginPage() {
               setPassword(event.target.value);
             }}
             placeholder="••••••••"
+            className="h-[var(--control-height-lg)]"
             required
           />
         </Field>
         {error ? <InlineAlert message={error} /> : null}
         <div className="pt-2">
-          <Button type="submit" size="lg" className="w-full" disabled={loading}>
+          <Button type="submit" size="lg" className="w-full text-sm" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </div>
