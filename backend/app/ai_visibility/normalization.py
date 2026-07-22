@@ -15,18 +15,6 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _PUNCTUATION_RE = re.compile(r"[^\w\s]", flags=re.UNICODE)
 
 
-def normalize_text(value: object) -> str:
-    """NFKC + casefold + ``&``->``and`` + whitespace collapse.
-
-    Used to build the searchable form of an answer. Punctuation is preserved
-    (only collapsed whitespace) so that offsets remain meaningful for callers
-    that only need case/width-insensitive matching.
-    """
-    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
-    text = text.replace("&", " and ")
-    return _WHITESPACE_RE.sub(" ", text).strip()
-
-
 def normalize_alias(value: object) -> str:
     """Aggressive normalization for alias matching: strip punctuation too.
 
@@ -73,24 +61,6 @@ def normalize_domain(value: object) -> str:
         text = "https://" + text
     host = urlsplit(text).hostname or ""
     return host.removeprefix("www.")
-
-
-def normalize_url(value: object) -> str:
-    """Drop the URL fragment; keep scheme/host/path/query. Lowercase host only."""
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if "://" not in text:
-        text = "https://" + text
-    parts = urlsplit(text)
-    host = (parts.hostname or "").lower().removeprefix("www.")
-    rebuilt = f"{parts.scheme}://{host}"
-    if parts.port:
-        rebuilt += f":{parts.port}"
-    rebuilt += parts.path
-    if parts.query:
-        rebuilt += f"?{parts.query}"
-    return rebuilt
 
 
 def domain_matches(candidate: str, target: str) -> bool:

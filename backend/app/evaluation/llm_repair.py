@@ -15,16 +15,14 @@ This module is offline: the extraction hot path must never import it.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connectors.llm.tasks import run_prompt_task
 from app.core.config.evaluation import (
     GROUNDED_REPAIR_CUSTOM_FIELD_CARDINALITIES,
     GROUNDED_REPAIR_CUSTOM_FIELD_TYPES,
-    GROUNDED_REPAIR_LLM_TASK,
     GROUNDED_REPAIR_NO_PROPOSALS_STATUS,
     GROUNDED_REPAIR_PUBLISH_POLICIES,
 )
@@ -184,39 +182,4 @@ async def apply_grounded_repair(
         activate=False,
         authority=_UNVERIFIED_MODEL_AUTHORITY,
         representative_url_result_ids=representative_url_result_ids or [],
-    )
-
-
-async def run_grounded_repair(
-    session: AsyncSession,
-    *,
-    run: CrawlRun,
-    variables: dict[str, Any],
-    representative_url_result_ids: list[int] | None = None,
-) -> dict[str, object]:
-    """Invoke the grounded-repair LLM task and gate its proposals (offline only).
-
-    ``variables`` supplies the bounded prompt input (target schema, compact
-    representation, structured objects, existing evidence, operator labels). A
-    missing config, transport error, or free-form output yields a diagnostic
-    dict rather than raising, so the operator loop degrades cleanly.
-    """
-    result = await run_prompt_task(
-        session,
-        task_type=GROUNDED_REPAIR_LLM_TASK,
-        run_id=run.id,
-        domain=normalize_domain(run.url),
-        variables=variables,
-    )
-    if result.error_message or not isinstance(result.payload, dict):
-        return {
-            "activation_status": "llm_unavailable",
-            "error": result.error_message or "no grounded repair proposals returned",
-        }
-    batch = GroundedRepairBatch.model_validate(result.payload)
-    return await apply_grounded_repair(
-        session,
-        run=run,
-        batch=batch,
-        representative_url_result_ids=representative_url_result_ids,
     )

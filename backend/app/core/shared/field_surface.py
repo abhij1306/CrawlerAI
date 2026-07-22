@@ -10,7 +10,6 @@ from app.core.config.extraction_rules import (
 from app.core.config.field_mappings import (
     ADDITIONAL_IMAGES_FIELD,
     CANONICAL_SCHEMAS,
-    FIELD_ALIASES,
     URL_FIELD,
 )
 from app.core.config.public_record_policy import (
@@ -20,7 +19,6 @@ from app.core.config.public_record_policy import (
 from app.core.records.field_policy import (
     exact_requested_field_key,
     expand_requested_fields,
-    get_surface_field_aliases,
     normalize_field_key,
 )
 from app.core.shared.coerce_primitives import is_blank
@@ -141,29 +139,4 @@ def surface_fields(
     return fields
 
 
-def surface_alias_lookup(
-    surface: str,
-    requested_fields: list[str] | None,
-) -> dict[str, str]:
-    fields = surface_fields(surface, requested_fields)
-    aliases = get_surface_field_aliases(surface)
-    lookup: dict[str, str] = {}
-    for requested in requested_fields or []:
-        normalized_requested = normalize_field_key(requested)
-        exact_field = exact_requested_field_key(requested)
-        if normalized_requested:
-            lookup[normalized_requested] = exact_field or normalized_requested
-        if exact_field:
-            lookup[exact_field] = exact_field
-    for canonical in fields:
-        normalized_canonical = normalize_field_key(canonical)
-        if normalized_canonical:
-            lookup[normalized_canonical] = canonical
-        canonical_aliases = list(aliases.get(canonical, []))
-        if not canonical_aliases:
-            canonical_aliases = list(FIELD_ALIASES.get(canonical, []))
-        for alias in canonical_aliases:
-            normalized_alias = normalize_field_key(alias)
-            if normalized_alias:
-                lookup.setdefault(normalized_alias, canonical)
-    return lookup
+

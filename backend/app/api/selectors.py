@@ -17,6 +17,7 @@ from app.schemas.selectors import (
     SelectorTestResponse,
 )
 from app.core.records.selectors_runtime import (
+    SANDBOXED_HTML_PREVIEW_HEADERS,
     build_preview_html,
     fetch_selector_document,
     list_selector_domain_summaries,
@@ -216,9 +217,11 @@ async def selectors_preview_html(
             message="Failed fetching selector preview HTML",
             detail="Unable to fetch preview HTML from the upstream page.",
         )
+    # Fetched page HTML is untrusted: serve it in a CSP-sandboxed opaque origin.
     return HTMLResponse(
         content=build_preview_html(
             source_url=str(document["url"]),
             html=str(document["html"]),
-        )
+        ),
+        headers=SANDBOXED_HTML_PREVIEW_HEADERS,
     )

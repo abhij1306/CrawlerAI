@@ -315,15 +315,6 @@ async def commit_selected_fields(
     return updated_records, updated_fields
 
 
-async def commit_llm_suggestions(
-    session: AsyncSession,
-    *,
-    run: CrawlRun,
-    items: list[dict],
-) -> tuple[int, int]:
-    return await commit_selected_fields(session=session, run=run, items=items)
-
-
 async def active_jobs(
     session: AsyncSession, *, user_id: int | None = None
 ) -> list[dict]:

@@ -30,6 +30,16 @@ if TYPE_CHECKING:
     from app.crawl.domain_memory_service import SelectorMemory
 
 
+# Crawled/fetched page HTML is attacker-controlled. Any endpoint that serves it
+# as text/html from the API origin must send these headers so embedded scripts
+# cannot execute in the origin's security context (CSP sandbox = unique opaque
+# origin, no script execution).
+SANDBOXED_HTML_PREVIEW_HEADERS: dict[str, str] = {
+    "Content-Security-Policy": "sandbox",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
 async def fetch_selector_document(url: str) -> dict[str, object]:
     await ensure_public_crawl_targets([url])
     result = await fetch_page(str(url), prefer_browser=False)

@@ -306,22 +306,6 @@ def detail_url_looks_like_product(url: str) -> bool:
     return len(semantic_identity_tokens(title)) >= DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
 
 
-def detail_url_is_locale_root(url: str) -> bool:
-    parts = [part for part in urlparse(str(url or "")).path.split("/") if part]
-    if len(parts) != 1:
-        return False
-    locale = parts[0]
-    return bool(
-        (len(locale) == 2 and locale.isalpha())
-        or (
-            len(locale) == 5
-            and locale[2] in {"-", "_"}
-            and locale[:2].isalpha()
-            and locale[3:].isalpha()
-        )
-    )
-
-
 def detail_url_is_collection_like(url: str) -> bool:
     parts = [part for part in urlparse(str(url or "").lower()).path.split("/") if part]
     return bool(parts and parts[-1] in _COLLECTION_TOKENS)
@@ -571,12 +555,6 @@ def _commerce_identity_tokens(value: object) -> frozenset[str]:
         ):
             tokens.add(token)
     return frozenset(tokens)
-
-
-def title_looks_like_brand_shell(title: str, url: str = "") -> bool:
-    text = re.sub(r"\W+", "", str(title or "")).lower()
-    host = urlparse(str(url or "")).netloc.split(".")[-2:-1]
-    return bool(text and host and text == re.sub(r"\W+", "", host[0]).lower())
 
 
 def listing_detail_like_path(url: str) -> bool:

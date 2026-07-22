@@ -4,7 +4,6 @@ import json
 import re
 from collections.abc import Callable, Iterable
 
-from app.core.records.field_policy import HTML_SECTION_FIELDS, normalize_requested_field
 from app.extraction.documents import HtmlDocument
 
 
@@ -186,26 +185,4 @@ def bounded_json_objects(
             )
 
 
-def extract_job_sections(html: str | HtmlDocument) -> dict[str, str]:
-    document = _document(html, "job_sections")
-    mapped: dict[str, str] = {}
-    for heading in document.safe_css("h2, h3, strong"):
-        heading_text = " ".join(heading.text().split()).strip()
-        if not heading_text:
-            continue
-        section = normalize_requested_field(heading_text)
-        if section not in HTML_SECTION_FIELDS:
-            continue
-        collected: list[str] = []
-        for sibling in heading.following_siblings():
-            if sibling.tag() in {"h1", "h2", "h3", "strong"}:
-                break
-            cleaned = " ".join(sibling.text().split()).strip()
-            if cleaned:
-                collected.append(cleaned)
-        value = " ".join(collected).strip()
-        if not value:
-            continue
-        existing = mapped.get(section)
-        mapped[section] = " ".join(part for part in (existing, value) if part).strip()
-    return mapped
+

@@ -16,27 +16,6 @@ def _document(value: str | HtmlDocument, artifact_id: str) -> HtmlDocument:
     )
 
 
-def extract_structured_data(html_text: str | HtmlDocument) -> dict[str, object]:
-    document = _document(html_text, "llm_structured")
-    structured: dict[str, object] = {}
-
-    def _append_structured_item(type_name: str, item: dict[str, object]) -> None:
-        existing = structured.get(type_name)
-        if isinstance(existing, list):
-            existing.append(item)
-        else:
-            structured[type_name] = [item]
-
-    for item in parse_json_ld(document):
-        if isinstance(item, dict) and item.get("@type"):
-            type_name = str(item["@type"]).split("/")[-1]
-            _append_structured_item(type_name, item)
-    for key, value in harvest_js_state_objects(document).items():
-        if key == "__NEXT_DATA__" and isinstance(value, dict):
-            structured[key] = value
-    return structured
-
-
 def parse_json_ld(document: HtmlDocument) -> list[object]:
     rows: list[object] = []
     for script in document.safe_css('script[type*="ld+json"]'):

@@ -79,9 +79,6 @@ AI_VISIBILITY_FORCED_GROUNDED_INSTRUCTION = (
     "Cite the sources supporting your recommendations."
 )
 
-# Backward-compatible import for callers outside this feature branch.
-AI_VISIBILITY_SYSTEM_INSTRUCTION = AI_VISIBILITY_FORCED_GROUNDED_INSTRUCTION
-
 # Single-token aliases that are also ordinary English words. They require
 # stronger text evidence than normalized whole-token matching.
 AI_VISIBILITY_AMBIGUOUS_ALIASES = frozenset({"target"})
