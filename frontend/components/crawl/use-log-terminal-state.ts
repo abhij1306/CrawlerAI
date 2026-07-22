@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
 import { parseApiDate } from '../../lib/crawl/format';
 import { cleanRecordForDisplay } from '../../lib/crawl/record-utils';
-import { buildLogSiteGroups, sanitizeLogMessage, siteDomId } from './log-terminal-utils';
+import {
+  buildLogSiteGroups,
+  LOG_GROUP_WINDOW_SIZE,
+  sanitizeLogMessage,
+  siteDomId,
+  windowLogGroups,
+} from './log-terminal-utils';
 import type { LogSiteGroup } from './log-terminal-utils';
 
 const URL_TERMINAL_MESSAGE_PATTERN =
@@ -67,13 +73,17 @@ export function useLogTerminalState({
   logs,
   records,
   live,
+  nowMs,
 }: Readonly<{
   logs: CrawlLog[];
   records: CrawlRecord[];
   live: boolean;
+  nowMs?: number;
 }>) {
   const peekPanelRef = useRef<HTMLDivElement | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Static mount-time fallback only; the workspace passes its shared live clock via nowMs.
+  const [fallbackNowMs] = useState(() => Date.now());
+  const effectiveNowMs = nowMs ?? fallbackNowMs;
   const [peekedGroupKey, setPeekedGroupKey] = useState<string | null>(null);
   const [peekedRecordIndex, setPeekedRecordIndex] = useState(0);
   const [expandedGroupPreference, setExpandedGroupPreference] = useState<
@@ -82,6 +92,15 @@ export function useLogTerminalState({
   const [triageCursor, setTriageCursor] = useState(0);
 
   const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
+  const deferredGroups = useDeferredValue(groups);
+  const [visibleGroupCount, setVisibleGroupCount] = useState(LOG_GROUP_WINDOW_SIZE);
+  const { visible: visibleGroups, hiddenCount: hiddenGroupCount } = useMemo(
+    () => windowLogGroups(deferredGroups, visibleGroupCount),
+    [deferredGroups, visibleGroupCount],
+  );
+  const showEarlierGroups = () => {
+    setVisibleGroupCount((current) => current + LOG_GROUP_WINDOW_SIZE);
+  };
   const siteOrdinalByKey = useMemo(() => {
     let ordinal = 0;
     const values = new Map<string, number>();
@@ -135,14 +154,6 @@ export function useLogTerminalState({
       ? JSON.stringify(cleanRecordForDisplay(peekedGroup.records[safePeekedRecordIndex]), null, 2)
       : '';
   const safeTriageCursor = issueGroups.length ? Math.min(triageCursor, issueGroups.length - 1) : 0;
-
-  useEffect(() => {
-    if (!live) {
-      return;
-    }
-    const timer = globalThis.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => globalThis.clearInterval(timer);
-  }, [live]);
 
   useEffect(() => {
     if (!activePeekedGroupKey) {
@@ -217,19 +228,22 @@ export function useLogTerminalState({
     activePeekedGroupKey,
     expandedGroupKey,
     groups,
+    hiddenGroupCount,
     inferredSerialEndMsByKey,
     issueGroups,
     jumpToGroup,
     navigateTriage,
-    nowMs,
+    nowMs: effectiveNowMs,
     peekedGroup,
     peekedRecordJson,
     peekPanelRef,
     safePeekedRecordIndex,
     setPeekedGroupKey,
     setPeekedRecordIndex,
+    showEarlierGroups,
     siteOrdinalByKey,
     timelineTicks,
     toggleGroup,
+    visibleGroups,
   };
 }

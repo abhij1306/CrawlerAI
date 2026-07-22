@@ -12,6 +12,7 @@ type RunLiveWorkspaceProps = {
   logs: CrawlLog[];
   records: CrawlRecord[];
   elapsedLabel: string;
+  nowMs: number;
   socketOnline: boolean;
   liveJumpAvailable: boolean;
   viewportRef: RefObject<HTMLDivElement | null>;
@@ -25,6 +26,7 @@ export function RunLiveWorkspace({
   logs,
   records,
   elapsedLabel,
+  nowMs,
   socketOnline,
   liveJumpAvailable,
   viewportRef,
@@ -81,6 +83,7 @@ export function RunLiveWorkspace({
         requestedFields={run?.requested_fields ?? []}
         live
         viewportRef={viewportRef}
+        nowMs={nowMs}
       />
     </Card>
   );

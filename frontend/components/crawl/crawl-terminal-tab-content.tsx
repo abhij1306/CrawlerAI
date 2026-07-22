@@ -10,10 +10,8 @@ import { RunLogsOutput } from './run-logs-output';
 import { RunLearningPanel } from './run-learning-panel';
 import type { RecipeActionPendingKey } from './use-run-recipe-actions';
 
-export interface CrawlTerminalTabContentProps {
-  outputTab: string;
+export interface TableTabModel {
   tableRecordsLoading: boolean;
-  jsonRecordsLoading: boolean;
   filteredTableRecords: CrawlRecord[];
   visibleColumns: string[];
   visibleSelectedIds: number[];
@@ -23,17 +21,29 @@ export interface CrawlTerminalTabContentProps {
   onSelectAllRecords: (checked: boolean) => void;
   onToggleRecord: (id: number, checked: boolean) => void;
   onLoadMoreTableRecords: () => void;
+}
+
+export interface JsonTabModel {
+  jsonRecordsLoading: boolean;
   records: CrawlRecord[];
   recordsJson: string;
   jsonRecordsLength: number;
   recordsTotal: number;
   hasMoreJsonRecords: boolean;
   recordsFetchCapReached: boolean;
+  emptyRecordsState: { title: string; description: string };
   setJsonVisibleCount: React.Dispatch<React.SetStateAction<number>>;
+}
+
+export interface LogsTabModel {
   logs: CrawlLog[];
   batchSourceRecords: CrawlRecord[];
   requestedFields: string[];
   logViewportRef: React.RefObject<HTMLDivElement | null>;
+  nowMs: number;
+}
+
+export interface LearningTabModel {
   domainRecipeLoading: boolean;
   domainRecipe: DomainRecipe | undefined;
   recipeActionPending: RecipeActionPendingKey | null;
@@ -41,49 +51,34 @@ export interface CrawlTerminalTabContentProps {
   activateGroundedCorrection: (item: DomainRecipeFieldLearningItem) => Promise<void>;
 }
 
+export interface CrawlTerminalTabContentProps {
+  outputTab: string;
+  table: TableTabModel;
+  json: JsonTabModel;
+  logs: LogsTabModel;
+  learning: LearningTabModel;
+}
+
 export function CrawlTerminalTabContent({
   outputTab,
-  tableRecordsLoading,
-  jsonRecordsLoading,
-  filteredTableRecords,
-  visibleColumns,
-  visibleSelectedIds,
-  tableTotal,
-  hasMoreTableRecords,
-  emptyRecordsState,
-  onSelectAllRecords,
-  onToggleRecord,
-  onLoadMoreTableRecords,
-  records,
-  recordsJson,
-  jsonRecordsLength,
-  recordsTotal,
-  hasMoreJsonRecords,
-  recordsFetchCapReached,
-  setJsonVisibleCount,
+  table,
+  json,
   logs,
-  batchSourceRecords,
-  requestedFields,
-  logViewportRef,
-  domainRecipeLoading,
-  domainRecipe,
-  recipeActionPending,
-  recipeActionError,
-  activateGroundedCorrection,
+  learning,
 }: Readonly<CrawlTerminalTabContentProps>) {
   if (outputTab === 'table') {
     return (
       <RunTableOutput
-        loading={tableRecordsLoading}
-        records={filteredTableRecords}
-        visibleColumns={visibleColumns}
-        selectedIds={visibleSelectedIds}
-        total={tableTotal}
-        hasMore={hasMoreTableRecords}
-        emptyState={emptyRecordsState}
-        onSelectAll={onSelectAllRecords}
-        onToggleRow={onToggleRecord}
-        onLoadMore={onLoadMoreTableRecords}
+        loading={table.tableRecordsLoading}
+        records={table.filteredTableRecords}
+        visibleColumns={table.visibleColumns}
+        selectedIds={table.visibleSelectedIds}
+        total={table.tableTotal}
+        hasMore={table.hasMoreTableRecords}
+        emptyState={table.emptyRecordsState}
+        onSelectAll={table.onSelectAllRecords}
+        onToggleRow={table.onToggleRecord}
+        onLoadMore={table.onLoadMoreTableRecords}
       />
     );
   }
@@ -91,15 +86,15 @@ export function CrawlTerminalTabContent({
   if (outputTab === 'json') {
     return (
       <RunJsonOutput
-        loading={jsonRecordsLoading}
-        records={records}
-        recordsJson={recordsJson}
-        visibleCount={jsonRecordsLength}
-        total={recordsTotal}
-        hasMore={hasMoreJsonRecords}
-        fetchCapReached={recordsFetchCapReached}
-        emptyState={emptyRecordsState}
-        onLoadMore={() => setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)}
+        loading={json.jsonRecordsLoading}
+        records={json.records}
+        recordsJson={json.recordsJson}
+        visibleCount={json.jsonRecordsLength}
+        total={json.recordsTotal}
+        hasMore={json.hasMoreJsonRecords}
+        fetchCapReached={json.recordsFetchCapReached}
+        emptyState={json.emptyRecordsState}
+        onLoadMore={() => json.setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)}
       />
     );
   }
@@ -107,10 +102,11 @@ export function CrawlTerminalTabContent({
   if (outputTab === 'logs') {
     return (
       <RunLogsOutput
-        logs={logs}
-        records={batchSourceRecords}
-        requestedFields={requestedFields}
-        viewportRef={logViewportRef}
+        logs={logs.logs}
+        records={logs.batchSourceRecords}
+        requestedFields={logs.requestedFields}
+        viewportRef={logs.logViewportRef}
+        nowMs={logs.nowMs}
       />
     );
   }
@@ -119,11 +115,11 @@ export function CrawlTerminalTabContent({
     return (
       <div className="min-h-[55vh] space-y-4">
         <RunLearningPanel
-          loading={domainRecipeLoading}
-          recipe={domainRecipe}
-          pendingKey={recipeActionPending}
-          error={recipeActionError}
-          onActivateCorrection={(item) => void activateGroundedCorrection(item)}
+          loading={learning.domainRecipeLoading}
+          recipe={learning.domainRecipe}
+          pendingKey={learning.recipeActionPending}
+          error={learning.recipeActionError}
+          onActivateCorrection={(item) => void learning.activateGroundedCorrection(item)}
         />
       </div>
     );

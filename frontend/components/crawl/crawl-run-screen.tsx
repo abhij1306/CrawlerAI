@@ -287,6 +287,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
           logs={logs}
           records={batchSourceRecords}
           elapsedLabel={elapsedLabel}
+          nowMs={localNow}
           socketOnline={logSocketOnline}
           liveJumpAvailable={liveJumpAvailable}
           viewportRef={logViewportRef}
@@ -307,36 +308,46 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
         >
           <CrawlTerminalTabContent
             outputTab={outputTab}
-            tableRecordsLoading={tableRecordsQuery.isLoading || isFetchingNextTablePage}
-            jsonRecordsLoading={jsonRecordsQuery.isLoading || isFetchingNextJsonPage}
-            filteredTableRecords={filteredTableRecords}
-            visibleColumns={visibleColumns}
-            visibleSelectedIds={visibleSelectedIds}
-            tableTotal={tableTotal}
-            hasMoreTableRecords={hasMoreTableRecords}
-            emptyRecordsState={emptyRecordsState}
-            onSelectAllRecords={selectAllVisibleTableRecords}
-            onToggleRecord={toggleSelectedRecord}
-            onLoadMoreTableRecords={() => void fetchNextTablePage()}
-            records={records}
-            recordsJson={recordsJson}
-            jsonRecordsLength={jsonRecords.length}
-            recordsTotal={recordsTotal}
-            hasMoreJsonRecords={hasMoreJsonRecords}
-            recordsFetchCapReached={recordsFetchCapReached}
-            setJsonVisibleCount={(updater) => {
-              setJsonVisibleCount(updater);
-              void fetchNextJsonPage();
+            table={{
+              tableRecordsLoading: tableRecordsQuery.isLoading || isFetchingNextTablePage,
+              filteredTableRecords,
+              visibleColumns,
+              visibleSelectedIds,
+              tableTotal,
+              hasMoreTableRecords,
+              emptyRecordsState,
+              onSelectAllRecords: selectAllVisibleTableRecords,
+              onToggleRecord: toggleSelectedRecord,
+              onLoadMoreTableRecords: () => void fetchNextTablePage(),
             }}
-            logs={logs}
-            batchSourceRecords={batchSourceRecords}
-            requestedFields={run?.requested_fields ?? []}
-            logViewportRef={logViewportRef}
-            domainRecipeLoading={domainRecipeQuery.isLoading}
-            domainRecipe={domainRecipe}
-            recipeActionPending={recipeActionPending}
-            recipeActionError={recipeActionError}
-            activateGroundedCorrection={activateGroundedCorrection}
+            json={{
+              jsonRecordsLoading: jsonRecordsQuery.isLoading || isFetchingNextJsonPage,
+              records,
+              recordsJson,
+              jsonRecordsLength: jsonRecords.length,
+              recordsTotal,
+              hasMoreJsonRecords,
+              recordsFetchCapReached,
+              emptyRecordsState,
+              setJsonVisibleCount: (updater) => {
+                setJsonVisibleCount(updater);
+                void fetchNextJsonPage();
+              },
+            }}
+            logs={{
+              logs,
+              batchSourceRecords,
+              requestedFields: run?.requested_fields ?? [],
+              logViewportRef,
+              nowMs: localNow,
+            }}
+            learning={{
+              domainRecipeLoading: domainRecipeQuery.isLoading,
+              domainRecipe,
+              recipeActionPending,
+              recipeActionError,
+              activateGroundedCorrection,
+            }}
           />
         </RunTerminalShell>
       ) : null}
