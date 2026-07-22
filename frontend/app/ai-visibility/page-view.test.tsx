@@ -236,6 +236,6 @@ describe('AiVisibilityPage', () => {
     expect(await screen.findByText('Execution #7')).toBeInTheDocument();
     expect(screen.getByText('Best&Less is a great option.')).toBeInTheDocument();
     expect(screen.getByText('best kids clothes australia')).toBeInTheDocument();
-    expect(screen.getAllByText(/bestandless\.com\.au/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^bestandless\.com\.au$/).length).toBeGreaterThan(0);
   });
 });
