@@ -169,6 +169,11 @@ def _page_url(page: object) -> str:
         try:
             value = value()
         except Exception:
+            logger.debug(
+                "Page-url read failed on a discovery page object; using empty "
+                "value",
+                exc_info=True,
+            )
             value = ""
     return str(value or "").strip()
 

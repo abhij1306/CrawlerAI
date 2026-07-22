@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass
+import logging
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -31,6 +32,8 @@ from app.core.shared.text_coerce import slug_tokens
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.extraction.surfaces import surface_spec
 
+
+logger = logging.getLogger(__name__)
 
 _STRUCTURED_SHELL_TOKENS = (
     "application/ld+json",
@@ -239,6 +242,11 @@ def _has_meaningful_detail_dom(analysis: HtmlAnalysis) -> bool:
         try:
             nodes = analysis.document.css(selector)
         except Exception:
+            logger.debug(
+                "Protected-descendant probe failed for selector %r; skipping it",
+                selector,
+                exc_info=True,
+            )
             nodes = ()
         for node in nodes:
             body = clean_text(
@@ -379,6 +387,12 @@ async def _rendered_fragment_card_diagnostics(
             limit=int(crawler_runtime_settings.rendered_listing_card_capture_limit),
         )
     except Exception:
+        logger.debug(
+            "Rendered-fragment card capture failed for %s; readiness proceeds "
+            "without fragment diagnostics",
+            url,
+            exc_info=True,
+        )
         return {}
     if not fragments:
         return {}

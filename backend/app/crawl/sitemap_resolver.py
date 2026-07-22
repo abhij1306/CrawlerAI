@@ -139,6 +139,13 @@ async def resolve_category_urls_with_site_links(
             )
         except Exception as exc:
             static_error = exc
+            logger.debug(
+                "Static sitemap resolution failed for %s; falling back to "
+                "rendered discovery: %s",
+                domain,
+                type(exc).__name__,
+                exc_info=True,
+            )
         else:
             if (
                 normalized_strategy == "static_only"

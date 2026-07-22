@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -32,6 +33,8 @@ from app.core.records.field_policy import (
 )
 from app.core.shared.coerce_primitives import string_list
 from app.core.shared.field_coerce import coerce_int as _coerce_int
+
+logger = logging.getLogger(__name__)
 
 _DETAIL_EXPAND_KEYWORDS: dict[str, tuple[str, ...]] = {
     str(key): tuple(str(item) for item in value or [])
@@ -211,6 +214,11 @@ async def _candidate_rows(
             snapshot = await interactive_candidate_snapshot(handle)
         except Exception as exc:
             failures.append(str(exc))
+            logger.debug(
+                "Interactive candidate snapshot failed; skipping candidate: %s",
+                type(exc).__name__,
+                exc_info=True,
+            )
             continue
         rows.append(
             (
@@ -348,6 +356,10 @@ async def _click_dom_candidate(page: Any, handle: Any) -> None:
             timeout=int(crawler_runtime_settings.detail_expand_click_timeout_ms)
         )
     except Exception:
+        logger.debug(
+            "Direct candidate click failed; falling back to DOM click",
+            exc_info=True,
+        )
         await handle.evaluate("(node) => node instanceof HTMLElement && node.click()")
     wait_ms = int(crawler_runtime_settings.accordion_expand_wait_ms)
     if wait_ms > 0:
@@ -372,6 +384,12 @@ async def _expand_selector(
         candidates = await page.locator(selector).element_handles()
     except Exception as exc:
         failures.append(f"locator_failed:{selector}:{exc}")
+        logger.debug(
+            "Element-handle lookup failed for selector %r: %s",
+            selector,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return []
     diagnostics["buttons_found"] = _coerce_int(diagnostics["buttons_found"]) + len(
         candidates
@@ -409,6 +427,12 @@ async def _expand_selector(
             clicked.append(label)
         except Exception as exc:
             failures.append(str(exc))
+            logger.debug(
+                "DOM candidate click failed for %r: %s",
+                label,
+                type(exc).__name__,
+                exc_info=True,
+            )
     return clicked
 
 
@@ -562,6 +586,11 @@ async def _interactive_handle_attr(handle: Any, attr_name: str) -> str:
     try:
         value = await getter(attr_name)
     except Exception:
+        logger.debug(
+            "Attribute read %r failed on interactive handle; using empty value",
+            attr_name,
+            exc_info=True,
+        )
         return ""
     return " ".join(str(value or "").split()).strip().lower()
 
@@ -572,6 +601,10 @@ async def _interactive_handle_tag_name(handle: Any) -> str:
             "(node) => node instanceof Element ? node.tagName.toLowerCase() : ''"
         )
     except Exception:
+        logger.debug(
+            "Tag-name read failed on interactive handle; using empty value",
+            exc_info=True,
+        )
         return ""
     return " ".join(str(value or "").split()).strip().lower()
 
@@ -583,6 +616,10 @@ async def _interactive_handle_is_visible(handle: Any) -> bool:
     try:
         return bool(await checker())
     except Exception:
+        logger.debug(
+            "Visibility check failed on interactive handle; treating as hidden",
+            exc_info=True,
+        )
         return False
 
 
@@ -606,6 +643,10 @@ async def _interactive_handle_context_flags(handle: Any) -> dict[str, bool]:
             }"""
         )
     except Exception:
+        logger.debug(
+            "Context-flag read failed on interactive handle; using no flags",
+            exc_info=True,
+        )
         return {}
     if not isinstance(value, dict):
         return {}

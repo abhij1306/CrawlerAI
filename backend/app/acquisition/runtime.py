@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -35,6 +36,8 @@ from app.core.url_safety import (
 )
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
+
+logger = logging.getLogger(__name__)
 
 _SHARED_HTTP_CLIENTS: dict[tuple[str | None, str], httpx.AsyncClient] = {}
 _SHARED_HTTP_CLIENT_LOCK = asyncio.Lock()
@@ -125,6 +128,11 @@ def classify_block_from_headers(headers: Any) -> str | None:
     try:
         items = list(headers.items()) if hasattr(headers, "items") else list(headers)
     except Exception:
+        logger.debug(
+            "Unusable headers object for block classification; skipping header "
+            "markers",
+            exc_info=True,
+        )
         return None
     normalized: dict[str, str] = {}
     for key, value in items:

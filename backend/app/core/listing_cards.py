@@ -179,6 +179,11 @@ def _css(node: Any, selector: str) -> tuple[Any, ...]:
         method = getattr(node, "safe_css", None) or getattr(node, "css")
         return tuple(method(selector))
     except Exception:
+        logger.warning(
+            "listing card css probe failed for selector %r; treating as no matches",
+            selector,
+            exc_info=True,
+        )
         return ()
 
 
@@ -189,6 +194,11 @@ def _attribute(node: Any, name: str) -> str:
             return str(method(name) or "").strip()
         return str((getattr(node, "attributes", {}) or {}).get(name) or "").strip()
     except Exception:
+        logger.warning(
+            "listing card attribute read failed for %r; using empty value",
+            name,
+            exc_info=True,
+        )
         return ""
 
 
@@ -198,6 +208,11 @@ def _has_attribute(node: Any, name: str) -> bool:
         values = method() if callable(method) else method
         return name in (values or {})
     except Exception:
+        logger.warning(
+            "listing card attribute probe failed for %r; treating as absent",
+            name,
+            exc_info=True,
+        )
         return False
 
 
@@ -207,6 +222,10 @@ def _text(node: Any) -> str:
         value = method() if callable(method) else node.text(separator=" ", strip=True)
         return " ".join(str(value or "").split())
     except Exception:
+        logger.warning(
+            "listing card text extraction failed; using empty value",
+            exc_info=True,
+        )
         return ""
 
 
@@ -215,6 +234,10 @@ def _html(node: Any) -> str:
         value = getattr(node, "html", "")
         return str(value() if callable(value) else value or "")
     except Exception:
+        logger.warning(
+            "listing card html extraction failed; using empty value",
+            exc_info=True,
+        )
         return ""
 
 
@@ -263,6 +286,10 @@ def _is_hidden(node: Any) -> bool:
                 return True
             current = getattr(current, "parent", None)
     except Exception:
+        logger.warning(
+            "listing card ancestor visibility walk failed; treating as visible",
+            exc_info=True,
+        )
         return False
     return False
 

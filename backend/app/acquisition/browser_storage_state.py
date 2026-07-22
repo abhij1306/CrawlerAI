@@ -110,6 +110,10 @@ def mark_storage_state_persist_policy(
         try:
             context = context()
         except Exception:
+            logger.debug(
+                "Browser context unavailable; storage-state persist policy not set",
+                exc_info=True,
+            )
             return
     if context is None:
         return

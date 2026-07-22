@@ -26,15 +26,20 @@ publish_receives_evidence_or_entity_graph = false
 # Audit-fix reconciliation (2026-07-22): raised to measured actual after the
 # resolution god-package split added 7 modules (2,044-LOC __init__ is now a
 # 175-LOC facade) and documents.py grew with the to_thread offload work.
-physical_loc_budget = 16753
+# Audit-debt Stream B commits 9-10 (2026-07-22): adapters.py (564 -> 519)
+# and jobs.py (559 -> 547) ratcheted down after the CASCADE_* flag removal
+# (3.8); collectors/dom.py (1062 -> 1069) and model_runtime.py (440 -> 448)
+# raised to measured for the silent-except diagnostics (4.8); total
+# ratcheted down to measured.
+physical_loc_budget = 16711
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
 "__init__.py" = 19
-"adapters.py" = 564
+"adapters.py" = 519
 "cascade.py" = 212
 "collectors/_helpers.py" = 233
-"collectors/dom.py" = 1062
+"collectors/dom.py" = 1069
 "collectors/js_state.py" = 914
 "collectors/jsonld.py" = 783
 "collectors/metadata.py" = 188
@@ -44,12 +49,12 @@ default_module_cyclomatic_complexity_budget = 20
 "engine.py" = 1059
 "entities.py" = 850
 "field_states.py" = 37
-"jobs.py" = 559
+"jobs.py" = 547
 "json_walk.py" = 65
 "listing.py" = 301
 "listing_records.py" = 488
 "listing_tier0.py" = 546
-"model_runtime.py" = 440
+"model_runtime.py" = 448
 "network_listing.py" = 230
 "pipeline.py" = 781
 "publication.py" = 617

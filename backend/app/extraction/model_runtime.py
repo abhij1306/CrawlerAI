@@ -8,6 +8,7 @@ module never resolves or publishes records.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Thread
@@ -36,6 +37,8 @@ from app.extraction.contracts import (
     UniversalModelResult,
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
+
+logger = logging.getLogger(__name__)
 
 ModelRuntimeOutcome = Literal[
     "disabled",
@@ -154,6 +157,12 @@ def run_model_fallback(
             detail="universal model invocation timed out",
         )
     except Exception as exc:  # model service must degrade without breaking extraction
+        logger.warning(
+            "Universal model invocation failed; extraction continues without "
+            "the model fallback: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return ModelFallbackResult(
             outcome="failed",
             artifact=artifact,

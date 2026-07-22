@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from html import unescape
 from urllib.parse import parse_qsl, urljoin, urlsplit
@@ -60,6 +61,8 @@ from app.extraction.documents import HtmlNode
 from app.core.shared.ids import stable_id
 from app.core.records.field_policy import normalize_field_key, normalize_requested_field
 from app.core.shared.url_utils import is_utility_image_url, largest_srcset_url
+
+logger = logging.getLogger(__name__)
 
 _IMAGE_SCOPE_ATTRIBUTES = (
     "id",
@@ -1090,6 +1093,11 @@ def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
         try:
             nodes = doc.css(selector)
         except Exception:
+            logger.debug(
+                "Requested-field selector %r failed; skipping it",
+                selector,
+                exc_info=True,
+            )
             continue
         for node in nodes[:3]:
             if node.is_hidden():

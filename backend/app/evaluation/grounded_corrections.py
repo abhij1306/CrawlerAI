@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -35,6 +36,8 @@ from app.persistence.extraction_memory import (
     create_candidate_release_snapshot,
     upsert_recipe,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GroundedCorrectionScopeMismatch(ValueError):
@@ -310,6 +313,12 @@ def _replay_rule(document, url_result_id: int, rule: dict[str, object]):
     try:
         nodes = document.css(selector)
     except Exception:
+        logger.debug(
+            "Grounded selector %r for field %r failed to evaluate",
+            selector,
+            field_name,
+            exc_info=True,
+        )
         return _check(
             url_result_id, field_name, selector, 0
         ), "invalid_grounded_selector"

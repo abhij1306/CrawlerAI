@@ -399,6 +399,10 @@ def _request_frame_url(request: Any) -> str:
     try:
         return str(getattr(getattr(request, "frame", None), "url", "") or "")
     except Exception:
+        logger.debug(
+            "Frame-URL read failed for a captured request; using empty value",
+            exc_info=True,
+        )
         return ""
 
 
@@ -640,6 +644,11 @@ async def read_network_payload_body(
                 outcome="response_closed",
                 error=f"{type(exc).__name__}: {exc}",
             )
+        logger.debug(
+            "Network payload read failed; payload is dropped: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return NetworkPayloadReadResult(
             body=None,
             outcome="read_error",

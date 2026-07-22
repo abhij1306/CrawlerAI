@@ -29,11 +29,17 @@ OVERSIZED_MODULE_DEBT = {
     # Audit-debt Stream B commit 5 (2026-07-22): browser_recovery.py left the
     # ledger (723 -> 681 after the type_text_like_human smoke-symbol deletion,
     # 3.14).
-    "acquisition/browser_readiness.py": 702,
+    # Stream B commit 10 (same day): browser_recovery.py re-entered (681 ->
+    # 728) and browser_capture.py entered (699 -> 704) with the silent-except
+    # diagnostics (4.8); browser_readiness +13, collectors/dom +7 — all raised
+    # to measured.
+    "acquisition/browser_capture.py": 704,
+    "acquisition/browser_readiness.py": 715,
+    "acquisition/browser_recovery.py": 728,
     "acquisition/browser_result_builder.py": 744,
     "core/config/extraction_rules/_detail.py": 1026,
     "enrichment/service.py": 907,
-    "extraction/collectors/dom.py": 1062,
+    "extraction/collectors/dom.py": 1069,
     "extraction/collectors/js_state.py": 914,
     "extraction/collectors/jsonld.py": 783,
     "extraction/contracts.py": 856,
@@ -233,16 +239,19 @@ PACKAGE_LOC_BUDGETS = {
     # deleted, 3.8), extraction -57 (legacy flag-OFF harvest branches +
     # unreferenced collect_job_detail), crawl -6 (learn-once gate flatten) —
     # ratcheted down to measured.
+    # Stream B commit 10 (same day): acquisition +159, core +45, crawl +15,
+    # extraction +15, evaluation +8, intelligence +5 for the silent-except
+    # diagnostics (4.8) — raised to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_184,
-    "crawl": 9_316,
-    "core": 20_965,
+    "acquisition": 17_343,
+    "crawl": 9_331,
+    "core": 21_010,
     "enrichment": 2_254,
     "connectors": 2_444,
-    "intelligence": 3_457,
-    "extraction": 16_696,
-    "evaluation": 1_563,
+    "intelligence": 3_462,
+    "extraction": 16_711,
+    "evaluation": 1_571,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
 # the resolution split, browser-pool collaborators, SSRF hardening, Celery
@@ -280,7 +289,10 @@ PACKAGE_LOC_BUDGETS = {
 # Stream B commit 8 (same day): +12 for the shared job-lifecycle schema bases
 # (3.11; the new schemas/job_lifecycle module's docstring + ORM-divergence
 # note outweigh the deduped PI/DE field re-declarations).
-TOTAL_APP_LOC_BUDGET = 87_207
+# Stream B commit 9 (same day): -116 for the CASCADE_* flag removal + dead
+# legacy harvest branches (3.8).
+# Stream B commit 10 (same day): +247 for the silent-except diagnostics (4.8).
+TOTAL_APP_LOC_BUDGET = 87_338
 
 
 def test_production_package_loc_budgets() -> None:

@@ -77,6 +77,11 @@ def _patch_opentelemetry_fastapi() -> None:
                         else starlette_route.matches(scope)
                     )
                 except Exception:
+                    logger.debug(
+                        "Route match probe failed for %r; trying the next route",
+                        getattr(starlette_route, "path", starlette_route),
+                        exc_info=True,
+                    )
                     continue
                 if match == Match.FULL:
                     try:

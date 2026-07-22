@@ -140,8 +140,15 @@ async def _retry_challenge_navigation(
             wait_until="domcontentloaded",
             timeout=min(remaining_budget_ms, int(navigation_timeout_ms)),
         )
-    except Exception:
+    except Exception as exc:
         context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
+        logger.warning(
+            "Challenge retry navigation failed for %s; keeping the original "
+            "challenged response: %s",
+            context.url,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return context.response
     context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
     retry_status = int(
@@ -153,7 +160,14 @@ async def _retry_challenge_navigation(
             html,
             _recovered_html_status_code(retry_status),
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Post-retry challenge assessment failed for %s; keeping the "
+            "original response: %s",
+            context.url,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return context.response
     if not _challenge_has_cleared(
         html,
@@ -252,6 +266,10 @@ def _challenge_has_cleared(
             )
         )
     except Exception:
+        logger.debug(
+            "Low-content-shell probe failed; assuming the page has content",
+            exc_info=True,
+        )
         low_content = False
     if not low_content:
         return True
@@ -391,6 +409,10 @@ async def _challenge_viewport(page: Any) -> tuple[int, int] | None:
             })"""
         )
     except Exception:
+        logger.debug(
+            "Viewport probe failed; challenge mouse activity is skipped",
+            exc_info=True,
+        )
         return None
     if not isinstance(viewport, dict):
         return None
@@ -494,6 +516,10 @@ async def _emit_challenge_activity(page: Any) -> None:
         if callable(wheel) and settings.scroll_px:
             await wheel(0, settings.scroll_px)
     except Exception:
+        logger.debug(
+            "Challenge activity simulation failed; continuing without it",
+            exc_info=True,
+        )
         return
 
 
@@ -511,12 +537,22 @@ async def _find_turnstile_box(page: Any) -> dict[str, float] | None:
         try:
             handle = await query(selector)
         except Exception:
+            logger.debug(
+                "Turnstile selector query failed for %r; trying the next selector",
+                selector,
+                exc_info=True,
+            )
             continue
         if handle is None:
             continue
         try:
             box = await handle.bounding_box()
         except Exception:
+            logger.debug(
+                "Turnstile bounding-box probe failed for %r; treating as not clickable",
+                selector,
+                exc_info=True,
+            )
             box = None
         if (
             isinstance(box, dict)
@@ -670,6 +706,11 @@ async def _emit_scroll_physics(page: Any) -> int:
             emitted += 1
             await page.wait_for_timeout(_behavior_pause_ms())
         except Exception:
+            logger.debug(
+                "Scroll-behavior emission stopped after %s step(s)",
+                emitted,
+                exc_info=True,
+            )
             break
     return emitted
 
@@ -729,7 +770,13 @@ async def capture_rendered_listing_fragments(
                 "candidateLimit": max(int(limit), int(limit) * len(selectors)),
             },
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Interactive-element snapshot failed; challenge solving has no "
+            "clickable candidates: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return []
     if not isinstance(snapshot, list):
         return []

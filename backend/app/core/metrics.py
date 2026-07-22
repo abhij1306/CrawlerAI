@@ -160,6 +160,10 @@ def _database_connections_checked_out() -> int:
         try:
             return int(checked_out())
         except Exception:
+            logger.debug(
+                "Pool checked-out probe failed; reporting 0",
+                exc_info=True,
+            )
             return 0
     return 0
 
@@ -170,6 +174,7 @@ async def check_database() -> bool:
             await session.execute(text("SELECT 1"))
         return True
     except Exception:
+        logger.debug("Database health check failed", exc_info=True)
         return False
 
 
@@ -180,6 +185,7 @@ async def check_redis() -> bool:
         await get_redis().get("__healthcheck__")
         return True
     except Exception:
+        logger.debug("Redis health check failed", exc_info=True)
         return False
 
 

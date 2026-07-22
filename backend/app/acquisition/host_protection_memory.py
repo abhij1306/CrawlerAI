@@ -380,7 +380,13 @@ async def reset_host_protection_memory(
             try:
                 await reset_host_protection_memory(session=owned_session)
                 await owned_session.commit()
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Host-protection memory reset failed; stale policy rows may "
+                    "persist: %s",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
                 with _suppress_all():
                     await owned_session.rollback()
             return
