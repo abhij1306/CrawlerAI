@@ -234,6 +234,9 @@ async def recover_orphaned_product_intelligence_jobs(
     stale_before = now - timedelta(
         seconds=product_intelligence_settings.job_orphaned_after_seconds
     )
+    pending_stale_before = now - timedelta(
+        seconds=product_intelligence_settings.job_orphaned_pending_after_seconds
+    )
     jobs = list(
         (
             await session.scalars(
@@ -252,6 +255,7 @@ async def recover_orphaned_product_intelligence_jobs(
             job.summary,
             exclude_task_id=exclude_task_id,
             stale=stale,
+            pending_stale=updated_at <= pending_stale_before,
             task_state=celery_task_state,
         ):
             continue
@@ -710,7 +714,10 @@ async def _poll_candidates_and_score(
     checked, ~150 candidates per 10-product job). Each round performs a single
     run-status lookup for every still-pending candidate and only scores
     candidates whose run reached a final status, keeping the pacing interval
-    polite regardless of candidate count. Matching/scoring itself is unchanged.
+    polite regardless of candidate count. The total poll budget stays
+    proportional to the pending-candidate count (candidate_poll_seconds per
+    candidate) so large batches are not starved by a single shared window.
+    Matching/scoring itself is unchanged.
     """
     job_id = int(job.id)
     pending: dict[int, int | None] = {
@@ -724,7 +731,13 @@ async def _poll_candidates_and_score(
     if not pending:
         return
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + product_intelligence_settings.candidate_poll_seconds
+    # Budget parity with the legacy sequential loop: each pending candidate
+    # keeps its own candidate_poll_seconds window, so a full candidate batch
+    # cannot time out before its crawl runs had a fair chance to finish
+    # (batched polling makes the common case far faster than sequential).
+    deadline = loop.time() + (
+        product_intelligence_settings.candidate_poll_seconds * max(1, len(pending))
+    )
     interval = product_intelligence_settings.candidate_poll_interval_seconds
     while pending and loop.time() <= deadline:
         run_ids = [run_id for run_id in pending.values() if run_id is not None]

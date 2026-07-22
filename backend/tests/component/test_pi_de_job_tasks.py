@@ -290,7 +290,9 @@ async def test_poll_candidates_batches_status_checks_and_times_out_together(
         candidates.append(candidate)
     await db_session.commit()
 
-    monkeypatch.setattr(product_intelligence_settings, "candidate_poll_seconds", 1.0)
+    # Total budget is candidate_poll_seconds per pending candidate (parity
+    # with the legacy sequential loop): 5 x 0.5s = 2.5s here.
+    monkeypatch.setattr(product_intelligence_settings, "candidate_poll_seconds", 0.5)
     monkeypatch.setattr(
         product_intelligence_settings, "candidate_poll_interval_seconds", 0.5
     )
@@ -311,12 +313,13 @@ async def test_poll_candidates_batches_status_checks_and_times_out_together(
     for candidate in candidates:
         assert candidate.status == PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
     # One run-status lookup per round for ALL pending candidates, not one per
-    # candidate per round: ~3 rounds for a 1.0s deadline at 0.5s intervals.
+    # candidate per round: ~6 rounds for a 2.5s budget at 0.5s intervals.
     run_status_queries = [
         statement for statement in statements if "crawl_runs" in statement
     ]
-    assert 0 < len(run_status_queries) <= 5
-    # Sequential polling would block up to 5 x candidate_poll_seconds.
+    assert 0 < len(run_status_queries) <= 8
+    # Fully sequential polling would block up to 5 x candidate_poll_seconds
+    # per candidate; batched polling exhausts the same total budget faster.
     assert elapsed < 4.0
 
 
@@ -471,6 +474,8 @@ async def test_recover_orphaned_product_intelligence_jobs(
     done_task.summary = {"celery_task_id": "t-done"}
     pending_stale = _make_pi_job(test_user.id, status="running")
     pending_stale.summary = {"celery_task_id": "t-pending"}
+    pending_lost = _make_pi_job(test_user.id, status="running")
+    pending_lost.summary = {"celery_task_id": "t-pending"}
     queued_job = _make_pi_job(test_user.id, status="queued")
     for job in (
         stale_no_task,
@@ -478,16 +483,34 @@ async def test_recover_orphaned_product_intelligence_jobs(
         live_task,
         done_task,
         pending_stale,
+        pending_lost,
         queued_job,
     ):
         db_session.add(job)
     await db_session.commit()
 
     stale_time = datetime.now(UTC) - STALE_AGE
+    # PENDING + stale past the normal orphan window but NOT the longer pending
+    # window: still plausibly queued behind a worker backlog — must survive.
+    # PENDING + stale past the pending window: treated as a lost task record.
+    pending_lost_time = datetime.now(UTC) - timedelta(
+        seconds=product_intelligence_settings.job_orphaned_pending_after_seconds
+        + 300
+    )
     await db_session.execute(
         update(ProductIntelligenceJob)
-        .where(ProductIntelligenceJob.id.in_([stale_no_task.id, pending_stale.id]))
+        .where(
+            ProductIntelligenceJob.id.in_(
+                [stale_no_task.id, pending_stale.id, pending_lost.id]
+            )
+        )
         .values(updated_at=stale_time),
+        execution_options={"synchronize_session": False},
+    )
+    await db_session.execute(
+        update(ProductIntelligenceJob)
+        .where(ProductIntelligenceJob.id == pending_lost.id)
+        .values(updated_at=pending_lost_time),
         execution_options={"synchronize_session": False},
     )
     await db_session.commit()
@@ -496,16 +519,18 @@ async def test_recover_orphaned_product_intelligence_jobs(
     recovered = await recover_orphaned_product_intelligence_jobs(db_session)
 
     assert recovered == 3
-    for job in (stale_no_task, done_task, pending_stale):
+    for job in (stale_no_task, done_task, pending_lost):
         assert job.status == "failed"
         assert "OrphanedJobRecovery" in job.summary["error"]
         assert job.completed_at is not None
-    # Untouched: fresh rows, live tasks, and queued (not yet started) jobs.
-    for job in (fresh_no_task, live_task, queued_job):
+    # Untouched: fresh rows, live tasks, queued (not yet started) jobs, and
+    # PENDING tasks inside the longer queued-backlog window.
+    for job in (fresh_no_task, live_task, queued_job, pending_stale):
         await db_session.refresh(job)
     assert fresh_no_task.status == "running"
     assert live_task.status == "running"
     assert queued_job.status == "queued"
+    assert pending_stale.status == "running"
 
 
 @pytest.mark.component

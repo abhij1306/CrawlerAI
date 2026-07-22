@@ -611,6 +611,10 @@ class ProductIntelligenceSettings(BaseSettings):
     # job-task entry. Must comfortably exceed the longest stretch in which a
     # healthy job does not update its row (one candidate poll window).
     job_orphaned_after_seconds: float = 900.0
+    # Orphan recovery for jobs whose Celery task is still PENDING: PENDING also
+    # means "legitimately queued behind a worker backlog", so a queued job must
+    # be stale for this longer window before it may be marked failed.
+    job_orphaned_pending_after_seconds: float = 3600.0
     confidence_threshold: float = 0.4
     title_token_limit: int = 6
     price_band_ratio: float = 0.25
@@ -648,6 +652,10 @@ class ProductIntelligenceSettings(BaseSettings):
         )
         self.job_orphaned_after_seconds = max(
             60.0, float(self.job_orphaned_after_seconds)
+        )
+        self.job_orphaned_pending_after_seconds = max(
+            float(self.job_orphaned_after_seconds),
+            float(self.job_orphaned_pending_after_seconds),
         )
         self.confidence_threshold = min(max(float(self.confidence_threshold), 0.0), 1.0)
         self.title_token_limit = max(1, int(self.title_token_limit))
