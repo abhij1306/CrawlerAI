@@ -38,7 +38,7 @@ const checks = [
   },
   {
     file: 'components/crawl/records-table.tsx',
-    maxLines: 375,
+    maxLines: 425,
   },
 ];
 

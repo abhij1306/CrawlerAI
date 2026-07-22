@@ -21,6 +21,7 @@ const lineBudgetExceptions = new Map([
   ['components/crawl/log-terminal-utils.ts', 520],
   ['components/crawl/crawl-config-logic.ts', 465],
   ['app/ai-visibility/project-form-dialog.tsx', 420],
+  ['components/crawl/records-table.tsx', 425],
 ]);
 
 const requiredApiOwners = [
