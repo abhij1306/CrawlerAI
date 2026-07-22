@@ -1,6 +1,7 @@
 """Run-lifecycle scalability: queue claiming, resume, bounded run summary."""
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -336,6 +337,67 @@ async def test_process_run_honors_pause_control_request(
     await db_session.refresh(run)
     assert run.status == CrawlStatus.PAUSED.value
     assert run.queue_owner is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_parallel_run_bounds_live_worker_tasks_to_concurrency(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    """2.11: worker-pool scheduling keeps peak live tasks at O(concurrency).
+
+    The old up-front design materialized one task per pending URL (24 here);
+    the worker pool must never exceed `concurrency` live worker tasks.
+    """
+    monkeypatch.setattr(app_settings, "celery_dispatch_enabled", True)
+    patch_settings(url_batch_concurrency=3, browser_runtime_context_capacity=3)
+    monkeypatch.setattr(
+        app_settings, "system_max_concurrent_urls", 3, raising=False
+    )
+    urls = [f"https://example.com/p/{idx}" for idx in range(24)]
+    run = await _make_batch_run(db_session, test_user, urls)
+    processed: list[str] = []
+
+    async def _fake_process_single_url(*args, **kwargs) -> URLProcessingResult:
+        processed.append(str(kwargs.get("url") or ""))
+        await asyncio.sleep(0.01)
+        return URLProcessingResult(
+            records=[], verdict="success", url_metrics={"record_count": 0}
+        )
+
+    monkeypatch.setattr(
+        "app.crawl.batch_runtime.process_single_url", _fake_process_single_url
+    )
+
+    peak_live_workers = 0
+    monitor_stop = asyncio.Event()
+
+    async def _monitor() -> None:
+        nonlocal peak_live_workers
+        prefix = f"crawl-run-{run.id}-"
+        while not monitor_stop.is_set():
+            live = sum(
+                1
+                for task in asyncio.all_tasks()
+                if task.get_name().startswith(prefix)
+            )
+            peak_live_workers = max(peak_live_workers, live)
+            await asyncio.sleep(0.001)
+
+    monitor = asyncio.create_task(_monitor())
+    try:
+        await process_run(db_session, run.id)
+    finally:
+        monitor_stop.set()
+        await monitor
+
+    assert len(processed) == 24
+    assert 2 <= peak_live_workers <= 3
+    await db_session.refresh(run)
+    assert run.status == CrawlStatus.COMPLETED.value
 
 
 @pytest.mark.asyncio

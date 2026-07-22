@@ -78,6 +78,13 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     url_batch_concurrency: int = 8
+    # Worker-pool URL scheduling (2.11): `url_batch_concurrency` long-lived
+    # workers pull (idx, url) items from a shared iterator and push results
+    # onto a bounded queue (capacity = concurrency * size factor) instead of
+    # materializing one task per pending URL; the parent ticks control
+    # checkpoints at least every tick interval while URLs are in flight.
+    parallel_result_queue_size_factor: int = 2
+    parallel_control_tick_seconds: float = 1.0
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0

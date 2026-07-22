@@ -15,6 +15,12 @@ from app.crawl.batch_runtime import (
     process_run,
 )
 from app.crawl.pipeline.run_progress import assemble_run_summary_payload
+from app.crawl.state import (
+    CONTROL_REQUEST_KILL,
+    CONTROL_REQUEST_PAUSE,
+    CrawlStatus,
+    set_control_request,
+)
 from app.core.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run, get_run_records
@@ -782,6 +788,137 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
     assert not any(
         f"URL processing timed out for {failing_url}" in message for message in messages
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("control_request", "expected_status"),
+    [
+        (CONTROL_REQUEST_PAUSE, CrawlStatus.PAUSED.value),
+        (CONTROL_REQUEST_KILL, CrawlStatus.KILLED.value),
+    ],
+)
+async def test_parallel_process_run_honors_control_request(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+    control_request: str,
+    expected_status: str,
+) -> None:
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
+    patch_settings(url_batch_concurrency=2, browser_runtime_context_capacity=2)
+    monkeypatch.setattr(
+        batch_runtime_module.settings,
+        "system_max_concurrent_urls",
+        2,
+        raising=False,
+    )
+    urls = [f"https://example.com/products/{suffix}" for suffix in ("a", "b", "c", "d")]
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "fetch_profile": {"fetch_mode": "http_only"},
+                "urls": urls,
+            },
+        },
+    )
+    started: list[str] = []
+
+    async def _fake_process_single_url(*args, **kwargs):
+        url = str(kwargs.get("url") or "")
+        started.append(url)
+        if url.endswith("/a"):
+            # A concurrent session requests pause/kill during the first URL.
+            set_control_request(kwargs["run"], control_request)
+            await kwargs["session"].commit()
+        else:
+            # In-flight URLs run to completion after the stop is observed.
+            await asyncio.sleep(0.2)
+        return URLProcessingResult(
+            records=[], verdict="success", url_metrics={"record_count": 0}
+        )
+
+    monkeypatch.setattr(
+        "app.crawl.batch_runtime.process_single_url", _fake_process_single_url
+    )
+
+    await process_run(db_session, run.id)
+    await db_session.refresh(run)
+
+    assert run.status == expected_status
+    assert run.queue_owner is None
+    # The two workers genuinely ran in parallel...
+    assert len(started) >= 2
+    # ...and the stop was observed before the fourth URL was pulled (the
+    # 0.2s in-flight sleeps give the checkpoint a wide margin).
+    assert len(started) <= 3
+    assert "https://example.com/products/d" not in started
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_parallel_process_run_stops_after_max_records(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
+    patch_settings(url_batch_concurrency=2, browser_runtime_context_capacity=2)
+    monkeypatch.setattr(
+        batch_runtime_module.settings,
+        "system_max_concurrent_urls",
+        2,
+        raising=False,
+    )
+    urls = [f"https://example.com/products/{idx}" for idx in range(6)]
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "fetch_profile": {"fetch_mode": "http_only"},
+                "max_records": 3,
+                "urls": urls,
+            },
+        },
+    )
+
+    async def _fake_process_single_url(*args, **kwargs):
+        del args, kwargs
+        return URLProcessingResult(
+            records=[{}, {}],
+            verdict="success",
+            url_metrics={"record_count": 2},
+        )
+
+    monkeypatch.setattr(
+        "app.crawl.batch_runtime.process_single_url", _fake_process_single_url
+    )
+
+    await process_run(db_session, run.id)
+    await db_session.refresh(run)
+    logs = (
+        (
+            await db_session.execute(
+                select(CrawlLog.message).where(CrawlLog.run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert run.status == "completed"
+    assert "Stopped after reaching max_records=3" in logs
+    assert run.result_summary["record_count"] >= 3
 
 
 @pytest.mark.asyncio
