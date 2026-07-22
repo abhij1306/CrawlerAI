@@ -1,10 +1,9 @@
-import { startTransition, useEffect, useReducer, useState } from 'react';
-import { CheckCircle2, PlugZap, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, Trash2 } from 'lucide-react';
 
-import { Button, Dropdown, Field, Input } from '../../../components/ui/primitives';
+import { Button } from '../../../components/ui/primitives';
 import {
   DetailRow,
-  InlineAlert,
   MutedPanelMessage,
   PageHeader,
   SectionCard,
@@ -17,279 +16,34 @@ import {
   TableRow,
   TableCell,
 } from '../../../components/ui/table';
-import { adminApi } from '../../../lib/api/admin';
-import type {
-  LlmConfigCreatePayload,
-  LlmConfigRecord,
-  LlmCostLogRecord,
-  LlmProviderCatalogItem,
-} from '../../../lib/api/types';
-
-const CUSTOM_MODEL_OPTION = '__custom__';
-const TASK_TYPES = [
-  'general',
-  'data_enrichment_semantic',
-  'grounded_extraction_repair',
-  'product_intelligence_enrichment',
-  'product_intelligence_brand_inference',
-];
-
-const INITIAL_LLM_FORM: LlmConfigCreatePayload = {
-  provider: 'mistral',
-  model: 'mistral-small-latest',
-  task_type: 'data_enrichment_semantic',
-  api_key: '',
-  per_domain_daily_budget_usd: '0',
-  global_session_budget_usd: '0',
-  is_active: true,
-};
-
-type AdminLlmState = {
-  providers: LlmProviderCatalogItem[];
-  configs: LlmConfigRecord[];
-  costLog: LlmCostLogRecord[];
-  customModelSelected: boolean;
-  error: string;
-  message: string;
-  saving: boolean;
-  testing: boolean;
-  form: LlmConfigCreatePayload;
-};
-
-type AdminLlmAction =
-  | {
-      type: 'initialLoaded';
-      providers: LlmProviderCatalogItem[];
-      configs: LlmConfigRecord[];
-      costLog: LlmCostLogRecord[];
-    }
-  | { type: 'runtimeLoaded'; configs: LlmConfigRecord[]; costLog: LlmCostLogRecord[] }
-  | { type: 'patchForm'; patch: Partial<LlmConfigCreatePayload> }
-  | { type: 'setCustomModelSelected'; selected: boolean }
-  | { type: 'startSave' }
-  | { type: 'saveSucceeded' }
-  | { type: 'finishSave' }
-  | { type: 'startTest' }
-  | { type: 'testSucceeded'; message: string }
-  | { type: 'finishTest' }
-  | { type: 'deleteStarted' }
-  | { type: 'deleteSucceeded' }
-  | { type: 'failed'; message: string };
-
-const INITIAL_ADMIN_LLM_STATE: AdminLlmState = {
-  providers: [],
-  configs: [],
-  costLog: [],
-  customModelSelected: false,
-  error: '',
-  message: '',
-  saving: false,
-  testing: false,
-  form: INITIAL_LLM_FORM,
-};
-
-function alignFormToProviders(
-  current: LlmConfigCreatePayload,
-  providers: LlmProviderCatalogItem[],
-): LlmConfigCreatePayload {
-  if (providers.length === 0) {
-    return current;
-  }
-  const fallbackProvider = providers[0];
-  const matchingProvider = providers.find((provider) => provider.provider === current.provider);
-  if (matchingProvider) {
-    if (current.model.trim()) {
-      return current;
-    }
-    return {
-      ...current,
-      model: matchingProvider.recommended_models[0] ?? current.model,
-    };
-  }
-  return {
-    ...current,
-    provider: fallbackProvider?.provider ?? current.provider,
-    model: fallbackProvider?.recommended_models[0] ?? current.model,
-  };
-}
-
-function adminLlmReducer(state: AdminLlmState, action: AdminLlmAction): AdminLlmState {
-  switch (action.type) {
-    case 'initialLoaded':
-      return {
-        ...state,
-        providers: action.providers,
-        configs: action.configs,
-        costLog: action.costLog,
-        customModelSelected: false,
-        form: alignFormToProviders(state.form, action.providers),
-      };
-    case 'runtimeLoaded':
-      return { ...state, configs: action.configs, costLog: action.costLog };
-    case 'patchForm':
-      return { ...state, form: { ...state.form, ...action.patch } };
-    case 'setCustomModelSelected':
-      return { ...state, customModelSelected: action.selected };
-    case 'startSave':
-      return { ...state, saving: true, error: '', message: '' };
-    case 'saveSucceeded':
-      return { ...state, message: 'LLM config saved.', form: { ...state.form, api_key: '' } };
-    case 'finishSave':
-      return { ...state, saving: false };
-    case 'startTest':
-      return { ...state, testing: true, error: '', message: '' };
-    case 'testSucceeded':
-      return { ...state, message: action.message };
-    case 'finishTest':
-      return { ...state, testing: false };
-    case 'deleteStarted':
-      return { ...state, error: '', message: '' };
-    case 'deleteSucceeded':
-      return { ...state, message: 'LLM config removed.' };
-    case 'failed':
-      return { ...state, error: action.message };
-  }
-}
+import type { LlmConfigRecord, LlmCostLogRecord } from '../../../lib/api/types';
+import { LlmConfigFormCard } from './llm-config-form';
+import { useAdminLlm } from './use-admin-llm';
 
 // skipcq: JS-0067
 export default function AdminLlmPage() {
-  const [state, dispatch] = useReducer(adminLlmReducer, INITIAL_ADMIN_LLM_STATE);
   const {
     providers,
     configs,
     costLog,
+    form,
+    patchForm,
     customModelSelected,
+    setCustomModelSelected,
     error,
     message,
+    handleSave,
+    handleTest,
+    handleDelete,
     saving,
     testing,
-    form,
-  } = state;
+  } = useAdminLlm();
   // Client-only "now" so today/yesterday labels don't differ between server and client render.
   const [nowMs, setNowMs] = useState<number | null>(null);
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setNowMs(Date.now()), 0);
     return () => window.clearTimeout(timeoutId);
   }, []);
-  async function refreshRuntimeState() {
-    try {
-      const [nextConfigs, nextCostLog] = await Promise.all([
-        adminApi.listLlmConfigs({ include_unsupported: true }),
-        adminApi.listLlmCostLog(),
-      ]);
-      startTransition(() => {
-        dispatch({ type: 'runtimeLoaded', configs: nextConfigs, costLog: nextCostLog });
-      });
-    } catch (nextError) {
-      dispatch({
-        type: 'failed',
-        message: nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.',
-      });
-    }
-  }
-
-  async function handleSave() {
-    dispatch({ type: 'startSave' });
-    try {
-      await adminApi.createLlmConfig(form);
-      dispatch({ type: 'saveSucceeded' });
-      await refreshRuntimeState();
-    } catch (nextError) {
-      dispatch({
-        type: 'failed',
-        message: nextError instanceof Error ? nextError.message : 'Unable to save LLM config.',
-      });
-    } finally {
-      dispatch({ type: 'finishSave' });
-    }
-  }
-
-  async function handleTest() {
-    dispatch({ type: 'startTest' });
-    try {
-      const response = await adminApi.testLlmConnection({
-        provider: form.provider,
-        model: form.model,
-        api_key: form.api_key,
-      });
-      dispatch({ type: 'testSucceeded', message: response.message });
-    } catch (nextError) {
-      dispatch({
-        type: 'failed',
-        message: nextError instanceof Error ? nextError.message : 'Connection test failed.',
-      });
-    } finally {
-      dispatch({ type: 'finishTest' });
-    }
-  }
-
-  async function handleDelete(configId: number) {
-    dispatch({ type: 'deleteStarted' });
-    try {
-      await adminApi.deleteLlmConfig(configId);
-      dispatch({ type: 'deleteSucceeded' });
-      await refreshRuntimeState();
-    } catch (nextError) {
-      dispatch({
-        type: 'failed',
-        message: nextError instanceof Error ? nextError.message : 'Unable to delete LLM config.',
-      });
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      try {
-        const [nextProviders, nextConfigs, nextCostLog] = await Promise.all([
-          adminApi.listLlmProviders(),
-          adminApi.listLlmConfigs({ include_unsupported: true }),
-          adminApi.listLlmCostLog(),
-        ]);
-        if (cancelled) return;
-        startTransition(() => {
-          dispatch({
-            type: 'initialLoaded',
-            providers: nextProviders,
-            configs: nextConfigs,
-            costLog: nextCostLog,
-          });
-        });
-      } catch (nextError) {
-        if (cancelled) return;
-        dispatch({
-          type: 'failed',
-          message: nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.',
-        });
-      }
-    }
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const recommendedModels =
-    providers.find((provider) => provider.provider === form.provider)?.recommended_models ?? [];
-  const modelCatalogLoaded = recommendedModels.length > 0;
-  const formModel = form.model.trim();
-  const modelInCatalog = recommendedModels.includes(formModel);
-  const modelIsCustom =
-    customModelSelected || (modelCatalogLoaded && formModel !== '' && !modelInCatalog);
-  const modelDropdownValue = modelIsCustom ? CUSTOM_MODEL_OPTION : form.model;
-  const modelOptions = [
-    ...recommendedModels.map((model) => ({
-      value: model,
-      label: model,
-    })),
-    ...(modelCatalogLoaded || formModel === '' || modelInCatalog
-      ? []
-      : [{ value: formModel, label: formModel }]),
-    { value: CUSTOM_MODEL_OPTION, label: 'Custom...' },
-  ];
-  const modelSuggestionsId = 'llm-model-suggestions';
 
   return (
     <div className="page-stack">
@@ -301,21 +55,18 @@ export default function AdminLlmPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         {/* ── Left column: create form + active configs */}
         <div className="page-stack">
-          <CreateConfigCard
+          <LlmConfigFormCard
             form={form}
             providers={providers}
-            modelDropdownValue={modelDropdownValue}
-            modelOptions={modelOptions}
-            modelIsCustom={modelIsCustom}
-            modelSuggestionsId={modelSuggestionsId}
-            recommendedModels={recommendedModels}
+            customModelSelected={customModelSelected}
             testing={testing}
             saving={saving}
             message={message}
             error={error}
-            dispatch={dispatch}
-            onTest={() => void handleTest()}
-            onSave={() => void handleSave()}
+            onPatchForm={patchForm}
+            onCustomModelSelected={setCustomModelSelected}
+            onTest={handleTest}
+            onSave={handleSave}
           />
 
           <ActiveConfigsCard configs={configs} onDelete={handleDelete} />
@@ -325,151 +76,6 @@ export default function AdminLlmPage() {
         <CostLogCard costLog={costLog} nowMs={nowMs} />
       </div>
     </div>
-  );
-}
-
-interface CreateConfigCardProps {
-  form: LlmConfigCreatePayload;
-  providers: LlmProviderCatalogItem[];
-  modelDropdownValue: string;
-  modelOptions: { value: string; label: string }[];
-  modelIsCustom: boolean;
-  modelSuggestionsId: string;
-  recommendedModels: string[];
-  testing: boolean;
-  saving: boolean;
-  message: string;
-  error: string;
-  dispatch: React.Dispatch<AdminLlmAction>;
-  onTest: () => void;
-  onSave: () => void;
-}
-
-function CreateConfigCard({
-  form,
-  providers,
-  modelDropdownValue,
-  modelOptions,
-  modelIsCustom,
-  modelSuggestionsId,
-  recommendedModels,
-  testing,
-  saving,
-  message,
-  error,
-  dispatch,
-  onTest,
-  onSave,
-}: Readonly<CreateConfigCardProps>) {
-  return (
-    <SectionCard
-      title="Create Config"
-      description="Activate one provider/model per task. New active configs automatically replace the previous active config for the same task."
-      className="space-y-5"
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Provider">
-          <Dropdown<string>
-            ariaLabel="Provider"
-            value={form.provider}
-            onChange={(provider) => {
-              const nextModel =
-                providers.find((row) => row.provider === provider)?.recommended_models?.[0] ?? '';
-              dispatch({ type: 'setCustomModelSelected', selected: false });
-              dispatch({
-                type: 'patchForm',
-                patch: {
-                  provider,
-                  model: nextModel || form.model,
-                },
-              });
-            }}
-            options={providers.map((provider) => ({
-              value: provider.provider,
-              label: provider.label,
-            }))}
-          />
-        </Field>
-
-        <Field label="Task">
-          <Dropdown<string>
-            ariaLabel="Task"
-            value={form.task_type}
-            onChange={(task_type) => dispatch({ type: 'patchForm', patch: { task_type } })}
-            options={TASK_TYPES.map((taskType) => ({ value: taskType, label: taskType }))}
-          />
-        </Field>
-
-        <Field label="Model" className="md:col-span-2">
-          <div className="grid gap-2">
-            <Dropdown<string>
-              ariaLabel="Model"
-              value={modelDropdownValue}
-              onChange={(model) => {
-                if (model === CUSTOM_MODEL_OPTION) {
-                  dispatch({ type: 'setCustomModelSelected', selected: true });
-                  return;
-                }
-                dispatch({ type: 'setCustomModelSelected', selected: false });
-                dispatch({ type: 'patchForm', patch: { model } });
-              }}
-              options={modelOptions}
-            />
-            {modelIsCustom ? (
-              <>
-                <Input
-                  value={form.model}
-                  list={modelSuggestionsId}
-                  onChange={(event) =>
-                    dispatch({ type: 'patchForm', patch: { model: event.target.value } })
-                  }
-                  placeholder="Enter custom model id"
-                />
-                <datalist id={modelSuggestionsId}>
-                  {recommendedModels.map((model) => (
-                    <option key={model} value={model} label={model}>
-                      {model}
-                    </option>
-                  ))}
-                </datalist>
-              </>
-            ) : null}
-          </div>
-        </Field>
-
-        <Field label="API Key" className="md:col-span-2">
-          <Input
-            type="password"
-            value={form.api_key ?? ''}
-            onChange={(event) =>
-              dispatch({ type: 'patchForm', patch: { api_key: event.target.value } })
-            }
-            placeholder="Leave blank to rely on environment variables."
-          />
-        </Field>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="neutral" onClick={onTest} disabled={testing}>
-          <PlugZap className="size-3.5" />
-          {testing ? 'Testing…' : 'Test Connection'}
-        </Button>
-        <Button
-          type="button"
-          variant="action"
-          onClick={onSave}
-          disabled={saving || !form.model.trim()}
-        >
-          <Plus className="size-3.5" />
-          {saving ? 'Saving…' : 'Save Config'}
-        </Button>
-      </div>
-
-      <div className="min-h-[52px]">
-        {message ? <InlineAlert message={message} tone="neutral" /> : null}
-        {error ? <InlineAlert message={error} tone="danger" /> : null}
-      </div>
-    </SectionCard>
   );
 }
 
