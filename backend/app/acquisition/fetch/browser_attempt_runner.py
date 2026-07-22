@@ -15,13 +15,15 @@ from app.acquisition.fetch import (
     attempt_host_policy,
     attempt_plan,
 )
-from app.acquisition.fetch.attempt_execution import AttemptOutcomeState
-from app.acquisition.fetch.attempt_plan import AttemptPlanState
 from app.acquisition.fetch.browser_policy import (
     attach_exception_browser_diagnostics,
     browser_escalation_lane,
 )
-from app.acquisition.fetch.types import FetchRuntimeContext
+from app.acquisition.fetch.types import (
+    AttemptOutcomeState,
+    AttemptPlanState,
+    FetchRuntimeContext,
+)
 from app.acquisition.host_protection_memory import (
     HostProtectionPolicy,
 )

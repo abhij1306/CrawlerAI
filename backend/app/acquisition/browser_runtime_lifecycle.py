@@ -20,27 +20,14 @@ from app.acquisition.browser_background_tasks import await_without_cancelling
 from app.acquisition.browser_diagnostics import (
     REAL_CHROME_BROWSER_ENGINE as _REAL_CHROME_BROWSER_ENGINE,
     launch_headless_for_engine as _launch_headless_for_engine,
+    resolve_browser_pool as _browser_pool,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 if TYPE_CHECKING:
-    from types import ModuleType
-
     from app.acquisition.browser_pool import SharedBrowserRuntime
 
 logger = logging.getLogger(__name__)
-
-
-def _browser_pool() -> ModuleType:
-    """Resolve ``browser_pool`` lazily at call time.
-
-    Attributes are looked up on the live module object so monkeypatch-based
-    tests keep working, while avoiding a module-level import cycle:
-    ``browser_pool`` imports this module at module level.
-    """
-    from app.acquisition import browser_pool
-
-    return browser_pool
 
 
 def should_recycle_browser(runtime: SharedBrowserRuntime) -> bool:

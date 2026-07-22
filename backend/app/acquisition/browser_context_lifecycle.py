@@ -19,27 +19,15 @@ from typing import TYPE_CHECKING, Any, cast
 from app.acquisition import browser_runtime_lifecycle
 from app.acquisition.browser_diagnostics import (
     browser_failure_kind as _browser_failure_kind,
+    resolve_browser_pool as _browser_pool,
 )
 
 if TYPE_CHECKING:
     from patchright.async_api import BrowserContext
-    from types import ModuleType
 
     from app.acquisition.browser_pool import SharedBrowserRuntime
 
 logger = logging.getLogger(__name__)
-
-
-def _browser_pool() -> ModuleType:
-    """Resolve ``browser_pool`` lazily at call time.
-
-    Attributes are looked up on the live module object so monkeypatch-based
-    tests keep working, while avoiding a module-level import cycle:
-    ``browser_pool`` imports this module at module level.
-    """
-    from app.acquisition import browser_pool
-
-    return browser_pool
 
 
 async def open_context_page(
