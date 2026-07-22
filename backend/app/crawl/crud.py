@@ -31,6 +31,7 @@ from app.connectors.llm.config_service import snapshot_active_configs
 from app.persistence.extraction_memory import create_release_snapshot
 from app.core.records.normalizers import normalize_value
 from app.core.url_safety import ensure_public_crawl_targets
+from app.schemas.crawl import enforce_run_url_limit
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,6 +73,12 @@ async def create_crawl_run(
     if run_type == "batch" and urls:
         settings = settings_view.with_updates(urls=urls).as_dict()
         settings_view = CrawlRunSettings.from_value(settings)
+    final_run_urls = settings_view.urls()
+    if final_run_urls:
+        # Enforce the run URL cap on the FINAL settings payload too: the
+        # CrawlCreate schema validator only sees the top-level urls field, so
+        # settings.urls was a cap-bypass path for oversized batches.
+        enforce_run_url_limit(list(final_run_urls))
     await ensure_public_crawl_targets(collect_target_urls(payload, settings_view))
     validate_extraction_contract(settings_view.extraction_contract())
     domain_requested_fields = await load_domain_requested_fields(

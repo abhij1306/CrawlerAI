@@ -39,6 +39,36 @@ def test_enforce_run_url_limit_message_includes_configured_cap(monkeypatch) -> N
         enforce_run_url_limit(["https://example.com"] * 8)
 
 
+@pytest.mark.component
+async def test_create_crawl_run_enforces_cap_on_settings_payload_urls(
+    db_session, test_user, monkeypatch
+) -> None:
+    """settings.urls must not bypass the run URL cap.
+
+    The CrawlCreate schema validator only sees the top-level urls field, so a
+    batch payload carrying urls inside settings previously skipped the cap.
+    """
+    from app.crawl.crud import create_crawl_run
+
+    monkeypatch.setattr(settings, "max_run_urls", 2)
+    with pytest.raises(ValueError, match="at most 2"):
+        await create_crawl_run(
+            db_session,
+            test_user.id,
+            {
+                "run_type": "batch",
+                "surface": "ecommerce_detail",
+                "settings": {
+                    "urls": [
+                        "https://example.com/a",
+                        "https://example.com/b",
+                        "https://example.com/c",
+                    ]
+                },
+            },
+        )
+
+
 @pytest.mark.unit
 def test_max_records_is_bounded_by_configured_maximum(monkeypatch) -> None:
     monkeypatch.setattr(settings, "max_run_records", 500)
