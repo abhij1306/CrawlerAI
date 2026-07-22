@@ -105,9 +105,6 @@ def configured_adapter_names() -> tuple[str, ...]:
     return tuple(ordered_names)
 
 
-
-
-
 def platform_config_for_family(
     family: str | None,
 ) -> PlatformConfig | None:

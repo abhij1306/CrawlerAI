@@ -5,7 +5,7 @@ import {
   type AiVisibilityProviderStatus,
   type AiVisibilityRun,
 } from '../../lib/api/ai-visibility';
-import { aiVisibilityStatusLabel, aiVisibilityStatusTone } from './ai-visibility-status';
+import { dashboardStatusLabel, statusTone } from '../../lib/ui/status';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -74,9 +74,7 @@ export function RunReportSection({
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="Status">
-            <Badge tone={aiVisibilityStatusTone(run.status)}>
-              {aiVisibilityStatusLabel(run.status)}
-            </Badge>
+            <Badge tone={statusTone(run.status)}>{dashboardStatusLabel(run.status)}</Badge>
           </Stat>
           <Stat label="Progress">
             <span className="type-metric text-foreground">
@@ -160,8 +158,8 @@ export function RunReportSection({
                   <TableCell>{exec.prompt_text_snapshot}</TableCell>
                   <TableCell className="text-center">{exec.repetition}</TableCell>
                   <TableCell className="text-center">
-                    <Badge tone={aiVisibilityStatusTone(exec.status)} flat>
-                      {aiVisibilityStatusLabel(exec.status)}
+                    <Badge tone={statusTone(exec.status)} flat>
+                      {dashboardStatusLabel(exec.status)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-center">

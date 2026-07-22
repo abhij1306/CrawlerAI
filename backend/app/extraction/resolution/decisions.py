@@ -28,7 +28,6 @@ from app.extraction.resolution.lineage import _aggregate_fact
 from app.extraction.resolution.ranking import non_positive_money, rank
 
 
-
 def _asset_publication_facts(
     asset_decisions: tuple[AssetDecision, ...],
     decisions: tuple[Decision, ...],

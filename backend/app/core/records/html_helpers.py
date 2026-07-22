@@ -183,6 +183,3 @@ def bounded_json_objects(
                 (f"{path}/{index}", child, depth + 1)
                 for index, child in reversed(list(enumerate(current[:max_list_items])))
             )
-
-
-

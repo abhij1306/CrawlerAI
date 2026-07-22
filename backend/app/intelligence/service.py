@@ -9,9 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.celery_app import CELERY_UNREADY_STATES, celery_task_state
+from app.core.celery_app import (
+    celery_task_id_of,
+    celery_task_is_gone,
+    celery_task_state,
+    enqueue_celery_job,
+    mark_celery_job_failed,
+    start_in_process_job,
+)
 from app.core.config import settings
-from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.core.database import SessionLocal
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
@@ -188,9 +194,6 @@ async def create_product_intelligence_job(
     return job
 
 
-_BACKGROUND_JOB_TASKS: set[asyncio.Task[None]] = set()
-
-
 async def dispatch_product_intelligence_job(
     session: AsyncSession, job: ProductIntelligenceJob
 ) -> None:
@@ -204,70 +207,15 @@ async def dispatch_product_intelligence_job(
     if settings.celery_dispatch_enabled:
         from app.tasks import product_intelligence_run_job_task
 
-        task_id = f"product-intelligence-job-{int(job.id)}-{uuid4().hex}"
-        job.summary = {**dict(job.summary or {}), CELERY_TASK_ID_KEY: task_id}
-        await session.commit()
-        try:
-            product_intelligence_run_job_task.apply_async(
-                args=[int(job.id)], task_id=task_id
-            )
-        except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception(
-                "Celery enqueue failed for Product Intelligence job %s; "
-                "falling back to in-process execution",
-                job.id,
-            )
-            job.summary = {
-                key: value
-                for key, value in dict(job.summary or {}).items()
-                if key != CELERY_TASK_ID_KEY
-            }
-            await session.commit()
-        else:
+        if await enqueue_celery_job(
+            session,
+            job,
+            task=product_intelligence_run_job_task,
+            task_id=f"product-intelligence-job-{int(job.id)}-{uuid4().hex}",
+            label="Product Intelligence",
+        ):
             return
-    task = asyncio.create_task(run_product_intelligence_job(int(job.id)))
-    _BACKGROUND_JOB_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_JOB_TASKS.discard)
-
-
-def _job_task_is_gone(
-    job: ProductIntelligenceJob,
-    *,
-    exclude_task_id: str | None,
-    stale: bool,
-) -> bool:
-    """Return True when a running job has no live Celery task behind it."""
-    task_id = str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "")
-    if not task_id:
-        # Legacy BackgroundTasks row or in-process fallback: no task to check,
-        # so only a row stale beyond the orphan window is safe to recover.
-        return stale
-    if exclude_task_id is not None and task_id == exclude_task_id:
-        return False
-    state = celery_task_state(task_id)
-    if state is None:
-        # Result backend unavailable: stay conservative, never fail live work.
-        return False
-    if state not in CELERY_UNREADY_STATES:
-        # Task finished (or was revoked) but the job was never finalized.
-        return True
-    if state == "PENDING":
-        # PENDING also covers lost/expired task records, so require the row to
-        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
-        return stale
-    return False
-
-
-def _mark_job_failed(
-    job: ProductIntelligenceJob, *, now: datetime, error: str
-) -> None:
-    job.status = PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED
-    job.completed_at = now
-    job.summary = {
-        **dict(job.summary or {}),
-        "error": error,
-        "recovered_at": now.isoformat(),
-    }
+    start_in_process_job(run_product_intelligence_job(int(job.id)))
 
 
 async def recover_orphaned_product_intelligence_jobs(
@@ -300,10 +248,16 @@ async def recover_orphaned_product_intelligence_jobs(
     for job in jobs:
         updated_at = job.updated_at or job.created_at or now
         stale = updated_at <= stale_before
-        if not _job_task_is_gone(job, exclude_task_id=exclude_task_id, stale=stale):
+        if not celery_task_is_gone(
+            job.summary,
+            exclude_task_id=exclude_task_id,
+            stale=stale,
+            task_state=celery_task_state,
+        ):
             continue
-        _mark_job_failed(
+        mark_celery_job_failed(
             job,
+            failed_status=PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
             now=now,
             error="OrphanedJobRecovery: no live Celery task for running job",
         )
@@ -331,11 +285,10 @@ async def run_product_intelligence_job(
             # redelivered an interrupted execution (acks-late worker loss).
             # Discovery is not resumable, so fail cleanly instead of
             # duplicating candidates/crawls or leaving the row stuck.
-            if task_id is not None and (
-                str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "") == task_id
-            ):
-                _mark_job_failed(
+            if task_id is not None and celery_task_id_of(job.summary) == task_id:
+                mark_celery_job_failed(
                     job,
+                    failed_status=PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
                     now=datetime.now(UTC),
                     error="WorkerInterrupted: job interrupted by worker loss",
                 )
@@ -827,7 +780,7 @@ async def _poll_candidates_and_score(
     await session.commit()
 
 
-async def _poll_candidate_and_score(
+async def poll_candidate_and_score(
     session: AsyncSession,
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
@@ -854,5 +807,4 @@ async def _score_completed_candidates(
 
 
 backfill_candidate_brand = _backfill_candidate_brand
-poll_candidate_and_score = _poll_candidate_and_score
 resolve_source_snapshot = _resolve_source_snapshot

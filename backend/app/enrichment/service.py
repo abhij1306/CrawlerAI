@@ -1,5 +1,4 @@
 from __future__ import annotations
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -8,9 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.celery_app import CELERY_UNREADY_STATES, celery_task_state
+from app.core.celery_app import (
+    celery_task_id_of,
+    celery_task_is_gone,
+    celery_task_state,
+    enqueue_celery_job,
+    mark_celery_job_failed,
+    start_in_process_job,
+)
 from app.core.config import settings
-from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.core.database import SessionLocal
 from app.core.shared.coerce_primitives import (
     bounded_int,
@@ -143,9 +148,6 @@ async def create_data_enrichment_job(
     return job
 
 
-_BACKGROUND_JOB_TASKS: set[asyncio.Task[None]] = set()
-
-
 async def dispatch_data_enrichment_job(
     session: AsyncSession, job: DataEnrichmentJob
 ) -> None:
@@ -159,56 +161,15 @@ async def dispatch_data_enrichment_job(
     if settings.celery_dispatch_enabled:
         from app.tasks import data_enrichment_run_job_task
 
-        task_id = f"data-enrichment-job-{int(job.id)}-{uuid4().hex}"
-        job.summary = {**dict(job.summary or {}), CELERY_TASK_ID_KEY: task_id}
-        await session.commit()
-        try:
-            data_enrichment_run_job_task.apply_async(args=[int(job.id)], task_id=task_id)
-        except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception(
-                "Celery enqueue failed for Data Enrichment job %s; "
-                "falling back to in-process execution",
-                job.id,
-            )
-            job.summary = {
-                key: value
-                for key, value in dict(job.summary or {}).items()
-                if key != CELERY_TASK_ID_KEY
-            }
-            await session.commit()
-        else:
+        if await enqueue_celery_job(
+            session,
+            job,
+            task=data_enrichment_run_job_task,
+            task_id=f"data-enrichment-job-{int(job.id)}-{uuid4().hex}",
+            label="Data Enrichment",
+        ):
             return
-    task = asyncio.create_task(run_data_enrichment_job(int(job.id)))
-    _BACKGROUND_JOB_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_JOB_TASKS.discard)
-
-
-def _job_task_is_gone(
-    job: DataEnrichmentJob,
-    *,
-    exclude_task_id: str | None,
-    stale: bool,
-) -> bool:
-    """Return True when a running job has no live Celery task behind it."""
-    task_id = str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "")
-    if not task_id:
-        # Legacy BackgroundTasks row or in-process fallback: no task to check,
-        # so only a row stale beyond the orphan window is safe to recover.
-        return stale
-    if exclude_task_id is not None and task_id == exclude_task_id:
-        return False
-    state = celery_task_state(task_id)
-    if state is None:
-        # Result backend unavailable: stay conservative, never fail live work.
-        return False
-    if state not in CELERY_UNREADY_STATES:
-        # Task finished (or was revoked) but the job was never finalized.
-        return True
-    if state == "PENDING":
-        # PENDING also covers lost/expired task records, so require the row to
-        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
-        return stale
-    return False
+    start_in_process_job(run_data_enrichment_job(int(job.id)))
 
 
 async def _fail_stuck_job(
@@ -220,13 +181,12 @@ async def _fail_stuck_job(
     are reset from pending/running to failed so a later job can re-enrich them
     (job creation skips records in pending/running).
     """
-    job.status = DATA_ENRICHMENT_STATUS_FAILED
-    job.completed_at = now
-    job.summary = {
-        **dict(job.summary or {}),
-        "error": error,
-        "recovered_at": now.isoformat(),
-    }
+    mark_celery_job_failed(
+        job,
+        failed_status=DATA_ENRICHMENT_STATUS_FAILED,
+        now=now,
+        error=error,
+    )
     products = list(
         (
             await session.scalars(
@@ -296,7 +256,12 @@ async def recover_orphaned_data_enrichment_jobs(
     for job in jobs:
         updated_at = job.updated_at or job.created_at or now
         stale = updated_at <= stale_before
-        if not _job_task_is_gone(job, exclude_task_id=exclude_task_id, stale=stale):
+        if not celery_task_is_gone(
+            job.summary,
+            exclude_task_id=exclude_task_id,
+            stale=stale,
+            task_state=celery_task_state,
+        ):
             continue
         await _fail_stuck_job(
             session,
@@ -323,9 +288,7 @@ async def run_data_enrichment_job(job_id: int, *, task_id: str | None = None) ->
             # A running job whose recorded task id matches ours means Celery
             # redelivered an interrupted execution (acks-late worker loss):
             # fail cleanly instead of leaving the row stuck.
-            if task_id is not None and (
-                str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "") == task_id
-            ):
+            if task_id is not None and celery_task_id_of(job.summary) == task_id:
                 await _fail_stuck_job(
                     session,
                     job,

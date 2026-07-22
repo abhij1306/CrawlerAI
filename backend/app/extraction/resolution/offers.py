@@ -14,7 +14,6 @@ from app.extraction.resolution.decisions import _invalidity_reason, _resolve_sca
 from app.extraction.resolution.ranking import rank
 
 
-
 def _offer_rank(offer: OfferEntity) -> tuple[int, int, int, str]:
     facts = dict(offer.fact_evidence or {})
     commercial = (

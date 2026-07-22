@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Callable, Coroutine, Mapping
+from datetime import datetime
 from importlib import import_module
 from types import SimpleNamespace
+from typing import Any, Protocol
 
 try:
     from celery import Celery  # type: ignore[import-untyped]
@@ -28,8 +32,13 @@ except (
             return _decorate
 
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
-from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.config.runtime_settings import (
+    CELERY_TASK_ID_KEY,
+    crawler_runtime_settings,
+)
 from app.core.logfire_integration import instrument_celery
 
 logger = logging.getLogger(__name__)
@@ -91,6 +100,114 @@ def celery_task_state(task_id: str) -> str | None:
     except Exception:  # pylint: disable=broad-exception-caught
         logger.debug("Celery state lookup failed for task %s", task_id, exc_info=True)
         return None
+
+
+class CeleryJobRow(Protocol):
+    """Structural row shared by the Celery-dispatched job models."""
+
+    id: object
+    status: str
+    completed_at: datetime | None
+    summary: dict[str, Any] | None
+
+
+def celery_task_id_of(summary: object) -> str:
+    """Celery task id recorded on a job summary dict ("" when absent)."""
+    if not isinstance(summary, Mapping):
+        return ""
+    return str(summary.get(CELERY_TASK_ID_KEY) or "")
+
+
+def celery_task_is_gone(
+    summary: object,
+    *,
+    exclude_task_id: str | None,
+    stale: bool,
+    task_state: Callable[[str], str | None] = celery_task_state,
+) -> bool:
+    """True when a running job has no live Celery task behind it."""
+    task_id = celery_task_id_of(summary)
+    if not task_id:
+        # Legacy BackgroundTasks row or in-process fallback: no task to check,
+        # so only a row stale beyond the orphan window is safe to recover.
+        return stale
+    if exclude_task_id is not None and task_id == exclude_task_id:
+        return False
+    state = task_state(task_id)
+    if state is None:
+        # Result backend unavailable: stay conservative, never fail live work.
+        return False
+    if state not in CELERY_UNREADY_STATES:
+        # Task finished (or was revoked) but the job was never finalized.
+        return True
+    if state == "PENDING":
+        # PENDING also covers lost/expired task records, so require the row to
+        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
+        return stale
+    return False
+
+
+async def enqueue_celery_job(
+    session: AsyncSession,
+    job: CeleryJobRow,
+    *,
+    task: Any,
+    task_id: str,
+    label: str,
+) -> bool:
+    """Record ``task_id`` on the job row and enqueue its Celery task.
+
+    True when the broker accepted the task. On enqueue failure the recorded id
+    is stripped again and False returned so the caller can fall back to
+    in-process execution.
+    """
+    job.summary = {**dict(job.summary or {}), CELERY_TASK_ID_KEY: task_id}
+    await session.commit()
+    try:
+        task.apply_async(args=[int(job.id)], task_id=task_id)
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception(
+            "Celery enqueue failed for %s job %s; "
+            "falling back to in-process execution",
+            label,
+            job.id,
+        )
+        job.summary = {
+            key: value
+            for key, value in dict(job.summary or {}).items()
+            if key != CELERY_TASK_ID_KEY
+        }
+        await session.commit()
+        return False
+    return True
+
+
+_IN_PROCESS_JOB_TASKS: set[asyncio.Task[None]] = set()
+
+
+def start_in_process_job(coro: Coroutine[object, object, None]) -> None:
+    """Run a job coroutine as an in-process asyncio task (local-dev fallback).
+
+    The registry holds a strong reference until completion so the task is not
+    garbage-collected mid-run.
+    """
+    task = asyncio.create_task(coro)
+    _IN_PROCESS_JOB_TASKS.add(task)
+    task.add_done_callback(_IN_PROCESS_JOB_TASKS.discard)
+
+
+def mark_celery_job_failed(
+    job: CeleryJobRow, *, failed_status: str, now: datetime, error: str
+) -> None:
+    """Terminal failure stamp on a job row (status + error/recovered_at summary)."""
+    job.status = failed_status
+    job.completed_at = now
+    job.summary = {
+        **dict(job.summary or {}),
+        "error": error,
+        "recovered_at": now.isoformat(),
+    }
+
 
 # Celery worker lifecycle signals
 try:

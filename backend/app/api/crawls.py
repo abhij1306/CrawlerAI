@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections.abc import Callable
 from typing import Annotated, Any, cast
 
@@ -46,6 +45,7 @@ from app.crawl.log_stream import (
 )
 from app.crawl.service import kill_run, pause_run, resume_run
 from app.crawl.state import TERMINAL_STATUSES
+from app.core.config import settings
 from app.core.config.runtime_settings import crawler_runtime_settings
 from fastapi import (
     APIRouter,
@@ -68,12 +68,9 @@ logger = logging.getLogger("app.api.crawls")
 RUN_CONFLICT_DETAIL = "Run cannot be cancelled in its current state"
 ResponseSpec = dict[int | str, dict[str, Any]]
 
-# TODO: hoist into shared config (core/config) once cross-agent ownership settles.
 # Max accepted size for CSV run-upload payloads; read at import time so tests can
-# monkeypatch the module constant.
-CSV_UPLOAD_MAX_BYTES = int(
-    os.environ.get("CRAWLER_CSV_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))
-)
+# monkeypatch the module constant (value sourced from core config settings).
+CSV_UPLOAD_MAX_BYTES = settings.csv_upload_max_bytes
 
 RUN_NOT_FOUND_RESPONSE: ResponseSpec = {
     status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
