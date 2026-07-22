@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Protocol
 
+from app.acquisition.contracts import AttemptResult, AttemptSpec
 from app.acquisition.host_protection_memory import HostProtectionPolicy
+from app.acquisition.runtime import PageFetchResult
 
 FetchEventHandler = Callable[[str, str], Awaitable[None] | None]
 
@@ -65,3 +69,52 @@ class FetchPageCall:
     max_scrolls: int = 1
     max_records: int | None = None
     on_event: FetchEventHandler | None = None
+
+
+@dataclass(slots=True)
+class AttemptPlanState:
+    """Mutable per-run attempt plan owned by ``BrowserAttemptRunner``.
+
+    Lives in the shared types module so the attempt collaborator modules
+    (``attempt_plan``/``attempt_execution``/``attempt_host_policy``) can type
+    their ``runner`` parameter without importing the runner module back —
+    that back-edge created an import cycle.
+    """
+
+    plan_id: str = ""
+    plan_started_at: datetime | None = None
+    plan_deadline: datetime | None = None
+    attempt_specs: list[AttemptSpec] = field(default_factory=list)
+    attempt_results: list[AttemptResult] = field(default_factory=list)
+    retry_budget_exhausted: bool = False
+
+
+@dataclass(slots=True)
+class AttemptOutcomeState:
+    """Latest per-run attempt outcomes owned by ``BrowserAttemptRunner``."""
+
+    latest_page_result: PageFetchResult | None = None
+    last_blocked_result: PageFetchResult | None = None
+    last_browser_error: Exception | None = None
+
+
+class AttemptRunner(Protocol):
+    """Structural view of ``BrowserAttemptRunner`` used by its collaborators.
+
+    Keeps ``attempt_plan``/``attempt_execution``/``attempt_host_policy``
+    annotated without importing ``browser_attempt_runner`` (which imports
+    them) — inverting the edge into this shared types module. ``deps`` stays
+    ``Any``: ``BrowserAttemptDependencies`` is owned by the runner module and
+    typing it here would re-introduce the cycle.
+    """
+
+    context: FetchRuntimeContext
+    reason: str
+    requested_fields: list[str] | None
+    listing_recovery_mode: str | None
+    capture_screenshot: bool
+    host_policy: HostProtectionPolicy | None
+    active_host_policy: HostProtectionPolicy | None
+    plan: AttemptPlanState
+    outcome: AttemptOutcomeState
+    deps: Any
