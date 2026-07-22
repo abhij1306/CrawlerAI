@@ -26,8 +26,10 @@ OVERSIZED_MODULE_DEBT = {
     # Celery job runner (2.7); intelligence/service.py entered with the
     # concurrent candidate polling; extraction_memory grew with the
     # knowledge.py query-layer move (4.6).
+    # Audit-debt Stream B commit 5 (2026-07-22): browser_recovery.py left the
+    # ledger (723 -> 681 after the type_text_like_human smoke-symbol deletion,
+    # 3.14).
     "acquisition/browser_readiness.py": 702,
-    "acquisition/browser_recovery.py": 723,
     "acquisition/browser_result_builder.py": 744,
     "core/config/extraction_rules/_detail.py": 1026,
     "enrichment/service.py": 907,
@@ -219,11 +221,15 @@ PACKAGE_LOC_BUDGETS = {
     # Stream B commit 4 (same day): acquisition -1 (never-read
     # _max_payload_bytes attribute) and core -3 (dead alias + unread Settings
     # field) ratcheted down to measured (3.13).
+    # Stream B commit 5 (same day): acquisition -42 (type_text_like_human +
+    # typing-delay helper/settings), crawl -16 (orphaned dashboard reset
+    # wrappers + selector_rule_count), core -32 (selector summary service fn)
+    # ratcheted down to measured (3.14).
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_234,
-    "crawl": 9_367,
-    "core": 21_044,
+    "acquisition": 17_192,
+    "crawl": 9_351,
+    "core": 21_012,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -255,7 +261,10 @@ PACKAGE_LOC_BUDGETS = {
 # baseline/llm_repair modules + unread GROUNDED_REPAIR_* constants (3.7).
 # Stream B commit 4 (same day): -7 for the residual dead constant/alias/
 # settings purge (3.13).
-TOTAL_APP_LOC_BUDGET = 87_585
+# Stream B commit 5 (same day): -349 for the orphaned test-only routes,
+# route-orphaned export builders/streamers, dashboard reset wrappers, and the
+# smoke-script typing symbol (3.14).
+TOTAL_APP_LOC_BUDGET = 87_236
 
 
 def test_production_package_loc_budgets() -> None:

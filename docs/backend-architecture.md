@@ -54,7 +54,7 @@ Important route groups:
 
 - `api/crawls.py`: create runs, category discovery, CSV ingestion, logs, websocket updates, pause/resume/kill, commit fields, commit LLM suggestions
 - `api/crawl_domain.py`: domain recipe, domain run-profile, field feedback, and cookie-memory routes under `/api/crawls`
-- `api/records.py`: records list plus JSON/CSV/artifacts/discoverist exports and provenance
+- `api/records.py`: records list plus JSON/CSV/discoverist exports and provenance
 - `api/review.py`: review payload, artifact HTML, save review mapping
 - `api/selectors.py`: selector CRUD, cross-surface listing by domain, suggestion, test, preview HTML
 - `api/knowledge.py`: authenticated graph/site/entity/contract reads, operator source selection, admin rebuild, purge, and per-site delete
@@ -62,6 +62,11 @@ Important route groups:
 - `api/data_enrichment.py`: on-demand ecommerce detail enrichment jobs and enriched product row lookup
 - `api/product_intelligence.py`: product discovery, candidate crawl jobs, match scoring, and review
 - `api/public/*`: API-key authenticated extraction, domain info, capabilities, and envelopes
+
+Routes with no console UI by design (do not delete as "dead"):
+
+- `POST + GET /api/api-keys` (`api/api_keys.py`) — operator API, no console UI by design; the only key-creation surface backing the public `/api/v1` API
+- `GET /api/crawls/{run_id}/export/discoverist` (`api/records.py`) — documented external partner contract, no console caller by design
 
 Domain-recipe routes live under `api/crawl_domain.py`:
 

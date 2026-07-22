@@ -157,56 +157,6 @@ async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_selectors_api_summary_returns_per_surface_counts(
-    selector_api_client: AsyncClient,
-    db_session,
-) -> None:
-    await save_domain_memory(
-        db_session,
-        domain="example.com",
-        surface="ecommerce_detail",
-        selectors={
-            "rules": [
-                {"id": 1, "field_name": "price", "css_selector": ".detail-price"},
-                {"id": 2, "field_name": "title", "css_selector": "h1"},
-            ]
-        },
-    )
-    await save_domain_memory(
-        db_session,
-        domain="example.com",
-        surface="job_detail",
-        selectors={
-            "rules": [{"id": 3, "field_name": "brand", "css_selector": ".brand"}]
-        },
-    )
-    await db_session.commit()
-
-    summary_response = await selector_api_client.get("/api/selectors/summary")
-    filtered_response = await selector_api_client.get(
-        "/api/selectors/summary",
-        params={
-            "domain": "example.com",
-            "surface": "job_detail",
-            "limit": 1,
-            "offset": 0,
-        },
-    )
-
-    assert summary_response.status_code == 200
-    assert filtered_response.status_code == 200
-    assert filtered_response.json()[0]["surface"] == "job_detail"
-    assert {
-        (row["domain"], row["surface"], row["selector_count"])
-        for row in summary_response.json()
-    } == {
-        ("example.com", "ecommerce_detail", 2),
-        ("example.com", "job_detail", 1),
-    }
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
 async def test_selectors_api_error_handling(
     selector_api_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,

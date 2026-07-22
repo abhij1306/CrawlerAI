@@ -4,7 +4,6 @@ import csv
 import json
 from collections.abc import AsyncIterator, Callable
 from io import StringIO
-from tempfile import TemporaryFile
 from urllib.parse import urlparse
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
@@ -30,16 +29,11 @@ from app.persistence.export.schema import (
     clean_export_data as _clean_export_data,
     export_record_from_row,
 )
-from app.core.shared.field_coerce import (
-    object_dict as _object_dict,
-    object_list as _object_list,
-)
 from app.persistence.publish.quality_gate import (
     export_quality_headers,
     export_quality_report,
 )
 from app.persistence.record_artifacts import (
-    RecordArtifacts,
     load_canonical_record_views,
     load_record_artifacts,
 )
@@ -129,34 +123,6 @@ async def build_csv_export_response(
         filename=f"run-{run_id}.csv",
         media_type=CSV_MEDIA_TYPE,
         streamer=stream_export_csv,
-    )
-
-
-async def build_tables_csv_export_response(
-    session: AsyncSession,
-    *,
-    run_id: int,
-) -> StreamingResponse:
-    return await build_export_response(
-        session,
-        run_id=run_id,
-        filename=f"run-{run_id}-tables.csv",
-        media_type=CSV_MEDIA_TYPE,
-        streamer=stream_export_tables_csv,
-    )
-
-
-async def build_artifacts_json_export_response(
-    session: AsyncSession,
-    *,
-    run_id: int,
-) -> StreamingResponse:
-    return await build_export_response(
-        session,
-        run_id=run_id,
-        filename=f"run-{run_id}-artifacts.json",
-        media_type="application/json",
-        streamer=stream_export_artifacts_json,
     )
 
 
@@ -280,55 +246,6 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
         buffer.truncate(0)
 
 
-async def stream_export_tables_csv(session: AsyncSession, run_id: int):
-    fieldnames: set[str] = set()
-    with TemporaryFile(mode="w+", encoding="utf-8", newline="") as row_buffer:
-        async for record_view in _stream_export_record_views(session, run_id):
-            for table_row in artifact_table_rows(
-                record_view.record, artifacts=record_view.artifacts
-            ):
-                fieldnames.update(table_row.keys())
-                row_buffer.write(json.dumps(table_row, separators=(",", ":")) + "\n")
-        if not fieldnames:
-            return
-        ordered_fieldnames = [str(csv_safe_cell(name)) for name in sorted(fieldnames)]
-        buffer = StringIO()
-        writer = csv.DictWriter(
-            buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
-        )
-        writer.writeheader()
-        yield buffer.getvalue()
-        buffer.seek(0)
-        buffer.truncate(0)
-        row_buffer.seek(0)
-        for line in row_buffer:
-            table_row = json.loads(line)
-            writer.writerow(sanitize_csv_row(table_row))
-            yield buffer.getvalue()
-            buffer.seek(0)
-            buffer.truncate(0)
-
-
-async def stream_table_rows_csv(table_rows: list[dict]):
-    fieldnames: set[str] = set()
-    for row in table_rows:
-        fieldnames.update(row.keys())
-    ordered_fieldnames = [str(csv_safe_cell(name)) for name in sorted(fieldnames)]
-    buffer = StringIO()
-    writer = csv.DictWriter(
-        buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
-    )
-    writer.writeheader()
-    yield buffer.getvalue()
-    buffer.seek(0)
-    buffer.truncate(0)
-    for row in table_rows:
-        writer.writerow(sanitize_csv_row(row))
-        yield buffer.getvalue()
-        buffer.seek(0)
-        buffer.truncate(0)
-
-
 async def stream_export_discoverist(session: AsyncSession, run_id: int):
     fieldnames = tuple(
         str(field_name) for field_name in DISCOVERIST_SCHEMA if str(field_name).strip()
@@ -355,106 +272,8 @@ async def stream_export_discoverist(session: AsyncSession, run_id: int):
         buffer.truncate(0)
 
 
-async def stream_export_artifacts_json(session: AsyncSession, run_id: int):
-    yield "[\n"
-    first = True
-    async for record_view in _stream_export_record_views(session, run_id):
-        if not first:
-            yield ",\n"
-        yield json.dumps(
-            record_artifact_bundle(record_view.record, artifacts=record_view.artifacts),
-            indent=2,
-        )
-        first = False
-    yield "\n]"
-
-
 def clean_export_data(data: dict) -> dict:
     return _clean_export_data(data)
-
-
-def artifact_table_rows(
-    row: CrawlRecord,
-    *,
-    artifacts: RecordArtifacts,
-) -> list[dict]:
-    source_trace = dict(artifacts.source_trace)
-    manifest_trace = source_trace.get("manifest_trace")
-    manifest_trace_map = manifest_trace if isinstance(manifest_trace, dict) else {}
-    tables = manifest_trace_map.get("tables")
-    table_list = tables if isinstance(tables, list) else []
-    flattened: list[dict] = []
-    for table in table_list:
-        if not isinstance(table, dict):
-            continue
-        header_cells = table.get("headers")
-        headers = header_cells if isinstance(header_cells, list) else []
-        header_labels = [
-            str((cell.get("text") if isinstance(cell, dict) else "") or "").strip()
-            or f"column_{index + 1}"
-            for index, cell in enumerate(headers)
-        ]
-        table_rows = _object_list(table.get("rows"))
-        for row_index, table_row in enumerate(table_rows, start=1):
-            if not isinstance(table_row, dict):
-                continue
-            table_cells = table_row.get("cells")
-            cells = table_cells if isinstance(table_cells, list) else []
-            payload: dict[str, object] = {
-                "record_id": row.id,
-                "source_url": row.source_url,
-                "table_index": table.get("table_index"),
-                "table_caption": table.get("caption"),
-                "table_section_title": table.get("section_title"),
-                "table_row_index": table_row.get("row_index") or row_index,
-            }
-            for index, cell in enumerate(cells):
-                if not isinstance(cell, dict):
-                    continue
-                label = (
-                    header_labels[index]
-                    if index < len(header_labels)
-                    else f"column_{index + 1}"
-                )
-                payload[label] = cell.get("text")
-            flattened.append(
-                {k: v for k, v in payload.items() if v not in (None, "", [], {})}
-            )
-    return flattened
-
-
-def record_artifact_bundle(
-    row: CrawlRecord,
-    *,
-    artifacts: RecordArtifacts,
-) -> dict[str, object]:
-    raw_data = _record_export_source(artifacts)
-    source_trace = dict(artifacts.source_trace)
-    manifest_trace = _object_dict(source_trace.get("manifest_trace"))
-    cleaned = clean_export_data(raw_data)
-    json_ld_rows = _object_list(manifest_trace.get("json_ld"))
-    table_rows = _object_list(manifest_trace.get("tables"))
-    page_summary = {
-        "record_id": row.id,
-        "source_url": row.source_url,
-        "title": cleaned.get("title") or raw_data.get("title"),
-        "fallback_type": source_trace.get("type"),
-    }
-    evidence_refs = {
-        "json_ld_count": len(json_ld_rows),
-        "table_count": len(table_rows),
-    }
-    return {
-        "record_id": row.id,
-        "source_url": row.source_url,
-        "structured_record": cleaned or None,
-        "table_rows": artifact_table_rows(row, artifacts=artifacts) or None,
-        "page_summary": {
-            k: v for k, v in page_summary.items() if v not in (None, "", [], {})
-        }
-        or None,
-        "evidence_refs": evidence_refs,
-    }
 
 
 def export_headers(metadata: dict[str, int | bool]) -> dict[str, str]:
@@ -463,13 +282,6 @@ def export_headers(metadata: dict[str, int | bool]) -> dict[str, str]:
         EXPORT_TOTAL_HEADER: str(metadata["total"]),
         EXPORT_PARTIAL_HEADER: "true" if metadata["truncated"] else "false",
     }
-
-
-def _record_export_source(artifacts: RecordArtifacts) -> dict[str, object]:
-    raw = dict(artifacts.raw_data)
-    if raw:
-        return dict(raw)
-    return dict(artifacts.data)
 
 
 def _sanitize_export_data(data: dict[str, object]) -> dict[str, object]:

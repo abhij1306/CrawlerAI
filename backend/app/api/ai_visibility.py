@@ -300,22 +300,6 @@ async def ai_visibility_cancel_run(
     return AiVisibilityRunResponse.model_validate(run)
 
 
-@router.get("/runs/{run_id}/executions")
-async def ai_visibility_list_run_executions(
-    run_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-) -> list[AiVisibilityExecutionResponse]:
-    try:
-        run = await get_run(session, user=user, run_id=run_id)
-    except LookupError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
-    executions = await list_executions(session, run=run)
-    return [AiVisibilityExecutionResponse.model_validate(e) for e in executions]
-
-
 @router.get("/runs/{run_id}/export.csv")
 async def ai_visibility_export_csv(
     run_id: int,

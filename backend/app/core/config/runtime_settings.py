@@ -146,8 +146,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_behavior_pause_min_ms: int = 80
     browser_behavior_pause_jitter_ms: int = 220
     browser_behavior_realism_timeout_seconds: float = 3.0
-    browser_behavior_typing_min_delay_ms: int = 35
-    browser_behavior_typing_jitter_ms: int = 95
     surface_readiness_max_wait_ms: int | None = 6000
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
@@ -357,8 +355,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_behavior_scroll_max_px",
             "browser_behavior_pause_min_ms",
             "browser_behavior_pause_jitter_ms",
-            "browser_behavior_typing_min_delay_ms",
-            "browser_behavior_typing_jitter_ms",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
         if self.browser_behavior_scroll_max_px < self.browser_behavior_scroll_min_px:

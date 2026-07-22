@@ -24,11 +24,9 @@ from app.persistence.record_export_service import (
     MAX_RECORD_PAGE_SIZE,
     RECORD_PROVENANCE_NOT_FOUND_RESPONSE,
     RUN_NOT_FOUND_RESPONSE,
-    build_artifacts_json_export_response,
     build_csv_export_response,
     build_discoverist_export_response,
     build_json_export_response,
-    build_tables_csv_export_response,
     export_record_provenance,
 )
 from app.persistence.record_artifacts import load_canonical_record_views
@@ -164,35 +162,6 @@ async def export_csv(
 ) -> StreamingResponse:
     await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_csv_export_response(session, run_id=run_id)
-
-
-@router.get(
-    "/api/crawls/{run_id}/export/tables.csv",
-    responses=_stream_route_responses(
-        RUN_NOT_FOUND_RESPONSE, media_type=CSV_MEDIA_TYPE
-    ),
-    response_class=CsvStreamingResponse,
-)
-async def export_tables_csv(
-    run_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> StreamingResponse:
-    await _require_run_access(session, run_id=run_id, user=current_user)
-    return await build_tables_csv_export_response(session, run_id=run_id)
-
-
-@router.get(
-    "/api/crawls/{run_id}/export/artifacts.json",
-    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
-)
-async def export_artifacts_json(
-    run_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> StreamingResponse:
-    await _require_run_access(session, run_id=run_id, user=current_user)
-    return await build_artifacts_json_export_response(session, run_id=run_id)
 
 
 @router.get(

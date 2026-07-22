@@ -187,13 +187,6 @@ async def test_key_never_in_any_serialized_response(
     assert "GEMINI_API_KEY" not in run_body
     assert "x-goog-api-key" not in run_body
 
-    # Executions list
-    exec_response = await ai_visibility_client.get(
-        f"/api/ai-visibility/runs/{run.id}/executions"
-    )
-    exec_body = exec_response.content.decode()
-    assert "api_key" not in exec_body.lower()
-
     # Individual execution with snapshot
     if executions:
         detail_response = await ai_visibility_client.get(

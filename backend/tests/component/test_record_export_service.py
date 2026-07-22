@@ -7,11 +7,9 @@ from app.models.crawl_run import CrawlRecord
 from app.persistence import record_export_service
 from app.persistence.record_export_service import (
     build_json_export_response,
-    stream_export_artifacts_json,
     stream_export_csv,
     stream_export_discoverist,
     stream_export_json,
-    stream_table_rows_csv,
 )
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -186,18 +184,11 @@ async def test_export_streamers_preserve_order_across_paged_reads(
 
     exported_json = await _collect_chunks(stream_export_json(None, 7))
     exported_csv = await _collect_chunks(stream_export_csv(None, 7))
-    exported_artifacts = await _collect_chunks(stream_export_artifacts_json(None, 7))
 
     json_rows = json.loads(exported_json)
-    artifact_rows = json.loads(exported_artifacts)
 
     assert [row["title"] for row in json_rows] == ["A", "B", "C"]
     assert exported_csv.index("A") < exported_csv.index("B") < exported_csv.index("C")
-    assert [row["source_url"] for row in artifact_rows] == [
-        "https://example.com/a",
-        "https://example.com/b",
-        "https://example.com/c",
-    ]
     assert record_export_service.export_record_from_row(
         rows[0],
         data=dict(rows[0].data),
@@ -340,24 +331,3 @@ async def test_export_discoverist_csv_neutralizes_spreadsheet_formula_cells(
             assert not cell.startswith(("=", "+", "@", "\t", "\r"))
     assert "'@SUM(1+1)" in exported_csv
     assert "'-2+3+cmd" in exported_csv
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_stream_table_rows_csv_neutralizes_formula_cells() -> None:
-    exported_csv = await _collect_chunks(
-        stream_table_rows_csv(
-            [
-                {
-                    "=header": "value",
-                    "cell": "\t=cmd|'/c calc'!A1",
-                    "plain": 42,
-                }
-            ]
-        )
-    )
-
-    lines = exported_csv.strip().splitlines()
-    assert lines[0] == "'=header,cell,plain"
-    assert "'\t=cmd" in lines[1]
-    assert "42" in lines[1]

@@ -9,9 +9,7 @@ from app.schemas.crawl import CrawlRunResponse, DashboardResponse
 from app.crawl.dashboard_service import (
     build_dashboard,
     reset_application_data,
-    reset_crawl_data,
     reset_domain_memory,
-    reset_product_intelligence,
 )
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,16 +42,6 @@ async def dashboard_reset_data(
     return result
 
 
-@router.post("/reset-crawl-data")
-async def dashboard_reset_crawl_data(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
-) -> dict:
-    result = await reset_crawl_data(session)
-    await session.commit()
-    return result
-
-
 @router.post("/reset-domain-memory")
 async def dashboard_reset_domain_memory(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -64,11 +52,4 @@ async def dashboard_reset_domain_memory(
     return result
 
 
-@router.post("/reset-product-intelligence")
-async def dashboard_reset_product_intelligence(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
-) -> dict:
-    result = await reset_product_intelligence(session)
-    await session.commit()
-    return result
+

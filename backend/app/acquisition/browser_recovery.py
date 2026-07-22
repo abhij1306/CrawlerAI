@@ -647,40 +647,6 @@ async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:
     }
 
 
-async def type_text_like_human(
-    page: Any, selector: str, text: str
-) -> dict[str, object]:
-    target_selector = str(selector or "").strip()
-    target_text = str(text or "")
-    if not target_selector or not target_text:
-        return {"typed_chars": 0}
-    locator_factory = getattr(page, "locator", None)
-    keyboard = getattr(page, "keyboard", None)
-    if not callable(locator_factory) or keyboard is None:
-        return {"typed_chars": 0}
-    typed_chars = 0
-    try:
-        locator = locator_factory(target_selector)
-        click = getattr(locator, "click", None)
-        if callable(click):
-            await click(
-                timeout=int(crawler_runtime_settings.traversal_click_timeout_ms)
-            )
-        for character in target_text:
-            type_fn = getattr(keyboard, "type", None)
-            if not callable(type_fn):
-                break
-            await type_fn(character)
-            typed_chars += 1
-            await page.wait_for_timeout(_typing_delay_ms())
-    except Exception:
-        # Preserve the partial typed_chars count so callers can detect partial
-        # input and recover (e.g., clear the field or fall back to direct nav)
-        # instead of treating the form as untouched.
-        logger.debug("Humanized typing stopped early", exc_info=True)
-    return {"typed_chars": typed_chars}
-
-
 async def _emit_scroll_physics(page: Any) -> int:
     mouse = getattr(page, "mouse", None)
     wheel = getattr(mouse, "wheel", None)
@@ -716,18 +682,6 @@ def _behavior_pause_ms() -> int:
     if jitter_ms:
         pause_ms += secrets.randbelow(jitter_ms)
     return pause_ms
-
-
-def _typing_delay_ms() -> int:
-    delay_ms = max(
-        0, int(crawler_runtime_settings.browser_behavior_typing_min_delay_ms or 0)
-    )
-    jitter_ms = max(
-        0, int(crawler_runtime_settings.browser_behavior_typing_jitter_ms or 0)
-    )
-    if jitter_ms:
-        delay_ms += secrets.randbelow(jitter_ms)
-    return delay_ms
 
 
 def _clamp_mouse_coordinate(value: int, limit: int, padding: int) -> int:

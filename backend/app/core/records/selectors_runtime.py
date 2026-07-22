@@ -14,7 +14,6 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.domain_memory_service import (
     load_domain_memory,
     list_selector_memories,
-    selector_rule_count,
     selector_rules_from_memory,
 )
 from app.core.domain_utils import normalize_domain
@@ -134,35 +133,6 @@ def _selector_record_from_memory(
         "created_at": memory.created_at if memory is not None else None,
         "updated_at": memory.updated_at if memory is not None else None,
     }
-
-
-async def list_selector_domain_summaries(
-    session: AsyncSession,
-    *,
-    domain: str = "",
-    surface: str = "",
-    limit: int | None = None,
-    offset: int = 0,
-) -> list[dict[str, object]]:
-    normalized_domain = str(domain or "").strip().lower()
-    normalized_surface = str(surface or "").strip().lower()
-    memories = await list_selector_memories(session)
-    memories = [
-        memory
-        for memory in memories
-        if (not normalized_domain or memory.domain == normalized_domain)
-        and (not normalized_surface or memory.surface == normalized_surface)
-    ]
-    end = None if limit is None else offset + int(limit)
-    return [
-        {
-            "domain": memory.domain,
-            "surface": memory.surface,
-            "selector_count": selector_rule_count(memory.selectors),
-            "updated_at": memory.updated_at,
-        }
-        for memory in memories[offset:end]
-    ]
 
 
 async def suggest_selectors(
