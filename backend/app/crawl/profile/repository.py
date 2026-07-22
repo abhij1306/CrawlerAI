@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import inspect, select
 from sqlalchemy.dialects.postgresql import insert
@@ -11,15 +12,35 @@ from app.core.domain_utils import normalize_domain
 
 from .normalization import normalize_domain_run_profile
 
+# Per-URL DB budget: profile loads run up to 4x per URL and each used to pay a
+# ``has_table`` introspection query. Table existence is stable for the life of
+# a bound engine (migrations run at deploy time), so the result is memoized per
+# bind. Weak keys drop entries when a (test-scoped) engine is disposed.
+_DOMAIN_RUN_PROFILES_TABLE_CHECKS: WeakKeyDictionary = WeakKeyDictionary()
+
+
+def reset_domain_run_profiles_table_cache() -> None:
+    """Drop memoized ``has_table`` results (test isolation / post-migration)."""
+
+    _DOMAIN_RUN_PROFILES_TABLE_CHECKS.clear()
+
 
 async def _has_domain_run_profiles_table(session: AsyncSession) -> bool:
-    return bool(
+    bind = session.get_bind()
+    if bind is not None:
+        cached = _DOMAIN_RUN_PROFILES_TABLE_CHECKS.get(bind)
+        if cached is not None:
+            return bool(cached)
+    exists = bool(
         await session.run_sync(
             lambda sync_session: inspect(sync_session.connection()).has_table(
                 "domain_run_profiles"
             )
         )
     )
+    if bind is not None:
+        _DOMAIN_RUN_PROFILES_TABLE_CHECKS[bind] = exists
+    return exists
 
 
 async def load_domain_run_profile(

@@ -19,6 +19,7 @@ from .normalization import (
     _coerce_optional_choice,
     normalize_acquisition_contract,
     normalize_domain_run_profile,
+    normalize_internal_api_endpoints,
 )
 from .repository import load_domain_run_profile, save_domain_run_profile
 
@@ -147,6 +148,42 @@ def build_success_acquisition_contract(
     )
 
 
+def _contract_without_volatile_stamps(contract: object) -> dict[str, object]:
+    """Contract comparison view minus per-call stamps.
+
+    ``last_quality_success.timestamp`` is refreshed on every recorded success;
+    it is display metadata, not a contract change, so it must not defeat the
+    no-change debounce on the per-URL hot path.
+    """
+
+    normalized = normalize_acquisition_contract(contract)
+    success = normalized.get("last_quality_success")
+    if isinstance(success, Mapping):
+        normalized["last_quality_success"] = {
+            key: value for key, value in success.items() if key != "timestamp"
+        }
+    return normalized
+
+
+def _profile_write_is_unchanged(
+    base_profile: dict[str, object],
+    *,
+    acquisition_contract: dict[str, object],
+    internal_api_endpoints: list[dict[str, object]] | None,
+) -> bool:
+    existing_contract = _contract_without_volatile_stamps(
+        base_profile.get("acquisition_contract")
+    )
+    if existing_contract != _contract_without_volatile_stamps(acquisition_contract):
+        return False
+    if internal_api_endpoints is None:
+        return True
+    existing_endpoints = normalize_internal_api_endpoints(
+        base_profile.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+    )
+    return existing_endpoints == internal_api_endpoints
+
+
 async def save_learned_acquisition_contract(
     session: AsyncSession,
     *,
@@ -154,6 +191,7 @@ async def save_learned_acquisition_contract(
     surface: str,
     source_run_id: int,
     contract: dict[str, object],
+    internal_api_endpoints: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     existing = await load_domain_run_profile(
         session,
@@ -166,7 +204,24 @@ async def save_learned_acquisition_contract(
             {},
             source_run_id=source_run_id,
         )
-    base_profile["acquisition_contract"] = normalize_acquisition_contract(contract)
+    normalized_contract = normalize_acquisition_contract(contract)
+    normalized_endpoints = (
+        normalize_internal_api_endpoints(internal_api_endpoints)
+        if internal_api_endpoints
+        else None
+    )
+    # Per-URL DB budget: consecutive URLs of one run usually relearn the same
+    # contract. Skip the upsert when nothing meaningful changed instead of
+    # rewriting the same DomainRunProfile row once or twice per URL.
+    if existing is not None and _profile_write_is_unchanged(
+        base_profile,
+        acquisition_contract=normalized_contract,
+        internal_api_endpoints=normalized_endpoints,
+    ):
+        return dict(existing.profile or {})
+    base_profile["acquisition_contract"] = normalized_contract
+    if normalized_endpoints is not None:
+        base_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalized_endpoints
     return await save_domain_run_profile(
         session,
         domain=domain,
@@ -259,7 +314,17 @@ async def record_acquisition_contract_outcome(
                 and value not in (None, "", [], {})
             }
         )
-        saved_profile = await save_learned_acquisition_contract(
+        endpoints = learned_internal_api_endpoints(
+            network_payloads=network_payloads,
+            surface=surface,
+            page_url=page_url or "",
+            requested_fields=requested_fields,
+            source_run_id=source_run_id,
+        )
+        # Per-URL DB budget: contract learning and learned endpoints are merged
+        # into ONE profile upsert per URL (this used to save the same row
+        # twice when endpoints were learned).
+        await save_learned_acquisition_contract(
             session,
             domain=domain,
             surface=surface,
@@ -273,29 +338,8 @@ async def record_acquisition_contract_outcome(
                 found_fields=found_fields,
                 source_run_id=source_run_id,
             ),
+            internal_api_endpoints=endpoints or None,
         )
-        endpoints = learned_internal_api_endpoints(
-            network_payloads=network_payloads,
-            surface=surface,
-            page_url=page_url or "",
-            requested_fields=requested_fields,
-            source_run_id=source_run_id,
-        )
-        if endpoints:
-            saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = endpoints
-            existing_profile = await load_domain_run_profile(
-                session,
-                domain=domain,
-                surface=surface,
-            )
-            await save_domain_run_profile(
-                session,
-                domain=domain,
-                surface=surface,
-                profile=saved_profile,
-                source_run_id=source_run_id,
-                existing_record=existing_profile,
-            )
         return
     if not count_failure:
         return
