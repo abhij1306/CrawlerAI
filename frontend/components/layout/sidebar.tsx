@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { api } from '../../lib/api';
+import { authApi } from '../../lib/api/auth';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
 import { navGroups } from '../../src/app/route-registry';
@@ -37,7 +37,7 @@ export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAd
     if (logoutPending) return;
     setLogoutPending(true);
     try {
-      await api.logout();
+      await authApi.logout();
     } catch {
       // Local sign-out proceeds even when the server logout call fails.
     }

@@ -1,7 +1,7 @@
 import { startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 import { telemetryErrorPayload, trackEvent } from '../../lib/telemetry/events';
 import { buildDispatch, inferRunTypeHint, type StudioMode } from './crawl-config-logic';
@@ -56,7 +56,7 @@ export function useCrawlSubmission({
       const response =
         dispatch.runType === 'csv'
           ? await createCsvRun(dispatch)
-          : await api.createCrawl({
+          : await crawlsApi.createCrawl({
               run_type: dispatch.runType,
               url: dispatch.url,
               urls: dispatch.urls,
@@ -91,7 +91,7 @@ async function createCsvRun(dispatch: PendingDispatch) {
   if (!dispatch.csvFile) {
     throw new Error('CSV file is missing.');
   }
-  return api.createCsvCrawl({
+  return crawlsApi.createCsvCrawl({
     file: dispatch.csvFile,
     surface: dispatch.surface,
     additionalFields: dispatch.additionalFields,

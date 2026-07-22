@@ -14,7 +14,7 @@ import {
 } from '../../components/ui/patterns';
 import { Button } from '../../components/ui/primitives';
 import { buttonVariants } from '../../components/ui/button-variants';
-import { api } from '../../lib/api';
+import { dataEnrichmentApi } from '../../lib/api/data-enrichment';
 import { loadPrefill, useDataEnrichmentState } from './data-enrichment-state';
 import { EnrichmentStatus, EnrichmentTableLoading } from './enrichment-components';
 import { EnrichedProductDetail, EnrichedProductSidebar } from './enriched-product-view';
@@ -37,7 +37,7 @@ export default function DataEnrichmentPage() {
 
   const { data: jobsData } = useQuery({
     queryKey: queryKeys.dataEnrichment.jobs(),
-    queryFn: () => api.listDataEnrichmentJobs({ limit: 20 }),
+    queryFn: () => dataEnrichmentApi.listDataEnrichmentJobs({ limit: 20 }),
     refetchInterval: (query) => {
       const jobs = query.state.data ?? [];
       const hasRunningJob = jobs.some(
@@ -72,7 +72,7 @@ export default function DataEnrichmentPage() {
     refetch: refetchDetail,
   } = useQuery({
     queryKey: queryKeys.dataEnrichment.detail(resolvedJobId ?? 0),
-    queryFn: () => api.getDataEnrichmentJob(resolvedJobId ?? 0),
+    queryFn: () => dataEnrichmentApi.getDataEnrichmentJob(resolvedJobId ?? 0),
     enabled: resolvedJobId !== null,
     refetchInterval: (query) => {
       const status = String(query.state.data?.job?.status ?? '');
@@ -98,7 +98,7 @@ export default function DataEnrichmentPage() {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      api.createDataEnrichmentJob({
+      dataEnrichmentApi.createDataEnrichmentJob({
         source_run_id: initialPrefill.source_run_id ?? null,
         source_record_ids: sourceRecordIds,
         source_records: sourceRecords,

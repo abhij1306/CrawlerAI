@@ -15,7 +15,7 @@ import {
   StatusDot,
   SurfaceSection,
 } from '../../components/ui/patterns';
-import { api } from '../../lib/api';
+import { dashboardApi } from '../../lib/api/dashboard';
 import type { CrawlRun, Dashboard } from '../../lib/api/types';
 import { getDomain } from '../../lib/format/domain';
 import {
@@ -233,7 +233,7 @@ function RunStatusDistribution({
 export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: queryKeys.dashboard(),
-    queryFn: api.dashboard,
+    queryFn: dashboardApi.dashboard,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
 

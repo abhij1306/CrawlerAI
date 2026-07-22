@@ -30,11 +30,21 @@ vi.mock('react-router-dom', async (importOriginal) => {
   };
 });
 
-vi.mock('../../lib/api', () => ({
-  api: {
+vi.mock('../../lib/api/crawls', () => ({
+  crawlsApi: {
     createCsvCrawl: createCsvCrawlMock,
     createCrawl: createCrawlMock,
+  },
+}));
+
+vi.mock('../../lib/api/domain-memory', () => ({
+  domainMemoryApi: {
     getDomainRunProfile: getDomainRunProfileMock,
+  },
+}));
+
+vi.mock('../../lib/api/selectors', () => ({
+  selectorsApi: {
     listSelectors: listSelectorsMock,
   },
 }));

@@ -2,7 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../../lib/api';
+import { crawlsApi } from '../../../lib/api/crawls';
+import { dashboardApi } from '../../../lib/api/dashboard';
+import { domainMemoryApi } from '../../../lib/api/domain-memory';
+import { knowledgeApi } from '../../../lib/api/knowledge';
 import type {
   CrawlRun,
   DomainCookieMemoryRecord,
@@ -50,23 +53,23 @@ export function useDomainMemoryWorkspace() {
   const queryClient = useQueryClient();
   const profilesQuery = useQuery({
     queryKey: queryKeys.domainRunProfiles.all,
-    queryFn: () => api.listDomainRunProfiles(),
+    queryFn: () => domainMemoryApi.listDomainRunProfiles(),
   });
   const cookiesQuery = useQuery({
-    queryKey: ['domain-cookie-memory'] as const,
-    queryFn: () => api.listDomainCookieMemory(),
+    queryKey: queryKeys.domainMemory.cookieMemory(),
+    queryFn: () => domainMemoryApi.listDomainCookieMemory(),
   });
   const feedbackQuery = useQuery({
-    queryKey: ['domain-field-feedback', 100] as const,
-    queryFn: () => api.listDomainFieldFeedback({ limit: 100 }),
+    queryKey: queryKeys.domainMemory.fieldFeedback(100),
+    queryFn: () => domainMemoryApi.listDomainFieldFeedback({ limit: 100 }),
   });
   const completedRunsQuery = useQuery({
     queryKey: queryKeys.runs.list({ status: 'completed', limit: 100 }),
-    queryFn: () => api.listCrawls({ status: 'completed', limit: 100 }),
+    queryFn: () => crawlsApi.listCrawls({ status: 'completed', limit: 100 }),
   });
   const knowledgeSitesQuery = useQuery({
-    queryKey: ['knowledge-sites'] as const,
-    queryFn: () => api.listKnowledgeSites(),
+    queryKey: queryKeys.knowledgeGraph.sites(),
+    queryFn: () => knowledgeApi.listKnowledgeSites(),
   });
   const workspaceQueries = [
     profilesQuery,
@@ -96,10 +99,10 @@ export function useDomainMemoryWorkspace() {
     try {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.domainRunProfiles.all }),
-        queryClient.invalidateQueries({ queryKey: ['domain-cookie-memory'] }),
-        queryClient.invalidateQueries({ queryKey: ['domain-field-feedback'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.cookieMemory() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.fieldFeedback(100) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runs.all }),
-        queryClient.invalidateQueries({ queryKey: ['knowledge-sites'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeGraph.sites() }),
       ]);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to load domain memory.');
@@ -196,7 +199,7 @@ export function useDomainMemoryWorkspace() {
     setProfileSaveKey(saveKey);
     setError('');
     try {
-      await api.saveDomainRunProfile(sourceRunId, {
+      await domainMemoryApi.saveDomainRunProfile(sourceRunId, {
         profile: profileDraftFor(domain, surfaceWorkspace),
       });
       setProfileDrafts((current) => {
@@ -217,7 +220,7 @@ export function useDomainMemoryWorkspace() {
     setResetError('');
     setError('');
     try {
-      await api.resetDomainMemory();
+      await dashboardApi.resetDomainMemory();
       setProfileDrafts({});
       await loadWorkspace();
       setResetDialogOpen(false);

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlRun } from '../../lib/api/types';
 import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';
 import { POLLING_INTERVALS } from '../../lib/constants/timing';
@@ -15,7 +15,7 @@ export function useRunWorkspace(runId: number) {
     refetch,
   } = useQuery({
     queryKey: queryKeys.runs.detail(runId),
-    queryFn: ({ signal }) => api.getCrawl(runId, { signal }),
+    queryFn: ({ signal }) => crawlsApi.getCrawl(runId, { signal }),
     refetchInterval: (query) => {
       const currentRun = query.state.data as CrawlRun | undefined;
       if (!currentRun || !ACTIVE_STATUSES.has(currentRun.status)) {

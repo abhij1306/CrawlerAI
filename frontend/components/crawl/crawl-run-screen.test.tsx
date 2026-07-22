@@ -75,8 +75,23 @@ class MockWebSocket {
   }
 }
 
-vi.mock('../../lib/api', () => ({
-  api: apiMock,
+vi.mock('../../lib/api/crawls', () => ({
+  crawlsApi: {
+    getCrawl: apiMock.getCrawl,
+    listCrawls: apiMock.listCrawls,
+    getRecords: apiMock.getRecords,
+    getCrawlLogs: apiMock.getCrawlLogs,
+    killCrawl: apiMock.killCrawl,
+    saveGroundedCorrection: apiMock.saveGroundedCorrection,
+    exportCsv: apiMock.exportCsv,
+    exportJson: apiMock.exportJson,
+  },
+}));
+
+vi.mock('../../lib/api/domain-memory', () => ({
+  domainMemoryApi: {
+    getDomainRecipe: apiMock.getDomainRecipe,
+  },
 }));
 
 function terminalRun(runId: number): CrawlRun {

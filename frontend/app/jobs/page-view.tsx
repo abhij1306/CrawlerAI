@@ -4,7 +4,8 @@ import { useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
+import { jobsApi } from '../../lib/api/jobs';
 import type { ActiveJob } from '../../lib/api/types';
 import { formatJobsTimestamp as formatTimestamp, formatTimeHms } from '../../lib/format/date';
 import { humanizeStatus, jobsStatusTone as statusTone } from '../../lib/ui/status';
@@ -42,7 +43,7 @@ export default function JobsPage() {
     refetch: refetchJobs,
   } = useQuery({
     queryKey: queryKeys.jobs.active(),
-    queryFn: api.listJobs,
+    queryFn: jobsApi.listJobs,
     refetchInterval: 5000,
   });
 
@@ -57,7 +58,7 @@ export default function JobsPage() {
     setPendingAction(`${action}:${runId}`);
     try {
       setActionError('');
-      await api.killCrawl(runId);
+      await crawlsApi.killCrawl(runId);
       await refetchJobs();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `Unable to ${action} run ${runId}.`);

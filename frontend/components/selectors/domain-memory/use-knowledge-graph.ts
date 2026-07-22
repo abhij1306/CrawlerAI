@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../../lib/api';
+import { knowledgeApi } from '../../../lib/api/knowledge';
 import type { KnowledgeContract, KnowledgeSiteRecord } from '../../../lib/api/types';
 import type { DomainWorkspace } from './types';
 
@@ -26,8 +26,8 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
     queryKey: queryKeys.knowledgeGraph.domain(domain),
     queryFn: async () => {
       const [contractsResponse, siteResponse] = await Promise.all([
-        api.listKnowledgeContractsByDomain(domain),
-        api.listKnowledgeSites().catch(() => null),
+        knowledgeApi.listKnowledgeContractsByDomain(domain),
+        knowledgeApi.listKnowledgeSites().catch(() => null),
       ]);
       const site =
         siteResponse?.sites.find((entry) => entry.domain === domain) ??
@@ -41,7 +41,7 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
 
   const selectSource = useMutation({
     mutationFn: ({ contract, selectedSource, expectedVersion }: SelectSourceVariables) =>
-      api.selectKnowledgeContractSource(contract.id, {
+      knowledgeApi.selectKnowledgeContractSource(contract.id, {
         selected_source: selectedSource,
         expected_version: expectedVersion,
         template_id: contract.template_id,

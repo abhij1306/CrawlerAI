@@ -17,7 +17,7 @@ import {
   TableRow,
   TableCell,
 } from '../../../components/ui/table';
-import { api } from '../../../lib/api';
+import { adminApi } from '../../../lib/api/admin';
 import type {
   LlmConfigCreatePayload,
   LlmConfigRecord,
@@ -174,8 +174,8 @@ export default function AdminLlmPage() {
   async function refreshRuntimeState() {
     try {
       const [nextConfigs, nextCostLog] = await Promise.all([
-        api.listLlmConfigs({ include_unsupported: true }),
-        api.listLlmCostLog(),
+        adminApi.listLlmConfigs({ include_unsupported: true }),
+        adminApi.listLlmCostLog(),
       ]);
       startTransition(() => {
         dispatch({ type: 'runtimeLoaded', configs: nextConfigs, costLog: nextCostLog });
@@ -191,7 +191,7 @@ export default function AdminLlmPage() {
   async function handleSave() {
     dispatch({ type: 'startSave' });
     try {
-      await api.createLlmConfig(form);
+      await adminApi.createLlmConfig(form);
       dispatch({ type: 'saveSucceeded' });
       await refreshRuntimeState();
     } catch (nextError) {
@@ -207,7 +207,7 @@ export default function AdminLlmPage() {
   async function handleTest() {
     dispatch({ type: 'startTest' });
     try {
-      const response = await api.testLlmConnection({
+      const response = await adminApi.testLlmConnection({
         provider: form.provider,
         model: form.model,
         api_key: form.api_key,
@@ -226,7 +226,7 @@ export default function AdminLlmPage() {
   async function handleDelete(configId: number) {
     dispatch({ type: 'deleteStarted' });
     try {
-      await api.deleteLlmConfig(configId);
+      await adminApi.deleteLlmConfig(configId);
       dispatch({ type: 'deleteSucceeded' });
       await refreshRuntimeState();
     } catch (nextError) {
@@ -243,9 +243,9 @@ export default function AdminLlmPage() {
     async function run() {
       try {
         const [nextProviders, nextConfigs, nextCostLog] = await Promise.all([
-          api.listLlmProviders(),
-          api.listLlmConfigs({ include_unsupported: true }),
-          api.listLlmCostLog(),
+          adminApi.listLlmProviders(),
+          adminApi.listLlmConfigs({ include_unsupported: true }),
+          adminApi.listLlmCostLog(),
         ]);
         if (cancelled) return;
         startTransition(() => {

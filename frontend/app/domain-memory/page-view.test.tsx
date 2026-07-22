@@ -27,8 +27,47 @@ const apiMock = vi.hoisted(() => ({
   deleteSelectorsByDomain: vi.fn(),
 }));
 
-vi.mock('../../lib/api', () => ({
-  api: apiMock,
+vi.mock('../../lib/api/crawls', () => ({
+  crawlsApi: {
+    listCrawls: apiMock.listCrawls,
+    getRunReport: apiMock.getRunReport,
+    getResultDiagnosis: apiMock.getResultDiagnosis,
+  },
+}));
+
+vi.mock('../../lib/api/dashboard', () => ({
+  dashboardApi: {
+    resetDomainMemory: apiMock.resetDomainMemory,
+  },
+}));
+
+vi.mock('../../lib/api/domain-memory', () => ({
+  domainMemoryApi: {
+    listDomainRunProfiles: apiMock.listDomainRunProfiles,
+    listDomainCookieMemory: apiMock.listDomainCookieMemory,
+    listDomainFieldFeedback: apiMock.listDomainFieldFeedback,
+    saveDomainRunProfile: apiMock.saveDomainRunProfile,
+  },
+}));
+
+vi.mock('../../lib/api/knowledge', () => ({
+  knowledgeApi: {
+    listKnowledgeSites: apiMock.listKnowledgeSites,
+    getKnowledgeGraph: apiMock.getKnowledgeGraph,
+    listKnowledgeContractsByDomain: apiMock.listKnowledgeContractsByDomain,
+    listKnowledgeContracts: apiMock.listKnowledgeContracts,
+    selectKnowledgeContractSource: apiMock.selectKnowledgeContractSource,
+  },
+}));
+
+vi.mock('../../lib/api/selectors', () => ({
+  selectorsApi: {
+    listSelectorSummaries: apiMock.listSelectorSummaries,
+    listSelectors: apiMock.listSelectors,
+    updateSelector: apiMock.updateSelector,
+    deleteSelector: apiMock.deleteSelector,
+    deleteSelectorsByDomain: apiMock.deleteSelectorsByDomain,
+  },
 }));
 
 function HeaderActions() {

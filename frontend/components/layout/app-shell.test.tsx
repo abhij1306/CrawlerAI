@@ -11,7 +11,9 @@ const apiMock = vi.hoisted(() => ({
   resetApplicationData: vi.fn(),
 }));
 
-vi.mock('../../lib/api', () => ({ api: apiMock }));
+vi.mock('../../lib/api/dashboard', () => ({
+  dashboardApi: { resetApplicationData: apiMock.resetApplicationData },
+}));
 
 function renderShell(role: 'admin' | 'user' = 'admin') {
   render(

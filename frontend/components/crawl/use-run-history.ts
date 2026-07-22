@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlRun } from '../../lib/api/types';
 import { getDomain } from '../../lib/format/domain';
 import type { HistoryItem } from '../ui/history-drawer';
@@ -13,7 +13,7 @@ export function useRunHistory(enabled = true) {
   const queryClient = useQueryClient();
   const { data: queryData } = useQuery({
     queryKey: queryKeys.runs.list({ limit: HISTORY_LIMIT }),
-    queryFn: ({ signal }) => api.listCrawls({ limit: HISTORY_LIMIT }, { signal }),
+    queryFn: ({ signal }) => crawlsApi.listCrawls({ limit: HISTORY_LIMIT }, { signal }),
     enabled,
   });
 

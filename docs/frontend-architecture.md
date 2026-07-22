@@ -99,7 +99,6 @@ Primary files:
 - `src/api/errors.ts`
 - `src/api/query-client.ts`
 - `src/api/query-keys.ts`
-- `lib/api/index.ts`
 - `lib/api/auth.ts`
 - `lib/api/dashboard.ts`
 - `lib/api/crawls.ts`
@@ -120,7 +119,7 @@ Responsibilities:
 - HTTP transport, abort signals, and request IDs
 - one query-key factory and application query defaults
 - typed domain endpoint modules for backend calls
-- short compatibility facade for callers not yet migrated to direct domain imports
+- direct domain imports (`lib/api/<domain>.ts`) at every call site; the former `lib/api/index.ts` compatibility facade is deleted
 - API typing and zod response schemas (`lib/api/schemas.ts`)
 - auth-aware fetch wrapper
 - URL helpers for selector preview HTML
@@ -382,7 +381,7 @@ Policy and CI checks:
 ## 8. Architectural Notes
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
-- `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; `lib/api/index.ts` is a compatibility facade only.
+- `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; call sites import their domain modules directly (the `lib/api/index.ts` facade was removed in audit 7.8).
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.

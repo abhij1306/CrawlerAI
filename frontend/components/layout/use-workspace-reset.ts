@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { httpErrorStatus } from '@/api/client';
-import { api } from '../../lib/api';
+import { dashboardApi } from '../../lib/api/dashboard';
 import { trapFocus } from '../../lib/focus-trap';
 
 const resetForbiddenMessage =
@@ -63,7 +63,7 @@ export function useWorkspaceReset(canResetWorkspace: boolean) {
     setResetPending(true);
     setResetError('');
     try {
-      await api.resetApplicationData();
+      await dashboardApi.resetApplicationData();
       globalThis.location.reload();
     } catch (error) {
       const status = httpErrorStatus(error);

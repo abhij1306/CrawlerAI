@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getApiWebSocketBaseUrl } from '@/api/client';
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlLog } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timing';
@@ -229,7 +229,7 @@ export function useRunLogStream({
   } = useQuery({
     queryKey: queryKeys.runs.logs(runId),
     queryFn: ({ signal }) =>
-      api.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
+      crawlsApi.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
     enabled,
     refetchInterval: logPollingInterval({
       enabled,

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlRecord, CrawlRun, Paginated } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { POLLING_INTERVALS, RETRY_LIMITS } from '../../lib/constants/timing';
@@ -155,7 +155,7 @@ export function useRunRecords({
   } = useInfiniteQuery({
     queryKey: queryKeys.runs.tableRecords(runId, tablePageSize),
     queryFn: ({ pageParam, signal }) =>
-      api.getRecords(runId, { page: pageParam, limit: tablePageSize }, { signal }),
+      crawlsApi.getRecords(runId, { page: pageParam, limit: tablePageSize }, { signal }),
     initialPageParam: 1,
     getNextPageParam: nextPage,
     enabled: fetchMode.table,
@@ -174,7 +174,7 @@ export function useRunRecords({
   } = useInfiniteQuery({
     queryKey: queryKeys.runs.jsonRecords(runId, jsonPageSize),
     queryFn: ({ pageParam, signal }) =>
-      api.getRecords(runId, { page: pageParam, limit: jsonPageSize }, { signal }),
+      crawlsApi.getRecords(runId, { page: pageParam, limit: jsonPageSize }, { signal }),
     initialPageParam: 1,
     getNextPageParam: nextJsonPage,
     enabled: Boolean(run) && fetchMode.json,

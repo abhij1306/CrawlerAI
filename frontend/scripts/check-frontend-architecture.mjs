@@ -7,7 +7,6 @@ const checks = [
   { file: 'app/data-enrichment/page-view.tsx', maxLines: 260 },
   { file: 'app/runs/page-view.tsx', maxLines: 260 },
   { file: 'components/layout/app-shell.tsx', maxLines: 260 },
-  { file: 'lib/api/index.ts', maxLines: 80 },
 ];
 
 const requiredApiOwners = [
@@ -49,15 +48,6 @@ for (const owner of requiredApiOwners) {
   if (!fs.existsSync(ownerPath)) {
     failures.push(`lib/api/${owner} is missing. Keep API methods split by domain owner.`);
   }
-}
-
-const apiIndex = read('lib/api/index.ts');
-if (
-  apiIndex !== null &&
-  (/\bfrom\s+['"]@\/api\/client['"]/.test(apiIndex) ||
-    /\b(apiClient|getApiBaseUrl)\b/.test(apiIndex))
-) {
-  failures.push('lib/api/index.ts must stay a compatibility facade, not a transport owner.');
 }
 
 const dataEnrichmentPage = read('app/data-enrichment/page-view.tsx');
