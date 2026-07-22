@@ -216,11 +216,14 @@ PACKAGE_LOC_BUDGETS = {
     # Audit-debt Stream B commit 3 (same day): evaluation ratcheted DOWN
     # (2,009 -> 1,563) with the test-only baseline/llm_repair deletion (3.7);
     # core -16 for the unread GROUNDED_REPAIR_* constants.
+    # Stream B commit 4 (same day): acquisition -1 (never-read
+    # _max_payload_bytes attribute) and core -3 (dead alias + unread Settings
+    # field) ratcheted down to measured (3.13).
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_235,
+    "acquisition": 17_234,
     "crawl": 9_367,
-    "core": 21_047,
+    "core": 21_044,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -250,7 +253,9 @@ PACKAGE_LOC_BUDGETS = {
 # shared robots client (2.16).
 # Audit-debt Stream B commit 3 (same day): -428 for the test-only evaluation
 # baseline/llm_repair modules + unread GROUNDED_REPAIR_* constants (3.7).
-TOTAL_APP_LOC_BUDGET = 87_592
+# Stream B commit 4 (same day): -7 for the residual dead constant/alias/
+# settings purge (3.13).
+TOTAL_APP_LOC_BUDGET = 87_585
 
 
 def test_production_package_loc_budgets() -> None:

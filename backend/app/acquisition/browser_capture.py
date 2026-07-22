@@ -111,7 +111,6 @@ class BrowserNetworkCapture:
         self._reserved_bytes = 0
         self._dropped_payload_events = 0
         self._max_payloads = max(1, browser_capture_max_network_payloads())
-        self._max_payload_bytes = max(1, browser_capture_max_network_payload_bytes())
         self._total_payload_bytes = max(
             1,
             browser_capture_total_network_payload_bytes(),

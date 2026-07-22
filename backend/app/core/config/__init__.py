@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     cookie_store_dir: Path = Field(default=BASE_DIR / "cookie_store")
     playwright_headless: bool = True
     browser_pool_size: int = 4
-    browser_context_timeout_seconds: float = 30.0
     http_timeout_seconds: float = 20.0
     http_max_connections: int = 100
     http_max_keepalive_connections: int = 40

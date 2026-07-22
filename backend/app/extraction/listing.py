@@ -5,11 +5,11 @@ from typing import Literal
 from urllib.parse import urljoin
 
 from app.core.config.extraction_recipes import (
-    ECOMMERCE_LISTING_HTML_ARTIFACT_IDS,
     ECOMMERCE_LISTING_IMAGE_SELECTORS,
     ECOMMERCE_LISTING_PRICE_SELECTORS,
     ECOMMERCE_LISTING_TITLE_ATTRIBUTES,
     ECOMMERCE_LISTING_TITLE_SELECTORS,
+    LISTING_HTML_ARTIFACT_IDS,
 )
 from app.core.listing_cards import select_listing_cards
 from app.core.config.extraction_rules import (
@@ -45,7 +45,7 @@ def collect_ecommerce_listing(
     bundle: CaptureBundle, reader: ArtifactReader
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    for artifact_id in ECOMMERCE_LISTING_HTML_ARTIFACT_IDS:
+    for artifact_id in LISTING_HTML_ARTIFACT_IDS:
         if reader.exists(artifact_id):
             doc = reader.document_store.html(artifact_id)
             rows.extend(

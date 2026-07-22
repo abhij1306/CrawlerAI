@@ -40,8 +40,6 @@ LISTING_HTML_ARTIFACT_IDS = (
     ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
     ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
 )
-# Back-compat alias: existing commerce imports keep working unchanged.
-ECOMMERCE_LISTING_HTML_ARTIFACT_IDS = LISTING_HTML_ARTIFACT_IDS
 
 ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "[data-testid*='title' i]",

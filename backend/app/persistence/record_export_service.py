@@ -50,9 +50,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 RUN_NOT_FOUND_RESPONSE = {
     404: {"description": RUN_NOT_FOUND_DETAIL},
 }
-RECORD_NOT_FOUND_RESPONSE = {
-    404: {"description": RECORD_NOT_FOUND_DETAIL},
-}
 RECORD_PROVENANCE_NOT_FOUND_RESPONSE = {
     404: {"description": f"{RECORD_NOT_FOUND_DETAIL} or {RUN_NOT_FOUND_DETAIL}"},
 }
