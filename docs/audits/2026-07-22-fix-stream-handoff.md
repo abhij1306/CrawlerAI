@@ -13,12 +13,32 @@ extraction 16,753; enrichment 2,250; intelligence 3,448; new complex-function en
 Verified: ledger pair 60/60, `test_resolution_split_public_api.py` 4/4, collaborator suites 30/30,
 component `test_browser_context.py` 91/91, 19 focused audit-fix files 163/163, ruff clean, frontend 45/45 + `vp check` clean.
 
-## 1. Review subagent results (in flight)
+## 1. Review subagent results — DONE (second session)
 
-Task id `review-diff` was reviewing `git diff main...HEAD` (security/concurrency/contracts/refactor-fidelity/data-layer).
-Collect its result; route actionable findings to the owning area. Known intentional patterns it may flag (not bugs):
-acquisition collaborator modules resolve `browser_pool` helpers at call time (monkeypatch compat); resolution facade
-re-exports incl. `_rank` (119-name public surface pinned by `tests/unit/test_resolution_split_public_api.py`).
+Full-diff review completed; actionable findings FIXED in `a6406b1`, `4a8bb97`, `7850c42`:
+- HIGH: browser route interceptor ran protected-challenge tokens before the SSRF host guard (subresource SSRF
+  bypass via `?akamai=1`-style URLs) — guard reordered, regression test added.
+- HIGH: PI candidate poll budget was a single shared 30s window — now scales per pending candidate
+  (`candidate_poll_seconds * len(pending)`), parity with the legacy sequential cap.
+- MED: 10k URL cap bypassable via `settings.urls` (schema only validates top-level `urls`) — enforced on the
+  final settings payload in `create_crawl_run`.
+- MED: orphan recovery could fail queued never-started jobs after a >15 min worker backlog — PENDING tasks now
+  require `job_orphaned_pending_after_seconds` (default 3600s).
+- MED: `run_health` blind in flight (progress patches no longer carry `url_verdicts`) — now derives from
+  `verdict_counts`.
+- LOW: 4 residual dead Settings fields removed (`backend_host`, `backend_port`, `acquisition_cache_dir`,
+  `crawl_log_file_dir`).
+- NOTED, not changed: `DELETE /api/api-keys/{id}` stays deleted per audit 3.2 (contract note in PR body);
+  SSRF-blocked fetches surface as generic 500/RuntimeError instead of fail-fast typed error — follow-up
+  (SecurityError wrapped in the attempt chain, `fetch_context.py:305`); the guard itself verified holding.
+
+## 4. Testing — DONE (second session; subagent timed out at 3600s mid-report, main agent completed re-verification)
+
+Backend 493+217+82+22+34 passed at HEAD `7850c42`; ruff clean; frontend 177/28 + `vp check` clean; adversarial
+probes green (SSRF redirect blocked end-to-end, caps enforced incl. settings.urls bypass now closed, deleted
+routes 404, CSP sandbox headers, 401s); e2e Celery crawl extracted 2 records; UI walkthrough screenshots +
+recording under `/code/.generated_artifacts/`. Test report submitted (title "PR #34 audit-fix verification",
+status partial due to the subagent timeout). Remaining for merge: nothing blocking.
 
 ## 2. CodeQL comments on PR #34 — DONE (see header update)
 
