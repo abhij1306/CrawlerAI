@@ -216,14 +216,7 @@ async def _maybe_learn_once(
 
 
 def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:
-    from app.crawl.pipeline import extraction_loop
-
-    detect_family = getattr(
-        extraction_loop,
-        "detect_platform_family",
-        detect_platform_family,
-    )
-    platform_family = detect_family(
+    platform_family = detect_platform_family(
         acquisition_result.final_url,
         acquisition_result.html,
     )
@@ -250,16 +243,9 @@ async def _run_record_extraction(
     acquisition_result: PageAcquisitionResult,
     selector_rules: list[dict[str, object]],
 ) -> ExtractionResult:
-    from app.crawl.pipeline import extraction_loop
-
     await _expand_variant_endpoint_payloads(context, acquisition_result)
     runtime_snapshot = await _load_runtime_snapshot(context)
     await context.session.commit()
-    extract_records_impl = getattr(
-        extraction_loop,
-        "extract_records_for_acquisition_result",
-        extract_records_for_acquisition_result,
-    )
     adapter_artifacts = mapping_or_empty(
         getattr(acquisition_result, "artifacts", {})
     ).get("adapter_artifacts")
@@ -276,7 +262,7 @@ async def _run_record_extraction(
         selector_rule_count=len(selector_rules or []),
     ) as span:
         result = await asyncio.to_thread(
-            extract_records_impl,
+            extract_records_for_acquisition_result,
             acquisition_result,
             context.surface,
             max_records=context.config.max_records,
@@ -359,19 +345,12 @@ async def _extract_records_from_preserved_browser_html(
     rendered_html = str(artifacts.get("full_rendered_html") or "").strip()
     if not rendered_html or rendered_html == str(acquisition_result.html or "").strip():
         return None
-    from app.crawl.pipeline import extraction_loop as _extraction_loop
-
-    extract_impl = getattr(
-        _extraction_loop,
-        "extract_records_for_acquisition_result",
-        extract_records_for_acquisition_result,
-    )
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
     runtime_snapshot = await _load_runtime_snapshot(context)
     try:
         fallback_result = await asyncio.to_thread(
-            extract_impl,
+            extract_records_for_acquisition_result,
             acquisition_result,
             context.surface,
             max_records=context.config.max_records,
@@ -434,14 +413,7 @@ async def _load_selector_rules(
         )
         saved_rules = selector_rules_from_release(release, surface=context.surface)
     else:
-        from app.crawl.pipeline import extraction_loop
-
-        load_rules = getattr(
-            extraction_loop,
-            "load_domain_selector_rules",
-            load_domain_selector_rules,
-        )
-        saved_rules = await load_rules(
+        saved_rules = await load_domain_selector_rules(
             context.session,
             domain=normalize_domain(page_url),
             surface=context.surface,

@@ -10,6 +10,7 @@ from app.core.db_utils import mapping_or_empty
 from app.core.records.field_policy import normalize_requested_field
 from app.core.shared.field_coerce import LONG_TEXT_FIELDS
 from app.persistence.publish import VERDICT_ERROR, is_effectively_blocked
+from app.persistence.run_summary import as_int
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -34,6 +35,16 @@ async def log_pipeline_event(
     *,
     commit: bool = True,
 ) -> None:
+    """Queue a crawl-log row for the URL's batched persistence.
+
+    Per-URL DB budget: log rows accumulate in the URL's session and flush with
+    the URL's other work, committed once per URL by the session owner, instead
+    of one flush+commit per event (~5-8 commits per URL before). ``commit`` is
+    retained for call-site compatibility; events no longer force an immediate
+    commit.
+    """
+
+    del commit  # events are batched; see docstring
     if not context.config.persist_logs:
         return
 
@@ -41,15 +52,16 @@ async def log_pipeline_event(
     run = getattr(context, "run", None)
     if run is None:
         return
-    resolved_urls = run.result_summary.get("resolved_url_list")
-    if url and resolved_urls and len(resolved_urls) > 1:
+    # The run row no longer stores resolved_url_list while the run executes
+    # (fixed-size per-URL patches); url_count is the fixed-size stand-in.
+    if url and as_int(run.summary_dict().get("url_count")) > 1:
         prefixed_message = f"[url:{url}] {message}"
     else:
         prefixed_message = message
 
-    await log_event(context.session, run.id, level, prefixed_message)
-    if commit:
-        await context.session.commit()
+    context.session.add(
+        CrawlLog(run_id=run.id, level=level, message=str(prefixed_message or ""))
+    )
 
 
 async def set_stage(
@@ -111,23 +123,6 @@ def suppress_empty_downstream_record_logs(
     records: list[dict[str, object]],
 ) -> bool:
     return not records and effective_blocked(acquisition_result)
-
-
-def screenshot_required(browser_outcome: str) -> bool:
-    return browser_outcome in {
-        "challenge_page",
-        "location_required",
-        "low_content_shell",
-        "navigation_failed",
-        "traversal_failed",
-        "render_timeout",
-    }
-
-
-def browser_result_is_extractable(acquisition_result: PageAcquisitionResult) -> bool:
-    if getattr(acquisition_result, "method", "") != "browser":
-        return True
-    return browser_outcome(acquisition_result) in {"", "usable_content"}
 
 
 def merge_browser_diagnostics(

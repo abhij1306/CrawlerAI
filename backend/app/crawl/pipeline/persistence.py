@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
@@ -15,6 +17,8 @@ from app.core.db_utils import mapping_or_empty
 from app.core.shared.field_coerce import object_list as _object_list
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +33,25 @@ class PersistedRecordBatch:
 
 
 @dataclass(slots=True)
+class _StagedRecordWrite:
+    """One record write staged for the URL's single batched flush.
+
+    ``full_update`` carries every column value for a changed existing row;
+    ``trace_refresh`` carries only the volatile diagnostic trace refresh;
+    both are ``None`` for a no-change row or a brand-new record.
+    """
+
+    record: CrawlRecord
+    raw_data: dict[str, object]
+    discovered_data: dict[str, object]
+    source_trace: dict[str, object]
+    counts_as_change: bool
+    is_new: bool
+    full_update: dict[str, object] | None = None
+    trace_refresh: dict[str, object] | None = None
+
+
+@dataclass(slots=True)
 class _RecordPersistenceState:
     session: AsyncSession
     run: CrawlRun
@@ -37,6 +60,7 @@ class _RecordPersistenceState:
     existing_by_identity: dict[str, CrawlRecord]
     seen_identities: set[str]
     changed_count: int = 0
+    pending: list[_StagedRecordWrite] = field(default_factory=list)
     records: list[CrawlRecord] = field(default_factory=list)
     provenance: list[Mapping[str, object]] = field(default_factory=list)
 
@@ -158,7 +182,10 @@ async def persist_extracted_records(
         seen_identities=set(existing_records_by_identity),
     )
     for record in records:
-        await _persist_extracted_record(state, dict(record))
+        _stage_extracted_record(state, dict(record))
+    # Per-URL DB budget: one flush for the URL's whole record batch instead of
+    # one INSERT/UPDATE round trip per record.
+    await _flush_staged_writes(state)
     return PersistedRecordBatch(
         changed_count=state.changed_count,
         records=tuple(state.records),
@@ -166,7 +193,7 @@ async def persist_extracted_records(
     )
 
 
-async def _persist_extracted_record(
+def _stage_extracted_record(
     state: _RecordPersistenceState,
     raw_record: dict[str, object],
 ) -> None:
@@ -213,7 +240,7 @@ async def _persist_extracted_record(
     )
     existing_record = state.existing_by_identity.get(identity_key or "")
     if identity_key and identity_key in state.seen_identities:
-        await _update_existing_record(
+        _stage_existing_record_update(
             state,
             existing_record=existing_record,
             source_url=record_source_url,
@@ -237,21 +264,19 @@ async def _persist_extracted_record(
         discovered_data=dict(discovered_data),
         source_trace=dict(source_trace),
     )
-    state.session.add(crawl_record)
-    await state.session.flush()
-    state.changed_count += 1
-    state.records.append(crawl_record)
-    state.provenance.append(
-        _record_provenance_payload(
-            crawl_record,
+    state.pending.append(
+        _StagedRecordWrite(
+            record=crawl_record,
             raw_data=raw_record,
             discovered_data=discovered_data,
             source_trace=source_trace,
+            counts_as_change=True,
+            is_new=True,
         )
     )
 
 
-async def _update_existing_record(
+def _stage_existing_record_update(
     state: _RecordPersistenceState,
     *,
     existing_record: CrawlRecord | None,
@@ -273,32 +298,131 @@ async def _update_existing_record(
         discovered_data=discovered_data,
         content_fingerprint=content_fingerprint,
     )
+    full_update: dict[str, object] | None = None
+    trace_refresh: dict[str, object] | None = None
     if public_changed:
-        _update_stored_record(
-            existing_record,
-            url_result_id=state.url_result_id,
-            source_url=source_url,
-            data=data,
-            raw_data=raw_data,
-            discovered_data=discovered_data,
-            source_trace=source_trace,
-            content_fingerprint=content_fingerprint,
-        )
-        await state.session.flush()
-        state.changed_count += 1
+        full_update = {
+            "url_result_id": state.url_result_id,
+            "source_url": source_url,
+            "data": data,
+            "raw_data": raw_data,
+            "discovered_data": discovered_data,
+            "source_trace": source_trace,
+            "content_fingerprint": content_fingerprint,
+        }
     elif existing_record.source_trace != source_trace:
         # Refresh the volatile diagnostic trace without bumping changed_count.
-        existing_record.source_trace = source_trace
-        await state.session.flush()
-    state.records.append(existing_record)
-    state.provenance.append(
-        _record_provenance_payload(
-            existing_record,
+        trace_refresh = source_trace
+    state.pending.append(
+        _StagedRecordWrite(
+            record=existing_record,
             raw_data=raw_data,
             discovered_data=discovered_data,
             source_trace=source_trace,
+            counts_as_change=public_changed,
+            is_new=False,
+            full_update=full_update,
+            trace_refresh=trace_refresh,
         )
     )
+
+
+def _apply_staged_write(session: AsyncSession, write: _StagedRecordWrite) -> None:
+    if write.is_new:
+        session.add(write.record)
+    elif write.full_update is not None:
+        _update_stored_record(write.record, **write.full_update)
+    elif write.trace_refresh is not None:
+        write.record.source_trace = write.trace_refresh
+
+
+def _finalize_staged_write(
+    state: _RecordPersistenceState, write: _StagedRecordWrite
+) -> None:
+    if write.counts_as_change:
+        state.changed_count += 1
+    state.records.append(write.record)
+    state.provenance.append(
+        _record_provenance_payload(
+            write.record,
+            raw_data=write.raw_data,
+            discovered_data=write.discovered_data,
+            source_trace=write.source_trace,
+        )
+    )
+
+
+@asynccontextmanager
+async def _null_savepoint():
+    yield
+
+
+def _flush_savepoint(session: AsyncSession):
+    """Savepoint guard around a flush.
+
+    Duck-typed session doubles without ``begin_nested`` get a no-op guard;
+    real sessions get a SAVEPOINT so a failed flush never poisons the URL's
+    outer transaction.
+    """
+
+    begin_nested = getattr(session, "begin_nested", None)
+    if callable(begin_nested):
+        return begin_nested()
+    return _null_savepoint()
+
+
+async def _flush_staged_writes(state: _RecordPersistenceState) -> None:
+    if not state.pending:
+        return
+    try:
+        async with _flush_savepoint(state.session):
+            for write in state.pending:
+                _apply_staged_write(state.session, write)
+            await state.session.flush()
+    except Exception:
+        # Per-record error semantics: retry each write under its own savepoint
+        # so one bad record skips with a warning instead of failing the URL's
+        # whole batch.
+        logger.warning(
+            "Batched CrawlRecord flush failed; retrying %d record(s) individually",
+            len(state.pending),
+            exc_info=True,
+        )
+        await _flush_staged_writes_individually(state)
+        return
+    for write in state.pending:
+        _finalize_staged_write(state, write)
+
+
+async def _flush_staged_writes_individually(state: _RecordPersistenceState) -> None:
+    session = state.session
+    # After the batch savepoint rolled back, every staged new row reverts to
+    # pending; detach them all so each retry flush involves exactly one record.
+    # A server-assigned PK from the failed flush is cleared so retries INSERT
+    # cleanly.
+    for write in state.pending:
+        if write.is_new:
+            if write.record in session:
+                session.expunge(write.record)
+            write.record.id = None
+    for write in state.pending:
+        try:
+            async with _flush_savepoint(session):
+                _apply_staged_write(session, write)
+                await session.flush()
+        except Exception:
+            logger.warning(
+                "CrawlRecord persistence failed for source_url=%s; record skipped",
+                getattr(write.record, "source_url", ""),
+                exc_info=True,
+            )
+            if write.is_new:
+                # Keep the failed row from poisoning the next record's flush.
+                if write.record in session:
+                    session.expunge(write.record)
+                write.record.id = None
+            continue
+        _finalize_staged_write(state, write)
 
 
 def _record_provenance_payload(

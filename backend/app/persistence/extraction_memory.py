@@ -7,8 +7,9 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import uuid
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+from cachetools import LRUCache
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1005,20 +1006,47 @@ async def rollback_release_snapshot_for_run(
     )
 
 
+# Per-URL DB budget: every URL in a run used to reload the run's frozen release
+# payload 2-4x (selector rules + runtime snapshot + retries), each time through
+# a fresh per-URL session that could not share the identity map. A persisted
+# release snapshot is immutable (INVARIANTS §17) and keyed by an app-generated
+# UUID, so the payload is memoized at process level keyed by snapshot id. The
+# bound keeps a long-lived worker from accumulating payloads across runs; only
+# a handful of runs are in flight per process at once.
+_RELEASE_PAYLOAD_CACHE_MAX_ENTRIES = 8
+_release_payload_cache: LRUCache[uuid.UUID, dict[str, object]] = LRUCache(
+    maxsize=_RELEASE_PAYLOAD_CACHE_MAX_ENTRIES
+)
+
+
+def reset_release_payload_cache() -> None:
+    """Drop memoized release payloads (test isolation / post-migration reloads)."""
+
+    _release_payload_cache.clear()
+
+
 async def load_release_payload(
     session: AsyncSession, release_snapshot_id: uuid.UUID | None
 ) -> dict[str, object]:
     if release_snapshot_id is None:
         return {}
+    cached = _release_payload_cache.get(release_snapshot_id)
+    if cached is not None:
+        # Hand out a copy: callers keep the historical per-call mutable-copy
+        # semantics (``_load_runtime_snapshot`` annotates the returned dict).
+        return deepcopy(cached)
     row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
     if row is None:
+        # Never memoize a miss: the row may be created later in this process.
         return {}
     # CRITICAL 2: a persisted release snapshot is frozen. Return the stored
     # payload unchanged so in-flight runs keep replaying the exact recipes they
     # were created with. Current template/recipe suspension status is applied
     # only while BUILDING a future snapshot (see ``build_release_payload``,
     # which filters to active/trusted templates and active recipes).
-    return deepcopy(row.payload)
+    payload = deepcopy(row.payload)
+    _release_payload_cache[release_snapshot_id] = deepcopy(payload)
+    return payload
 
 
 async def record_extraction_result(
@@ -1324,3 +1352,165 @@ async def purge_extraction_memory(session: AsyncSession) -> dict[str, int]:
         )
         await session.execute(delete(model))
     return counts
+
+
+# ---------------------------------------------------------------------------
+# Knowledge compatibility projections.
+#
+# Query/projection owners for the thin HTTP handlers in ``api/knowledge.py``.
+# Response shapes are the historical compatibility shapes; handlers only add
+# HTTP concerns (auth, status codes).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeSiteProjection:
+    """Per-domain extraction-memory site row for ``GET /api/knowledge/sites``."""
+
+    id: uuid.UUID
+    domain: str
+    current_version: int
+    projection_status: str
+    last_projected_run_id: int | None
+    last_projected_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeContractLocation:
+    """A stored contract payload plus the template row that owns it."""
+
+    template: ExtractionTemplate
+    contract: dict[str, Any]
+
+
+async def list_knowledge_site_projections(
+    session: AsyncSession,
+) -> list[KnowledgeSiteProjection]:
+    """Project all templates into one row per domain, ordered by domain."""
+
+    templates = list(
+        (await session.execute(select(ExtractionTemplate))).scalars().all()
+    )
+    version_rows = (
+        await session.execute(
+            select(
+                ExtractionRecipe.template_id,
+                func.max(ExtractionRecipe.version),
+            ).group_by(ExtractionRecipe.template_id)
+        )
+    ).all()
+    latest_version_by_template = {
+        template_id: int(version)
+        for template_id, version in version_rows
+        if version is not None
+    }
+    domains: dict[str, list[ExtractionTemplate]] = {}
+    for template in templates:
+        domains.setdefault(template.domain, []).append(template)
+    return [
+        KnowledgeSiteProjection(
+            id=rows[0].id,
+            domain=domain,
+            current_version=max(
+                (latest_version_by_template.get(row.id, 1) for row in rows),
+                default=1,
+            ),
+            projection_status="active",
+            last_projected_run_id=max(
+                (row.last_seen_run_id or 0 for row in rows), default=0
+            )
+            or None,
+            last_projected_at=max((row.updated_at for row in rows), default=None),
+        )
+        for domain, rows in sorted(domains.items())
+    ]
+
+
+async def list_template_contracts(
+    session: AsyncSession, template: ExtractionTemplate
+) -> list[dict[str, Any]]:
+    recipe = await _contract_recipe(session, template.id)
+    return [
+        dict(row) for row in (recipe.payload.get("contracts", []) if recipe else [])
+    ]
+
+
+async def list_domain_contracts(
+    session: AsyncSession,
+    *,
+    domain: str = "",
+    surface: str = "",
+) -> list[dict[str, Any]]:
+    """All stored contract rows for the filtered templates, operator first."""
+
+    query = select(ExtractionTemplate)
+    if domain:
+        query = query.where(ExtractionTemplate.domain == normalize_domain(domain))
+    if surface:
+        query = query.where(ExtractionTemplate.surface == surface)
+    templates = list((await session.execute(query)).scalars().all())
+    contracts: list[dict[str, Any]] = []
+    for template in templates:
+        contracts.extend(await list_template_contracts(session, template))
+    contracts.sort(
+        key=lambda row: (
+            row.get("selection_origin") != "operator",
+            row.get("canonical_field", ""),
+        )
+    )
+    return contracts
+
+
+async def find_contract_location(
+    session: AsyncSession, contract_id: str
+) -> KnowledgeContractLocation | None:
+    for template in list(
+        (await session.execute(select(ExtractionTemplate))).scalars().all()
+    ):
+        for contract in await list_template_contracts(session, template):
+            if str(contract.get("id")) == contract_id:
+                return KnowledgeContractLocation(template=template, contract=contract)
+    return None
+
+
+def select_contract_source(
+    contract: dict[str, Any], *, selected_source: str
+) -> dict[str, Any]:
+    """Record an operator source selection on a stored contract payload."""
+
+    contract["selected_source"] = selected_source
+    contract["selection_origin"] = "operator"
+    history = list(contract.get("selection_history") or [])
+    history.append({"selected_source": selected_source, "scope": "template"})
+    contract["selection_history"] = history
+    return contract
+
+
+async def store_template_contract(
+    session: AsyncSession, template: ExtractionTemplate, contract: dict[str, Any]
+) -> None:
+    contracts = await list_template_contracts(session, template)
+    contracts = [
+        row for row in contracts if str(row.get("id")) != str(contract.get("id"))
+    ]
+    contracts.append(contract)
+    await upsert_recipe(
+        session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": contracts},
+    )
+
+
+async def _contract_recipe(
+    session: AsyncSession, template_id: uuid.UUID
+) -> ExtractionRecipe | None:
+    return (
+        await session.execute(
+            select(ExtractionRecipe).where(
+                ExtractionRecipe.template_id == template_id,
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
+            )
+        )
+    ).scalar_one_or_none()
