@@ -8,20 +8,15 @@ adapter's shape: build payload -> POST -> map HTTP/transport errors to
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
-import httpx
-
+from app.ai_visibility._provider_http import _execute_post
 from app.ai_visibility.anthropic_parser import parse_anthropic_message
 from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
-from app.ai_visibility.gemini import AiVisibilityProviderError, classify_provider_status
+from app.ai_visibility.gemini import AiVisibilityProviderError
 from app.core.config.ai_visibility import (
-    AI_VISIBILITY_ERROR_CONNECTION,
     AI_VISIBILITY_ERROR_RATE_LIMIT,
     AI_VISIBILITY_ERROR_SERVER,
-    AI_VISIBILITY_ERROR_TIMEOUT,
-    AI_VISIBILITY_ERROR_UNKNOWN,
     AI_VISIBILITY_PROVIDER_ANTHROPIC,
     ai_visibility_settings,
 )
@@ -100,47 +95,17 @@ class AnthropicAnswerEngineAdapter:
         self._country_code = country_code
 
     async def execute(self, request: AnswerEngineRequest) -> AnswerEngineResponse:
-        headers = {
-            "x-api-key": self._api_key,
-            "anthropic-version": ai_visibility_settings.anthropic_version,
-            "content-type": "application/json",
-        }
-        started = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=request.timeout_seconds) as client:
-                response = await client.post(
-                    ai_visibility_settings.anthropic_messages_url,
-                    json=_payload(request, country_code=self._country_code),
-                    headers=headers,
-                )
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout) as exc:
-            raise AiVisibilityProviderError(
-                f"Anthropic request timed out: {exc}",
-                error_code=AI_VISIBILITY_ERROR_TIMEOUT,
-                retryable=True,
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise AiVisibilityProviderError(
-                f"Anthropic connection error: {exc}",
-                error_code=AI_VISIBILITY_ERROR_CONNECTION,
-                retryable=True,
-            ) from exc
-        latency_ms = int((time.monotonic() - started) * 1000)
-        if response.status_code >= 400:
-            error_code, retryable = classify_provider_status(response.status_code)
-            raise AiVisibilityProviderError(
-                f"Anthropic returned HTTP {response.status_code}",
-                error_code=error_code,
-                retryable=retryable,
-            )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise AiVisibilityProviderError(
-                f"Anthropic returned non-JSON response: {exc}",
-                error_code=AI_VISIBILITY_ERROR_UNKNOWN,
-                retryable=False,
-            ) from exc
+        payload, latency_ms = await _execute_post(
+            provider_label="Anthropic",
+            url=ai_visibility_settings.anthropic_messages_url,
+            payload=_payload(request, country_code=self._country_code),
+            headers={
+                "x-api-key": self._api_key,
+                "anthropic-version": ai_visibility_settings.anthropic_version,
+                "content-type": "application/json",
+            },
+            timeout_seconds=request.timeout_seconds,
+        )
         _raise_for_search_error(payload)
         return parse_anthropic_message(
             payload,

@@ -270,7 +270,10 @@ PACKAGE_LOC_BUDGETS = {
 # smoke-script typing symbol (3.14).
 # Stream B commit 6 (same day): -40 net for the triplicated/copy-pasted helper
 # hoists to single owners (3.9 worker/browser helpers, 3.12 seven dupes).
-TOTAL_APP_LOC_BUDGET = 87_196
+# Stream B commit 7 (same day): -1 net for the shared ai_visibility
+# _provider_http._execute_post skeleton (3.10; ~120 adapter LOC deduped
+# against the new neutral module, which is not in a budgeted package).
+TOTAL_APP_LOC_BUDGET = 87_195
 
 
 def test_production_package_loc_budgets() -> None:
