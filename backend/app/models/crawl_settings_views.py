@@ -1,0 +1,488 @@
+from __future__ import annotations
+# pylint: disable=missing-function-docstring
+
+# Derived-settings view computations extracted from CrawlRunSettings
+# (models/crawl_settings.py). Each collaborator wraps the raw settings dict and
+# owns one cohesive slice of the derived views; CrawlRunSettings delegates to
+# these without changing its public call surface.
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
+
+from app.core.config import settings
+from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.core.config.runtime_settings import crawler_runtime_settings
+from app.crawl.utils import normalize_target_url, resolve_traversal_mode
+
+_BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
+_LEGACY_HANDOFF_ELIGIBLE_KEY = "prefer_curl_handoff"
+
+
+def _coerce_int(
+    value: object, default: int, minimum: int, maximum: int | None = None
+) -> int:
+    try:
+        result = max(minimum, int(str(value)))
+        if maximum is not None:
+            result = min(result, maximum)
+        return result
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_optional_int(
+    value: object,
+    minimum: int = 0,
+    maximum: int | None = None,
+    *,
+    reject_non_positive: bool = False,
+) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        result = int(text)
+        if reject_non_positive and result <= 0:
+            return None
+        result = max(result, minimum)
+        if maximum is not None:
+            result = min(result, maximum)
+        return result
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_sequence(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Sequence):
+        return list(value)
+    return [value]
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(mode="json")
+        return dict(dumped) if isinstance(dumped, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _proxy_username(proxy_url: object) -> str:
+    try:
+        return str(urlparse(str(proxy_url or "").strip()).username or "").strip()
+    except ValueError:
+        return ""
+
+
+def _clean_str(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _coerce_optional_choice(value: object, allowed: set[str]) -> str | None:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in allowed else None
+
+
+def _infer_proxy_rotation(
+    *,
+    proxy_list: Sequence[str],
+    stored_rotation: object,
+) -> str | None:
+    normalized = str(stored_rotation or "").strip().lower()
+    if normalized:
+        return normalized
+    sticky_markers = tuple(
+        str(value or "").strip().lower()
+        for value in tuple(crawler_runtime_settings.proxy_sticky_username_markers or ())
+        if str(value or "").strip()
+    )
+    if not sticky_markers:
+        return None
+    for proxy_url in proxy_list:
+        username = _proxy_username(proxy_url).lower()
+        if username and any(marker in username for marker in sticky_markers):
+            return "sticky"
+    return None
+
+
+@dataclass(slots=True)
+class RunExecutionView:
+    """Run targeting and fetch-execution parameters derived from raw settings."""
+
+    data: dict[str, Any]
+
+    def urls(self) -> list[str]:
+        return [
+            normalize_target_url(value)
+            for value in _coerce_sequence(self.data.get("urls"))
+        ]
+
+    def traversal_mode(self) -> str | None:
+        return resolve_traversal_mode(self.data)
+
+    def advanced_enabled(self) -> bool:
+        return bool(self.data.get("advanced_enabled"))
+
+    def respect_robots_txt(self) -> bool:
+        if "respect_robots_txt" not in self.data:
+            return False
+        return bool(self.data.get("respect_robots_txt"))
+
+    def max_pages(self) -> int:
+        fetch_profile = _mapping(self.data.get("fetch_profile"))
+        return _coerce_int(
+            fetch_profile.get(
+                "max_pages",
+                self.data.get("max_pages", crawler_runtime_settings.default_max_pages),
+            ),
+            crawler_runtime_settings.default_max_pages,
+            crawler_runtime_settings.min_max_pages,
+            crawler_runtime_settings.max_max_pages,
+        )
+
+    def max_records(self) -> int:
+        return _coerce_int(
+            self.data.get("max_records", crawler_runtime_settings.default_max_records),
+            crawler_runtime_settings.default_max_records,
+            1,
+            settings.max_run_records,
+        )
+
+    def max_scrolls(self) -> int:
+        fetch_profile = _mapping(self.data.get("fetch_profile"))
+        return _coerce_int(
+            fetch_profile.get(
+                "max_scrolls",
+                self.data.get(
+                    "max_scrolls",
+                    crawler_runtime_settings.default_max_scrolls,
+                ),
+            ),
+            crawler_runtime_settings.default_max_scrolls,
+            1,
+        )
+
+    def sleep_ms(self) -> int:
+        fetch_profile = _mapping(self.data.get("fetch_profile"))
+        return _coerce_int(
+            fetch_profile.get(
+                "request_delay_ms",
+                self.data.get(
+                    "request_delay_ms",
+                    self.data.get(
+                        "sleep_ms",
+                        crawler_runtime_settings.min_request_delay_ms,
+                    ),
+                ),
+            ),
+            crawler_runtime_settings.min_request_delay_ms,
+            crawler_runtime_settings.min_request_delay_ms,
+        )
+
+    def url_batch_concurrency(self) -> int:
+        return _coerce_int(
+            self.data.get(
+                "url_batch_concurrency",
+                crawler_runtime_settings.url_batch_concurrency,
+            ),
+            crawler_runtime_settings.url_batch_concurrency,
+            1,
+        )
+
+    def url_timeout_seconds(self) -> float:
+        return crawler_runtime_settings.coerce_url_timeout_seconds(
+            self.data.get(
+                "url_timeout_seconds",
+                crawler_runtime_settings.url_process_timeout_seconds,
+            )
+        )
+
+    def fetch_profile(self) -> dict[str, object]:
+        stored = _mapping(self.data.get("fetch_profile"))
+        traversal_mode = self.traversal_mode()
+        ttl_key = crawler_runtime_settings.host_memory_ttl_seconds_key
+        host_memory_ttl_seconds = _coerce_optional_int(
+            stored.get(ttl_key, self.data.get(ttl_key)),
+            minimum=crawler_runtime_settings.host_memory_ttl_min_seconds,
+            maximum=crawler_runtime_settings.host_memory_ttl_max_seconds,
+        )
+        if stored:
+            return {
+                "fetch_mode": str(stored.get("fetch_mode") or "auto").strip().lower()
+                or "auto",
+                "extraction_source": str(stored.get("extraction_source") or "raw_html")
+                .strip()
+                .lower()
+                or "raw_html",
+                "js_mode": str(stored.get("js_mode") or "auto").strip().lower()
+                or "auto",
+                "include_iframes": bool(stored.get("include_iframes", False)),
+                "traversal_mode": traversal_mode,
+                "request_delay_ms": self.sleep_ms(),
+                "max_pages": self.max_pages(),
+                "max_scrolls": self.max_scrolls(),
+                ttl_key: host_memory_ttl_seconds,
+            }
+        return {
+            "fetch_mode": "auto",
+            "extraction_source": "raw_html",
+            "js_mode": "auto",
+            "include_iframes": False,
+            "traversal_mode": traversal_mode,
+            "request_delay_ms": self.sleep_ms(),
+            "max_pages": self.max_pages(),
+            "max_scrolls": self.max_scrolls(),
+            ttl_key: host_memory_ttl_seconds,
+        }
+
+
+@dataclass(slots=True)
+class ProxySettingsView:
+    """Proxy list/profile derivation, including sticky-rotation inference."""
+
+    data: dict[str, Any]
+
+    def proxy_list(self) -> list[str]:
+        stored_profile = _mapping(self.data.get("proxy_profile"))
+        raw_value = (
+            stored_profile.get("proxy_list")
+            if "proxy_list" in stored_profile
+            else self.data.get("proxy_list")
+        )
+        values = []
+        for value in _coerce_sequence(raw_value):
+            text = str(value or "").strip()
+            if text:
+                values.append(text)
+        return values
+
+    def proxy_profile(self, *, infer_rotation: bool = True) -> dict[str, object]:
+        stored = _mapping(self.data.get("proxy_profile"))
+        profile: dict[str, object] = dict(stored)
+        proxy_list = self.proxy_list()
+        profile["enabled"] = bool(
+            stored.get("enabled", self.data.get("proxy_enabled", False))
+        )
+        profile["proxy_list"] = proxy_list
+        if infer_rotation:
+            inferred_rotation = _infer_proxy_rotation(
+                proxy_list=proxy_list,
+                stored_rotation=stored.get("rotation"),
+            )
+            if inferred_rotation is not None:
+                profile["rotation"] = inferred_rotation
+        return profile
+
+
+@dataclass(slots=True)
+class AcquisitionContractView:
+    """Acquisition-contract normalization (engine preference, handoff, staleness)."""
+
+    data: dict[str, Any]
+
+    def acquisition_contract(self) -> dict[str, object]:
+        stored = _mapping(self.data.get("acquisition_contract"))
+        fetch_profile = _mapping(self.data.get("fetch_profile"))
+        fetch_mode = (
+            str(fetch_profile.get("fetch_mode", self.data.get("fetch_mode") or ""))
+            .strip()
+            .lower()
+        )
+        browser_only = fetch_mode == "browser_only"
+        handoff_eligible = bool(
+            stored.get(
+                "handoff_eligible", stored.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False)
+            )
+        )
+        if browser_only:
+            handoff_eligible = False
+        stale = _mapping(stored.get("stale_after_failures"))
+        last_quality_success = _mapping(stored.get("last_quality_success"))
+        normalized_success: dict[str, object] | None = None
+        if last_quality_success:
+            normalized_success = dict(last_quality_success)
+            normalized_success.update(
+                {
+                    "method": _clean_str(last_quality_success.get("method")),
+                    "browser_engine": _coerce_optional_choice(
+                        last_quality_success.get("browser_engine"),
+                        _BROWSER_ENGINE_VALUES,
+                    ),
+                    "record_count": _coerce_int(
+                        last_quality_success.get("record_count"),
+                        0,
+                        0,
+                    ),
+                    "field_coverage": dict(
+                        last_quality_success.get("field_coverage") or {}
+                    )
+                    if isinstance(last_quality_success.get("field_coverage"), Mapping)
+                    else {},
+                    "source_run_id": _coerce_optional_int(
+                        last_quality_success.get("source_run_id"),
+                        1,
+                        reject_non_positive=True,
+                    ),
+                    "timestamp": _clean_str(last_quality_success.get("timestamp")),
+                }
+            )
+        return {
+            "preferred_browser_engine": str(
+                stored.get("preferred_browser_engine") or "auto"
+            )
+            .strip()
+            .lower()
+            or "auto",
+            "prefer_browser": bool(stored.get("prefer_browser", False)) or browser_only,
+            "handoff_eligible": handoff_eligible,
+            "handoff_cookie_engine": (
+                "auto"
+                if browser_only
+                else str(stored.get("handoff_cookie_engine") or "auto").strip().lower()
+                or "auto"
+            ),
+            "required_rendering": bool(stored.get("required_rendering", False)),
+            "required_traversal": bool(stored.get("required_traversal", False)),
+            "required_network_payloads": bool(
+                stored.get("required_network_payloads", False)
+            ),
+            "last_quality_success": normalized_success,
+            "stale_after_failures": {
+                "failure_count": _coerce_int(
+                    stale.get("failure_count"),
+                    0,
+                    0,
+                ),
+                "stale": bool(stale.get("stale", False)),
+            },
+        }
+
+
+@dataclass(slots=True)
+class RunProfileView:
+    """Profile assembly: locality/diagnostics fragments and composite views."""
+
+    data: dict[str, Any]
+
+    @property
+    def _execution(self) -> RunExecutionView:
+        return RunExecutionView(self.data)
+
+    @property
+    def _proxy(self) -> ProxySettingsView:
+        return ProxySettingsView(self.data)
+
+    @property
+    def _contract(self) -> AcquisitionContractView:
+        return AcquisitionContractView(self.data)
+
+    def locality_profile(self) -> dict[str, object]:
+        stored = _mapping(self.data.get("locality_profile"))
+        return {
+            "geo_country": str(stored.get("geo_country") or "auto").strip() or "auto",
+            "language_hint": str(stored.get("language_hint") or "").strip() or None,
+            "currency_hint": str(stored.get("currency_hint") or "").strip() or None,
+        }
+
+    def diagnostics_profile(self) -> dict[str, object]:
+        stored = _mapping(self.data.get("diagnostics_profile"))
+        capture_network = (
+            str(stored.get("capture_network") or "off").strip().lower() or "off"
+        )
+        return {
+            "capture_html": bool(stored.get("capture_html", True)),
+            "capture_screenshot": bool(stored.get("capture_screenshot", False)),
+            "capture_network": capture_network,
+            "capture_response_headers": bool(
+                stored.get("capture_response_headers", True)
+            ),
+            "capture_browser_diagnostics": bool(
+                stored.get("capture_browser_diagnostics", True)
+            ),
+        }
+
+    def acquisition_profile(self) -> dict[str, object]:
+        profile: dict[str, object] = {}
+        for key in ("ignore_https_errors", "bypass_csp"):
+            if key in self.data:
+                profile[key] = bool(self.data.get(key))
+        fetch_profile = self._execution.fetch_profile()
+        diagnostics_profile = self.diagnostics_profile()
+        profile.update(
+            {
+                "fetch_mode": fetch_profile["fetch_mode"],
+                "extraction_source": fetch_profile["extraction_source"],
+                "js_mode": fetch_profile["js_mode"],
+                "include_iframes": fetch_profile["include_iframes"],
+                "capture_html": diagnostics_profile["capture_html"],
+                "capture_screenshot": diagnostics_profile["capture_screenshot"],
+                "capture_network": diagnostics_profile["capture_network"],
+                "capture_response_headers": diagnostics_profile[
+                    "capture_response_headers"
+                ],
+                "capture_browser_diagnostics": diagnostics_profile[
+                    "capture_browser_diagnostics"
+                ],
+            }
+        )
+        if fetch_profile["host_memory_ttl_seconds"] is not None:
+            profile["host_memory_ttl_seconds"] = fetch_profile[
+                "host_memory_ttl_seconds"
+            ]
+        proxy_profile = self._proxy.proxy_profile()
+        profile["proxy_profile"] = proxy_profile
+        profile["locality_profile"] = self.locality_profile()
+        if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
+            from app.crawl.profile.normalization import normalize_internal_api_endpoints
+
+            profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+                normalize_internal_api_endpoints(
+                    self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+                )
+            )
+        return profile
+
+    def normalized_for_storage(self) -> dict[str, Any]:
+        normalized = dict(self.data)
+        execution = self._execution
+        proxy = self._proxy
+        ttl_key = crawler_runtime_settings.host_memory_ttl_seconds_key
+        normalized["urls"] = execution.urls()
+        normalized["max_records"] = execution.max_records()
+        normalized["respect_robots_txt"] = execution.respect_robots_txt()
+        normalized["fetch_profile"] = execution.fetch_profile()
+        normalized.pop(ttl_key, None)
+        if normalized["fetch_profile"].get(ttl_key) is not None:
+            normalized[ttl_key] = normalized["fetch_profile"][ttl_key]
+        normalized["locality_profile"] = self.locality_profile()
+        normalized["diagnostics_profile"] = self.diagnostics_profile()
+        normalized["acquisition_contract"] = self._contract.acquisition_contract()
+        if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
+            from app.crawl.profile.normalization import normalize_internal_api_endpoints
+
+            normalized[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+                normalize_internal_api_endpoints(
+                    self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+                )
+            )
+        normalized["max_pages"] = execution.max_pages()
+        normalized["max_scrolls"] = execution.max_scrolls()
+        normalized["sleep_ms"] = execution.sleep_ms()
+        normalized["request_delay_ms"] = execution.sleep_ms()
+        normalized["traversal_mode"] = execution.traversal_mode()
+        normalized["proxy_enabled"] = bool(proxy.proxy_profile()["enabled"])
+        normalized["proxy_list"] = proxy.proxy_list()
+        normalized["proxy_profile"] = proxy.proxy_profile(infer_rotation=False)
+        if execution.advanced_enabled():
+            normalized["advanced_mode"] = self.data.get("advanced_mode")
+        elif "advanced_mode" in normalized:
+            normalized["advanced_mode"] = None
+        return normalized

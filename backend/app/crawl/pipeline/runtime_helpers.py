@@ -10,7 +10,7 @@ from app.core.db_utils import mapping_or_empty
 from app.core.records.field_policy import normalize_requested_field
 from app.core.shared.field_coerce import LONG_TEXT_FIELDS
 from app.persistence.publish import VERDICT_ERROR, is_effectively_blocked
-from app.persistence.run_summary import as_int
+from app.core.shared.run_summary import as_int
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
