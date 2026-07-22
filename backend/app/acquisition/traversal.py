@@ -25,8 +25,8 @@ from app.acquisition.traversal_helpers import (
     emit_event as _emit_event,
     looks_like_paginate_control,
 )
+from app.acquisition.browser_capture import PlaywrightError
 from app.acquisition.traversal_recovery import (
-    PlaywrightError,
     click_with_retry,
     dismiss_overlays_if_needed,
     locator_still_resolves,

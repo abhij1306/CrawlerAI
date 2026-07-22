@@ -7,8 +7,11 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crawl_run import CrawlRun
-from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.crawl.state import CrawlStatus
+from app.workers.base import (
+    load_run_with_normalized_status as _load_run_with_normalized_status,
+)
+from app.workers.base import set_task_id as _set_task_id
 
 logger = logging.getLogger(__name__)
 process_run_task = None
@@ -19,26 +22,10 @@ def _new_task_id(run_id: int) -> str:
     return f"crawl-run-{run_id}-{uuid4().hex}"
 
 
-def _set_task_id(run: CrawlRun, task_id: str | None) -> None:
-    if task_id:
-        run.update_summary(**{CELERY_TASK_ID_KEY: task_id})
-    else:
-        run.remove_summary_keys(CELERY_TASK_ID_KEY)
-
-
 async def _clear_task_id(session: AsyncSession, run: CrawlRun) -> None:
     """Clear a persisted task_id and commit so the run is safe to re-dispatch."""
     _set_task_id(run, None)
     await session.commit()
-
-
-async def _load_run_with_normalized_status(
-    session: AsyncSession, run_id: int
-) -> tuple[CrawlRun, CrawlStatus]:
-    run = await session.get(CrawlRun, run_id)
-    if run is None:
-        raise ValueError(f"Run not found: {run_id}")
-    return run, run.status_value
 
 
 def _process_run_task():

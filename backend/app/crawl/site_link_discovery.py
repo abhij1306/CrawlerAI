@@ -34,6 +34,9 @@ from app.crawl.sitemap_resolver import SitemapResolutionResult
 from app.crawl.utils import normalize_target_url, text_has_token
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.core.shared.url_utils import absolute_url
+from app.core.shared.url_utils import (
+    looks_like_locale_segment as _looks_like_locale_segment,
+)
 from app.core.url_safety import validate_public_target
 
 FetchPage = Callable[..., Awaitable[Any]]
@@ -337,7 +340,9 @@ def _category_branch(url: str) -> tuple[str, ...]:
     segments = tuple(
         segment.casefold()
         for segment in urlsplit(url).path.split("/")
-        if segment and not _looks_like_locale_segment(segment)
+        # Underscores normalize to dashes before the locale check so segments
+        # like "en_US" still classify as locale branches (pre-hoist behavior).
+        if segment and not _looks_like_locale_segment(segment.replace("_", "-"))
     )
     return segments
 
@@ -347,16 +352,6 @@ def _matches_requested_branch(url: str, requested_branch: tuple[str, ...]) -> bo
     return bool(candidate) and (
         candidate[: len(requested_branch)] == requested_branch
         or requested_branch[-1] in candidate
-    )
-
-
-def _looks_like_locale_segment(value: str) -> bool:
-    cleaned = str(value or "").replace("_", "-").casefold()
-    return (len(cleaned) == 2 and cleaned.isalpha()) or (
-        len(cleaned) == 5
-        and cleaned[2] == "-"
-        and cleaned[:2].isalpha()
-        and cleaned[3:].isalpha()
     )
 
 

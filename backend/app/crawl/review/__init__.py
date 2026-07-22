@@ -508,16 +508,6 @@ async def _latest_field_feedback_index(
     return index
 
 
-def _serialize_feedback_row(row: DomainFieldFeedback) -> dict[str, object]:
-    return {
-        "action": row.action,
-        "source_kind": row.source_kind,
-        "source_value": row.source_value,
-        "source_run_id": row.source_run_id,
-        "created_at": row.created_at,
-    }
-
-
 def _serialize_feedback_record(row: DomainFieldFeedback) -> dict[str, object]:
     payload = row.payload or {}
     return {

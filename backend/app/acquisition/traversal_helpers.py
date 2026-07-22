@@ -26,7 +26,7 @@ from app.acquisition.platform_policy import (
 from selectolax.lexbor import LexborHTMLParser
 
 logger = logging.getLogger(__name__)
-_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
+RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 
 if TYPE_CHECKING:
     from app.acquisition.traversal_types import TraversalResult
@@ -119,7 +119,7 @@ async def looks_like_paginate_control(locator) -> bool:
             }
             """
         )
-    except _RECOVERABLE_ERRORS:
+    except RECOVERABLE_ERRORS:
         logger.debug("Traversal next_page control inspection failed", exc_info=True)
         return False
     if not isinstance(inspection, dict):
@@ -183,7 +183,7 @@ async def _looks_like_next_page_control(locator) -> bool:
             }
             """
         )
-    except _RECOVERABLE_ERRORS:
+    except RECOVERABLE_ERRORS:
         return False
     if not isinstance(inspection, dict):
         return False
@@ -326,7 +326,7 @@ async def _settle_after_action(
         return
     try:
         await page.wait_for_load_state("networkidle", timeout=min(1500, wait_ms * 2))
-    except _RECOVERABLE_ERRORS:
+    except RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal networkidle settle wait failed url=%s",
             page.url,
@@ -336,7 +336,7 @@ async def _settle_after_action(
         await page.wait_for_load_state(
             "domcontentloaded", timeout=min(1500, wait_ms * 2)
         )
-    except _RECOVERABLE_ERRORS:
+    except RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal domcontentloaded settle wait failed url=%s",
             page.url,
@@ -405,7 +405,7 @@ async def _wait_for_domcontentloaded(page, *, deadline_at: float | None) -> None
             "domcontentloaded",
             timeout=timeout_ms,
         )
-    except _RECOVERABLE_ERRORS:
+    except RECOVERABLE_ERRORS:
         logger.debug("Traversal domcontentloaded wait failed", exc_info=True)
         return
 

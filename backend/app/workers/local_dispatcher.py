@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionLocal
 from app.models.crawl_run import CrawlRun
 from app.crawl.batch_runtime import process_run as _batch_process_run
-from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.crawl.state import CrawlStatus
 from app.crawl.pipeline.runtime_helpers import mark_run_failed
+from app.workers.base import (
+    load_run_with_normalized_status as _load_run_with_normalized_status,
+)
+from app.workers.base import set_task_id as _set_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +26,6 @@ _local_run_tasks: weakref.WeakValueDictionary[int, asyncio.Task[None]] = (
 
 def _new_task_id(run_id: int) -> str:
     return f"crawl-run-{run_id}-{uuid4().hex}"
-
-
-def _set_task_id(run: CrawlRun, task_id: str | None) -> None:
-    if task_id:
-        run.update_summary(**{CELERY_TASK_ID_KEY: task_id})
-    else:
-        run.remove_summary_keys(CELERY_TASK_ID_KEY)
 
 
 def get_live_local_run_task(run_id: int) -> asyncio.Task[None] | None:
@@ -106,15 +102,6 @@ def track_local_run_task(run_id: int) -> asyncio.Task[None]:
 
     task.add_done_callback(_cleanup)
     return task
-
-
-async def _load_run_with_normalized_status(
-    session: AsyncSession, run_id: int
-) -> tuple[CrawlRun, CrawlStatus]:
-    run = await session.get(CrawlRun, run_id)
-    if run is None:
-        raise ValueError(f"Run not found: {run_id}")
-    return run, run.status_value
 
 
 class LocalRunDispatcher:

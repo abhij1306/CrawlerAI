@@ -64,6 +64,15 @@ async def log_pipeline_event(
     )
 
 
+def pipeline_acquisition_event_logger(context):
+    """Build the acquisition-stage ``on_event`` callback for a URL context."""
+
+    async def _log(level: str, message: str) -> None:
+        await log_pipeline_event(context, level, message)
+
+    return _log
+
+
 async def set_stage(
     session,
     run,

@@ -225,14 +225,18 @@ PACKAGE_LOC_BUDGETS = {
     # typing-delay helper/settings), crawl -16 (orphaned dashboard reset
     # wrappers + selector_rule_count), core -32 (selector summary service fn)
     # ratcheted down to measured (3.14).
+    # Stream B commit 6 (same day): acquisition -8 and crawl -29 (hoisted
+    # helper copies deleted, 3.9/3.12), intelligence -4 (dead _query_tokens),
+    # core +6 (clean_str/locale-segment single owners) — shrunk packages
+    # ratcheted down to measured, core raised to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_192,
-    "crawl": 9_351,
-    "core": 21_012,
+    "acquisition": 17_184,
+    "crawl": 9_322,
+    "core": 21_018,
     "enrichment": 2_254,
     "connectors": 2_444,
-    "intelligence": 3_461,
+    "intelligence": 3_457,
     "extraction": 16_753,
     "evaluation": 1_563,
 }
@@ -264,7 +268,9 @@ PACKAGE_LOC_BUDGETS = {
 # Stream B commit 5 (same day): -349 for the orphaned test-only routes,
 # route-orphaned export builders/streamers, dashboard reset wrappers, and the
 # smoke-script typing symbol (3.14).
-TOTAL_APP_LOC_BUDGET = 87_236
+# Stream B commit 6 (same day): -40 net for the triplicated/copy-pasted helper
+# hoists to single owners (3.9 worker/browser helpers, 3.12 seven dupes).
+TOTAL_APP_LOC_BUDGET = 87_196
 
 
 def test_production_package_loc_budgets() -> None:

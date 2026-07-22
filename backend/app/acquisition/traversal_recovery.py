@@ -8,10 +8,9 @@ from typing import TYPE_CHECKING
 from app.acquisition.dom_runtime import (
     wait_for_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
-from app.acquisition.browser_capture import (
-    PlaywrightError,
-    PlaywrightTimeoutError,
-    is_recoverable_playwright_error,
+from app.acquisition.browser_capture import is_recoverable_playwright_error
+from app.acquisition.traversal_helpers import (
+    RECOVERABLE_ERRORS as _RECOVERABLE_ERRORS,
 )
 from app.acquisition.traversal_helpers import (
     emit_event as _emit_event,
@@ -24,7 +23,6 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELECTORS
 
 logger = logging.getLogger(__name__)
-_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 _POTENTIALLY_RECOVERABLE_ERRORS = (*_RECOVERABLE_ERRORS, RuntimeError, OSError)
 _CENTER_SCROLL_SCRIPT = """(node) => {
     if (node instanceof Element) {

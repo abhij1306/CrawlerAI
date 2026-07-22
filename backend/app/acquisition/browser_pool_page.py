@@ -8,6 +8,9 @@ import logging
 
 from app.acquisition import cookie_store
 from app.acquisition.browser_background_tasks import await_without_cancelling
+from app.acquisition.browser_diagnostics import (
+    resolve_browser_pool as _browser_pool,
+)
 from app.acquisition.browser_storage_state import persist_context_storage_state
 from app.acquisition.browser_proxy_config import normalized_proxy_value
 from app.acquisition.browser_storage_state import (
@@ -91,7 +94,9 @@ async def runtime_page(
                 context_options=context_options,
             )
         finally:
-            _record_timing(phase_timings_ms, "context_open_ms", context_open_started_at)
+            _browser_pool()._record_timing(
+                phase_timings_ms, "context_open_ms", context_open_started_at
+            )
         yield page
     finally:
         try:
@@ -131,7 +136,7 @@ async def _load_storage_state(
         )
     if storage_state:
         context_options["storage_state"] = storage_state
-    _record_timing(phase_timings_ms, "storage_state_load_ms", started_at)
+    _browser_pool()._record_timing(phase_timings_ms, "storage_state_load_ms", started_at)
 
 
 async def _persist_and_close_context(
@@ -159,43 +164,31 @@ async def _persist_and_close_context(
                     allow_domain_storage_state
                     and bool(getattr(context, DOMAIN_STORAGE_PERSIST_ATTR, True))
                 ),
-                timeout_seconds=_browser_context_timeout_seconds(),
+                timeout_seconds=_browser_pool()._browser_context_timeout_seconds(),
             )
         finally:
-            _record_timing(phase_timings_ms, "storage_state_persist_ms", started_at)
+            _browser_pool()._record_timing(
+                phase_timings_ms, "storage_state_persist_ms", started_at
+            )
     finally:
         started_at = time.perf_counter()
         await _close_browser_context_safely(
             context,
             on_pending_done=on_pending_done,
         )
-        _record_timing(phase_timings_ms, "context_close_ms", started_at)
+        _browser_pool()._record_timing(phase_timings_ms, "context_close_ms", started_at)
 
 
 async def _close_browser_context_safely(context: Any, *, on_pending_done=None) -> None:
     close_coro = context.close()
     closed = await await_without_cancelling(
         close_coro,
-        timeout_seconds=_browser_context_timeout_seconds(),
+        timeout_seconds=_browser_pool()._browser_context_timeout_seconds(),
         on_pending_done=on_pending_done,
     )
     if closed:
         return
     logger.warning(
         "Timed out closing browser context after %.1fs; observing close in background",
-        _browser_context_timeout_seconds(),
+        _browser_pool()._browser_context_timeout_seconds(),
     )
-
-
-def _browser_context_timeout_seconds() -> float:
-    return max(0.1, float(crawler_runtime_settings.browser_context_timeout_ms) / 1000)
-
-
-def _record_timing(
-    phase_timings_ms: dict[str, int] | None,
-    key: str,
-    started_at: float,
-) -> None:
-    if phase_timings_ms is None:
-        return
-    phase_timings_ms[key] = int(max(0.0, time.perf_counter() - started_at) * 1000)

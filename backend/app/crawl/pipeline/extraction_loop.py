@@ -230,15 +230,6 @@ async def _run_robots_gate(
     return None
 
 
-def _pipeline_acquisition_event_logger(
-    context: _URLProcessingContext,
-):
-    async def _log(level: str, message: str) -> None:
-        await _log_pipeline_event(context, level, message)
-
-    return _log
-
-
 async def _run_acquisition_stage(
     context: _URLProcessingContext,
     *,

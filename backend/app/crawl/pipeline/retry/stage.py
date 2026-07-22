@@ -25,6 +25,7 @@ from app.crawl.pipeline.record_extraction_stage import (
 from app.crawl.pipeline.runtime_helpers import (
     log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
+    pipeline_acquisition_event_logger as _pipeline_acquisition_event_logger,
 )
 from app.persistence.publish import build_acquisition_profile, build_url_metrics
 from app.crawl.pipeline.url_processing_context import (
@@ -115,13 +116,6 @@ def _apply_context_plan_overrides(plan, context, settings_view):
     if context.config.sleep_ms != settings_view.sleep_ms():
         plan = plan.with_updates(sleep_ms=context.config.sleep_ms)
     return plan
-
-
-def _pipeline_acquisition_event_logger(context: _URLProcessingContext):
-    async def _log(level: str, message: str) -> None:
-        await _log_pipeline_event(context, level, message)
-
-    return _log
 
 
 def remaining_url_budget_seconds(context: _URLProcessingContext) -> float:

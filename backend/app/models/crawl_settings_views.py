@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from app.core.config import settings
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.shared.text_coerce import clean_str as _clean_str
 from app.crawl.utils import normalize_target_url, resolve_traversal_mode
 
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
@@ -79,11 +80,6 @@ def _proxy_username(proxy_url: object) -> str:
         return str(urlparse(str(proxy_url or "").strip()).username or "").strip()
     except ValueError:
         return ""
-
-
-def _clean_str(value: object) -> str | None:
-    text = str(value or "").strip()
-    return text or None
 
 
 def _coerce_optional_choice(value: object, allowed: set[str]) -> str | None:

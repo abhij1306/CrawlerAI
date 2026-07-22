@@ -15,20 +15,15 @@ from typing import Any
 from app.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE as _CHROMIUM_BROWSER_ENGINE,
 )
+from app.acquisition.browser_diagnostics import (
+    resolve_browser_pool as _browser_pool,
+)
 from app.acquisition import cookie_store
-from app.core.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)
 
 RUN_STORAGE_PERSIST_ATTR = "_crawler_persist_run_storage_state"
 DOMAIN_STORAGE_PERSIST_ATTR = "_crawler_persist_domain_storage_state"
-
-
-def _browser_context_timeout_seconds() -> float:
-    return max(
-        0.1,
-        float(crawler_runtime_settings.browser_context_timeout_ms) / 1000,
-    )
 
 
 async def persist_context_storage_state(
@@ -52,7 +47,7 @@ async def persist_context_storage_state(
         float(
             timeout_seconds
             if timeout_seconds is not None
-            else _browser_context_timeout_seconds()
+            else _browser_pool()._browser_context_timeout_seconds()
         ),
     )
     try:

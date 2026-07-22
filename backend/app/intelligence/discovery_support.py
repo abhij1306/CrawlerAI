@@ -557,12 +557,6 @@ def _looks_like_manufacturer_identifier(value: object) -> bool:
     )
 
 
-def _query_tokens(value: object) -> list[str]:
-    return [
-        token for token in re.split(r"[^a-z0-9]+", str(value or "").casefold()) if token
-    ]
-
-
 def _candidate_rank_text(candidate: DiscoveredCandidate) -> str:
     return " ".join(
         part for part in (_search_result_text(candidate.payload), candidate.url) if part
