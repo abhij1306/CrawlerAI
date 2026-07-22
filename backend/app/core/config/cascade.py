@@ -1,8 +1,8 @@
 """Cascade configuration knobs (extraction rearchitecture, Phase 0).
 
-Single owner of the tunable thresholds and enable flags for the selector-free
-listing+detail extraction cascade. Per the repo invariant, all strings /
-thresholds / field-name descriptors live here, never inline in service code.
+Single owner of the tunable thresholds for the selector-free listing+detail
+extraction cascade. Per the repo invariant, all strings / thresholds /
+field-name descriptors live here, never inline in service code.
 
 The cascade runs floors in a fixed order (adapter -> structured source -> DOM)
 and only escalates to the LEARN-ONCE LLM tier as an explicit, degradable
@@ -60,59 +60,6 @@ CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY: Final[
         r"\b0 jobs?\b",
     ),
 }
-
-# --- Cascade tier enable flags ---------------------------------------------
-
-# Structured-source and DOM floors are always on; they are the deterministic
-# backbone and are never gated behind an operator flag. The LEARN-ONCE LLM tier
-# is off unless the crawl explicitly enables the LLM (``llm_enabled``) AND the
-# per-template auto-learn gate below is satisfied.
-CASCADE_ADAPTER_FLOOR_ENABLED: Final[bool] = True
-CASCADE_STRUCTURED_FLOOR_ENABLED: Final[bool] = True
-CASCADE_DOM_FLOOR_ENABLED: Final[bool] = True
-
-# --- Per-surface cascade enable gates --------------------------------------
-
-# Independent per-surface switch that routes the commerce-listing adapter
-# through the selector-free deterministic cascade (structured -> network ->
-# DOM). When False, the commerce-listing adapter falls back to the legacy
-# ``collect_ecommerce_listing`` card collector, so operators can toggle the
-# rearchitecture for commerce listings alone without affecting other surfaces.
-CASCADE_ECOMMERCE_LISTING_ENABLED: Final[bool] = True
-
-# Independent per-surface switch that routes the job-listing adapter through the
-# same selector-free deterministic cascade (structured -> network -> DOM) as
-# commerce. When False, the job-listing adapter falls back to the legacy
-# ``collect_job_listing`` card collector, so operators can toggle the
-# rearchitecture for job listings alone without affecting other surfaces.
-CASCADE_JOB_LISTING_ENABLED: Final[bool] = True
-
-# Independent per-surface switch that routes the commerce-detail adapter through
-# the deterministic detail cascade seam (structured source floor -> DOM harvest
-# pipeline). When False, the commerce-detail adapter falls back to the exact
-# legacy ``harvest_ecommerce_detail`` inline harvest, so operators can toggle the
-# rearchitecture for commerce detail alone without affecting other surfaces. The
-# seam composes the SAME collectors in the SAME fixed order, so ON/OFF produce
-# byte-identical detail records; the flag only changes which code path assembles
-# them.
-CASCADE_ECOMMERCE_DETAIL_ENABLED: Final[bool] = True
-
-# Independent per-surface switch that routes the job-detail adapter through the
-# deterministic detail cascade seam (structured JSON-LD floor -> DOM harvest)
-# instead of the legacy ``collect_job_detail`` inline harvest. Mirrors
-# ``CASCADE_ECOMMERCE_DETAIL_ENABLED`` so operators can toggle the
-# rearchitecture for job detail alone without affecting other surfaces.
-CASCADE_JOB_DETAIL_ENABLED: Final[bool] = True
-
-# LEARN-ONCE LLM tier master switch. Even when True, the tier only fires for a
-# crawl whose ``llm_enabled`` control is set; this flag lets the tier be
-# disabled globally (e.g. during eval-gated rollout) regardless of per-crawl
-# controls.
-CASCADE_LEARN_ONCE_TIER_ENABLED: Final[bool] = True
-
-# Auto-learn a recipe on first crawl only for a NEW template when the floors
-# produced nothing and the crawl has ``llm_enabled`` set.
-CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL: Final[bool] = True
 
 # --- Recipe scope (User Decision #1368) ------------------------------------
 
@@ -330,15 +277,6 @@ __all__ = [
     "CASCADE_READINESS_REJECTION_REASON_LIMIT",
     "CASCADE_LISTING_SHELL_PATTERNS",
     "CASCADE_LISTING_NO_RESULTS_PATTERNS_BY_ROOT_ENTITY",
-    "CASCADE_ADAPTER_FLOOR_ENABLED",
-    "CASCADE_STRUCTURED_FLOOR_ENABLED",
-    "CASCADE_DOM_FLOOR_ENABLED",
-    "CASCADE_ECOMMERCE_LISTING_ENABLED",
-    "CASCADE_JOB_LISTING_ENABLED",
-    "CASCADE_ECOMMERCE_DETAIL_ENABLED",
-    "CASCADE_JOB_DETAIL_ENABLED",
-    "CASCADE_LEARN_ONCE_TIER_ENABLED",
-    "CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL",
     "CASCADE_RECIPE_SCOPE_KEY",
     "CASCADE_RECIPE_STALE_FAILURE_THRESHOLD",
     "CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS",

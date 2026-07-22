@@ -229,15 +229,19 @@ PACKAGE_LOC_BUDGETS = {
     # helper copies deleted, 3.9/3.12), intelligence -4 (dead _query_tokens),
     # core +6 (clean_str/locale-segment single owners) — shrunk packages
     # ratcheted down to measured, core raised to measured.
+    # Stream B commit 9 (same day): core -53 (nine CASCADE_* enable flags
+    # deleted, 3.8), extraction -57 (legacy flag-OFF harvest branches +
+    # unreferenced collect_job_detail), crawl -6 (learn-once gate flatten) —
+    # ratcheted down to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
     "acquisition": 17_184,
-    "crawl": 9_322,
-    "core": 21_018,
+    "crawl": 9_316,
+    "core": 20_965,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_457,
-    "extraction": 16_753,
+    "extraction": 16_696,
     "evaluation": 1_563,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with

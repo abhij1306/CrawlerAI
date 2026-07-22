@@ -15,8 +15,6 @@ from app.core.records.divergence import (
     compare_records_to_projection,
 )
 from app.extraction.contracts import (
-    ArtifactReader,
-    CaptureBundle,
     CollectorOutcome,
     CommerceDetailProjection,
     CommerceListingProjection,
@@ -37,22 +35,13 @@ from app.extraction.collectors.url import UrlCollector
 from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
 from app.extraction.jobs import (
-    collect_job_detail,
-    collect_job_listing,
     resolve_job_detail,
     resolve_job_listing,
     wrong_surface_findings_for_job_detail,
     wrong_surface_findings_for_job_listing,
 )
-from app.core.config.cascade import (
-    CASCADE_ECOMMERCE_DETAIL_ENABLED,
-    CASCADE_ECOMMERCE_LISTING_ENABLED,
-    CASCADE_JOB_DETAIL_ENABLED,
-    CASCADE_JOB_LISTING_ENABLED,
-)
 from app.extraction.cascade import run_detail_cascade, run_listing_cascade
 from app.extraction.listing import (
-    collect_ecommerce_listing,
     resolve_ecommerce_listing,
 )
 from app.extraction.publication import (
@@ -61,7 +50,7 @@ from app.extraction.publication import (
     serialize_job_detail_projection,
     serialize_job_listing_projection,
 )
-from app.extraction.pipeline import harvest_ecommerce_detail, normalize_ecommerce_detail
+from app.extraction.pipeline import normalize_ecommerce_detail
 from app.extraction.publication import (
     commerce_detail_projection,
     commerce_listing_projection,
@@ -96,23 +85,14 @@ def adapter_for(surface: Surface) -> SurfaceAdapter:
 
 
 def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
-    """Commerce-detail harvest: detail cascade when enabled, legacy otherwise.
+    """Commerce-detail harvest through the spec-driven detail cascade seam.
 
-    Flag-ON routes through the spec-driven detail cascade seam; flag-OFF calls
-    the legacy inline harvest. Both assemble the same floors, so normalization
-    below sees identical evidence. The flag is read at module scope so tests can
-    monkeypatch it.
+    The seam composes the structured-source and DOM floors in fixed order, so
+    normalization below sees their fused evidence.
     """
-    if CASCADE_ECOMMERCE_DETAIL_ENABLED:
-        harvested = run_detail_cascade(
-            request, request.artifact_reader, _surface_spec(request)
-        )
-    else:
-        harvested = harvest_ecommerce_detail(
-            request.capture,
-            request.artifact_reader,
-            requested_fields=request.requested_fields,
-        )
+    harvested = run_detail_cascade(
+        request, request.artifact_reader, _surface_spec(request)
+    )
     normalized = normalize_ecommerce_detail(
         harvested.evidence,
         page_url=request.capture.final_url or request.capture.requested_url,
@@ -177,68 +157,43 @@ def _request_locale_hint(request: ExtractionRequest) -> str | None:
 def _harvest_listing_surface(
     request: ExtractionRequest,
     surface: Surface,
-    *,
-    enabled: bool,
-    legacy_collector: Callable[[CaptureBundle, ArtifactReader], list[Evidence]],
 ) -> HarvestResult:
-    """Shared listing harvest: cascade when enabled, legacy collector otherwise.
+    """Shared listing harvest through the deterministic cascade.
 
-    Flag-ON path routes the surface through the SAME deterministic cascade
-    (structured -> network -> DOM) and carries the per-floor diagnostics
-    (including skipped/no_match floors) through verbatim. Flag-OFF path defers
-    to the surface's legacy card collector unchanged. ``enabled`` is resolved by
-    the caller from the module-level flag so tests can monkeypatch it.
+    Routes the surface through the SAME deterministic cascade (structured ->
+    network -> DOM) and carries the per-floor diagnostics (including
+    skipped/no_match floors) through verbatim.
     """
-    schema = listing_schema(surface) if enabled else None
-    if schema is not None:
-        result = run_listing_cascade(request, request.artifact_reader, schema)
-        return _harvest_from_rows(
-            surface,
-            result.evidence,
-            collector_outcomes=result.collector_outcomes,
-        )
+    schema = listing_schema(surface)
+    if schema is None:  # listing surfaces are cardinality-many by contract
+        return _harvest_from_rows(surface, ())
+    result = run_listing_cascade(request, request.artifact_reader, schema)
     return _harvest_from_rows(
         surface,
-        tuple(legacy_collector(request.capture, request.artifact_reader)),
+        result.evidence,
+        collector_outcomes=result.collector_outcomes,
     )
 
 
 def _harvest_listing(request: ExtractionRequest) -> HarvestResult:
-    return _harvest_listing_surface(
-        request,
-        Surface.ECOMMERCE_LISTING,
-        enabled=CASCADE_ECOMMERCE_LISTING_ENABLED,
-        legacy_collector=collect_ecommerce_listing,
-    )
+    return _harvest_listing_surface(request, Surface.ECOMMERCE_LISTING)
 
 
 def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
-    """Job-detail harvest: detail cascade when enabled, legacy otherwise.
+    """Job-detail harvest through the spec-driven detail cascade seam.
 
-    Flag-ON routes through the SAME spec-driven detail cascade seam commerce
-    uses (structured JSON-LD JobPosting floor -> DOM floor), so JS-rendered job
-    pages are covered and structured+DOM fuse onto one subject. Job detail has
-    no commerce normalization, so the harvest is returned directly. Flag-OFF
-    calls the legacy inline collector. The flag is read at module scope so tests
-    can monkeypatch it.
+    Routes through the SAME seam commerce uses (structured JSON-LD JobPosting
+    floor -> DOM floor), so JS-rendered job pages are covered and
+    structured+DOM fuse onto one subject. Job detail has no commerce
+    normalization, so the harvest is returned directly.
     """
-    if CASCADE_JOB_DETAIL_ENABLED:
-        return run_detail_cascade(
-            request, request.artifact_reader, _surface_spec(request)
-        )
-    return _harvest_from_rows(
-        Surface.JOB_DETAIL,
-        tuple(collect_job_detail(request.capture, request.artifact_reader)),
+    return run_detail_cascade(
+        request, request.artifact_reader, _surface_spec(request)
     )
 
 
 def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:
-    return _harvest_listing_surface(
-        request,
-        Surface.JOB_LISTING,
-        enabled=CASCADE_JOB_LISTING_ENABLED,
-        legacy_collector=collect_job_listing,
-    )
+    return _harvest_listing_surface(request, Surface.JOB_LISTING)
 
 
 def _harvest_from_rows(
