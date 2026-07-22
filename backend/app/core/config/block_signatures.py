@@ -4,6 +4,33 @@ ACCESS_DENIED_MARKER = "access denied"
 ACCESS_FORBIDDEN_MARKER = "access forbidden"
 SHAPE_SECURITY_MARKER = "shape security"
 
+# Bot-vendor response header tokens. Each row is
+# (header_name, required_value_substring, vendor); an empty substring matches
+# header presence only. Consumed by acquisition header classification.
+BOT_VENDOR_HEADER_MARKERS: tuple[tuple[str, str, str], ...] = (
+    ("x-datadome", "", "datadome"),
+    ("x-datadome-cid", "", "datadome"),
+    ("server", "datadome", "datadome"),
+    ("cf-mitigated", "challenge", "cloudflare"),  # only when value = "challenge"
+    ("x-sucuri-id", "", "sucuri"),
+    ("x-sucuri-cache", "", "sucuri"),
+    ("x-akamai-transformed", "", "akamai"),
+    ("akamai-grn", "", "akamai"),
+    ("x-px-block", "", "perimeterx"),
+)
+
+# Provider/active-provider marker tokens that identify Cloudflare challenge
+# evidence. Consumed by browser challenge recovery and block detection.
+CLOUDFLARE_PROVIDER_TOKENS: frozenset[str] = frozenset(
+    {"cloudflare", "cf-challenge", "cf-browser-verification"}
+)
+
+# Fetch redirect policy (SSRF guard). Manual redirect followers in
+# app/core/url_safety.py re-validate every Location target against the
+# public-target rules before issuing the next request and cap chain length.
+REDIRECT_FOLLOW_STATUS_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
+MAX_VALIDATED_REDIRECTS = 5
+
 BLOCK_SIGNATURES = {
     "phrases": [
         ACCESS_DENIED_MARKER,
