@@ -1,8 +1,17 @@
 # Fix-Stream Handoff — 2026-07-22 (PR #34)
 
-State: branch `vorflux/audit-critical-high-fixes` pushed; **PR #34 open** (11 commits, 143 files, +12.4k/−6.6k).
+State: branch `vorflux/audit-critical-high-fixes` pushed; **PR #34 open**.
 All 3 critical + targeted high findings from `docs/audits/2026-07-21-full-stack-audit.md` are IMPLEMENTED and verified
 by focused tests (see PR body). Simplify pass committed (`4e8a1f2`). Work below is what remains, in order.
+
+**Update (2026-07-22, second session):** items 2 and 3 are DONE (commits `019e7f2`, `380537a`, `965c0a3`).
+Cyclic imports broken (lazy `_browser_pool()` accessor in both browser_pool collaborators; `AttemptPlanState`/
+`AttemptOutcomeState` moved to shared `fetch/types.py` + new `AttemptRunner` Protocol there; state classes re-exported
+from old homes for compat). Architecture ledger re-keyed to fresh measured values (total 87,144; acquisition 17,104;
+extraction 16,753; enrichment 2,250; intelligence 3,448; new complex-function entries `run_job` 25,
+`_poll_candidates_and_score` 25; `intelligence/service.py` oversized entry 750). FE test regex anchored.
+Verified: ledger pair 60/60, `test_resolution_split_public_api.py` 4/4, collaborator suites 30/30,
+component `test_browser_context.py` 91/91, 19 focused audit-fix files 163/163, ruff clean, frontend 45/45 + `vp check` clean.
 
 ## 1. Review subagent results (in flight)
 
@@ -11,37 +20,21 @@ Collect its result; route actionable findings to the owning area. Known intentio
 acquisition collaborator modules resolve `browser_pool` helpers at call time (monkeypatch compat); resolution facade
 re-exports incl. `_rank` (119-name public surface pinned by `tests/unit/test_resolution_split_public_api.py`).
 
-## 2. CodeQL comments on PR #34 (new, unaddressed)
+## 2. CodeQL comments on PR #34 — DONE (see header update)
 
-- **Cyclic imports** (real design smell, works today via call-time resolution): new collaborator modules do
-  module-level `from app.acquisition import browser_pool as _browser_pool` while `browser_pool` imports them back.
-  Files: `acquisition/browser_context_lifecycle.py`, `browser_runtime_lifecycle.py`, `browser_pool.py`,
-  `acquisition/fetch/{attempt_plan,attempt_execution,browser_attempt_runner}.py`.
-  Fix direction: move the back-import inside functions (lazy) or invert via a small shared types module; keep
-  call-time module-object resolution so the 20+ monkeypatch points in `test_browser_context.py` keep working.
-  Re-run `tests/unit/test_*collaborators*.py` + component browser tests after.
+- **Cyclic imports** — FIXED in `019e7f2`: lazy `from app.acquisition import browser_pool` inside a module-level
+  `_browser_pool()` accessor (call-time module-object resolution preserved; monkeypatch tests green), and the
+  fetch-side TYPE_CHECKING back-edge inverted into `fetch/types.py` (`AttemptRunner` Protocol + relocated state
+  dataclasses).
 - `_rank` unused global in `extraction/resolution/__init__.py` — KEEP (pinned public surface); silence with a
   comment/`noqa` if desired.
 - `import` + `import from` same module in 3 test files (`test_pi_de_job_tasks.py`, `test_resolution_split_public_api.py`) — cosmetic; optional.
-- FE test regex missing anchor (`frontend/app/ai-visibility/page-view.test.tsx:239`) — test-only; anchor or dismiss.
+- FE test regex missing anchor (`frontend/app/ai-visibility/page-view.test.tsx:239`) — FIXED in `965c0a3` (`^...$` anchored).
 
-## 3. Architecture-ledger re-key (NOT done — was assigned to agent H)
+## 3. Architecture-ledger re-key — DONE in `380537a` (see header update)
 
-Ledger tests currently FAIL on stale budgets (intentional growth from the split/collaborators). Re-key to ACTUAL
-measured values (measure fresh — simplify pass shifted LOC slightly), with reconciliation comments:
-- `backend/tests/unit/test_final_architecture_ownership.py`:
-  - Move 7 `extraction/resolution/__init__.py` complexity entries to the new modules, values unchanged:
-    resolve 31, _reconcile_variant_prices 25, _semantic_derived_facts 25, _resolve_scalar 22, _brand_from_title 22,
-    _offer_atomic_price_currency_preferences 22, _inherit_variant_offer_facts 22. Delete the `__init__.py: 1931`
-    oversized-module entry.
-  - Add/adjust over-debt entries: `persistence/extraction_memory.py` (1,375 > 1,215),
-    `acquisition/browser_result_builder.py` (744 > 740); check `intelligence/service.py` complexity post-2.7.
-  - `PACKAGE_LOC_BUDGETS`: crawl already 9,250; acquisition 16,828 → actual (~17,065 pre-simplify);
-    extraction → actual (~16,753); total app 86,376 → actual (~87k). Do NOT lower budgets.
-- `backend/tests/unit/test_extraction_architecture.py` + `extraction_semantic_surface.toml`:
-  physical_loc_budget 16,437 → actual; file-count ratchet 35 → 42; add budgets for the 7 new resolution modules;
-  `documents.py` budget 260 → 308.
-Verify: `cd backend && .venv/bin/python -m pytest tests/unit/test_final_architecture_ownership.py tests/unit/test_extraction_architecture.py -q`.
+All budgets re-measured on the working tree and re-keyed with reconciliation comments; budgets raised only.
+Verify: `cd backend && .venv/bin/python -m pytest tests/unit/test_final_architecture_ownership.py tests/unit/test_extraction_architecture.py -q` (60/60 green).
 
 ## 4. Testing (env staged, awaiting go)
 
