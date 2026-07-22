@@ -204,3 +204,176 @@ async def test_crawls_logs_ws_allows_missing_origin_for_non_browser_clients(
 
     assert websocket.accepted is True
     assert websocket.closed == [(1000, "Run completed")]
+
+
+class _BackoffWebSocket:
+    def __init__(self) -> None:
+        self.cookies: dict[str, str] = {}
+        self.headers: dict[str, str] = {}
+        self.accepted = False
+        self.sent: list[dict] = []
+        self.closed: list[tuple[int, str]] = []
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def close(self, *, code: int, reason: str) -> None:
+        self.closed.append((code, reason))
+
+
+def _log_row(row_id: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=row_id,
+        run_id=1,
+        level="info",
+        message=f"log {row_id}",
+        created_at=datetime.now(UTC),
+    )
+
+
+def _patch_backoff_stream(
+    monkeypatch: pytest.MonkeyPatch,
+    snapshots: list[tuple[list, SimpleNamespace]],
+    *,
+    initial_status: str = "running",
+) -> list[float]:
+    async def _resolve_user(_token: str | None):
+        return SimpleNamespace(id=1, role="admin")
+
+    async def _load_run(*, run_id: int, user):
+        del run_id, user
+        return SimpleNamespace(status_value=initial_status)
+
+    scripted = list(snapshots)
+
+    async def _load_snapshot(*, run_id: int, after_id: int | None):
+        del run_id, after_id
+        return scripted.pop(0)
+
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(crawls_api, "resolve_log_stream_user", _resolve_user)
+    monkeypatch.setattr(crawls_api, "load_accessible_log_run", _load_run)
+    monkeypatch.setattr(crawls_api, "load_log_stream_snapshot", _load_snapshot)
+    monkeypatch.setattr(crawls_api.asyncio, "sleep", _fake_sleep)
+    return sleeps
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_backs_off_on_empty_polls_and_resets_on_new_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(
+        crawls_api.crawler_runtime_settings,
+        cooperative_sleep_poll_ms=250,
+        log_stream_max_poll_ms=5000,
+    )
+    running = SimpleNamespace(status_value="running")
+    sleeps = _patch_backoff_stream(
+        monkeypatch,
+        [
+            ([], running),
+            ([], running),
+            ([_log_row(1)], running),
+            ([], running),
+            ([], running),
+            ([], SimpleNamespace(status_value="completed")),
+        ],
+    )
+    websocket = _BackoffWebSocket()
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.closed == [(1000, "Run completed")]
+    assert len(websocket.sent) == 1
+    # 250ms base doubles while idle; new rows reset it to the base cadence.
+    assert sleeps == [0.25, 0.5, 1.0, 0.25, 0.5]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_resets_interval_on_non_terminal_status_change(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(
+        crawls_api.crawler_runtime_settings,
+        cooperative_sleep_poll_ms=250,
+        log_stream_max_poll_ms=5000,
+    )
+    running = SimpleNamespace(status_value="running")
+    paused = SimpleNamespace(status_value="paused")
+    sleeps = _patch_backoff_stream(
+        monkeypatch,
+        [
+            ([], running),
+            ([], running),
+            ([], paused),
+            ([], paused),
+            ([], SimpleNamespace(status_value="completed")),
+        ],
+    )
+    websocket = _BackoffWebSocket()
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.closed == [(1000, "Run completed")]
+    # The status change poll resets the next interval to the 250ms base.
+    assert sleeps == [0.25, 0.5, 1.0, 0.25]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_caps_backoff_at_configured_max(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(
+        crawls_api.crawler_runtime_settings,
+        cooperative_sleep_poll_ms=250,
+        log_stream_max_poll_ms=1000,
+    )
+    running = SimpleNamespace(status_value="running")
+    sleeps = _patch_backoff_stream(
+        monkeypatch,
+        [
+            ([], running),
+            ([], running),
+            ([], running),
+            ([], running),
+            ([], running),
+            ([], running),
+            ([], SimpleNamespace(status_value="completed")),
+        ],
+    )
+    websocket = _BackoffWebSocket()
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert sleeps == [0.25, 0.5, 1.0, 1.0, 1.0, 1.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_terminal_close_is_immediate_without_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps = _patch_backoff_stream(
+        monkeypatch,
+        [([], SimpleNamespace(status_value="completed"))],
+        initial_status="completed",
+    )
+    websocket = _BackoffWebSocket()
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.closed == [(1000, "Run completed")]
+    assert sleeps == []

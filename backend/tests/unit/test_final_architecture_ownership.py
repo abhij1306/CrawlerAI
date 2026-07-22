@@ -200,10 +200,12 @@ PACKAGE_LOC_BUDGETS = {
     # Chunk E (same day): core +138 for redis_execute + the Redis
     # sliding-window rate-limit consumer (1.9); acquisition +84 for the
     # Redis host-pacing claim script (2.8).
+    # Chunk F (same day): crawl +49 for the fallback log-cap counters in
+    # crawl/events.py (2.10); core +6 for the new runtime tunables (2.9/2.10).
     # Budgets are only raised, never lowered.
     "acquisition": 17_235,
-    "crawl": 9_269,
-    "core": 20_961,
+    "crawl": 9_318,
+    "core": 20_967,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -223,7 +225,8 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk D (same day): +24 for proxy endpoint validation at run creation.
 # Logout slice (same day): +46 for POST /api/auth/logout + shared auth resolvers.
 # Chunk E (same day): +279 for Redis-backed rate limits + host pacing (1.9/2.8).
-TOTAL_APP_LOC_BUDGET = 87_709
+# Chunk F (same day): +87 for log-stream backoff + log caps without Redis (2.9/2.10).
+TOTAL_APP_LOC_BUDGET = 87_796
 
 
 def test_production_package_loc_budgets() -> None:

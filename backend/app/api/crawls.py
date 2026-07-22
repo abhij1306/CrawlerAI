@@ -96,6 +96,20 @@ def _log_stream_sleep_seconds() -> float:
         return 0.001
 
 
+def _log_stream_max_poll_seconds() -> float:
+    try:
+        return max(
+            0.001,
+            float(crawler_runtime_settings.log_stream_max_poll_ms) / 1000,
+        )
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid log_stream_max_poll_ms=%r; using 5s log stream max poll interval",
+            crawler_runtime_settings.log_stream_max_poll_ms,
+        )
+        return 5.0
+
+
 def _websocket_token(websocket: WebSocket) -> str | None:
     token = websocket.cookies.get("access_token")
     if not token:
@@ -408,9 +422,14 @@ async def crawls_logs_ws(
 
     await websocket.accept()
     cursor = after_id
-    poll_interval_seconds = _log_stream_sleep_seconds()
+    base_poll_interval_seconds = _log_stream_sleep_seconds()
+    max_poll_interval_seconds = max(
+        base_poll_interval_seconds, _log_stream_max_poll_seconds()
+    )
+    poll_interval_seconds = base_poll_interval_seconds
     missing_run_snapshots = 0
     log_run_id = int(run_id)
+    last_status_value = run.status_value
     try:
         while True:
             rows, next_run = await load_log_stream_snapshot(
@@ -422,6 +441,7 @@ async def crawls_logs_ws(
                 await websocket.send_json(serialize_log_event(row))
                 cursor = row.id
 
+            status_changed = False
             if next_run is None:
                 missing_run_snapshots += 1
                 logger.warning(
@@ -433,11 +453,25 @@ async def crawls_logs_ws(
                     return
             else:
                 missing_run_snapshots = 0
+                status_changed = (
+                    next_run.status_value != last_status_value
+                    and next_run.status_value not in TERMINAL_STATUSES
+                )
                 run = next_run
+                last_status_value = run.status_value
             if run.status_value in TERMINAL_STATUSES and not rows:
                 await websocket.close(code=1000, reason="Run completed")
                 return
             await asyncio.sleep(poll_interval_seconds)
+            # Adaptive backoff (2.9): activity keeps the base cadence; sustained
+            # empty polls double the interval up to the configured cap so idle
+            # runs stop hammering the database.
+            if rows or status_changed:
+                poll_interval_seconds = base_poll_interval_seconds
+            else:
+                poll_interval_seconds = min(
+                    poll_interval_seconds * 2, max_poll_interval_seconds
+                )
 
     except WebSocketDisconnect:
         return
