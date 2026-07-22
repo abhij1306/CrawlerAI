@@ -537,6 +537,7 @@ export const LogTerminal = memo(function LogTerminal({
     activeGroupKeys,
     activePeekedGroupKey,
     expandedGroupKey,
+    groupIndexByKey,
     groups,
     hiddenGroupCount,
     inferredSerialEndMsByKey,
@@ -645,6 +646,8 @@ export const LogTerminal = memo(function LogTerminal({
               </div>
             ) : null}
             {visibleGroups.map((group, index) => {
+              // Stable across window slides; `index` is window-relative and shifts.
+              const stableGroupIndex = groupIndexByKey.get(group.key) ?? index;
               const expanded = expandedGroupKey === group.key || group.key === activeGroupKey;
               const isRunEventGroup = !group.url;
               const payload = payloadSnapshot(group);
@@ -670,11 +673,11 @@ export const LogTerminal = memo(function LogTerminal({
                       isRunEventGroup
                         ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
                         : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
-                      severityTone(group, index),
+                      severityTone(group, stableGroupIndex),
                     )}
                   >
                     <div className="font-mono text-xs text-subtle">
-                      {(group.index ?? siteOrdinalByKey.get(group.key) ?? index + 1)
+                      {(group.index ?? siteOrdinalByKey.get(group.key) ?? stableGroupIndex + 1)
                         .toString()
                         .padStart(2, '0')}
                     </div>

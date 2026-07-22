@@ -101,6 +101,15 @@ export function useLogTerminalState({
   const showEarlierGroups = () => {
     setVisibleGroupCount((current) => current + LOG_GROUP_WINDOW_SIZE);
   };
+  // Absolute index of each group in the full list — stable identity for parity
+  // and window math, unlike the window-relative render index.
+  const groupIndexByKey = useMemo(() => {
+    const values = new Map<string, number>();
+    groups.forEach((group, index) => {
+      values.set(group.key, index);
+    });
+    return values;
+  }, [groups]);
   const siteOrdinalByKey = useMemo(() => {
     let ordinal = 0;
     const values = new Map<string, number>();
@@ -197,11 +206,23 @@ export function useLogTerminalState({
   }, [groups]);
 
   const jumpToGroup = (groupKey: string) => {
-    const element = document.getElementById(siteDomId(groupKey));
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.classList.add('log-entry-highlight');
-      setTimeout(() => element.classList.remove('log-entry-highlight'), 2000);
+    const scrollToGroup = () => {
+      const element = document.getElementById(siteDomId(groupKey));
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add('log-entry-highlight');
+        setTimeout(() => element.classList.remove('log-entry-highlight'), 2000);
+      }
+    };
+    const groupIndex = groupIndexByKey.get(groupKey);
+    const isWindowedOut =
+      groupIndex !== undefined && groupIndex < groups.length - visibleGroupCount;
+    if (isWindowedOut) {
+      // Reveal the window containing the target, then scroll after it renders.
+      setVisibleGroupCount(groups.length - groupIndex);
+      window.requestAnimationFrame(scrollToGroup);
+    } else {
+      scrollToGroup();
     }
     setExpandedGroupPreference(groupKey);
   };
@@ -227,6 +248,7 @@ export function useLogTerminalState({
     activeGroupKeys,
     activePeekedGroupKey,
     expandedGroupKey,
+    groupIndexByKey,
     groups,
     hiddenGroupCount,
     inferredSerialEndMsByKey,
