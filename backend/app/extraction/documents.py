@@ -4,7 +4,7 @@ import json
 import hashlib
 import logging
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from selectolax.lexbor import LexborHTMLParser, LexborNode
@@ -36,6 +36,127 @@ def _collapsed_visible_text(root: LexborNode) -> str:
     return " ".join(" ".join(pieces).split())
 
 
+# ``HtmlNode`` helper groups, extracted as module-level functions over the raw
+# lexbor node so the public wrapper class below stays a thin artifact_id-aware
+# shell. Kept in this module because selectolax usage is confined to
+# documents.py by the extraction architecture tests.
+def _node_direct_text(node: LexborNode) -> str:
+    pieces: list[str] = []
+    child = node.child
+    while child is not None:
+        if child.is_text_node:
+            text = str(child.text() or "").strip()
+            if text:
+                pieces.append(text)
+        child = child.next
+    return " ".join(" ".join(pieces).split())
+
+
+def _node_child_elements(node: LexborNode) -> tuple[LexborNode, ...]:
+    # Direct element children (no text/comment nodes), in document order.
+    return tuple(
+        child
+        for child in node.iter()
+        if not child.is_text_node
+        and str(child.tag or "")
+        and not str(child.tag).startswith("-")
+    )
+
+
+def _node_previous_element(node: LexborNode) -> LexborNode | None:
+    sibling = node.prev
+    while sibling is not None and str(sibling.tag or "").startswith("-"):
+        sibling = sibling.prev
+    return sibling
+
+
+def _node_attribute(node: LexborNode, name: str) -> str | None:
+    if name not in node.attributes:
+        return None
+    value = node.attributes.get(name)
+    return "" if value is None else str(value)
+
+
+def _node_dom_path(node: LexborNode) -> str:
+    parts: list[str] = []
+    current: LexborNode | None = node
+    while current is not None:
+        tag = str(current.tag or "").lower()
+        if not tag or tag.startswith("-"):
+            break
+        parent = current.parent
+        index = 1
+        if parent is not None:
+            # Selectolax returns a fresh wrapper per access, so nodes must be
+            # compared by mem_id (address), never `is`. parent.iter() yields
+            # the direct children in document order.
+            current_id = int(current.mem_id)
+            for sibling in parent.iter():
+                if int(sibling.mem_id) == current_id:
+                    break
+                if str(sibling.tag or "").lower() == tag:
+                    index += 1
+        parts.append(f"{tag}[{index}]")
+        current = parent
+    return "/" + "/".join(reversed(parts))
+
+
+def _node_json(node: LexborNode) -> object:
+    text = node.text(separator=" ", strip=True)
+    try:
+        return json.loads(text) if text.strip() else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _node_ancestors(node: LexborNode) -> tuple[LexborNode, ...]:
+    nodes: list[LexborNode] = []
+    current = node.parent
+    while current is not None:
+        nodes.append(current)
+        current = current.parent
+    return tuple(nodes)
+
+
+def _node_siblings(node: LexborNode) -> tuple[LexborNode, ...]:
+    parent = node.parent
+    if parent is None:
+        return ()
+    return tuple(
+        sibling
+        for sibling in parent.iter()
+        if sibling.parent is parent and sibling is not node
+    )
+
+
+def _node_following_siblings(node: LexborNode) -> tuple[LexborNode, ...]:
+    nodes: list[LexborNode] = []
+    current = node.next
+    while current is not None:
+        nodes.append(current)
+        current = current.next
+    return tuple(nodes)
+
+
+def _node_stable_locator(node: LexborNode) -> str:
+    tag = str(node.tag or "*")
+    node_id = _node_attribute(node, "id")
+    if node_id:
+        return f"{tag}#{node_id}"
+    classes = " ".join((_node_attribute(node, "class") or "").split()[:3])
+    return f"{tag}.{classes}" if classes else tag
+
+
+def _node_is_hidden(node: LexborNode) -> bool:
+    if _node_attribute(node, "hidden") is not None:
+        return True
+    aria_hidden = (_node_attribute(node, "aria-hidden") or "").strip().lower()
+    if aria_hidden == "true":
+        return True
+    style = (_node_attribute(node, "style") or "").replace(" ", "").lower()
+    return "display:none" in style or "visibility:hidden" in style
+
+
 @dataclass(frozen=True)
 class HtmlNode:
     artifact_id: str
@@ -63,15 +184,7 @@ class HtmlNode:
         return self.node.text(separator=separator, strip=strip)
 
     def direct_text(self) -> str:
-        pieces: list[str] = []
-        child = self.node.child
-        while child is not None:
-            if child.is_text_node:
-                text = str(child.text() or "").strip()
-                if text:
-                    pieces.append(text)
-            child = child.next
-        return " ".join(" ".join(pieces).split())
+        return _node_direct_text(self.node)
 
     def content_text(self) -> str:
         # Like text(), but excludes text inside script/style/noscript. Inline
@@ -80,13 +193,9 @@ class HtmlNode:
         return _collapsed_visible_text(self.node)
 
     def child_elements(self) -> tuple[HtmlNode, ...]:
-        # Direct element children (no text/comment nodes), in document order.
         return tuple(
             HtmlNode(self.artifact_id, child)
-            for child in self.node.iter()
-            if not child.is_text_node
-            and str(child.tag or "")
-            and not str(child.tag).startswith("-")
+            for child in _node_child_elements(self.node)
         )
 
     def tag(self) -> str:
@@ -97,16 +206,11 @@ class HtmlNode:
         return HtmlNode(self.artifact_id, parent) if parent is not None else None
 
     def previous_element(self) -> HtmlNode | None:
-        sibling = self.node.prev
-        while sibling is not None and str(sibling.tag or "").startswith("-"):
-            sibling = sibling.prev
+        sibling = _node_previous_element(self.node)
         return HtmlNode(self.artifact_id, sibling) if sibling is not None else None
 
     def attribute(self, name: str) -> str | None:
-        if name not in self.node.attributes:
-            return None
-        value = self.node.attributes.get(name)
-        return "" if value is None else str(value)
+        return _node_attribute(self.node, name)
 
     def attributes(self) -> Mapping[str, str]:
         return {str(key): str(value) for key, value in self.node.attributes.items()}
@@ -115,80 +219,35 @@ class HtmlNode:
         return int(self.node.mem_id)
 
     def dom_path(self) -> str:
-        parts: list[str] = []
-        current: LexborNode | None = self.node
-        while current is not None:
-            tag = str(current.tag or "").lower()
-            if not tag or tag.startswith("-"):
-                break
-            parent = current.parent
-            index = 1
-            if parent is not None:
-                # Selectolax returns a fresh wrapper per access, so nodes must be
-                # compared by mem_id (address), never `is`. parent.iter() yields
-                # the direct children in document order.
-                current_id = int(current.mem_id)
-                for sibling in parent.iter():
-                    if int(sibling.mem_id) == current_id:
-                        break
-                    if str(sibling.tag or "").lower() == tag:
-                        index += 1
-            parts.append(f"{tag}[{index}]")
-            current = parent
-        return "/" + "/".join(reversed(parts))
+        return _node_dom_path(self.node)
 
     def json(self) -> object:
-        text = self.text()
-        try:
-            return json.loads(text) if text.strip() else None
-        except json.JSONDecodeError:
-            return None
+        return _node_json(self.node)
 
     def ancestors(self) -> tuple[HtmlNode, ...]:
-        nodes: list[HtmlNode] = []
-        current = self.node.parent
-        while current is not None:
-            nodes.append(HtmlNode(self.artifact_id, current))
-            current = current.parent
-        return tuple(nodes)
+        return tuple(
+            HtmlNode(self.artifact_id, node) for node in _node_ancestors(self.node)
+        )
 
     def siblings(self) -> tuple[HtmlNode, ...]:
-        parent = self.node.parent
-        if parent is None:
-            return ()
         return tuple(
-            HtmlNode(self.artifact_id, node)
-            for node in parent.iter()
-            if node.parent is parent and node is not self.node
+            HtmlNode(self.artifact_id, node) for node in _node_siblings(self.node)
         )
 
     def following_siblings(self) -> tuple[HtmlNode, ...]:
-        nodes: list[HtmlNode] = []
-        current = self.node.next
-        while current is not None:
-            nodes.append(HtmlNode(self.artifact_id, current))
-            current = current.next
-        return tuple(nodes)
+        return tuple(
+            HtmlNode(self.artifact_id, node)
+            for node in _node_following_siblings(self.node)
+        )
 
     def html(self) -> str:
         return str(self.node.html or "")
 
     def stable_locator(self) -> str:
-        tag = str(self.node.tag or "*")
-        node_id = self.attribute("id")
-        if node_id:
-            return f"{tag}#{node_id}"
-        classes = " ".join((self.attribute("class") or "").split()[:3])
-        return f"{tag}.{classes}" if classes else tag
+        return _node_stable_locator(self.node)
 
     def is_hidden(self) -> bool:
-        if self.attribute("hidden") is not None:
-            return True
-        aria_hidden = (self.attribute("aria-hidden") or "").strip().lower()
-        if aria_hidden == "true":
-            return True
-        style = (self.attribute("style") or "").replace(" ", "").lower()
-        return "display:none" in style or "visibility:hidden" in style
+        return _node_is_hidden(self.node)
 
 
 class HtmlDocument:
@@ -242,12 +301,17 @@ class HtmlDocument:
 @dataclass(frozen=True, slots=True)
 class HtmlAnalysis:
     html: str
-    lowered_html: str
     document: HtmlDocument
     visible_text: str
     normalized_text: str
     title_text: str
     h1_present: bool
+    # Lazily computed lowercase copy of ``html`` — many analyses never need
+    # it, so the second full-page string is only materialized (and cached) on
+    # first access instead of being retained eagerly alongside the parser.
+    _lowered_html: str | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     @classmethod
     def from_html(cls, html: str) -> HtmlAnalysis:
@@ -257,13 +321,20 @@ class HtmlAnalysis:
         title = document.css_first("title")
         return cls(
             html=text,
-            lowered_html=text.lower(),
             document=document,
             visible_text=visible_text,
             normalized_text=" ".join(visible_text.split()),
             title_text=" ".join((title.text() if title else "").split()),
             h1_present=document.css_first("h1") is not None,
         )
+
+    @property
+    def lowered_html(self) -> str:
+        lowered = self._lowered_html
+        if lowered is None:
+            lowered = self.html.lower()
+            object.__setattr__(self, "_lowered_html", lowered)
+        return lowered
 
     def matches_html(self, html: str) -> bool:
         return self.document.matches_html(html)
