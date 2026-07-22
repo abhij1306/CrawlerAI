@@ -1,4 +1,4 @@
-import { defineConfig, lazyPlugins, type PluginOption } from 'vite-plus';
+import { defineConfig, lazyPlugins, loadEnv, type Plugin, type PluginOption } from 'vite-plus';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,9 +6,65 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
 
+// connect-src mirrors src/api/client.ts: the VITE_API_BASE_URL origin plus its
+// ws(s):// sibling (http:→ws:, https:→wss:). Unset (same-origin deploy) → 'self' only.
+function buildContentSecurityPolicy(apiBaseUrl: string | undefined): string {
+  const connectSrc = ["'self'"];
+  if (apiBaseUrl) {
+    try {
+      const parsed = new URL(apiBaseUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        const wsProtocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+        connectSrc.push(parsed.origin, `${wsProtocol}//${parsed.host}`);
+      }
+    } catch {
+      // Invalid VITE_API_BASE_URL: app boot rejects it — keep the 'self'-only policy.
+    }
+  }
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' https: data:",
+    "font-src 'self'",
+    `connect-src ${connectSrc.join(' ')}`,
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+// Build-only CSP meta (audit 5.5): injected solely into production builds so the dev
+// document stays untouched and HMR keeps working. frame-ancestors cannot be expressed
+// in a meta policy and remains owned by the static hosting boundary (see
+// docs/frontend-architecture.md runtime notes).
+function cspMetaPlugin(): Plugin {
+  let contentSecurityPolicy = "default-src 'self'";
+  return {
+    name: 'csp-meta',
+    apply: 'build',
+    configResolved(config) {
+      const env = loadEnv(config.mode, frontendRoot, 'VITE_');
+      contentSecurityPolicy = buildContentSecurityPolicy(env.VITE_API_BASE_URL);
+    },
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: contentSecurityPolicy,
+          },
+          injectTo: 'head-prepend',
+        },
+      ];
+    },
+  };
+}
+
 export default defineConfig({
   root: frontendRoot,
-  plugins: lazyPlugins(() => react() as PluginOption[]),
+  plugins: lazyPlugins(() => [...(react() as PluginOption[]), cspMetaPlugin()]),
   resolve: {
     alias: {
       '@': path.join(frontendRoot, 'src'),

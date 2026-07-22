@@ -30,7 +30,7 @@ Runtime notes:
 - `src/app/route-registry.ts` is the sole route authority. Files under `app/` are imported explicitly by this registry; Next App Router-only files such as `loading.tsx`, `layout.tsx`, and bracket route folders are dead code and blocked by the crawl architecture check.
 - Legacy routing, dynamic-import, link, and image compatibility wrappers have been removed.
 - `VITE_API_BASE_URL` is the frontend API base URL.
-- Production security headers and CSP are owned by the static hosting boundary, not frontend service code.
+- Production builds inject a baseline CSP via `<meta http-equiv="Content-Security-Policy">` (the build-only `csp-meta` plugin in `frontend/vite.config.ts`; the dev document is left untouched for HMR). Its `connect-src` mirrors the `VITE_API_BASE_URL` origin plus its `ws(s)://` sibling, so a build pointed at a new API origin must rebuild rather than re-point the same bundle. Remaining production security headers are still owned by the static hosting boundary, not frontend service code — ops callout: the host must keep sending `Content-Security-Policy: frame-ancestors 'none'` (meta CSP cannot express `frame-ancestors`), `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
 
 ## 2. Route Map
 
