@@ -550,6 +550,19 @@ Primary models:
 - `ReviewPromotion`
 - `DataEnrichmentJob`
 - `EnrichedProduct`
+
+`DomainCookieMemory.storage_state` is encrypted at rest (audit 1.6): rows hold
+an envelope `{"v": 1, "ct": <fernet ciphertext of the normalized storage
+state>}` keyed by `ENCRYPTION_KEY`, written by
+`acquisition/cookie_store.py` and migrated by
+`alembic/versions/20260722_0004_encrypt_domain_cookie_memory.py`. The memory
+stays deliberately shared across users keyed by `(domain[, engine])` — it is
+the cross-run learning substrate (`docs/INVARIANTS.md` §9), so scoping it per
+user would fragment learning; encryption removes the DB-dump exposure instead.
+Readers decrypt envelopes, pass legacy plaintext rows through unchanged, and
+skip (log + re-learn) rows that no longer decrypt. Deploy ordering: run the
+migration after all workers run the new code; old workers simply skip
+encrypted rows and re-learn.
 - `ApiKey`
 - `LLMConfig`
 - `LLMCostLog`

@@ -191,10 +191,12 @@ PACKAGE_LOC_BUDGETS = {
     # verdict_counts health) nudged crawl/enrichment/intelligence further.
     # Audit-debt Stream A chunk B (2026-07-22): core +7 for the public
     # is_non_dev_environment gate + metrics_auth_token setting (1.13).
+    # Chunk C (same day): acquisition +48 for the storage-state encryption
+    # envelope in cookie_store.py; core +9 for the envelope constants (1.6).
     # Budgets are only raised, never lowered.
-    "acquisition": 17_104,
+    "acquisition": 17_151,
     "crawl": 9_268,
-    "core": 20_768,
+    "core": 20_777,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -210,7 +212,8 @@ PACKAGE_LOC_BUDGETS = {
 # CSV formula-injection call sites, WS Origin check, and the register/login
 # schema split (core package landed exactly at its 20,761 budget).
 # Chunk B (same day): +40 for the non-dev docs/metrics gating in main.py.
-TOTAL_APP_LOC_BUDGET = 87_303
+# Chunk C (same day): +57 for the cookie-state encryption-at-rest helpers.
+TOTAL_APP_LOC_BUDGET = 87_360
 
 
 def test_production_package_loc_budgets() -> None:
