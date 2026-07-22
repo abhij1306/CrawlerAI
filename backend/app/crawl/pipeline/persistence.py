@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, TypedDict
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.crawl.pipeline.types import PublicRecord
 from app.core.config.diagnose import SOURCE_TRACE_BROWSER_DIAGNOSTIC_KEYS
 from app.core.records.confidence import score_record_confidence
 from app.core.records.field_url_normalization import canonical_public_record_url
@@ -172,7 +173,7 @@ def _update_stored_record(
 async def persist_extracted_records(
     session: AsyncSession,
     run: CrawlRun,
-    records: list[dict[str, object]],
+    records: list[PublicRecord],
     *,
     acquisition_result,
     url_result_id: int | None = None,
@@ -464,7 +465,7 @@ def _record_provenance_payload(
 
 
 def _candidate_identity_keys(
-    records: list[dict[str, object]],
+    records: list[PublicRecord],
     acquisition_result,
     *,
     surface: str | None = None,

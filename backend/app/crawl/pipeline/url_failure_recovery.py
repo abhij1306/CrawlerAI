@@ -5,7 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from app.models.crawl_run import CrawlRun
-from app.crawl.pipeline.types import URLProcessingResult
+from app.crawl.pipeline.types import URLMetrics, URLProcessingResult
 from app.persistence.publish import VERDICT_ERROR
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,8 +123,8 @@ async def recover_url_failure(
     )
 
 
-def _url_failure_metrics(exc: BaseException) -> dict[str, object]:
-    metrics: dict[str, object] = {"error": f"{type(exc).__name__}: {exc}"}
+def _url_failure_metrics(exc: BaseException) -> URLMetrics:
+    metrics: URLMetrics = {"error": f"{type(exc).__name__}: {exc}"}
     browser_diagnostics = getattr(exc, "browser_diagnostics", None)
     if not isinstance(browser_diagnostics, dict):
         return metrics

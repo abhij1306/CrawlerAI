@@ -242,10 +242,13 @@ PACKAGE_LOC_BUDGETS = {
     # Stream B commit 10 (same day): acquisition +159, core +45, crawl +15,
     # extraction +15, evaluation +8, intelligence +5 for the silent-except
     # diagnostics (4.8) — raised to measured.
+    # Stream B commit 12 (same day): crawl +132 for the PublicRecord/
+    # URLMetrics TypedDict seam in pipeline/types.py (4.13) — raised to
+    # measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
     "acquisition": 17_343,
-    "crawl": 9_331,
+    "crawl": 9_463,
     "core": 21_010,
     "enrichment": 2_254,
     "connectors": 2_444,
@@ -292,7 +295,9 @@ PACKAGE_LOC_BUDGETS = {
 # Stream B commit 9 (same day): -116 for the CASCADE_* flag removal + dead
 # legacy harvest branches (3.8).
 # Stream B commit 10 (same day): +247 for the silent-except diagnostics (4.8).
-TOTAL_APP_LOC_BUDGET = 87_338
+# Stream B commit 12 (same day): +132 for the typed pipeline boundary
+# (PublicRecord/URLMetrics TypedDicts + seam adoption, 4.13).
+TOTAL_APP_LOC_BUDGET = 87_470
 
 
 def test_production_package_loc_budgets() -> None:
