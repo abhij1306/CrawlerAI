@@ -206,10 +206,12 @@ PACKAGE_LOC_BUDGETS = {
     # batch_runtime.py (2.11); core +7 for its runtime tunables.
     # Chunk H (same day): core +71 for the public API-key principal cache
     # (2.12) in public_auth.py + its config constants.
+    # Chunk I (same day): crawl +7 for the source_trace browser_diagnostics
+    # allowlist (2.13); core +8 for its diagnose config constant.
     # Budgets are only raised, never lowered.
     "acquisition": 17_235,
-    "crawl": 9_327,
-    "core": 21_045,
+    "crawl": 9_334,
+    "core": 21_053,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -232,7 +234,8 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk F (same day): +87 for log-stream backoff + log caps without Redis (2.9/2.10).
 # Chunk G (same day): +16 for worker-pool URL scheduling (2.11).
 # Chunk H (same day): +71 for the public API-key principal cache (2.12).
-TOTAL_APP_LOC_BUDGET = 87_883
+# Chunk I (same day): +15 for the slim per-record source_trace (2.13).
+TOTAL_APP_LOC_BUDGET = 87_898
 
 
 def test_production_package_loc_budgets() -> None:
