@@ -25,12 +25,12 @@ from app.acquisition.browser_diagnostics import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 if TYPE_CHECKING:
-    from app.acquisition.browser_pool import SharedBrowserRuntime
+    from app.acquisition import browser_pool
 
 logger = logging.getLogger(__name__)
 
 
-def should_recycle_browser(runtime: SharedBrowserRuntime) -> bool:
+def should_recycle_browser(runtime: browser_pool.SharedBrowserRuntime) -> bool:
     if runtime._browser is None:
         return False
     if not getattr(runtime._browser, "is_connected", lambda: True)():
@@ -46,13 +46,13 @@ def should_recycle_browser(runtime: SharedBrowserRuntime) -> bool:
     return False
 
 
-def context_recycle_threshold_reached(runtime: SharedBrowserRuntime) -> bool:
+def context_recycle_threshold_reached(runtime: browser_pool.SharedBrowserRuntime) -> bool:
     max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
     return max_contexts > 0 and runtime._total_contexts_created >= max_contexts
 
 
 async def yield_slot_until_recycle_window(
-    runtime: SharedBrowserRuntime, timeout_seconds: float
+    runtime: browser_pool.SharedBrowserRuntime, timeout_seconds: float
 ) -> bool:
     if (
         runtime._browser is None
@@ -82,7 +82,7 @@ async def yield_slot_until_recycle_window(
     return True
 
 
-async def ensure_browser_runtime(runtime: SharedBrowserRuntime) -> None:
+async def ensure_browser_runtime(runtime: browser_pool.SharedBrowserRuntime) -> None:
     if runtime._browser is not None and not should_recycle_browser(runtime):
         return
     async with runtime._lock:
@@ -119,13 +119,13 @@ async def ensure_browser_runtime(runtime: SharedBrowserRuntime) -> None:
             raise
 
 
-async def recycle_after_driver_disconnect(runtime: SharedBrowserRuntime) -> None:
+async def recycle_after_driver_disconnect(runtime: browser_pool.SharedBrowserRuntime) -> None:
     async with runtime._lock:
         await close_browser_runtime_locked(runtime)
     await runtime.ensure()
 
 
-async def browser_launch_kwargs(runtime: SharedBrowserRuntime) -> dict[str, Any]:
+async def browser_launch_kwargs(runtime: browser_pool.SharedBrowserRuntime) -> dict[str, Any]:
     launch_args = [
         str(value).strip()
         for value in crawler_runtime_settings.browser_launch_args or ()
@@ -150,7 +150,7 @@ async def browser_launch_kwargs(runtime: SharedBrowserRuntime) -> dict[str, Any]
 
 
 def add_real_chrome_launch_kwargs(
-    runtime: SharedBrowserRuntime, launch_kwargs: dict[str, Any]
+    runtime: browser_pool.SharedBrowserRuntime, launch_kwargs: dict[str, Any]
 ) -> None:
     if runtime.browser_engine != _REAL_CHROME_BROWSER_ENGINE:
         return
@@ -169,7 +169,7 @@ def add_real_chrome_launch_kwargs(
 
 
 async def launch_proxy_config_for_browser(
-    runtime: SharedBrowserRuntime,
+    runtime: browser_pool.SharedBrowserRuntime,
 ) -> dict[str, str] | None:
     if runtime.launch_proxy_config is None:
         return None
@@ -185,7 +185,7 @@ async def launch_proxy_config_for_browser(
     return bridge_proxy_config
 
 
-async def close_browser_runtime_locked(runtime: SharedBrowserRuntime) -> None:
+async def close_browser_runtime_locked(runtime: browser_pool.SharedBrowserRuntime) -> None:
     components = (
         ("closing browser runtime", runtime._browser, "close"),
         ("stopping playwright", runtime._playwright, "stop"),

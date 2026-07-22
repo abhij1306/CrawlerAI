@@ -25,13 +25,13 @@ from app.acquisition.browser_diagnostics import (
 if TYPE_CHECKING:
     from patchright.async_api import BrowserContext
 
-    from app.acquisition.browser_pool import SharedBrowserRuntime
+    from app.acquisition import browser_pool
 
 logger = logging.getLogger(__name__)
 
 
 async def open_context_page(
-    runtime: SharedBrowserRuntime,
+    runtime: browser_pool.SharedBrowserRuntime,
     *,
     context_options: dict[str, Any],
 ) -> tuple[BrowserContext, Any]:
@@ -72,7 +72,7 @@ async def open_context_page(
 
 
 async def acquire_context_slot(
-    runtime: SharedBrowserRuntime,
+    runtime: browser_pool.SharedBrowserRuntime,
     *,
     phase_timings_ms: dict[str, int] | None,
 ) -> None:
@@ -114,7 +114,7 @@ async def acquire_context_slot(
 
 
 async def ensure_with_timing(
-    runtime: SharedBrowserRuntime,
+    runtime: browser_pool.SharedBrowserRuntime,
     *,
     phase_timings_ms: dict[str, int] | None,
 ) -> None:
@@ -132,14 +132,14 @@ async def ensure_with_timing(
         )
 
 
-def release_context_capacity(runtime: SharedBrowserRuntime) -> None:
+def release_context_capacity(runtime: browser_pool.SharedBrowserRuntime) -> None:
     update_active_contexts(runtime, -1)
     runtime._semaphore.release()
 
 
-def update_active_contexts(runtime: SharedBrowserRuntime, delta: int) -> None:
+def update_active_contexts(runtime: browser_pool.SharedBrowserRuntime, delta: int) -> None:
     runtime._active_contexts = max(0, runtime._active_contexts + delta)
 
 
-def update_queue_count(runtime: SharedBrowserRuntime, delta: int) -> None:
+def update_queue_count(runtime: browser_pool.SharedBrowserRuntime, delta: int) -> None:
     runtime._queued_count = max(0, runtime._queued_count + delta)
