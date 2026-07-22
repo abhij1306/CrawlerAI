@@ -18,12 +18,12 @@ async def block_unneeded_route(route: Any) -> None:
     resource_type = str(getattr(request, "resource_type", "") or "").lower()
     raw_url = str(getattr(request, "url", "") or "")
     request_url = raw_url.lower()
-    if any(token in request_url for token in PROTECTED_CHALLENGE_ROUTE_TOKENS):
-        await _continue_route(route, request_url=request_url, protected=True)
-        return
-    # SSRF guard: abort requests (document navigations incl. redirect hops,
-    # and subresources) targeting literal non-public IPs or internal/blocked
-    # hostnames. Hostname targets that need DNS are validated at the
+    # SSRF guard FIRST: abort requests (document navigations incl. redirect
+    # hops, and subresources) targeting literal non-public IPs or
+    # internal/blocked hostnames. This must run before the protected-challenge
+    # early-return below — challenge tokens are substring matches, so a URL
+    # like http://169.254.169.254/latest/meta-data/?akamai=1 would otherwise
+    # bypass the guard. Hostname targets that need DNS are validated at the
     # fetch / post-navigation boundary instead (see validate_public_url_host).
     try:
         validate_public_url_host(raw_url)
@@ -37,6 +37,9 @@ async def block_unneeded_route(route: Any) -> None:
         await _abort_or_continue(
             route, resource_type=resource_type, request_url=request_url
         )
+        return
+    if any(token in request_url for token in PROTECTED_CHALLENGE_ROUTE_TOKENS):
+        await _continue_route(route, request_url=request_url, protected=True)
         return
     if resource_type in BLOCKED_BROWSER_RESOURCE_TYPES or any(
         token in request_url for token in BLOCKED_BROWSER_ROUTE_TOKENS

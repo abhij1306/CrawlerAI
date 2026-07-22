@@ -1172,6 +1172,51 @@ async def test_block_unneeded_route_allows_fonts_and_protected_challenge_urls() 
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_block_unneeded_route_ssrf_guard_runs_before_challenge_tokens() -> None:
+    """Challenge-vendor URL tokens must not bypass the SSRF host guard.
+
+    The guard previously ran AFTER the protected-challenge early-return, so a
+    URL like http://169.254.169.254/latest/meta-data/?akamai=1 was continued
+    without host validation — a subresource SSRF bypass.
+    """
+    events: list[str] = []
+
+    class FakeRoute:
+        def __init__(self, *, resource_type: str, url: str) -> None:
+            self.request = SimpleNamespace(resource_type=resource_type, url=url)
+
+        async def abort(self) -> None:
+            events.append(f"abort:{self.request.url}")
+
+        async def continue_(self) -> None:
+            events.append(f"continue:{self.request.url}")
+
+    for url in (
+        "http://169.254.169.254/latest/meta-data/?akamai=1",
+        "http://127.0.0.1:6379/datadome",
+        "http://10.0.0.5/internal?x=captcha-delivery",
+    ):
+        await acquisition_browser_runtime._block_unneeded_route(
+            FakeRoute(resource_type="script", url=url)
+        )
+    # Legit public challenge vendor URL still flows through.
+    await acquisition_browser_runtime._block_unneeded_route(
+        FakeRoute(
+            resource_type="script",
+            url="https://geo.captcha-delivery.com/captcha/?initialCid=abc",
+        )
+    )
+
+    assert events == [
+        "abort:http://169.254.169.254/latest/meta-data/?akamai=1",
+        "abort:http://127.0.0.1:6379/datadome",
+        "abort:http://10.0.0.5/internal?x=captcha-delivery",
+        "continue:https://geo.captcha-delivery.com/captcha/?initialCid=abc",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_block_unneeded_route_aborts_third_party_trackers() -> None:
     events: list[str] = []
 
