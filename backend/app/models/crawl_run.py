@@ -37,7 +37,7 @@ from app.models.crawl_domain import (
 from app.models.crawl_settings import CrawlRunSettings
 from app.core.config.data_enrichment import DATA_ENRICHMENT_STATUS_UNENRICHED
 from app.core.db_utils import mapping_or_empty
-from app.persistence.run_summary import merge_run_summary_patch
+from app.core.shared.run_summary import merge_run_summary_patch
 
 CRAWL_RUN_FK = "crawl_runs.id"
 CRAWL_URL_RESULT_FK = "crawl_url_results.id"

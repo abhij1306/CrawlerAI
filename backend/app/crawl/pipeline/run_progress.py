@@ -10,7 +10,7 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.db_utils import mapping_or_empty
 from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.persistence.publish import VERDICT_ERROR
-from app.persistence.run_summary import as_int
+from app.core.shared.run_summary import as_int
 from app.core.shared.coerce_primitives import string_list
 
 

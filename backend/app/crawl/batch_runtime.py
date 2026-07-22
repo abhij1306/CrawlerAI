@@ -60,7 +60,7 @@ from app.crawl.pipeline.url_worker import (
     url_metric,
 )
 from app.persistence.publish import VERDICT_ERROR, aggregate_verdict
-from app.persistence.run_summary import as_int
+from app.core.shared.run_summary import as_int
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession

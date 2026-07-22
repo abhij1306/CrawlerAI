@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.persistence.run_summary import as_int
+from app.core.shared.run_summary import as_int
 
 
 @pytest.mark.unit
