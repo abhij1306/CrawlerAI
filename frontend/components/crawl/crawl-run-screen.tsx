@@ -308,6 +308,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
         >
           <CrawlTerminalTabContent
             outputTab={outputTab}
+            emptyRecordsState={emptyRecordsState}
             table={{
               tableRecordsLoading: tableRecordsQuery.isLoading || isFetchingNextTablePage,
               filteredTableRecords,
@@ -315,7 +316,6 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
               visibleSelectedIds,
               tableTotal,
               hasMoreTableRecords,
-              emptyRecordsState,
               onSelectAllRecords: selectAllVisibleTableRecords,
               onToggleRecord: toggleSelectedRecord,
               onLoadMoreTableRecords: () => void fetchNextTablePage(),
@@ -328,7 +328,6 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
               recordsTotal,
               hasMoreJsonRecords,
               recordsFetchCapReached,
-              emptyRecordsState,
               setJsonVisibleCount: (updater) => {
                 setJsonVisibleCount(updater);
                 void fetchNextJsonPage();

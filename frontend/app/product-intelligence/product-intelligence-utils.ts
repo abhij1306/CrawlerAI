@@ -5,7 +5,7 @@ import type {
 } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { ProductIntelligencePrefillPayload } from '../../lib/crawl/prefill';
-import { parsePrefillRecords } from '../../lib/crawl/prefill';
+import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
 
 export const SEARCH_PROVIDER_OPTIONS: Array<{
   value: ProductIntelligenceOptions['search_provider'];
@@ -52,33 +52,16 @@ export const MAX_SOURCE_PRODUCTS_LIMIT = 500;
 export const MAX_CANDIDATES_PER_PRODUCT_LIMIT = 25;
 
 export function loadPrefillPayload(): PrefillLoadResult {
-  if (typeof globalThis.window === 'undefined') {
-    return { error: '', payload: emptyPrefillPayload() };
-  }
-  const stored = globalThis.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-  if (!stored) {
-    return { error: '', payload: emptyPrefillPayload() };
-  }
-  try {
-    const parsed = JSON.parse(stored) as Partial<ProductIntelligencePrefillPayload>;
-    return {
-      error: '',
-      payload: {
-        source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
-        source_domain: parsed.source_domain ?? '',
-        records: parsePrefillRecords<ProductIntelligencePrefillPayload['records'][number]>(
-          parsed.records,
-        ),
-      },
-    };
-  } catch {
-    return {
-      error: 'Unable to read Product Intelligence prefill.',
-      payload: emptyPrefillPayload(),
-    };
-  } finally {
-    globalThis.sessionStorage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-  }
+  const { payload, ok } = loadStoredPrefill(
+    STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL,
+    emptyPrefillPayload,
+    (parsed) => ({
+      source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
+      source_domain: parsed.source_domain ?? '',
+      records: parsePrefillRecords(parsed.records),
+    }),
+  );
+  return { error: ok ? '' : 'Unable to read Product Intelligence prefill.', payload };
 }
 
 function emptyPrefillPayload(): ProductIntelligencePrefillPayload {

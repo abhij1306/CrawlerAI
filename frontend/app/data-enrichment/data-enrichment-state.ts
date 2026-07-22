@@ -2,7 +2,7 @@ import { useReducer } from 'react';
 
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { DataEnrichmentPrefillPayload } from '../../lib/crawl/prefill';
-import { parsePrefillRecords } from '../../lib/crawl/prefill';
+import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
 
 export type DataEnrichmentState = {
   llmEnabled: boolean;
@@ -54,20 +54,14 @@ function dataEnrichmentReducer(
 }
 
 export function loadPrefill(): DataEnrichmentPrefillPayload {
-  if (typeof window === 'undefined') return { source_run_id: null, records: [] };
-  const stored = window.sessionStorage.getItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL);
-  if (!stored) return { source_run_id: null, records: [] };
-  try {
-    const parsed = JSON.parse(stored) as Partial<DataEnrichmentPrefillPayload>;
-    return {
+  return loadStoredPrefill<DataEnrichmentPrefillPayload>(
+    STORAGE_KEYS.DATA_ENRICHMENT_PREFILL,
+    () => ({ source_run_id: null, records: [] }),
+    (parsed) => ({
       source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
-      records: parsePrefillRecords<DataEnrichmentPrefillPayload['records'][number]>(parsed.records),
-    };
-  } catch {
-    return { source_run_id: null, records: [] };
-  } finally {
-    window.sessionStorage.removeItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL);
-  }
+      records: parsePrefillRecords(parsed.records),
+    }),
+  ).payload;
 }
 
 export function useDataEnrichmentState() {

@@ -10,20 +10,19 @@ import { RunLogsOutput } from './run-logs-output';
 import { RunLearningPanel } from './run-learning-panel';
 import type { RecipeActionPendingKey } from './use-run-recipe-actions';
 
-export interface TableTabModel {
+interface TableTabModel {
   tableRecordsLoading: boolean;
   filteredTableRecords: CrawlRecord[];
   visibleColumns: string[];
   visibleSelectedIds: number[];
   tableTotal: number;
   hasMoreTableRecords: boolean;
-  emptyRecordsState: { title: string; description: string };
   onSelectAllRecords: (checked: boolean) => void;
   onToggleRecord: (id: number, checked: boolean) => void;
   onLoadMoreTableRecords: () => void;
 }
 
-export interface JsonTabModel {
+interface JsonTabModel {
   jsonRecordsLoading: boolean;
   records: CrawlRecord[];
   recordsJson: string;
@@ -31,11 +30,10 @@ export interface JsonTabModel {
   recordsTotal: number;
   hasMoreJsonRecords: boolean;
   recordsFetchCapReached: boolean;
-  emptyRecordsState: { title: string; description: string };
   setJsonVisibleCount: React.Dispatch<React.SetStateAction<number>>;
 }
 
-export interface LogsTabModel {
+interface LogsTabModel {
   logs: CrawlLog[];
   batchSourceRecords: CrawlRecord[];
   requestedFields: string[];
@@ -43,7 +41,7 @@ export interface LogsTabModel {
   nowMs: number;
 }
 
-export interface LearningTabModel {
+interface LearningTabModel {
   domainRecipeLoading: boolean;
   domainRecipe: DomainRecipe | undefined;
   recipeActionPending: RecipeActionPendingKey | null;
@@ -53,6 +51,7 @@ export interface LearningTabModel {
 
 export interface CrawlTerminalTabContentProps {
   outputTab: string;
+  emptyRecordsState: { title: string; description: string };
   table: TableTabModel;
   json: JsonTabModel;
   logs: LogsTabModel;
@@ -61,6 +60,7 @@ export interface CrawlTerminalTabContentProps {
 
 export function CrawlTerminalTabContent({
   outputTab,
+  emptyRecordsState,
   table,
   json,
   logs,
@@ -75,7 +75,7 @@ export function CrawlTerminalTabContent({
         selectedIds={table.visibleSelectedIds}
         total={table.tableTotal}
         hasMore={table.hasMoreTableRecords}
-        emptyState={table.emptyRecordsState}
+        emptyState={emptyRecordsState}
         onSelectAll={table.onSelectAllRecords}
         onToggleRow={table.onToggleRecord}
         onLoadMore={table.onLoadMoreTableRecords}
@@ -93,7 +93,7 @@ export function CrawlTerminalTabContent({
         total={json.recordsTotal}
         hasMore={json.hasMoreJsonRecords}
         fetchCapReached={json.recordsFetchCapReached}
-        emptyState={json.emptyRecordsState}
+        emptyState={emptyRecordsState}
         onLoadMore={() => json.setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)}
       />
     );

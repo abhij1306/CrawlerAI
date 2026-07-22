@@ -7,21 +7,15 @@ import type { LlmConfigRecord, LlmCostLogRecord, LlmProviderCatalogItem } from '
 import { INITIAL_LLM_FORM, useAdminLlm } from './use-admin-llm';
 
 const apiMock = vi.hoisted(() => ({
-  listUsers: vi.fn(),
-  updateUser: vi.fn(),
   listLlmProviders: vi.fn(),
   listLlmConfigs: vi.fn(),
   createLlmConfig: vi.fn(),
-  updateLlmConfig: vi.fn(),
   deleteLlmConfig: vi.fn(),
   testLlmConnection: vi.fn(),
   listLlmCostLog: vi.fn(),
 }));
 
-vi.mock('@lib/api/admin', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@lib/api/admin')>();
-  return { ...actual, adminApi: apiMock };
-});
+vi.mock('@lib/api/admin', () => ({ adminApi: apiMock }));
 
 const PROVIDERS: LlmProviderCatalogItem[] = [
   {
