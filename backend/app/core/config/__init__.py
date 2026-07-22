@@ -130,12 +130,25 @@ class Settings(BaseSettings):
     # When false, POST /api/auth/register returns 403 (POC single-admin dev). Enable for production multi-tenant.
     registration_enabled: bool = False
 
-    # Database pool tuning (ignored for SQLite).
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    # Database pool tuning (ignored for SQLite). Sized for per-process demand:
+    # 1 parent run session + up to system_max_concurrent_urls URL sessions +
+    # detached log writers, with headroom for API traffic sharing the process.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     db_pool_recycle_seconds: int = 600
-    db_pool_timeout_seconds: int = 10
+    db_pool_timeout_seconds: int = 30
     db_pool_pre_ping: bool = True
+
+    # Run lifecycle / queueing. celery_broker_visibility_timeout_seconds=0 means
+    # "auto": derive from 2x the Celery hard task wall limit at app config time.
+    celery_broker_visibility_timeout_seconds: int = 0
+    # Lease granted to the worker claiming a run; renewed per URL checkpoint.
+    run_claim_lease_seconds: int = 1200
+    # Minimum interval between per-URL run-progress commits.
+    run_progress_commit_interval_seconds: float = 5.0
+    # Hard input caps for run creation.
+    max_run_urls: int = 10_000
+    max_run_records: int = 100_000
 
     @field_validator(
         "artifacts_dir",

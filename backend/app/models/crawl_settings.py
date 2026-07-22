@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.utils import normalize_target_url, resolve_traversal_mode
+from app.core.config import settings
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.extraction.surfaces import parse_surface
 from app.core.config.runtime_settings import crawler_runtime_settings
@@ -328,6 +329,7 @@ class CrawlRunSettings:
             self.data.get("max_records", crawler_runtime_settings.default_max_records),
             crawler_runtime_settings.default_max_records,
             1,
+            settings.max_run_records,
         )
 
     def max_scrolls(self) -> int:
@@ -390,9 +392,6 @@ class CrawlRunSettings:
     def llm_config_snapshot(self) -> dict[str, Any]:
         snapshot = self.data.get("llm_config_snapshot")
         return dict(snapshot) if isinstance(snapshot, Mapping) else {}
-
-    def has_llm_config_snapshot(self) -> bool:
-        return bool(self.llm_config_snapshot())
 
     def extraction_contract(self) -> list[dict[str, Any]]:
         rows = self.data.get("extraction_contract")

@@ -14,6 +14,7 @@ from app.crawl.batch_runtime import (
     _parallel_worker_record_limit,
     process_run,
 )
+from app.crawl.pipeline.run_progress import assemble_run_summary_payload
 from app.core.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run, get_run_records
@@ -1310,7 +1311,14 @@ async def test_process_batch_run_resolves_urls_from_sitemap_settings(
         "https://example.com/collections/b",
     ]
     assert run.result_summary["url_count"] == 2
-    assert run.result_summary["resolved_url_list"] == processed_urls
+    # 2.1: resolved_url_list / mid-run url_verdicts are no longer stored on the
+    # run row (every per-URL commit used to rewrite the N-sized JSONB). Read
+    # paths reconstruct them from crawl_url_results via
+    # assemble_run_summary_payload; the final patch still persists url_verdicts.
+    assert "resolved_url_list" not in run.result_summary
+    assert run.result_summary["url_verdicts"] == ["success", "success"]
+    payload = await assemble_run_summary_payload(db_session, run)
+    assert payload["url_verdicts"] == ["success", "success"]
 
 
 @pytest.mark.asyncio

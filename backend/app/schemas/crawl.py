@@ -15,6 +15,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from app.core.config import settings
 from app.schemas.selectors import SelectorRecordResponse
 from app.extraction.surfaces import parse_surface
 from app.persistence.publish.verdict import run_health_verdict
@@ -24,6 +25,13 @@ _DISPLAY_HIDDEN_RECORD_FIELDS = {"record_type"}
 
 def _dict_payload(value: object) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def enforce_run_url_limit(urls: list[str]) -> list[str]:
+    limit = max(1, int(settings.max_run_urls))
+    if len(urls) > limit:
+        raise ValueError(f"urls supports at most {limit} entries per run")
+    return urls
 
 
 class CrawlCreate(BaseModel):
@@ -39,6 +47,11 @@ class CrawlCreate(BaseModel):
     @classmethod
     def _validate_surface(cls, value: str) -> str:
         return parse_surface(value).value
+
+    @field_validator("urls")
+    @classmethod
+    def _validate_urls_capacity(cls, value: list[str]) -> list[str]:
+        return enforce_run_url_limit(value)
 
 
 class CrawlRunResponse(BaseModel):

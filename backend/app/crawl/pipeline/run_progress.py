@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.db_utils import mapping_or_empty
+from app.models.crawl_run import CrawlRun, CrawlUrlResult
+from app.persistence.publish import VERDICT_ERROR
 from app.persistence.run_summary import as_int
 from app.core.shared.coerce_primitives import string_list
-
-if TYPE_CHECKING:
-    from app.models.crawl_run import CrawlRun
 
 
 @dataclass(slots=True)
@@ -22,22 +24,6 @@ class BatchRunProgressState:
     quality_summary: dict[str, object] = field(default_factory=dict)
     persisted_record_count: int = 0
     completed_count: int = 0
-
-    @classmethod
-    def from_run(
-        cls,
-        run: "CrawlRun",
-        *,
-        total_urls: int,
-        url_domain: str,
-        persisted_record_count: int,
-    ) -> "BatchRunProgressState":
-        return cls.from_summary(
-            run.summary_dict(),
-            total_urls=total_urls,
-            url_domain=url_domain,
-            persisted_record_count=persisted_record_count,
-        )
 
     @classmethod
     def from_summary(
@@ -105,6 +91,11 @@ class BatchRunProgressState:
         current_url_index: int,
         error_message: str | None = None,
     ) -> dict[str, object]:
+        # Per-URL patches must stay small and fixed-size: this patch is merged
+        # into the run's result_summary JSONB on every URL commit, so growing
+        # payloads (url_verdicts, resolved_url_list) would rewrite an N-sized
+        # blob N times. url_verdicts is written once by build_final_patch and
+        # can be reconstructed from crawl_url_results for in-flight reads.
         patch = {
             "url_count": self.total_urls,
             "record_count": self.persisted_record_count,
@@ -113,7 +104,6 @@ class BatchRunProgressState:
             "processed_urls": self.completed_count,
             "completed_urls": self.completed_count,
             "remaining_urls": max(self.total_urls - self.completed_count, 0),
-            "url_verdicts": self.url_verdicts,
             "verdict_counts": self.verdict_counts,
             "acquisition_summary": self.acquisition_summary,
             "quality_summary": self.quality_summary,
@@ -349,3 +339,113 @@ def _merge_run_quality_summary(
     if requested_found_best > 0:
         summary["requested_fields_found_best"] = requested_found_best
     return summary
+
+
+class ProgressCommitGate:
+    """Throttle per-URL progress commits to at most one per configured interval."""
+
+    def __init__(self, interval_seconds: float) -> None:
+        self._interval_seconds = max(0.0, float(interval_seconds))
+        self._last_commit_monotonic: float | None = None
+
+    def due(self) -> bool:
+        if self._last_commit_monotonic is None:
+            return True
+        elapsed = time.monotonic() - self._last_commit_monotonic
+        return elapsed >= self._interval_seconds
+
+    def mark_committed(self) -> None:
+        self._last_commit_monotonic = time.monotonic()
+
+
+async def load_completed_url_entries(
+    session: AsyncSession, run_id: int
+) -> list[tuple[str, str, str, int]]:
+    """Persisted per-URL outcomes (requested_url, normalized_url, verdict, records)."""
+    result = await session.execute(
+        select(
+            CrawlUrlResult.requested_url,
+            CrawlUrlResult.normalized_url,
+            CrawlUrlResult.verdict,
+            CrawlUrlResult.record_count,
+        )
+        .where(CrawlUrlResult.run_id == run_id)
+        .order_by(CrawlUrlResult.id)
+    )
+    return [
+        (
+            str(requested_url or ""),
+            str(normalized_url or ""),
+            str(verdict or ""),
+            as_int(record_count),
+        )
+        for requested_url, normalized_url, verdict, record_count in result.all()
+    ]
+
+
+def seed_progress_from_completed_entries(
+    progress_state: BatchRunProgressState,
+    url_list: list[str],
+    completed_entries: list[tuple[str, str, str, int]],
+) -> list[tuple[int, str]]:
+    """Rebuild progress from crawl_url_results; return the pending (idx, url) work.
+
+    On re-entry (redelivery, crash recovery, resume) URLs that already have a
+    persisted crawl_url_results row are folded back into the progress state at
+    their original positions and skipped, so the run resumes instead of
+    restarting from URL 1. A fresh run has no rows and processes everything.
+    """
+    if not completed_entries:
+        return [(idx, url) for idx, url in enumerate(url_list, start=1)]
+    completed_by_url: dict[str, tuple[str, int]] = {}
+    for requested_url, normalized_url, verdict, records_count in completed_entries:
+        entry = (verdict or VERDICT_ERROR, records_count)
+        if requested_url:
+            completed_by_url[requested_url] = entry
+        if normalized_url and normalized_url not in completed_by_url:
+            completed_by_url[normalized_url] = entry
+    pending_items: list[tuple[int, str]] = []
+    for zero_based_idx, url in enumerate(url_list):
+        hit = completed_by_url.get(url)
+        if hit is None:
+            pending_items.append((zero_based_idx + 1, url))
+            continue
+        verdict, records_count = hit
+        progress_state.record_url_result(
+            idx=zero_based_idx,
+            records_count=records_count,
+            verdict=verdict,
+            url_metrics={},
+        )
+    return pending_items
+
+
+async def assemble_run_summary_payload(
+    session: AsyncSession, run: CrawlRun
+) -> dict[str, object]:
+    """result_summary with the legacy per-URL payloads assembled at read time.
+
+    The run row no longer stores the growing ``url_verdicts`` /
+    ``resolved_url_list`` blobs while a run executes (they made every per-URL
+    commit rewrite an N-sized JSONB). Read paths that must serve the legacy
+    response shape should call this helper and serve the returned dict instead
+    of reading ``run.result_summary`` directly. Verdicts/URLs already persisted
+    in the summary (e.g. by the final patch of a completed run) win over the
+    reconstructed values, which are derived from crawl_url_results in
+    persistence order.
+    """
+    payload = run.summary_dict()
+    needs_verdicts = "url_verdicts" not in payload
+    needs_url_list = "resolved_url_list" not in payload
+    if not (needs_verdicts or needs_url_list):
+        return payload
+    entries = await load_completed_url_entries(session, int(run.id))
+    if not entries:
+        return payload
+    if needs_verdicts:
+        payload["url_verdicts"] = [verdict for _, _, verdict, _ in entries]
+    if needs_url_list:
+        payload["resolved_url_list"] = [
+            requested_url for requested_url, _, _, _ in entries if requested_url
+        ]
+    return payload
