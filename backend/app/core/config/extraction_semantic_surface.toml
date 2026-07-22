@@ -23,7 +23,10 @@ publish_receives_evidence_or_entity_graph = false
 # Closeout hardening reconciliation: ratcheted down to measured actuals —
 # collectors/dom.py shrank (1100 -> 1062) when its copy-pasted srcset
 # helpers were deduplicated into core/shared/url_utils.
-physical_loc_budget = 16437
+# Audit-fix reconciliation (2026-07-22): raised to measured actual after the
+# resolution god-package split added 7 modules (2,044-LOC __init__ is now a
+# 175-LOC facade) and documents.py grew with the to_thread offload work.
+physical_loc_budget = 16753
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
@@ -37,7 +40,7 @@ default_module_cyclomatic_complexity_budget = 20
 "collectors/metadata.py" = 188
 "collectors/url.py" = 100
 "contracts.py" = 856
-"documents.py" = 260
+"documents.py" = 308
 "engine.py" = 1059
 "entities.py" = 850
 "field_states.py" = 37
@@ -53,7 +56,14 @@ default_module_cyclomatic_complexity_budget = 20
 "replay.py" = 321
 "representation/__init__.py" = 23
 "representation/flat_map.py" = 246
-"resolution/__init__.py" = 1931
+"resolution/__init__.py" = 175
+"resolution/decisions.py" = 279
+"resolution/derived.py" = 314
+"resolution/lineage.py" = 116
+"resolution/offers.py" = 211
+"resolution/resolver.py" = 204
+"resolution/variant_rollup.py" = 515
+"resolution/variants.py" = 385
 "resolution/assets.py" = 252
 "resolution/price_units.py" = 161
 "resolution/ranking.py" = 134
@@ -72,7 +82,11 @@ default_module_cyclomatic_complexity_budget = 20
 "pipeline.py" = 40
 "publication.py" = 43
 "replay.py" = 29
-"resolution/__init__.py" = 31
+"resolution/decisions.py" = 22
+"resolution/derived.py" = 25
+"resolution/offers.py" = 22
 "resolution/price_units.py" = 37
+"resolution/resolver.py" = 31
+"resolution/variant_rollup.py" = 25
 "result_building.py" = 78
 "validation.py" = 33
