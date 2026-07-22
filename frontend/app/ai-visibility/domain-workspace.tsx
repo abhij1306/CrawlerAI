@@ -6,7 +6,7 @@ import type {
   AiVisibilityProviderId,
   AiVisibilityProviderStatus,
   PromptInput,
-} from '@/api/ai-visibility';
+} from '../../lib/api/ai-visibility';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';

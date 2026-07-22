@@ -4,6 +4,7 @@ import type { Ref } from 'react';
 
 import { KVTile } from '../../components/ui/patterns';
 import { Badge } from '../../components/ui/primitives';
+import { SafeExternalLink } from '../../components/ui/safe-external-link';
 import type { EnrichedProduct } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
 
@@ -234,15 +235,13 @@ export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetai
             </Badge>
           </div>
           {product.source_url ? (
-            <a
+            <SafeExternalLink
               href={product.source_url}
-              target="_blank"
-              rel="noreferrer"
               className="type-body-sm mt-1 flex items-center gap-1 truncate text-accent hover:underline"
             >
               {product.source_url}
               <ExternalLink className="size-3 shrink-0" />
-            </a>
+            </SafeExternalLink>
           ) : null}
         </div>
 

@@ -2,6 +2,7 @@ import { History } from 'lucide-react';
 
 import { AppDrawer } from './dialog';
 import { Badge } from './primitives';
+import { statusTone } from '../../lib/ui/status';
 import { cn } from '../../lib/utils';
 
 export type HistoryItem = {
@@ -12,16 +13,6 @@ export type HistoryItem = {
   meta?: string;
   deletable?: boolean;
   cancellable?: boolean;
-};
-
-const STATUS_TONE_MAP: Record<string, 'success' | 'danger' | 'neutral' | 'warning' | 'accent'> = {
-  complete: 'success',
-  completed: 'success',
-  success: 'success',
-  failed: 'danger',
-  error: 'danger',
-  running: 'accent',
-  pending: 'neutral',
 };
 
 export function HistoryDrawer({
@@ -82,10 +73,7 @@ export function HistoryDrawer({
                   >
                     #{item.id}
                   </span>
-                  <Badge
-                    tone={STATUS_TONE_MAP[(item.status ?? '').toLowerCase()] ?? 'neutral'}
-                    className="origin-right scale-90"
-                  >
+                  <Badge tone={statusTone(item.status ?? '')} className="origin-right scale-90">
                     {item.status}
                   </Badge>
                 </div>

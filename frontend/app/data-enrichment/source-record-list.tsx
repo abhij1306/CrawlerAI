@@ -1,4 +1,5 @@
 import { Badge } from '../../components/ui/primitives';
+import { SafeExternalLink } from '../../components/ui/safe-external-link';
 import type { DataEnrichmentSourceRecordInput } from '../../lib/api/types';
 
 function recordTitle(record: DataEnrichmentSourceRecordInput) {
@@ -25,15 +26,13 @@ export function SourceRecordList({
               <div className="type-body-sm truncate font-medium">{recordTitle(record)}</div>
               <div className="type-caption flex items-center gap-2">
                 {record.source_url ? (
-                  <a
+                  <SafeExternalLink
                     href={record.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="truncate text-accent opacity-80 hover:underline"
                     title={record.source_url}
                   >
                     {record.source_url}
-                  </a>
+                  </SafeExternalLink>
                 ) : null}
               </div>
             </div>

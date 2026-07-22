@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { CrawlRun } from '../../lib/api/types';
 import { InlineAlert, RunWorkspaceShell } from '../ui/patterns';
 import { Card } from '../ui/primitives';
+import { SafeExternalLink } from '../ui/safe-external-link';
 
 type RunTerminalShellProps = {
   run: CrawlRun | undefined;
@@ -31,14 +32,12 @@ export function RunTerminalShell({
         <RunWorkspaceShell
           header={
             run?.url ? (
-              <a
+              <SafeExternalLink
                 href={run.url}
-                target="_blank"
-                rel="noreferrer"
                 className="link-accent type-body block truncate underline-offset-2 hover:underline"
               >
                 {run.url}
-              </a>
+              </SafeExternalLink>
             ) : (
               <p className="type-body text-muted">Waiting for completed run data.</p>
             )

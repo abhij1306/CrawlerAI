@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { DataRegionEmpty } from '../../components/ui/patterns';
 import { Badge, Button, Dropdown, Input } from '../../components/ui/primitives';
+import { SafeExternalLink } from '../../components/ui/safe-external-link';
 import { DiscoveryTableLoading } from './product-intelligence-components';
 import { CandidateGroupSection } from './product-intelligence-candidate-card';
 import { downloadRows } from './product-intelligence-export';
@@ -236,15 +237,13 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
                 <span>{brand}</span>
                 <span className="type-caption-mono">{price}</span>
                 {url ? (
-                  <a
+                  <SafeExternalLink
                     href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="link-accent truncate hover:underline"
                     title={url}
                   >
                     {url}
-                  </a>
+                  </SafeExternalLink>
                 ) : null}
               </div>
             </div>

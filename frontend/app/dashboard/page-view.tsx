@@ -221,7 +221,7 @@ function RunStatusDistribution({
             <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
               {statusLabel(status)}
             </Badge>
-            <span className="text-foreground font-mono text-sm tabular-nums">{count}</span>
+            <span className="font-mono text-sm text-foreground tabular-nums">{count}</span>
           </div>
         ))}
       </div>

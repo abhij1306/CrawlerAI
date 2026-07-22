@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '../../components/ui/primitives';
+import { SafeExternalLink } from '../../components/ui/safe-external-link';
 import { cn } from '../../lib/utils';
 import { ExternalCandidateImage } from './product-intelligence-components';
 import {
@@ -77,15 +78,13 @@ export function CandidateGroupSection({
             {group.sourceUrl ? (
               <>
                 <span className="size-1 rounded-full bg-divider" />
-                <a
+                <SafeExternalLink
                   href={group.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="link-accent type-caption truncate"
                   title={group.sourceUrl}
                 >
                   Source PDP
-                </a>
+                </SafeExternalLink>
               </>
             ) : null}
           </div>
@@ -172,15 +171,13 @@ function CandidateCard({
 
         <div className="mt-3 flex min-w-0 flex-col">
           {brand && brand !== '--' ? <div className="type-label truncate">{brand}</div> : null}
-          <a
+          <SafeExternalLink
             href={candidate.url}
-            target="_blank"
-            rel="noopener noreferrer"
             className="group/link type-body-sm mt-1 line-clamp-2 text-foreground transition-colors hover:text-accent"
             title={title}
           >
             {title}
-          </a>
+          </SafeExternalLink>
           <div className="mt-2 flex flex-col gap-1">
             <div className="type-caption truncate" title={candidate.domain}>
               {candidate.domain}
@@ -204,15 +201,13 @@ function CandidateCard({
             Selected
           </span>
         ) : null}
-        <a
+        <SafeExternalLink
           href={candidate.url}
-          target="_blank"
-          rel="noopener noreferrer"
           className="type-label flex h-5 items-center gap-1 justify-self-end rounded-xs px-1 text-accent hover:underline"
         >
           Source
           <ExternalLink className="size-2.5" />
-        </a>
+        </SafeExternalLink>
       </div>
     </div>
   );

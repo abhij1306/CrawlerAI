@@ -3,6 +3,7 @@ import { ArrowRightCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
 
 import { Badge, Button, Tooltip } from '../../components/ui/primitives';
 import { StatusDot } from '../../components/ui/patterns';
+import { SafeExternalLink } from '../../components/ui/safe-external-link';
 import { TableCell, TableRow } from '../../components/ui/table';
 import type { CrawlRun } from '../../lib/api/types';
 import { formatRunsDate as formatDate } from '../../lib/format/date';
@@ -49,16 +50,14 @@ export function RunRow({
               >
                 <Copy className="size-3" />
               </button>
-              <a
+              <SafeExternalLink
                 href={run.url}
-                target="_blank"
-                rel="noreferrer"
                 className="inline-flex min-h-6 min-w-6 items-center justify-center text-muted transition-colors hover:text-accent"
                 title="Open original URL"
-                aria-label="Open original URL"
+                ariaLabel="Open original URL"
               >
                 <ExternalLink className="size-3" />
-              </a>
+              </SafeExternalLink>
             </div>
           </div>
         </div>

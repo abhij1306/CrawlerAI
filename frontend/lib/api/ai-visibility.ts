@@ -1,8 +1,13 @@
-import { apiClient } from './client';
+import { apiClient } from '@/api/client';
+import { queryKeys } from '@/api/query-keys';
+
+import { definedQuery, withQuery } from './shared';
 
 // --------------------------------------------------------------------------
 // Types
 // --------------------------------------------------------------------------
+// AI Visibility types are module-local (the shared lib/api/types.ts owner is
+// maintained separately). Keep them colocated here until they are promoted.
 export type AiVisibilityProviderId =
   | 'gemini'
   | 'anthropic'
@@ -120,68 +125,60 @@ export type AiVisibilityProviderStatus = {
 };
 
 // --------------------------------------------------------------------------
-// API Functions
+// Query keys
 // --------------------------------------------------------------------------
-export async function getProviders() {
-  return apiClient.get<AiVisibilityProviderStatus[]>('/api/ai-visibility/providers');
-}
+// Routes every AI Visibility key through the central queryKeys factory in
+// src/api/query-keys.ts; module-only keys extend it here instead of handing
+// call sites raw arrays.
+export const aiVisibilityQueryKeys = {
+  ...queryKeys.aiVisibility,
+  bestAndLessPreset: () => [...queryKeys.aiVisibility.all, 'presets', 'best-and-less'] as const,
+} as const;
 
-export async function getBestAndLessPreset() {
-  return apiClient.get<AiVisibilityProjectCreate>('/api/ai-visibility/presets/best-and-less');
-}
+// --------------------------------------------------------------------------
+// API
+// --------------------------------------------------------------------------
+export const aiVisibilityApi = {
+  listAiVisibilityProviders: () =>
+    apiClient.get<AiVisibilityProviderStatus[]>('/api/ai-visibility/providers'),
 
-export async function listProjects(limit = 50) {
-  return apiClient.get<AiVisibilityProject[]>(`/api/ai-visibility/projects?limit=${limit}`);
-}
+  getBestAndLessPreset: () =>
+    apiClient.get<AiVisibilityProjectCreate>('/api/ai-visibility/presets/best-and-less'),
 
-export async function getProject(projectId: number) {
-  return apiClient.get<AiVisibilityProject>(`/api/ai-visibility/projects/${projectId}`);
-}
+  listAiVisibilityProjects: (params?: { limit?: number }) =>
+    apiClient.get<AiVisibilityProject[]>(
+      withQuery('/api/ai-visibility/projects', definedQuery({ limit: params?.limit ?? 50 })),
+    ),
 
-export async function createProject(payload: AiVisibilityProjectCreate) {
-  return apiClient.post<AiVisibilityProject>('/api/ai-visibility/projects', payload);
-}
+  createAiVisibilityProject: (payload: AiVisibilityProjectCreate) =>
+    apiClient.post<AiVisibilityProject>('/api/ai-visibility/projects', payload),
 
-export async function updateProject(projectId: number, payload: AiVisibilityProjectUpdate) {
-  return apiClient.patch<AiVisibilityProject>(`/api/ai-visibility/projects/${projectId}`, payload);
-}
+  updateAiVisibilityProject: (projectId: number, payload: AiVisibilityProjectUpdate) =>
+    apiClient.patch<AiVisibilityProject>(`/api/ai-visibility/projects/${projectId}`, payload),
 
-export async function deleteProject(projectId: number) {
-  return apiClient.delete(`/api/ai-visibility/projects/${projectId}`);
-}
+  listAiVisibilityRuns: (params?: { projectId?: number; limit?: number }) =>
+    apiClient.get<AiVisibilityRun[]>(
+      withQuery(
+        '/api/ai-visibility/runs',
+        definedQuery({ project_id: params?.projectId, limit: params?.limit ?? 50 }),
+      ),
+    ),
 
-export async function listRuns(projectId?: number, limit = 50) {
-  const params = new URLSearchParams();
-  if (projectId !== undefined) params.set('project_id', String(projectId));
-  params.set('limit', String(limit));
-  const query = params.toString();
-  return apiClient.get<AiVisibilityRun[]>(`/api/ai-visibility/runs?${query}`);
-}
+  getAiVisibilityRun: (runId: number) =>
+    apiClient.get<AiVisibilityRunDetail>(`/api/ai-visibility/runs/${runId}`),
 
-export async function getRun(runId: number) {
-  return apiClient.get<AiVisibilityRunDetail>(`/api/ai-visibility/runs/${runId}`);
-}
+  deleteAiVisibilityRun: (runId: number) => apiClient.delete(`/api/ai-visibility/runs/${runId}`),
 
-export async function deleteRun(runId: number) {
-  return apiClient.delete(`/api/ai-visibility/runs/${runId}`);
-}
+  cancelAiVisibilityRun: (runId: number) =>
+    apiClient.post<AiVisibilityRun>(`/api/ai-visibility/runs/${runId}/cancel`, {}),
 
-export async function cancelRun(runId: number) {
-  return apiClient.post<AiVisibilityRun>(`/api/ai-visibility/runs/${runId}/cancel`, {});
-}
+  createAiVisibilityRun: (payload: AiVisibilityRunCreate) =>
+    apiClient.post<AiVisibilityRun>('/api/ai-visibility/runs', payload),
 
-export async function createRun(payload: AiVisibilityRunCreate) {
-  return apiClient.post<AiVisibilityRun>('/api/ai-visibility/runs', payload);
-}
+  getAiVisibilityExecution: (executionId: number) =>
+    apiClient.get<AiVisibilityExecution>(`/api/ai-visibility/executions/${executionId}`),
 
-export async function getExecution(executionId: number) {
-  return apiClient.get<AiVisibilityExecution>(`/api/ai-visibility/executions/${executionId}`);
-}
+  getAiVisibilityExportCsvUrl: (runId: number) => `/api/ai-visibility/runs/${runId}/export.csv`,
 
-export function getExportCsvUrl(runId: number) {
-  return `/api/ai-visibility/runs/${runId}/export.csv`;
-}
-
-export function getExportMarkdownUrl(runId: number) {
-  return `/api/ai-visibility/runs/${runId}/export.md`;
-}
+  getAiVisibilityExportMarkdownUrl: (runId: number) => `/api/ai-visibility/runs/${runId}/export.md`,
+};
