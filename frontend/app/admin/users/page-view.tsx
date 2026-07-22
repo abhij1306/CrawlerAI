@@ -3,25 +3,18 @@ import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
-import { adminApi } from '../../../lib/api/admin';
-import type { Paginated, User } from '../../../lib/api/types';
-import { formatAdminUserDate as formatDate } from '../../../lib/format/date';
-import { Badge, Button, Dropdown, Input } from '../../../components/ui/primitives';
+import { adminApi } from '@lib/api/admin';
+import type { Paginated, User } from '@lib/api/types';
+import { formatAdminUserDate as formatDate } from '@lib/format/date';
+import { Badge, Button, Dropdown, Input } from '@ui/primitives';
 import {
   DataRegionEmpty,
   DataRegionLoading,
   InlineAlert,
   PageHeader,
   SectionCard,
-} from '../../../components/ui/patterns';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../../components/ui/table';
+} from '@ui/patterns';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ui/table';
 
 type StatusFilter = 'all' | 'active' | 'inactive';
 

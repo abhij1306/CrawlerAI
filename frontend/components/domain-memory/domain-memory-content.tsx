@@ -1,9 +1,9 @@
 import { RefreshCcw, Trash2 } from 'lucide-react';
 
-import { surfaceLabel } from '../../../lib/format/domain';
-import { ConfirmDialog } from '../../ui/dialog';
-import { EmptyPanel, InlineAlert, MutedPanelMessage, PageHeader, TabBar } from '../../ui/patterns';
-import { Button, Dropdown, Input } from '../../ui/primitives';
+import { surfaceLabel } from '@lib/format/domain';
+import { ConfirmDialog } from '@ui/dialog';
+import { EmptyPanel, InlineAlert, MutedPanelMessage, PageHeader, TabBar } from '@ui/patterns';
+import { Button, Dropdown, Input } from '@ui/primitives';
 import type { DomainMemoryWorkspaceController } from './use-domain-memory-workspace';
 import { CookiesTab } from './cookies-tab';
 import { DomainSidebar } from './domain-sidebar';

@@ -68,6 +68,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.join(frontendRoot, 'src'),
+      '@lib': path.join(frontendRoot, 'lib'),
+      '@ui': path.join(frontendRoot, 'components', 'ui'),
     },
   },
   server: {

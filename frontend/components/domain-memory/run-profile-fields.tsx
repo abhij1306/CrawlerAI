@@ -1,7 +1,7 @@
-import type { AdvancedCrawlMode, DomainRunProfile } from '../../../lib/api/types';
-import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../../lib/constants/crawl-defaults';
-import { parseOptionalClampedNumber } from '../../../lib/crawl/format';
-import { Dropdown, Field, Input } from '../../ui/primitives';
+import type { AdvancedCrawlMode, DomainRunProfile } from '@lib/api/types';
+import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '@lib/constants/crawl-defaults';
+import { parseOptionalClampedNumber } from '@lib/crawl/format';
+import { Dropdown, Field, Input } from '@ui/primitives';
 import type { SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
 

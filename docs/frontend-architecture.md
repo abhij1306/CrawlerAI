@@ -235,6 +235,7 @@ Primary files:
 - `app/ai-visibility/execution-detail-dialog.tsx`
 - `app/ai-visibility/ai-visibility-status.ts` (status tone/label helpers delegating to `lib/ui/status`)
 - `app/domain-memory/page-view.tsx`
+- `components/domain-memory/` (feature owner for the domain-memory surface: workspace hook, tabs, sidebar)
 - `app/admin/users/page-view.tsx`
 - `app/admin/llm/page-view.tsx`
 
@@ -382,6 +383,8 @@ Policy and CI checks:
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
 - `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; call sites import their domain modules directly (the `lib/api/index.ts` facade was removed in audit 7.8).
+- Feature components live in top-level `components/<feature>/` directories: `components/domain-memory/` owns the domain-memory surface (moved out of the removed `components/selectors/` parent in audit 7.9).
+- Import aliases: `@/*` → `src/*`, `@lib/*` → `lib/*`, `@ui/*` → `components/ui/*` (tsconfig paths + vite resolve.alias). Deep `../../../+` cross-area imports use the aliases; short intra-feature relative imports stay relative.
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.

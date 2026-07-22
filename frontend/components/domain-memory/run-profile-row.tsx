@@ -1,8 +1,8 @@
 import { Save } from 'lucide-react';
 
-import type { DomainRunProfile } from '../../../lib/api/types';
-import { surfaceLabel } from '../../../lib/format/domain';
-import { Button } from '../../ui/primitives';
+import type { DomainRunProfile } from '@lib/api/types';
+import { surfaceLabel } from '@lib/format/domain';
+import { Button } from '@ui/primitives';
 import type { SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
 import { RunProfileFields } from './run-profile-fields';

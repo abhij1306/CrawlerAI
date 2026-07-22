@@ -12,7 +12,9 @@
     "types": ["vite-plus/client", "node"],
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@lib/*": ["./lib/*"],
+      "@ui/*": ["./components/ui/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,

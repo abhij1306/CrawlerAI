@@ -1,4 +1,4 @@
-import { DataRegionEmpty, DetailRow, KVTile, SurfaceSection } from '../../ui/patterns';
+import { DataRegionEmpty, DetailRow, KVTile, SurfaceSection } from '@ui/patterns';
 import type { DomainWorkspace } from './types';
 import { formatTimestamp } from './utils';
 

@@ -1,5 +1,5 @@
-import type { DomainRunProfile } from '../../../lib/api/types';
-import { DataRegionEmpty, DetailRow, SurfaceSection } from '../../ui/patterns';
+import type { DomainRunProfile } from '@lib/api/types';
+import { DataRegionEmpty, DetailRow, SurfaceSection } from '@ui/patterns';
 import type { DomainWorkspace, SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
 import { RunProfileRow } from './run-profile-row';

@@ -1,22 +1,10 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Trash2 } from 'lucide-react';
 
-import { Button } from '../../../components/ui/primitives';
-import {
-  DetailRow,
-  MutedPanelMessage,
-  PageHeader,
-  SectionCard,
-} from '../../../components/ui/patterns';
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableCell,
-} from '../../../components/ui/table';
-import type { LlmConfigRecord, LlmCostLogRecord } from '../../../lib/api/types';
+import { Button } from '@ui/primitives';
+import { DetailRow, MutedPanelMessage, PageHeader, SectionCard } from '@ui/patterns';
+import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from '@ui/table';
+import type { LlmConfigRecord, LlmCostLogRecord } from '@lib/api/types';
 import { LlmConfigFormCard } from './llm-config-form';
 import { useAdminLlm } from './use-admin-llm';
 

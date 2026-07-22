@@ -4,8 +4,8 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
   KnowledgeSiteRecord,
-} from '../../../lib/api/types';
-import { getNormalizedDomain, isSpecialUseDomain } from '../../../lib/format/domain';
+} from '@lib/api/types';
+import { getNormalizedDomain, isSpecialUseDomain } from '@lib/format/domain';
 import type { DomainWorkspace, SurfaceWorkspace } from './types';
 import { feedbackSearchText, isInternalDomainMemoryArtifact, profileSearchText } from './utils';
 

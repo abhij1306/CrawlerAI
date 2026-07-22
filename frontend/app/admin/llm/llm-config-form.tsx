@@ -1,8 +1,8 @@
 import { PlugZap, Plus } from 'lucide-react';
 
-import { Button, Dropdown, Field, Input } from '../../../components/ui/primitives';
-import { InlineAlert, SectionCard } from '../../../components/ui/patterns';
-import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '../../../lib/api/types';
+import { Button, Dropdown, Field, Input } from '@ui/primitives';
+import { InlineAlert, SectionCard } from '@ui/patterns';
+import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '@lib/api/types';
 
 const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [

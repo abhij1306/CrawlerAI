@@ -1,4 +1,4 @@
-import type { DomainRunProfile } from '../../../lib/api/types';
+import type { DomainRunProfile } from '@lib/api/types';
 import type { SurfaceWorkspace } from './types';
 
 export type UpdateProfileDraft = (

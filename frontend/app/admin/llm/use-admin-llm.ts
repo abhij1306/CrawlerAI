@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { adminApi } from '../../../lib/api/admin';
-import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '../../../lib/api/types';
+import { adminApi } from '@lib/api/admin';
+import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '@lib/api/types';
 
 export const INITIAL_LLM_FORM: LlmConfigCreatePayload = {
   provider: 'mistral',

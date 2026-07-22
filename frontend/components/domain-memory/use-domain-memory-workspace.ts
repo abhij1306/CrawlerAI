@@ -2,10 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
-import { crawlsApi } from '../../../lib/api/crawls';
-import { dashboardApi } from '../../../lib/api/dashboard';
-import { domainMemoryApi } from '../../../lib/api/domain-memory';
-import { knowledgeApi } from '../../../lib/api/knowledge';
+import { crawlsApi } from '@lib/api/crawls';
+import { dashboardApi } from '@lib/api/dashboard';
+import { domainMemoryApi } from '@lib/api/domain-memory';
+import { knowledgeApi } from '@lib/api/knowledge';
 import type {
   CrawlRun,
   DomainCookieMemoryRecord,
@@ -13,8 +13,8 @@ import type {
   DomainRunProfile,
   DomainRunProfileRecord,
   KnowledgeSiteRecord,
-} from '../../../lib/api/types';
-import { getNormalizedDomain } from '../../../lib/format/domain';
+} from '@lib/api/types';
+import { getNormalizedDomain } from '@lib/format/domain';
 import { buildDomainWorkspaces } from './build-workspaces';
 import type { SurfaceWorkspace } from './types';
 import { cloneDomainRunProfile, firstUsableDomain, profileDraftKey } from './utils';

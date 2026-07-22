@@ -3,9 +3,9 @@ import type {
   DomainRunProfile,
   DomainRunProfileRecord,
   KnowledgeContract,
-} from '../../../lib/api/types';
-import { isSpecialUseDomain } from '../../../lib/format/domain';
-import { defaultRunProfileBase, mergeRunProfile } from '../../../lib/crawl/run-profile';
+} from '@lib/api/types';
+import { isSpecialUseDomain } from '@lib/format/domain';
+import { defaultRunProfileBase, mergeRunProfile } from '@lib/crawl/run-profile';
 import type { SurfaceWorkspace } from './types';
 
 function titleCaseToken(value: string | null | undefined) {

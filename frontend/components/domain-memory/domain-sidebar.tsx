@@ -1,5 +1,5 @@
-import { Badge } from '../../ui/primitives';
-import { NavList, SurfacePanel } from '../../ui/patterns';
+import { Badge } from '@ui/primitives';
+import { NavList, SurfacePanel } from '@ui/patterns';
 import type { DomainWorkspace } from './types';
 import { getProfileCount } from './utils';
 
