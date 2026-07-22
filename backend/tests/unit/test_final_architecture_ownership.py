@@ -213,15 +213,19 @@ PACKAGE_LOC_BUDGETS = {
     # Chunk J (same day): crawl +14 for delete_run artifact cleanup (2.14);
     # core +10 for the retention setting + beat schedule.
     # Chunk K (same day): crawl +19 for the shared robots client (2.16).
-    # Budgets are only raised, never lowered.
+    # Audit-debt Stream B commit 3 (same day): evaluation ratcheted DOWN
+    # (2,009 -> 1,563) with the test-only baseline/llm_repair deletion (3.7);
+    # core -16 for the unread GROUNDED_REPAIR_* constants.
+    # Budgets are only raised, never lowered — except ratcheting down to the
+    # measured value when a deletion commit drops a package total.
     "acquisition": 17_235,
     "crawl": 9_367,
-    "core": 21_063,
+    "core": 21_047,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
     "extraction": 16_753,
-    "evaluation": 2_009,
+    "evaluation": 1_563,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
 # the resolution split, browser-pool collaborators, SSRF hardening, Celery
@@ -244,7 +248,9 @@ PACKAGE_LOC_BUDGETS = {
 # sweeper task (2.14).
 # Chunk K (same day): +40 for the single-query contract lookup (2.15) + the
 # shared robots client (2.16).
-TOTAL_APP_LOC_BUDGET = 88_020
+# Audit-debt Stream B commit 3 (same day): -428 for the test-only evaluation
+# baseline/llm_repair modules + unread GROUNDED_REPAIR_* constants (3.7).
+TOTAL_APP_LOC_BUDGET = 87_592
 
 
 def test_production_package_loc_budgets() -> None:

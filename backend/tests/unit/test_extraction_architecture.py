@@ -325,13 +325,10 @@ def test_extraction_rules_have_no_matrix_tuned_constants() -> None:
 def test_extraction_hot_path_never_imports_grounded_llm_repair() -> None:
     """Phase 7: the LLM may propose grounded repairs offline, never in the hot path.
 
-    Extraction must not import the grounded-repair module or any LLM connector, so
-    a model can never publish or activate a value inside a live extraction run.
+    Extraction must not import any LLM connector, so a model can never publish or
+    activate a value inside a live extraction run.
     """
-    forbidden_prefixes = (
-        "app.evaluation.llm_repair",
-        "app.connectors.llm",
-    )
+    forbidden_prefixes = ("app.connectors.llm",)
     offenders: list[tuple[Path, str]] = []
     for path in _python_files(EXTRACTION_ROOT):
         tree = _parse_module(path)
