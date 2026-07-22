@@ -5,6 +5,12 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from app.schemas.job_lifecycle import (
+    BaseJobCreate,
+    BaseJobResponse,
+    BaseSourceRecordInput,
+)
+
 
 class ProductIntelligenceOptions(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -36,16 +42,11 @@ class ProductIntelligenceOptions(BaseModel):
     llm_enrichment_enabled: bool = False
 
 
-class ProductIntelligenceSourceRecordInput(BaseModel):
-    id: int | None = None
-    run_id: int | None = None
-    source_url: str = ""
-    data: dict = Field(default_factory=dict)
+class ProductIntelligenceSourceRecordInput(BaseSourceRecordInput):
+    pass
 
 
-class ProductIntelligenceJobCreate(BaseModel):
-    source_run_id: int | None = None
-    source_record_ids: list[int] = Field(default_factory=list)
+class ProductIntelligenceJobCreate(BaseJobCreate):
     source_records: list[ProductIntelligenceSourceRecordInput] = Field(
         default_factory=list
     )
@@ -54,33 +55,16 @@ class ProductIntelligenceJobCreate(BaseModel):
     )
 
 
-class ProductIntelligenceDiscoveryRequest(BaseModel):
-    source_run_id: int | None = None
-    source_record_ids: list[int] = Field(default_factory=list)
-    source_records: list[ProductIntelligenceSourceRecordInput] = Field(
-        default_factory=list
-    )
-    options: ProductIntelligenceOptions = Field(
-        default_factory=ProductIntelligenceOptions
-    )
+class ProductIntelligenceDiscoveryRequest(ProductIntelligenceJobCreate):
+    pass
 
 
 class ProductIntelligenceReviewRequest(BaseModel):
     action: Literal["pending", "accepted", "rejected"]
 
 
-class ProductIntelligenceJobResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    user_id: int
-    source_run_id: int | None = None
-    status: str
-    options: dict
-    summary: dict
-    created_at: datetime
-    updated_at: datetime
-    completed_at: datetime | None = None
+class ProductIntelligenceJobResponse(BaseJobResponse):
+    pass
 
 
 class ProductIntelligenceSourceProductResponse(BaseModel):

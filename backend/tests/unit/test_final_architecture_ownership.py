@@ -273,7 +273,10 @@ PACKAGE_LOC_BUDGETS = {
 # Stream B commit 7 (same day): -1 net for the shared ai_visibility
 # _provider_http._execute_post skeleton (3.10; ~120 adapter LOC deduped
 # against the new neutral module, which is not in a budgeted package).
-TOTAL_APP_LOC_BUDGET = 87_195
+# Stream B commit 8 (same day): +12 for the shared job-lifecycle schema bases
+# (3.11; the new schemas/job_lifecycle module's docstring + ORM-divergence
+# note outweigh the deduped PI/DE field re-declarations).
+TOTAL_APP_LOC_BUDGET = 87_207
 
 
 def test_production_package_loc_budgets() -> None:

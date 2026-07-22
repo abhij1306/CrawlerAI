@@ -4,38 +4,29 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.job_lifecycle import (
+    BaseJobCreate,
+    BaseJobResponse,
+    BaseSourceRecordInput,
+)
+
 
 class DataEnrichmentOptions(BaseModel):
     max_source_records: int = Field(default=500, ge=1, le=500)
     llm_enabled: bool = False
 
 
-class DataEnrichmentSourceRecordInput(BaseModel):
-    id: int | None = None
-    run_id: int | None = None
-    source_url: str = ""
-    data: dict = Field(default_factory=dict)
+class DataEnrichmentSourceRecordInput(BaseSourceRecordInput):
+    pass
 
 
-class DataEnrichmentJobCreate(BaseModel):
-    source_run_id: int | None = None
-    source_record_ids: list[int] = Field(default_factory=list)
+class DataEnrichmentJobCreate(BaseJobCreate):
     source_records: list[DataEnrichmentSourceRecordInput] = Field(default_factory=list)
     options: DataEnrichmentOptions = Field(default_factory=DataEnrichmentOptions)
 
 
-class DataEnrichmentJobResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    user_id: int
-    source_run_id: int | None = None
-    status: str
-    options: dict
-    summary: dict
-    created_at: datetime
-    updated_at: datetime
-    completed_at: datetime | None = None
+class DataEnrichmentJobResponse(BaseJobResponse):
+    pass
 
 
 class EnrichedProductResponse(BaseModel):
