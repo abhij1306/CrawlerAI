@@ -20,4 +20,5 @@ export const authApi = {
     const res = await apiClient.get<User>('/api/auth/me', options);
     return strictValidate(userSchema, res, 'me');
   },
+  logout: () => apiClient.post<void>('/api/auth/logout', {}),
 };
