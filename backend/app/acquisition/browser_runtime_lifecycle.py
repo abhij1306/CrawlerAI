@@ -16,7 +16,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from app.acquisition import browser_pool as _browser_pool
 from app.acquisition.browser_background_tasks import await_without_cancelling
 from app.acquisition.browser_diagnostics import (
     REAL_CHROME_BROWSER_ENGINE as _REAL_CHROME_BROWSER_ENGINE,
@@ -25,9 +24,23 @@ from app.acquisition.browser_diagnostics import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from app.acquisition.browser_pool import SharedBrowserRuntime
 
 logger = logging.getLogger(__name__)
+
+
+def _browser_pool() -> ModuleType:
+    """Resolve ``browser_pool`` lazily at call time.
+
+    Attributes are looked up on the live module object so monkeypatch-based
+    tests keep working, while avoiding a module-level import cycle:
+    ``browser_pool`` imports this module at module level.
+    """
+    from app.acquisition import browser_pool
+
+    return browser_pool
 
 
 def should_recycle_browser(runtime: SharedBrowserRuntime) -> bool:
@@ -98,18 +111,18 @@ async def ensure_browser_runtime(runtime: SharedBrowserRuntime) -> None:
         if runtime._browser is not None:
             return
         try:
-            async_playwright = _browser_pool._async_playwright_manager_for_engine(
+            async_playwright = _browser_pool()._async_playwright_manager_for_engine(
                 runtime.browser_engine
             )
-            runtime._playwright = await _browser_pool._wait_for_browser_step(
+            runtime._playwright = await _browser_pool()._wait_for_browser_step(
                 async_playwright().start(),
-                timeout_seconds=_browser_pool._browser_launch_timeout_seconds(),
+                timeout_seconds=_browser_pool()._browser_launch_timeout_seconds(),
                 message="Timed out launching browser driver",
             )
             launch_kwargs = await browser_launch_kwargs(runtime)
-            runtime._browser = await _browser_pool._wait_for_browser_step(
+            runtime._browser = await _browser_pool()._wait_for_browser_step(
                 runtime._playwright.chromium.launch(**launch_kwargs),
-                timeout_seconds=_browser_pool._browser_launch_timeout_seconds(),
+                timeout_seconds=_browser_pool()._browser_launch_timeout_seconds(),
                 message="Timed out launching browser",
             )
             runtime._browser_launched_at = time.monotonic()
@@ -161,7 +174,7 @@ def add_real_chrome_launch_kwargs(
     launch_kwargs["executable_path"] = runtime.executable_path
     ignore_default_args = [
         str(arg).strip()
-        for arg in (_browser_pool.REAL_CHROME_IGNORE_DEFAULT_ARGS or ())
+        for arg in (_browser_pool().REAL_CHROME_IGNORE_DEFAULT_ARGS or ())
         if str(arg).strip()
     ]
     if ignore_default_args:
@@ -176,10 +189,10 @@ async def launch_proxy_config_for_browser(
     if runtime._authenticated_socks5_proxy is None:
         return dict(runtime.launch_proxy_config)
     if runtime._socks5_auth_bridge is None:
-        bridge_cls = _browser_pool.Socks5AuthBridge
+        bridge_cls = _browser_pool().Socks5AuthBridge
         runtime._socks5_auth_bridge = bridge_cls(runtime._authenticated_socks5_proxy)
     bridge_proxy = await runtime._socks5_auth_bridge.start()
-    bridge_proxy_config = _browser_pool._build_browser_proxy_config(bridge_proxy)
+    bridge_proxy_config = _browser_pool()._build_browser_proxy_config(bridge_proxy)
     if bridge_proxy_config is None:
         raise RuntimeError("SOCKS5 auth bridge failed to expose a browser proxy")
     return bridge_proxy_config
@@ -197,13 +210,13 @@ async def close_browser_runtime_locked(runtime: SharedBrowserRuntime) -> None:
         try:
             closed = await await_without_cancelling(
                 getattr(component, close_method)(),
-                timeout_seconds=_browser_pool._browser_close_timeout_seconds(),
+                timeout_seconds=_browser_pool()._browser_close_timeout_seconds(),
             )
             if not closed:
                 logger.warning(
                     "Timed out %s after %.1fs",
                     label,
-                    _browser_pool._browser_close_timeout_seconds(),
+                    _browser_pool()._browser_close_timeout_seconds(),
                 )
         except Exception:
             logger.debug("Failed while %s", label, exc_info=True)

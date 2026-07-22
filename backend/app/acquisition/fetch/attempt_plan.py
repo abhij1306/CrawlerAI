@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import TYPE_CHECKING
 
 from app.acquisition.browser_proxy_config import display_proxy
 from app.acquisition.contracts import (
@@ -14,24 +12,13 @@ from app.acquisition.contracts import (
     AttemptSpec,
 )
 from app.acquisition.fetch import attempt_host_policy
+from app.acquisition.fetch.types import AttemptPlanState as AttemptPlanState
+from app.acquisition.fetch.types import AttemptRunner
 from app.acquisition.runtime import PageFetchResult
 from app.core.config.runtime_settings import crawler_runtime_settings
 
-if TYPE_CHECKING:
-    from app.acquisition.fetch.browser_attempt_runner import BrowserAttemptRunner
 
-
-@dataclass(slots=True)
-class AttemptPlanState:
-    plan_id: str = ""
-    plan_started_at: datetime | None = None
-    plan_deadline: datetime | None = None
-    attempt_specs: list[AttemptSpec] = field(default_factory=list)
-    attempt_results: list[AttemptResult] = field(default_factory=list)
-    retry_budget_exhausted: bool = False
-
-
-def start_plan(runner: BrowserAttemptRunner) -> None:
+def start_plan(runner: AttemptRunner) -> None:
     runner.plan.plan_started_at = datetime.now(UTC)
     remaining = max(
         0.001,
@@ -62,7 +49,7 @@ def attempt_consumed_remaining_budget(
 
 
 def attempt_spec(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     *,
     proxy: str | None,
     engine: str,
@@ -93,7 +80,7 @@ def attempt_spec(
     return spec
 
 
-def plan_deadline(runner: BrowserAttemptRunner) -> datetime:
+def plan_deadline(runner: AttemptRunner) -> datetime:
     if runner.plan.plan_deadline is None:
         start_plan(runner)
     assert runner.plan.plan_deadline is not None
@@ -101,7 +88,7 @@ def plan_deadline(runner: BrowserAttemptRunner) -> datetime:
 
 
 async def raise_if_no_budget(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     engine: str,
     engine_index: int,
     engine_attempts: list[str],
@@ -122,7 +109,7 @@ async def raise_if_no_budget(
         )
 
 
-def has_attempt_budget(runner: BrowserAttemptRunner) -> bool:
+def has_attempt_budget(runner: AttemptRunner) -> bool:
     remaining = runner.context.deadline_monotonic - time.perf_counter()
     return remaining >= minimum_attempt_budget()
 
@@ -135,7 +122,7 @@ def minimum_attempt_budget() -> float:
 
 
 def attach_acquisition_diagnostics(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     result: PageFetchResult,
     *,
     selected_attempt_id: str | None,
@@ -151,7 +138,7 @@ def attach_acquisition_diagnostics(
 
 
 def acquisition_diagnostics(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     *,
     selected_attempt_id: str | None,
     outcome: str,

@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
 
 from app.acquisition.fetch.browser_policy import (
     durable_vendor_block_engine_attempts,
     extract_vendor_from_reason,
     is_vendor_block_reason,
 )
+from app.acquisition.fetch.types import AttemptRunner
 from app.acquisition.host_protection_memory import (
     HostProtectionPolicy,
 )
 from app.acquisition.runtime import PageFetchResult
 
-if TYPE_CHECKING:
-    from app.acquisition.fetch.browser_attempt_runner import BrowserAttemptRunner
-
 
 async def load_active_host_policy(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
 ) -> HostProtectionPolicy:
     if runner.host_policy is not None:
         return runner.host_policy
@@ -30,13 +27,13 @@ async def load_active_host_policy(
     )
 
 
-def active_host_policy(runner: BrowserAttemptRunner) -> HostProtectionPolicy:
+def active_host_policy(runner: AttemptRunner) -> HostProtectionPolicy:
     if runner.active_host_policy is None:
         raise RuntimeError("active host policy not loaded")
     return runner.active_host_policy
 
 
-def engine_attempts(runner: BrowserAttemptRunner, proxy: str | None) -> list[str]:
+def engine_attempts(runner: AttemptRunner, proxy: str | None) -> list[str]:
     attempts = runner.deps.browser_engine_attempts(
         context=runner.context,
         host_policy=active_host_policy(runner),
@@ -49,7 +46,7 @@ def engine_attempts(runner: BrowserAttemptRunner, proxy: str | None) -> list[str
 
 
 def vendor_block_result_unready(
-    runner: BrowserAttemptRunner, result: PageFetchResult
+    runner: AttemptRunner, result: PageFetchResult
 ) -> bool:
     if not is_vendor_block_reason(runner.reason):
         return False
@@ -69,7 +66,7 @@ def vendor_block_result_unready(
 
 
 async def record_blocked_result(
-    runner: BrowserAttemptRunner, result: PageFetchResult
+    runner: AttemptRunner, result: PageFetchResult
 ) -> None:
     runner.outcome.last_blocked_result = result
     await runner.deps.update_host_result_memory(runner.context, result=result)
@@ -81,7 +78,7 @@ async def record_blocked_result(
 
 
 def should_mark_vendor_timeout(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     exc: Exception,
     engine_index: int,
     engine_attempts: list[str],
@@ -94,7 +91,7 @@ def should_mark_vendor_timeout(
 
 
 async def mark_vendor_timeout(
-    runner: BrowserAttemptRunner, engine: str, proxy: str | None
+    runner: AttemptRunner, engine: str, proxy: str | None
 ) -> None:
     await runner.deps.note_host_hard_block(
         runner.context.url,
@@ -112,7 +109,7 @@ async def mark_vendor_timeout(
 
 
 def engine_attempts_after_failure_or_block(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     engine_attempts: list[str],
     *,
     attempted_engine: str,

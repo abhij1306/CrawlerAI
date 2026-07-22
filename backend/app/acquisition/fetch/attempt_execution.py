@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
 from app.acquisition.browser_runtime import build_failed_browser_diagnostics
@@ -18,24 +16,16 @@ from app.acquisition.fetch.browser_policy import (
     attach_exception_browser_diagnostics,
     host_policy_snapshot,
 )
+from app.acquisition.fetch.types import AttemptOutcomeState as AttemptOutcomeState
+from app.acquisition.fetch.types import AttemptRunner
 from app.acquisition.runtime import PageFetchResult
 from app.core.config.runtime_settings import proxy_rotation_mode
-
-if TYPE_CHECKING:
-    from app.acquisition.fetch.browser_attempt_runner import BrowserAttemptRunner
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class AttemptOutcomeState:
-    latest_page_result: PageFetchResult | None = None
-    last_blocked_result: PageFetchResult | None = None
-    last_browser_error: Exception | None = None
-
-
 def record_executor_attempt_error(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     attempt_result: AttemptResult,
     *,
     proxy: str | None,
@@ -68,7 +58,7 @@ def record_executor_attempt_error(
 
 
 async def execute_browser_attempt(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     execution: AttemptExecution,
     *,
     proxy_index: int,
@@ -165,7 +155,7 @@ def attempt_result(
 
 
 async def browser_fetch_result(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     *,
     proxy: str | None,
     engine: str,
@@ -202,7 +192,7 @@ async def browser_fetch_result(
 
 
 def stamp_attempt_diagnostics(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     result: PageFetchResult,
     proxy: str | None,
     proxy_index: int,
@@ -220,7 +210,7 @@ def stamp_attempt_diagnostics(
 
 
 async def record_attempt_exception(
-    runner: BrowserAttemptRunner,
+    runner: AttemptRunner,
     exc: Exception,
     *,
     proxy: str | None,
@@ -276,13 +266,13 @@ async def record_attempt_exception(
         await attempt_host_policy.mark_vendor_timeout(runner, engine, proxy)
 
 
-def browser_requested_fields(runner: BrowserAttemptRunner) -> list[str]:
+def browser_requested_fields(runner: AttemptRunner) -> list[str]:
     if runner.requested_fields is None:
         return list(runner.context.requested_fields)
     return list(runner.requested_fields)
 
 
-def recovery_mode(runner: BrowserAttemptRunner) -> str | None:
+def recovery_mode(runner: AttemptRunner) -> str | None:
     source = (
         runner.listing_recovery_mode
         if runner.listing_recovery_mode is not None
