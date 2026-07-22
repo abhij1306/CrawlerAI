@@ -5,6 +5,7 @@ import { AppDialog } from '../../components/ui/dialog';
 import { Badge, Button } from '../../components/ui/primitives';
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import { decodeUrlsForDisplay } from '../../lib/crawl/format';
+import { isSafeHttpUrl } from '../../lib/format/domain';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { isRecord, searchProviderLabel } from './product-intelligence-utils';
 
@@ -21,12 +22,14 @@ export function ExternalCandidateImage({
   alt: string;
   className: string;
 }>) {
+  if (!isSafeHttpUrl(src)) return null;
   return (
     <img
       src={src}
       alt={alt}
       loading="lazy"
       decoding="async"
+      referrerPolicy="no-referrer"
       className={`absolute inset-0 ${className}`}
       onError={hideBrokenImage}
     />
