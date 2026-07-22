@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from types import ModuleType
 
 from app.core.config import settings
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
@@ -235,6 +236,18 @@ def build_failed_browser_diagnostics(
     )
 
 
+def resolve_browser_pool() -> ModuleType:
+    """Resolve the ``browser_pool`` module lazily at call time.
+
+    ``browser_pool`` imports its lifecycle collaborators at module level, so
+    they use this shared accessor instead of importing it back (import
+    cycle); the live module object keeps monkeypatch-based tests working.
+    """
+    from app.acquisition import browser_pool
+
+    return browser_pool
+
+
 __all__ = [
     "CHROMIUM_BROWSER_ENGINE",
     "PATCHRIGHT_BROWSER_ENGINE",
@@ -248,5 +261,6 @@ __all__ = [
     "build_failed_browser_diagnostics",
     "launch_headless_for_engine",
     "normalize_browser_engine",
+    "resolve_browser_pool",
     "use_native_real_chrome_context",
 ]
