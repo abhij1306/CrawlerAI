@@ -25,6 +25,7 @@ from app.core.config.export_settings import (
     EXPORT_TOTAL_HEADER,
     MAX_RECORD_PAGE_SIZE,
 )
+from app.core.shared.csv_safety import csv_safe_cell, sanitize_csv_row
 from app.persistence.export.schema import (
     clean_export_data as _clean_export_data,
     export_record_from_row,
@@ -259,7 +260,7 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
         fieldnames.update(export_record.data.keys())
     if not fieldnames:
         return
-    ordered_fieldnames = sorted(fieldnames)
+    ordered_fieldnames = [str(csv_safe_cell(name)) for name in sorted(fieldnames)]
     buffer = StringIO()
     writer = csv.DictWriter(
         buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
@@ -276,7 +277,7 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
         )
         if not export_record.data:
             continue
-        writer.writerow(export_record.data)
+        writer.writerow(sanitize_csv_row(export_record.data))
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
@@ -293,7 +294,7 @@ async def stream_export_tables_csv(session: AsyncSession, run_id: int):
                 row_buffer.write(json.dumps(table_row, separators=(",", ":")) + "\n")
         if not fieldnames:
             return
-        ordered_fieldnames = sorted(fieldnames)
+        ordered_fieldnames = [str(csv_safe_cell(name)) for name in sorted(fieldnames)]
         buffer = StringIO()
         writer = csv.DictWriter(
             buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
@@ -305,7 +306,7 @@ async def stream_export_tables_csv(session: AsyncSession, run_id: int):
         row_buffer.seek(0)
         for line in row_buffer:
             table_row = json.loads(line)
-            writer.writerow(table_row)
+            writer.writerow(sanitize_csv_row(table_row))
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)
@@ -315,7 +316,7 @@ async def stream_table_rows_csv(table_rows: list[dict]):
     fieldnames: set[str] = set()
     for row in table_rows:
         fieldnames.update(row.keys())
-    ordered_fieldnames = sorted(fieldnames)
+    ordered_fieldnames = [str(csv_safe_cell(name)) for name in sorted(fieldnames)]
     buffer = StringIO()
     writer = csv.DictWriter(
         buffer, fieldnames=ordered_fieldnames, extrasaction="ignore"
@@ -325,7 +326,7 @@ async def stream_table_rows_csv(table_rows: list[dict]):
     buffer.seek(0)
     buffer.truncate(0)
     for row in table_rows:
-        writer.writerow(row)
+        writer.writerow(sanitize_csv_row(row))
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
@@ -344,9 +345,11 @@ async def stream_export_discoverist(session: AsyncSession, run_id: int):
     async for row in _stream_export_rows(session, run_id):
         writer.writerow(
             [
-                row.source_url
-                if field_name == "source_url"
-                else (row.data or {}).get(field_name, "")
+                csv_safe_cell(
+                    row.source_url
+                    if field_name == "source_url"
+                    else (row.data or {}).get(field_name, "")
+                )
                 for field_name in fieldnames
             ]
         )

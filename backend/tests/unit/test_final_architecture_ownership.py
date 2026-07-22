@@ -204,7 +204,10 @@ PACKAGE_LOC_BUDGETS = {
 # job runners, and the review-driven hardening fixes (net of the dead-code
 # purge). Re-keyed to 87,212 after the CI mypy/CodeQL fixes added the typed
 # staged-update payload and CursorResult casts. Measured on working tree.
-TOTAL_APP_LOC_BUDGET = 87_212
+# Audit-debt Stream A chunk A (2026-07-22): +51 for the csv_safety module,
+# CSV formula-injection call sites, WS Origin check, and the register/login
+# schema split (core package landed exactly at its 20,761 budget).
+TOTAL_APP_LOC_BUDGET = 87_263
 
 
 def test_production_package_loc_budgets() -> None:

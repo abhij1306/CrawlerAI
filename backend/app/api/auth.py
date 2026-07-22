@@ -13,7 +13,7 @@ from app.core.rate_limit import (
 )
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.schemas.user import AuthResponse, UserCreate, UserResponse
+from app.schemas.user import AuthResponse, UserCreate, UserRegister, UserResponse
 from app.core.config.auth_security import (
     AUTH_RATE_LIMIT_MAX_BUCKETS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
@@ -79,7 +79,7 @@ async def _enforce_auth_rate_limit(
 
 @router.post("/register", response_model=UserResponse)
 async def register(
-    payload: UserCreate,
+    payload: UserRegister,
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse | Response:

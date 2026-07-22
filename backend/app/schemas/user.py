@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -11,9 +12,15 @@ class UserCreate(BaseModel):
     password: str
 
 
+class UserRegister(UserCreate):
+    # Registration-only password policy; login keeps accepting legacy short
+    # passwords via the shared UserCreate shape.
+    password: str = Field(min_length=12)
+
+
 class UserUpdate(BaseModel):
     is_active: bool | None = None
-    role: str | None = None
+    role: Literal["admin", "user"] | None = None
 
 
 class UserResponse(BaseModel):

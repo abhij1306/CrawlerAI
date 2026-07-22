@@ -127,3 +127,80 @@ async def test_crawls_logs_ws_treats_protocol_attribute_error_as_disconnect(
     assert websocket.accepted is True
     assert not caplog.records
     assert websocket.closed == []
+
+
+class _OriginWebSocket:
+    def __init__(self, headers: dict[str, str]) -> None:
+        self.cookies: dict[str, str] = {}
+        self.headers = headers
+        self.accepted = False
+        self.closed: list[tuple[int, str]] = []
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        del payload
+
+    async def close(self, *, code: int, reason: str) -> None:
+        self.closed.append((code, reason))
+
+
+def _patch_log_stream_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _resolve_user(_token: str | None):
+        return SimpleNamespace(id=1, role="admin")
+
+    async def _load_run(*, run_id: int, user):
+        del run_id, user
+        return SimpleNamespace(status_value="completed")
+
+    async def _load_snapshot(*, run_id: int, after_id: int | None):
+        del run_id, after_id
+        return ([], SimpleNamespace(status_value="completed"))
+
+    monkeypatch.setattr(crawls_api, "resolve_log_stream_user", _resolve_user)
+    monkeypatch.setattr(crawls_api, "load_accessible_log_run", _load_run)
+    monkeypatch.setattr(crawls_api, "load_log_stream_snapshot", _load_snapshot)
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_rejects_disallowed_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    websocket = _OriginWebSocket({"origin": "https://evil.example"})
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.accepted is False
+    assert websocket.closed == [(1008, "Origin not allowed")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_allows_configured_frontend_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_log_stream_mocks(monkeypatch)
+    origin = crawls_api.get_frontend_origins()[0]
+    websocket = _OriginWebSocket({"origin": origin})
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.accepted is True
+    # Terminal status with no rows closes cleanly with code 1000.
+    assert websocket.closed == [(1000, "Run completed")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_logs_ws_allows_missing_origin_for_non_browser_clients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_log_stream_mocks(monkeypatch)
+    websocket = _OriginWebSocket({})
+
+    await crawls_api.crawls_logs_ws(websocket, run_id=1)
+
+    assert websocket.accepted is True
+    assert websocket.closed == [(1000, "Run completed")]

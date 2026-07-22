@@ -45,7 +45,7 @@ from app.crawl.log_stream import (
 )
 from app.crawl.service import kill_run, pause_run, resume_run
 from app.crawl.state import TERMINAL_STATUSES
-from app.core.config import settings
+from app.core.config import get_frontend_origins, settings
 from app.core.config.runtime_settings import crawler_runtime_settings
 from fastapi import (
     APIRouter,
@@ -104,6 +104,16 @@ def _websocket_token(websocket: WebSocket) -> str | None:
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
     return token
+
+
+def _websocket_origin_allowed(websocket: WebSocket) -> bool:
+    # Browser clients always send Origin; cross-origin browser connections are
+    # rejected because the cookie-authenticated handshake is otherwise a CSWSH
+    # vector. Absent Origin means a non-browser client — the token still gates.
+    origin = str(websocket.headers.get("origin") or "").strip()
+    if not origin:
+        return True
+    return origin in get_frontend_origins()
 
 
 # WebSocket disconnect compatibility: Some WebSocket implementations raise
@@ -382,6 +392,9 @@ async def crawls_logs(
 async def crawls_logs_ws(
     websocket: WebSocket, run_id: int, after_id: int | None = None
 ) -> None:
+    if not _websocket_origin_allowed(websocket):
+        await _close_websocket_safely(websocket, code=1008, reason="Origin not allowed")
+        return
     user = await resolve_log_stream_user(_websocket_token(websocket))
     if user is None:
         await _close_websocket_safely(websocket, code=1008, reason="Not authenticated")
