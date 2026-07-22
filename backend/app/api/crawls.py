@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable
 from typing import Annotated, Any, cast
 
@@ -28,7 +29,6 @@ from app.crawl.access_service import (
 )
 from app.crawl.category_discovery import discover_category_urls
 from app.crawl.crud import (
-    commit_llm_suggestions,
     commit_selected_fields,
     delete_run,
     get_run_logs,
@@ -67,6 +67,13 @@ logger = logging.getLogger("app.api.crawls")
 
 RUN_CONFLICT_DETAIL = "Run cannot be cancelled in its current state"
 ResponseSpec = dict[int | str, dict[str, Any]]
+
+# TODO: hoist into shared config (core/config) once cross-agent ownership settles.
+# Max accepted size for CSV run-upload payloads; read at import time so tests can
+# monkeypatch the module constant.
+CSV_UPLOAD_MAX_BYTES = int(
+    os.environ.get("CRAWLER_CSV_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))
+)
 
 RUN_NOT_FOUND_RESPONSE: ResponseSpec = {
     status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
@@ -193,7 +200,17 @@ async def crawls_create_csv(
     settings_json: Annotated[str, Form()] = "{}",
 ) -> dict:
     """Create a crawl run from an uploaded CSV file."""
-    content = (await file.read()).decode("utf-8", errors="ignore")
+    # Bounded read: reject oversized uploads with 413 instead of buffering the
+    # entire request body in API-process memory.
+    raw = await file.read(CSV_UPLOAD_MAX_BYTES + 1)
+    if len(raw) > CSV_UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=(
+                f"CSV upload exceeds the {CSV_UPLOAD_MAX_BYTES}-byte size limit"
+            ),
+        )
+    content = raw.decode("utf-8", errors="ignore")
     try:
         run, url_count = await create_crawl_run_from_csv(
             session,
@@ -289,24 +306,6 @@ async def crawls_pause(
     )
 
 
-@router.post("/{run_id:int}/llm-commit", responses=RUN_NOT_FOUND_RESPONSE)
-async def crawls_llm_commit(
-    run_id: int,
-    payload: FieldCommitRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-) -> FieldCommitResponse:
-    run = await _get_accessible_run_or_404(session, run_id=run_id, user=user)
-    updated_records, updated_fields = await commit_llm_suggestions(
-        session,
-        run=run,
-        items=[item.model_dump() for item in payload.items],
-    )
-    return FieldCommitResponse(
-        run_id=run.id, updated_records=updated_records, updated_fields=updated_fields
-    )
-
-
 @router.post("/{run_id:int}/commit-fields", responses=RUN_NOT_FOUND_RESPONSE)
 async def crawls_commit_fields(
     run_id: int,
@@ -362,24 +361,6 @@ async def crawls_kill(
         user=user,
         action=kill_run,
     )
-
-
-@router.post(
-    "/{run_id:int}/cancel",
-    responses=cast(
-        ResponseSpec,
-        {
-            status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
-            status.HTTP_409_CONFLICT: {"description": RUN_CONFLICT_DETAIL},
-        },
-    ),
-)
-async def crawls_cancel(
-    run_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-) -> dict:
-    return await crawls_kill(run_id, session, user)
 
 
 @router.get("/{run_id:int}/logs", responses=RUN_NOT_FOUND_RESPONSE)

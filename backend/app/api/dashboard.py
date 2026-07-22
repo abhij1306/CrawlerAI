@@ -8,14 +8,12 @@ from app.models.user import User
 from app.schemas.crawl import CrawlRunResponse, DashboardResponse
 from app.crawl.dashboard_service import (
     build_dashboard,
-    build_operational_metrics,
     reset_application_data,
     reset_crawl_data,
-    reset_data_enrichment,
     reset_domain_memory,
     reset_product_intelligence,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -74,27 +72,3 @@ async def dashboard_reset_product_intelligence(
     result = await reset_product_intelligence(session)
     await session.commit()
     return result
-
-
-@router.post("/reset-data-enrichment")
-async def dashboard_reset_data_enrichment(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
-    confirm: Annotated[str | None, Query()] = None,
-) -> dict:
-    if confirm != "data-enrichment":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="confirm=data-enrichment is required",
-        )
-    result = await reset_data_enrichment(session)
-    await session.commit()
-    return result
-
-
-@router.get("/metrics")
-async def dashboard_metrics(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
-) -> dict:
-    return await build_operational_metrics(session)

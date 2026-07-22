@@ -189,22 +189,6 @@ async def list_selector_memories(session: AsyncSession) -> list[SelectorMemory]:
     return memories
 
 
-def selector_payload_from_rules(rules: list[dict[str, object]]) -> dict[str, object]:
-    max_id = 0
-    normalized_rules: list[dict[str, object]] = []
-    for row in rules:
-        if not isinstance(row, dict):
-            continue
-        normalized_row = _normalized_selector_rule(row)
-        row_id = _safe_int(normalized_row.get("id"), default=0) or 0
-        max_id = max(max_id, row_id)
-        normalized_rules.append(normalized_row)
-    return {
-        "_meta": {"next_id": max_id + 1},
-        "rules": normalized_rules,
-    }
-
-
 async def load_domain_selector_rules(
     session: AsyncSession,
     *,

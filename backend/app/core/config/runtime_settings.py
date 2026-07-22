@@ -20,28 +20,6 @@ def settings_config(*, env_prefix: str) -> SettingsConfigDict:
     )
 
 
-PERFORMANCE_PROFILES: dict[str, dict[str, int]] = {
-    "ULTRA_FAST": {
-        "browser_fallback_visible_text_min": 1000,
-        "challenge_wait_max_seconds": 3,
-        "surface_readiness_max_wait_ms": 3000,
-    },
-    "BALANCED": {
-        "browser_fallback_visible_text_min": 500,
-        "challenge_wait_max_seconds": 15,
-        "surface_readiness_max_wait_ms": 6000,
-    },
-    "STEALTH": {
-        "browser_fallback_visible_text_min": 200,
-        "challenge_wait_max_seconds": 15,
-        "surface_readiness_max_wait_ms": 15000,
-    },
-}
-_PROFILE_CONTROLLED_FIELDS = (
-    "browser_fallback_visible_text_min",
-    "challenge_wait_max_seconds",
-    "surface_readiness_max_wait_ms",
-)
 _DEFAULT_CHROME_MAJOR_VERSION = 131
 VALID_FETCH_MODES = frozenset(
     {"auto", "http_only", "browser_only", "http_then_browser"}
@@ -81,7 +59,6 @@ class CrawlerRuntimeSettings(BaseSettings):
 
     model_config = settings_config(env_prefix="CRAWLER_RUNTIME_")
 
-    performance_profile: Literal["ULTRA_FAST", "BALANCED", "STEALTH"] = "BALANCED"
     http_timeout_seconds: int = 10
     acquisition_attempt_timeout_seconds: int = 90
     curl_impersonate_target: str = f"chrome{_DEFAULT_CHROME_MAJOR_VERSION}"
@@ -90,12 +67,6 @@ class CrawlerRuntimeSettings(BaseSettings):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         f"Chrome/{_DEFAULT_CHROME_MAJOR_VERSION}.0.0.0 Safari/537.36"
-    )
-    browser_fallback_visible_text_min: int | None = 500
-    browser_fallback_visible_text_ratio_max: float = 0.02
-    browser_fallback_html_size_threshold: int = 200000
-    js_gate_phrases: list[str] = Field(
-        default_factory=lambda: ["enable javascript", "<noscript>"]
     )
     default_max_records: int = 100
     default_max_pages: int = 5
@@ -106,14 +77,11 @@ class CrawlerRuntimeSettings(BaseSettings):
     default_max_scrolls: int = 10
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
-    auto_detect_surface: bool = False
     url_batch_concurrency: int = 8
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0
     job_max_wall_seconds: int = 3600
-    worker_max_concurrent_jobs: int = 8
-    worker_orphan_recovery_grace_seconds: int = 900
     long_run_threshold_seconds: int = 30 * 60
     max_duration_sample_size: int = 1000
     stalled_run_threshold_seconds: int = 2 * 60
@@ -124,40 +92,20 @@ class CrawlerRuntimeSettings(BaseSettings):
     api_rate_limit_window_seconds: int = 60
     api_rate_limit_max_clients: int = 4096
     api_rate_limit_trusted_proxies: tuple[str, ...] = ()
-    max_candidates_per_field: int = 5
-    dynamic_field_name_max_tokens: int = 7
     accordion_expand_max: int = 20
     accordion_expand_wait_ms: int = 500
     detail_expand_max_interactions: int = 6
     detail_expand_click_timeout_ms: int = 1000
     detail_expand_visibility_timeout_ms: int = 250
-    block_min_html_length: int = 100
-    block_low_content_text_max: int = 500
-    block_low_content_script_min: int = 3
-    block_low_content_link_max: int = 3
     listing_min_items: int = 2
-    card_autodetect_min_siblings: int = 3
-    json_max_search_depth: int = 5
-    max_json_recursion_depth: int = 8
-    js_shell_min_content_len: int = 100000
-    js_shell_visible_ratio_max: float = 0.15
-    js_shell_min_script_count: int = 2
     detail_field_signal_min_count: int = 2
     browser_detail_title_url_token_min_count: int = 3
-    network_payload_signature_min_match: int = 3
-    structured_source_generic_assignment_max_script_chars: int = 250000
-    structured_source_generic_assignment_max_matches_per_script: int = 24
     http_retry_status_codes: list[int] = Field(
         default_factory=lambda: [403, 406, 429, 502, 503, 504]
     )
     browser_recoverable_detail_status_codes: list[int] = Field(
         default_factory=lambda: [400]
     )
-    proxy_failure_cooldown_base_ms: int = 1000
-    proxy_failure_cooldown_max_ms: int = 15000
-    proxy_failure_backoff_max_exponent: int = 8
-    proxy_failure_state_ttl_seconds: int = 3600
-    proxy_failure_state_max_entries: int = 1024
     dns_resolution_retries: int = 1
     dns_resolution_retry_delay_ms: int = 250
     network_address_family_preference: Literal["auto", "ipv4", "ipv6"] = "auto"
@@ -174,7 +122,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     run_health_failed_error_rate: float = 0.25
     run_quality_threshold_high: float = 0.80
     run_quality_threshold_medium: float = 0.50
-    stealth_prefer_ttl_hours: int = 24
     challenge_wait_max_seconds: int | None = 15
     challenge_poll_interval_ms: int = 1000
     challenge_activity_mouse_steps: int = 12
@@ -195,14 +142,11 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_behavior_typing_min_delay_ms: int = 35
     browser_behavior_typing_jitter_ms: int = 95
     surface_readiness_max_wait_ms: int | None = 6000
-    surface_readiness_poll_ms: int = 250
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
     browser_post_block_cooldown_ms: int = 500
-    low_quality_browser_retry_methods: tuple[str, ...] = ("curl_cffi", "httpx")
     browser_navigation_networkidle_timeout_ms: int = 30000
     browser_navigation_networkidle_primary_budget_ratio: float = 0.4
-    browser_navigation_load_timeout_ms: int = 15000
     browser_navigation_domcontentloaded_timeout_ms: int = 15000
     browser_navigation_optimistic_wait_ms: int = 3000
     browser_spa_implicit_networkidle_timeout_ms: int = 6000
@@ -211,7 +155,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     # variation calls) can still be in flight when the DOM is serialized. This is a
     # bounded best-effort settle to let those payloads land for ready detail pages.
     browser_detail_payload_settle_timeout_ms: int = 4000
-    browser_navigation_min_commit_wait_ms: int = 8000
     browser_navigation_min_final_commit_timeout_ms: int = 15000
     browser_vendor_block_probe_timeout_seconds: float = 12.0
     browser_capture_max_network_payloads: int = 25
@@ -266,50 +209,8 @@ class CrawlerRuntimeSettings(BaseSettings):
         "sessionize_per_run",
     )
     browser_context_permissions: tuple[str, ...] = ("geolocation",)
-    browser_mask_playwright_globals: tuple[str, ...] = (
-        "__pwInitScripts",
-        "__playwright__binding__",
-        "_playwrightInstance",
-    )
-    browser_disable_web_workers: bool = True
-    browser_mask_webrtc_local_ips: bool = True
-    browser_connection_effective_type: Literal["slow-2g", "2g", "3g", "4g"] = "4g"
-    browser_connection_downlink_mbps: float = 4.5
-    browser_connection_downlink_max_mbps: float = 10.0
-    browser_connection_rtt_ms: int = 75
-    browser_connection_type: str = "wifi"
-    browser_connection_save_data: bool = False
-    browser_mobile_max_touch_points: int = 5
-    browser_permission_notifications_state: Literal["granted", "denied", "prompt"] = (
-        "prompt"
-    )
-    browser_permission_camera_state: Literal["granted", "denied", "prompt"] = "prompt"
-    browser_permission_microphone_state: Literal["granted", "denied", "prompt"] = (
-        "prompt"
-    )
-    browser_permission_geolocation_state: Literal["granted", "denied", "prompt"] = (
-        "prompt"
-    )
-    fingerprint_browser: str = "chrome"
-    fingerprint_os: tuple[str, ...] = ("windows", "macos", "linux")
-    fingerprint_device: str = "desktop"
-    fingerprint_locale: str = "en-US"
-    fingerprint_color_scheme: str = "dark"
-    fingerprint_timezone_id: str = ""
-    fingerprint_locale_auto_align_timezone_region: bool = True
-    fingerprint_hardware_concurrency: int = 0
-    fingerprint_device_memory_gb: float = 0.0
-    browser_identity_min_chrome_version: int = 120
-    fingerprint_coherence_max_retries: int = 3
-    browser_identity_cache_max_entries: int = 1024
-    browser_identity_cache_ttl_seconds: int = 3600
-    browser_desktop_viewport_reserved_height_px: int = 100
-    browser_desktop_window_frame_width_px: int = 16
-    browser_desktop_window_frame_height_px: int = 88
     browser_readiness_visible_text_min: int = 120
-    interruptible_wait_poll_ms: int = 250
     cooperative_sleep_poll_ms: int = 250
-    browser_shutdown_timeout_seconds: float = 10.0
     traversal_locator_visible_timeout_ms: int = 250
     traversal_scroll_into_view_timeout_ms: int = 2000
     traversal_cookie_consent_visible_timeout_ms: int = 200
@@ -318,13 +219,10 @@ class CrawlerRuntimeSettings(BaseSettings):
     traversal_location_interstitial_click_timeout_ms: int | None = None
     traversal_location_interstitial_postclick_wait_ms: int | None = None
     pagination_navigation_timeout_ms: int = 20000
-    pagination_page_size_anomaly_ratio: int = 5
     pagination_post_click_timeout_ms: int = 1500
     pagination_post_click_domcontentloaded_timeout_ms: int = 5000
     pagination_post_click_poll_ms: int = 250
-    pagination_post_click_settle_timeout_ms: int = 3000
     listing_readiness_max_wait_ms: int = 6000
-    listing_readiness_poll_ms: int = 500
     detail_expand_max_elapsed_ms: int = 2500
     detail_expand_max_per_selector: int = 4
     detail_aom_expand_max_interactions: int = 6
@@ -336,22 +234,12 @@ class CrawlerRuntimeSettings(BaseSettings):
     traversal_min_settle_wait_ms: int = 500
     traversal_settle_networkidle_timeout_ms: int = 4000
     traversal_weak_progress_streak_max: int = 2
-    listing_recovery_enabled: bool = True
-    listing_recovery_min_records_threshold: int = 5
-    listing_recovery_min_populated_fields_per_record: float = 3.0
     listing_recovery_max_actions: int = 3
     listing_recovery_post_action_wait_ms: int = 1500
     rendered_listing_card_capture_limit: int = 48
-    traversal_active_scrollable_threshold_px: int = 150
-    traversal_active_scrollable_bonus: int = 10
-    traversal_active_link_weight: int = 2
-    traversal_active_target_label_max_len: int = 120
     traversal_click_timeout_ms: int = 3000
     traversal_force_probe_min_advance_px: int = 600
-    infinite_scroll_container_overflow_threshold_px: int = 500
 
-    infinite_scroll_positive_signal_min: int = 2
-    cookie_consent_prewait_ms: int = 400
     cookie_consent_postclick_wait_ms: int = 600
     shadow_dom_flatten_max_hosts: int = 100
     browser_launch_timeout_seconds: float = 25.0
@@ -363,44 +251,21 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_max_contexts_before_recycle: int = 200
     browser_max_lifetime_seconds: int = 1800
     iframe_promotion_max_candidates: int = 2
-    browser_preference_min_successes: int = 2
-    acquisition_artifact_ttl_seconds: int = 86400
-    acquisition_artifact_cleanup_interval_seconds: int = 300
-    llm_confidence_threshold: float = 0.55
     browser_attempt_min_runtime_seconds: float = 0.001
     browser_retry_min_remaining_seconds: float = 20.0
     acquisition_contract_stale_failure_threshold: int = 2
-    detail_max_variant_axes: int = 3
-    detail_max_variant_rows: int = 0
     host_memory_ttl_seconds_key: str = "host_memory_ttl_seconds"
-    detail_max_variant_matrix_cells: int = 200
-    listing_candidate_strong_score_threshold: int = 18
-    listing_cohort_homogeneity_min_ratio: float = 0.6
     robots_cache_size: int = 512
     robots_cache_ttl: float = 3600.0
     robots_fetch_user_agent: str = "CrawlerAI"
 
     @model_validator(mode="after")
-    def _apply_profile_defaults(self) -> CrawlerRuntimeSettings:
-        self._apply_profile_field_defaults()
+    def _validate_settings(self) -> CrawlerRuntimeSettings:
         self._validate_acquisition_settings()
         self._validate_browser_settings()
-        self._validate_proxy_settings()
-        self._normalize_and_validate_worker_and_api_settings()
+        self._normalize_and_validate_api_settings()
         self._validate_crawl_and_run_settings()
         return self
-
-    def _apply_profile_field_defaults(self) -> None:
-        explicitly_set = set(self.model_fields_set)
-        profile = PERFORMANCE_PROFILES.get(
-            self.performance_profile, PERFORMANCE_PROFILES["BALANCED"]
-        )
-        for field_name in _PROFILE_CONTROLLED_FIELDS:
-            if (
-                self.performance_profile != "BALANCED"
-                and field_name not in explicitly_set
-            ) or getattr(self, field_name) is None:
-                setattr(self, field_name, profile[field_name])
 
     def _validate_acquisition_settings(self) -> None:
         if self.max_url_process_timeout_seconds < self.url_process_timeout_seconds:
@@ -413,12 +278,10 @@ class CrawlerRuntimeSettings(BaseSettings):
             "job_max_wall_seconds",
         ):
             _require_positive(field_name, getattr(self, field_name))
-        for field_name in (
+        _require_non_negative(
             "url_process_timeout_buffer_seconds",
-            "acquisition_artifact_ttl_seconds",
-            "acquisition_artifact_cleanup_interval_seconds",
-        ):
-            _require_non_negative(field_name, getattr(self, field_name))
+            self.url_process_timeout_buffer_seconds,
+        )
         _require_positive(
             "host_memory_ttl_min_seconds", self.host_memory_ttl_min_seconds
         )
@@ -431,17 +294,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             )
         if not str(self.host_memory_ttl_seconds_key or "").strip():
             raise ValueError("host_memory_ttl_seconds_key must not be blank")
-        _require_positive("detail_max_variant_axes", self.detail_max_variant_axes)
-        _require_non_negative(
-            "detail_max_variant_matrix_cells", self.detail_max_variant_matrix_cells
-        )
-        _require_non_negative("detail_max_variant_rows", self.detail_max_variant_rows)
-        if self.detail_max_variant_rows > 0:
-            required_cells = self.detail_max_variant_rows * self.detail_max_variant_axes
-            if self.detail_max_variant_matrix_cells < required_cells:
-                raise ValueError(
-                    "detail_max_variant_matrix_cells must be >= detail_max_variant_rows * detail_max_variant_axes"
-                )
 
     def _validate_browser_settings(self) -> None:
         for field_name in (
@@ -465,7 +317,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_proxy_bridge_connect_timeout_seconds",
             "browser_proxy_bridge_auth_timeout_seconds",
             "browser_proxy_bridge_first_byte_timeout_seconds",
-            "browser_identity_min_chrome_version",
         ):
             _require_positive(field_name, getattr(self, field_name))
         for field_name in (
@@ -500,20 +351,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         for field_name in ("browser_navigation_networkidle_primary_budget_ratio",):
             _require_open_unit_interval(field_name, getattr(self, field_name))
 
-    def _validate_proxy_settings(self) -> None:
-        _require_non_negative(
-            "proxy_failure_cooldown_base_ms",
-            self.proxy_failure_cooldown_base_ms,
-        )
-        if self.proxy_failure_cooldown_max_ms < self.proxy_failure_cooldown_base_ms:
-            raise ValueError(
-                "proxy_failure_cooldown_max_ms must be >= proxy_failure_cooldown_base_ms"
-            )
-
-    def _normalize_and_validate_worker_and_api_settings(self) -> None:
-        self.worker_orphan_recovery_grace_seconds = max(
-            int(self.worker_orphan_recovery_grace_seconds), 60
-        )
+    def _normalize_and_validate_api_settings(self) -> None:
         _require_positive(
             "api_rate_limit_max_requests", self.api_rate_limit_max_requests
         )
@@ -527,9 +365,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             raise ValueError("min_max_pages must be >= 1")
         if self.max_max_pages < self.min_max_pages:
             raise ValueError("max_max_pages must be >= min_max_pages")
-        _require_unit_interval(
-            "llm_confidence_threshold", self.llm_confidence_threshold
-        )
         if self.run_quality_threshold_high < self.run_quality_threshold_medium:
             raise ValueError(
                 "run_quality_threshold_high must be >= run_quality_threshold_medium"
@@ -543,10 +378,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             raise ValueError(
                 "run_health_failed_error_rate must be >= run_health_degraded_error_rate"
             )
-        _require_unit_interval(
-            "listing_cohort_homogeneity_min_ratio",
-            self.listing_cohort_homogeneity_min_ratio,
-        )
 
     def coerce_url_timeout_seconds(self, value: object) -> float:
         try:

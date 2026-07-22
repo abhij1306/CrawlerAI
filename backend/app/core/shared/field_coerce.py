@@ -11,12 +11,9 @@ from app.core.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
     COLOR_KEYWORD_PATTERN,
     IMAGE_FIELDS as IMAGE_FIELDS,
-    INTEGER_VALUE_FIELDS,
-    LISTING_UTILITY_TITLE_PATTERNS,
     LONG_TEXT_FIELDS as LONG_TEXT_FIELDS,
     NOISY_PRODUCT_ATTRIBUTE_KEYS,
     OPTION_VALUE_NOISE_WORDS,
-    PRICE_VALUE_FIELDS as PRICE_VALUE_FIELDS,
     # Read dynamically by field_coerce_dispatch via module attribute.
     RATING_RE as RATING_RE,
     REVIEW_COUNT_RE as _REVIEW_COUNT_RE,
@@ -40,7 +37,6 @@ from app.core.config.public_record_policy import (
     PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS,
 )
 from app.core.config.variant_policy import OPTION_SCALAR_FIELDS
-from app.core.config.url_path_markers import detail_path_markers
 from app.core.records.field_policy import (
     normalize_field_key,
 )
@@ -108,8 +104,6 @@ __all__ = (
     "variant_option_value_is_opaque_numeric",
 )
 
-PRODUCT_URL_HINTS = detail_path_markers("ecommerce_detail")
-JOB_URL_HINTS = detail_path_markers("job_detail")
 _FIELD_ALIASES = FIELD_ALIASES
 _OPTION_VALUE_SUFFIX_NOISE_RE = compile_regex_patterns(
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ()
@@ -119,8 +113,6 @@ _OPTION_VALUE_NOISE_WORD_PATTERN = "|".join(
     for word in tuple(OPTION_VALUE_NOISE_WORDS or ())
     if str(word).strip()
 )
-_PRICE_FIELD_NAMES = PRICE_VALUE_FIELDS
-_INTEGER_FIELD_NAMES = INTEGER_VALUE_FIELDS
 _NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
     normalize_field_key(str(key or ""))
     for key in tuple(NOISY_PRODUCT_ATTRIBUTE_KEYS or ())
@@ -145,9 +137,6 @@ safe_int = _safe_int
 coerce_int = _coerce_int
 
 
-LISTING_UTILITY_TITLE_REGEXES = tuple(
-    re.compile(pattern, re.I) for pattern in LISTING_UTILITY_TITLE_PATTERNS
-)
 _AVAILABILITY_CANONICAL_ENUM = frozenset(
     str(v) for v in dict(AVAILABILITY_URL_MAP or {}).values() if v
 )
@@ -156,29 +145,6 @@ _product_type_noise_tokens = frozenset(
     str(token).casefold()
     for token in tuple(PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS or ())
 )
-
-
-def direct_record_to_surface_fields(
-    record: dict[str, Any],
-    *,
-    surface: str,
-    page_url: str,
-    requested_fields: list[str] | None = None,
-    base_fields: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    shaped = dict(base_fields or {})
-    source_fields = surface_fields(
-        surface,
-        requested_fields,
-        allow_noncanonical_requested=False,
-    )
-    for field_name in source_fields:
-        value = coerce_field_value(
-            field_name, dict(record or {}).get(field_name), page_url
-        )
-        if value not in (None, "", [], {}):
-            shaped[field_name] = value
-    return finalize_record(shaped, surface=surface)
 
 
 def _split_multivalue_text_rows(value: str) -> list[str]:

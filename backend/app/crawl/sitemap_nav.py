@@ -91,10 +91,6 @@ def build_category_nav_tree(
     return _build_nav_tree(urls, labels_by_url=labels_by_url)
 
 
-def category_labels_by_url_from_tree(tree: list[dict[str, object]]) -> dict[str, str]:
-    return _labels_by_url_from_tree(tree)
-
-
 def category_url_key(url: str) -> str:
     return _url_key(url)
 

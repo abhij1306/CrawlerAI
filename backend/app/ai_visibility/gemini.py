@@ -116,15 +116,6 @@ async def _shared_client(timeout: float) -> httpx.AsyncClient:
         return _client
 
 
-async def close_ai_visibility_client() -> None:
-    global _client, _client_timeout
-    async with _client_lock:
-        if _client is not None and not _client.is_closed:
-            await _client.aclose()
-        _client = None
-        _client_timeout = None
-
-
 def _build_payload(request: AnswerEngineRequest) -> dict[str, Any]:
     return {
         "model": request.model,

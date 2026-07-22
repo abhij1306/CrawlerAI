@@ -54,15 +54,6 @@ async def create_user(
     return user
 
 
-async def ensure_default_admin(session: AsyncSession) -> User:
-    email, password = _load_default_admin_credentials()
-    result = await session.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-    if user is None:
-        return await create_user(session, email, password, role="admin")
-    return await _ensure_admin_user_state(session, user)
-
-
 async def _ensure_admin_user_state(session: AsyncSession, user: User) -> User:
     changed = False
     if user.role != "admin":

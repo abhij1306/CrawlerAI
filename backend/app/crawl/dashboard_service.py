@@ -35,9 +35,7 @@ from app.acquisition.rate_limiter import reset_pacing_state
 from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
 from app.crawl.state import ACTIVE_STATUSES
 from app.crawl.robots_policy import reset_robots_policy_cache
-from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import normalize_domain
-from app.observability.runtime_metrics import snapshot as runtime_metrics_snapshot
 from sqlalchemy import bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,21 +144,6 @@ async def reset_domain_memory(session: AsyncSession) -> dict:
 async def reset_product_intelligence(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         return await _reset_product_intelligence_db(session)
-
-
-async def reset_data_enrichment(session: AsyncSession) -> dict:
-    async with _session_transaction(session):
-        return await _reset_data_enrichment_db(session)
-
-
-async def reset_knowledge_graph(session: AsyncSession) -> dict:
-    """Compatibility endpoint for explicitly purging extraction memory.
-
-    This path removes only the graph. Domain Memory and application resets also
-    remove it as part of their wider forget-everything semantics.
-    """
-    async with _session_transaction(session):
-        return await purge_extraction_memory(session)
 
 
 async def _reset_crawl_data_db(session: AsyncSession) -> dict:
@@ -446,100 +429,3 @@ def _reset_directory(path, *, create_if_missing: bool = True) -> int:
     if create_if_missing:
         path.mkdir(parents=True, exist_ok=True)
     return removed
-
-
-async def build_operational_metrics(session: AsyncSession) -> dict:
-    """Build lightweight runtime + DB-backed operational metrics."""
-    runtime = await runtime_metrics_snapshot()
-    long_run_threshold_seconds = crawler_runtime_settings.long_run_threshold_seconds
-    stalled_run_threshold_seconds = (
-        crawler_runtime_settings.stalled_run_threshold_seconds
-    )
-    run_duration_rows = await session.execute(
-        select(
-            CrawlRun.created_at,
-            CrawlRun.completed_at,
-        )
-        .where(CrawlRun.created_at.is_not(None))
-        .order_by(CrawlRun.created_at.desc())
-        .limit(crawler_runtime_settings.max_duration_sample_size)
-    )
-    durations_seconds: list[float] = []
-    long_running_count = 0
-    active_without_stage_count = 0
-    active_stalled_no_progress_count = 0
-    active_status_values = {status.value for status in ACTIVE_STATUSES}
-    from datetime import UTC, datetime
-
-    now = datetime.now(UTC)
-    for created_at, completed_at in run_duration_rows:
-        created_ts = (
-            created_at.replace(tzinfo=UTC)
-            if getattr(created_at, "tzinfo", None) is None
-            else created_at.astimezone(UTC)
-        )
-        completed_ts = (
-            completed_at.replace(tzinfo=UTC)
-            if completed_at is not None
-            and getattr(completed_at, "tzinfo", None) is None
-            else completed_at.astimezone(UTC)
-            if completed_at is not None
-            else None
-        )
-        end_time = completed_ts or now
-        duration = max(0.0, (end_time - created_ts).total_seconds())
-        durations_seconds.append(duration)
-    active_rows = await session.execute(
-        select(CrawlRun.created_at, CrawlRun.updated_at, CrawlRun.result_summary).where(
-            CrawlRun.status.in_(list(active_status_values))
-        )
-    )
-    for created_at, updated_at, result_summary in active_rows:
-        if not created_at:
-            continue
-        summary = result_summary if isinstance(result_summary, dict) else {}
-        current_stage = str(summary.get("current_stage") or "").strip()
-        created_ts = (
-            created_at.replace(tzinfo=UTC)
-            if getattr(created_at, "tzinfo", None) is None
-            else created_at.astimezone(UTC)
-        )
-        active_duration = max(0.0, (now - created_ts).total_seconds())
-        if active_duration >= long_run_threshold_seconds:
-            long_running_count += 1
-        if not current_stage:
-            active_without_stage_count += 1
-            if updated_at is not None:
-                updated_ts = (
-                    updated_at.replace(tzinfo=UTC)
-                    if getattr(updated_at, "tzinfo", None) is None
-                    else updated_at.astimezone(UTC)
-                )
-                seconds_since_update = max(0.0, (now - updated_ts).total_seconds())
-                if seconds_since_update >= stalled_run_threshold_seconds:
-                    active_stalled_no_progress_count += 1
-    avg_duration = (
-        round(sum(durations_seconds) / len(durations_seconds), 2)
-        if durations_seconds
-        else 0.0
-    )
-    return {
-        "runtime_counters": {
-            "db_lock_errors_total": int(runtime.get("db_lock_errors_total", 0)),
-            "db_lock_retries_total": int(runtime.get("db_lock_retries_total", 0)),
-            "browser_launch_failures_total": int(
-                runtime.get("browser_launch_failures_total", 0)
-            ),
-            "proxy_exhaustion_total": int(runtime.get("proxy_exhaustion_total", 0)),
-        },
-        "run_duration": {
-            "active_long_running_threshold_seconds": long_run_threshold_seconds,
-            "active_long_running_count": long_running_count,
-            "average_duration_seconds": avg_duration,
-        },
-        "active_health": {
-            "stalled_run_threshold_seconds": stalled_run_threshold_seconds,
-            "active_without_stage_count": active_without_stage_count,
-            "active_stalled_no_progress_count": active_stalled_no_progress_count,
-        },
-    }

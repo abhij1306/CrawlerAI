@@ -92,7 +92,6 @@ async def crawls_domain_run_profile_lookup(
 
 
 @router.get("/domain-memory/run-profiles")
-@router.get("/domain-run-profiles")
 async def crawls_domain_run_profiles(
     session: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(get_current_user)],

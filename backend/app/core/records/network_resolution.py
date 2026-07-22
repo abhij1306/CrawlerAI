@@ -144,27 +144,6 @@ def accept_language_for_locale(locale: str) -> str:
     return f"{normalized},{language};q=0.9"
 
 
-def should_retry_with_forced_ipv4(exc: BaseException) -> bool:
-    if address_family_preference() != "auto":
-        return False
-    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError)):
-        return True
-    if isinstance(exc, OSError):
-        return True
-    lowered = str(exc or "").lower()
-    return any(
-        marker in lowered
-        for marker in (
-            "getaddrinfo failed",
-            "name or service not known",
-            "nodename nor servname provided",
-            "temporary failure in name resolution",
-            "network is unreachable",
-            "no route to host",
-        )
-    )
-
-
 def _build_async_http_transport(
     *,
     proxy: str | None,

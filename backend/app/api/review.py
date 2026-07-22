@@ -17,6 +17,7 @@ from app.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
 )
 from app.crawl.review import build_review_payload, load_review_html, save_review
+from app.core.records.selectors_runtime import SANDBOXED_HTML_PREVIEW_HEADERS
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +70,8 @@ async def review_artifact_html(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No HTML artifact found"
         )
-    return HTMLResponse(content=html_text)
+    # Crawled HTML is untrusted: serve it in a CSP-sandboxed opaque origin.
+    return HTMLResponse(content=html_text, headers=SANDBOXED_HTML_PREVIEW_HEADERS)
 
 
 @router.post("/{run_id}/save")

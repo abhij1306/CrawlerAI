@@ -509,17 +509,6 @@ STRUCTURED_EVIDENCE_FACT_FAMILIES = {
 }
 
 
-def variant_state_values_are_geographic(values: object) -> bool:
-    if not isinstance(values, list):
-        return False
-    matched = {
-        str(value or "").strip().casefold()
-        for value in values
-        if str(value or "").strip().casefold() in GEOGRAPHIC_STATE_VARIANT_VALUE_SET
-    }
-    return len(matched) >= int(GEOGRAPHIC_STATE_VARIANT_MIN_MATCHES)
-
-
 FLAT_VARIANT_KEYS: tuple[str, ...] = (
     "variant_id",
     COLOR_FIELD,

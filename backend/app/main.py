@@ -228,7 +228,7 @@ async def _public_auth_session(request: Request):
     if inspect.isasyncgen(value):
         # mypy 2.x narrows isasyncgen to AsyncGeneratorType[object, Never];
         # cast to the dependency's real shape (an async session generator).
-        agen = cast("AsyncGenerator[AsyncSession, None]", value)
+        agen = cast(AsyncGenerator[AsyncSession, None], value)
         session = await anext(agen)
         try:
             yield session
@@ -236,7 +236,7 @@ async def _public_auth_session(request: Request):
             await agen.aclose()
         return
     if inspect.isgenerator(value):
-        gen = cast("Generator[AsyncSession, None, None]", value)
+        gen = cast(Generator[AsyncSession, None, None], value)
         try:
             session = gen.send(None)
         except StopIteration as exc:
@@ -257,6 +257,16 @@ def _sanitize_header_value(value: str) -> str:
 
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
+# Baseline CSP for API responses: this service returns JSON and file downloads,
+# none of which need to load subresources or be framed. Interactive docs pages
+# pull JS/CSS from CDNs, so they are exempted below.
+_API_BASELINE_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+_CSP_EXEMPT_PATH_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+
+
+def _should_emit_api_csp(path: str) -> bool:
+    return not any(path.startswith(prefix) for prefix in _CSP_EXEMPT_PATH_PREFIXES)
+
 
 def _sanitize_header_name(value: str) -> str:
     text = str(value or "")
@@ -275,6 +285,11 @@ async def security_headers_middleware(request: Request, call_next) -> Response:
     response.headers["X-Frame-Options"] = SECURITY_HEADER_FRAME_OPTIONS
     response.headers["Referrer-Policy"] = SECURITY_HEADER_REFERRER_POLICY
     response.headers["Permissions-Policy"] = SECURITY_HEADER_PERMISSIONS_POLICY
+    if _should_emit_api_csp(request.url.path):
+        # Conservative baseline for a JSON API: no resource loads, no framing.
+        # setdefault so endpoints serving untrusted HTML can set a stricter
+        # sandbox policy at the route level.
+        response.headers.setdefault("Content-Security-Policy", _API_BASELINE_CSP)
     if path_requires_no_store(request.url.path):
         response.headers["Cache-Control"] = "no-store"
     if _should_emit_hsts(request):
