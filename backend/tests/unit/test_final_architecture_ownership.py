@@ -197,10 +197,13 @@ PACKAGE_LOC_BUDGETS = {
     # proxy_endpoint_validation_enabled; crawl +1 for the call site (1.10).
     # Logout slice (same day): core +23 for revoke_user_sessions +
     # get_current_user_optional shared resolver (5.3 backend).
+    # Chunk E (same day): core +138 for redis_execute + the Redis
+    # sliding-window rate-limit consumer (1.9); acquisition +84 for the
+    # Redis host-pacing claim script (2.8).
     # Budgets are only raised, never lowered.
-    "acquisition": 17_151,
+    "acquisition": 17_235,
     "crawl": 9_269,
-    "core": 20_823,
+    "core": 20_961,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -219,7 +222,8 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk C (same day): +57 for the cookie-state encryption-at-rest helpers.
 # Chunk D (same day): +24 for proxy endpoint validation at run creation.
 # Logout slice (same day): +46 for POST /api/auth/logout + shared auth resolvers.
-TOTAL_APP_LOC_BUDGET = 87_430
+# Chunk E (same day): +279 for Redis-backed rate limits + host pacing (1.9/2.8).
+TOTAL_APP_LOC_BUDGET = 87_709
 
 
 def test_production_package_loc_budgets() -> None:

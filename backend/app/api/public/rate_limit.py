@@ -14,6 +14,9 @@ from app.core.config.public_api import (
     PUBLIC_API_READ_BURST_LIMIT,
     PUBLIC_API_READ_RATE_LIMIT,
 )
+from app.core.rate_limit import consume_redis_sliding_window
+
+_REDIS_KEY_PREFIX = "ratelimit:public"
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,15 @@ async def consume_public_rate_limit(
     else:
         minute_limit = PUBLIC_API_READ_RATE_LIMIT
         burst_limit = PUBLIC_API_READ_BURST_LIMIT
+
+    redis_result = await _consume_public_rate_limit_redis(
+        api_key_id=api_key_id,
+        scope=scope,
+        minute_limit=minute_limit,
+        burst_limit=burst_limit,
+    )
+    if redis_result is not None:
+        return redis_result
 
     now = monotonic()
     minute_key = f"public:{api_key_id}:{scope}:minute"
@@ -110,6 +122,56 @@ async def consume_public_rate_limit(
             reset_seconds=reset_seconds,
             retry_after=0,
         )
+
+
+async def _consume_public_rate_limit_redis(
+    *,
+    api_key_id: int,
+    scope: str,
+    minute_limit: int,
+    burst_limit: int,
+) -> PublicRateLimitResult | None:
+    """Globally enforced minute + burst buckets (two ZSET keys per key/scope).
+
+    Returns None when the Redis path is unavailable so the caller falls back to
+    the in-process buckets.
+    """
+    minute = await consume_redis_sliding_window(
+        f"{_REDIS_KEY_PREFIX}:{api_key_id}:{scope}:minute",
+        window_seconds=PUBLIC_API_RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=minute_limit,
+    )
+    if minute is None:
+        return None
+    burst = await consume_redis_sliding_window(
+        f"{_REDIS_KEY_PREFIX}:{api_key_id}:{scope}:burst",
+        window_seconds=PUBLIC_API_BURST_WINDOW_SECONDS,
+        max_requests=burst_limit,
+    )
+    if burst is None:
+        return None
+    minute_allowed, minute_retry, minute_remaining, minute_reset = minute
+    burst_allowed, burst_retry, burst_remaining, _burst_reset = burst
+    if not minute_allowed or not burst_allowed:
+        retry_after = max(
+            1,
+            minute_retry if not minute_allowed else 0,
+            burst_retry if not burst_allowed else 0,
+        )
+        return PublicRateLimitResult(
+            allowed=False,
+            limit=minute_limit,
+            remaining=0,
+            reset_seconds=retry_after,
+            retry_after=retry_after,
+        )
+    return PublicRateLimitResult(
+        allowed=True,
+        limit=minute_limit,
+        remaining=min(minute_remaining, burst_remaining),
+        reset_seconds=minute_reset,
+        retry_after=0,
+    )
 
 
 def _bucket_for(buckets: OrderedDict[str, deque[float]], key: str) -> deque[float]:

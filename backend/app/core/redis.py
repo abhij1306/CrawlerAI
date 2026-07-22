@@ -15,9 +15,11 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "RedisUnavailableError",
     "close_redis",
     "get_redis",
     "get_redis_pool",
+    "redis_execute",
     "redis_fail_open",
     "redis_failure_total",
     "redis_is_enabled",
@@ -86,6 +88,52 @@ def get_redis() -> Redis:
 
 def redis_failure_total() -> int:
     return _redis_failure_state.total
+
+
+class RedisUnavailableError(RuntimeError):
+    """Redis cannot serve the requested shared-state operation right now.
+
+    Raised by redis_execute when the circuit breaker is open or the operation
+    failed; callers own their in-process fallback.
+    """
+
+
+async def redis_execute(
+    operation: Callable[[Redis], Awaitable[T]],
+    *,
+    operation_name: str,
+) -> T:
+    """Execute ``operation`` against Redis, bypassing the redis_state_enabled gate.
+
+    Unlike redis_fail_open this is NOT gated on settings.redis_state_enabled:
+    the compose default for that flag is false, but Redis is always deployed as
+    the Celery broker, so rate limiting and host pacing must stay globally
+    enforced even when optional shared-state features are disabled. Shares the
+    redis_fail_open circuit breaker and raises RedisUnavailableError on actual
+    Redis errors (and while the breaker is open) so callers can fall back to
+    in-process behavior.
+    """
+    if time.monotonic() < _redis_failure_state.disabled_until:
+        raise RedisUnavailableError(
+            f"Redis circuit breaker open; cannot run {operation_name}"
+        )
+    try:
+        return await operation(get_redis())
+    except RedisUnavailableError:
+        raise
+    except Exception as exc:
+        _temporarily_disable_redis(exc)
+        logger.warning(
+            "Redis operation failed; caller falls back to in-process state",
+            exc_info=False,
+            extra={
+                "exception_type": _safe_log_extra_token(type(exc).__name__),
+                "operation": _safe_log_extra_token(operation_name),
+            },
+        )
+        raise RedisUnavailableError(
+            f"Redis operation {operation_name} failed"
+        ) from exc
 
 
 async def close_redis() -> None:
