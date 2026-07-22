@@ -5,8 +5,9 @@ import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
+from app.acquisition import browser_context_lifecycle, browser_runtime_lifecycle
 from app.acquisition.browser_background_tasks import (
     await_without_cancelling,
     drain_browser_background_tasks,
@@ -16,9 +17,7 @@ from app.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE as _CHROMIUM_BROWSER_ENGINE,
     PATCHRIGHT_BROWSER_ENGINE as _PATCHRIGHT_BROWSER_ENGINE,
     REAL_CHROME_BROWSER_ENGINE as _REAL_CHROME_BROWSER_ENGINE,
-    browser_failure_kind as _browser_failure_kind,
     browser_profile_diagnostics as _browser_profile_diagnostics,
-    launch_headless_for_engine as _launch_headless_for_engine,
     normalize_browser_engine as _normalize_browser_engine,
     use_native_real_chrome_context as _use_native_real_chrome_context,
 )
@@ -27,7 +26,9 @@ from app.acquisition.browser_identity import (
     clear_browser_identity_cache,
 )
 from app.acquisition.browser_identity import build_playwright_context_spec
-from app.acquisition.browser_proxy_bridge import Socks5AuthBridge
+from app.acquisition.browser_proxy_bridge import (
+    Socks5AuthBridge as Socks5AuthBridge,
+)
 from app.acquisition.browser_page_helpers import object_int as _int_or_zero
 from app.acquisition.browser_pool_eviction import (
     evict_idle_browser_runtimes_locked,
@@ -45,7 +46,7 @@ from app.acquisition.browser_proxy_config import (
 )
 from app.core.config.browser_fingerprint_profiles import (
     NATIVE_REAL_CHROME_CONTEXT_OPTIONS,
-    REAL_CHROME_IGNORE_DEFAULT_ARGS,
+    REAL_CHROME_IGNORE_DEFAULT_ARGS as REAL_CHROME_IGNORE_DEFAULT_ARGS,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 
@@ -171,246 +172,41 @@ class SharedBrowserRuntime:
         self._browser_launched_at: float = 0.0
         self._last_used_at: float = time.monotonic()
 
-    def _should_recycle_browser(self) -> bool:
-        if self._browser is None:
-            return False
-        if not getattr(self._browser, "is_connected", lambda: True)():
-            return True
-        if self._active_contexts > 0:
-            return False
-        if self._context_recycle_threshold_reached():
-            return True
-        max_lifetime = int(crawler_runtime_settings.browser_max_lifetime_seconds)
-        if max_lifetime > 0 and self._browser_launched_at > 0:
-            if time.monotonic() - self._browser_launched_at >= max_lifetime:
-                return True
-        return False
-
-    def _context_recycle_threshold_reached(self) -> bool:
-        max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
-        return max_contexts > 0 and self._total_contexts_created >= max_contexts
-
     async def _yield_slot_until_recycle_window(self, timeout_seconds: float) -> bool:
-        if (
-            self._browser is None
-            or not self._context_recycle_threshold_reached()
-            or self._active_contexts > 0
-        ):
-            return False
-        deadline = time.monotonic() + max(0.0, timeout_seconds)
-        self._semaphore.release()
-        while self._active_contexts > 0 and self._context_recycle_threshold_reached():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise asyncio.TimeoutError(
-                    "Timed out waiting for browser context slot "
-                    f"after {timeout_seconds:.1f}s"
-                )
-            await asyncio.sleep(min(0.05, remaining))
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise asyncio.TimeoutError(
-                "Timed out waiting for browser context slot "
-                f"after {timeout_seconds:.1f}s"
-            )
-        await asyncio.wait_for(self._semaphore.acquire(), timeout=remaining)
-        return True
-
-    async def _ensure(self) -> None:
-        if self._browser is not None and not self._should_recycle_browser():
-            return
-        async with self._lock:
-            if self._should_recycle_browser():
-                logger.info(
-                    "Recycling browser instance (contexts=%d, lifetime=%.0fs)",
-                    self._total_contexts_created,
-                    time.monotonic() - self._browser_launched_at
-                    if self._browser_launched_at
-                    else 0,
-                )
-                await self._close_locked()
-            if self._browser is not None:
-                return
-            try:
-                async_playwright = _async_playwright_manager_for_engine(
-                    self.browser_engine
-                )
-                self._playwright = await _wait_for_browser_step(
-                    async_playwright().start(),
-                    timeout_seconds=_browser_launch_timeout_seconds(),
-                    message="Timed out launching browser driver",
-                )
-                launch_kwargs = await self._browser_launch_kwargs()
-                self._browser = await _wait_for_browser_step(
-                    self._playwright.chromium.launch(**launch_kwargs),
-                    timeout_seconds=_browser_launch_timeout_seconds(),
-                    message="Timed out launching browser",
-                )
-                self._browser_launched_at = time.monotonic()
-                self._total_contexts_created = 0
-            except Exception:
-                await self._close_locked()
-                raise
+        return await browser_runtime_lifecycle.yield_slot_until_recycle_window(
+            self, timeout_seconds
+        )
 
     async def ensure(self) -> None:
         """Public browser warm-up API."""
-        await self._ensure()
-
-    async def _recycle_after_driver_disconnect(self) -> None:
-        async with self._lock:
-            await self._close_locked()
-        await self.ensure()
-
-    async def _browser_launch_kwargs(self) -> dict[str, Any]:
-        launch_args = [
-            str(value).strip()
-            for value in crawler_runtime_settings.browser_launch_args or ()
-            if str(value).strip()
-        ]
-        launch_headless = _launch_headless_for_engine(self.browser_engine)
-        if (
-            launch_headless
-            and bool(crawler_runtime_settings.browser_use_new_headless)
-            and "--headless=new" not in launch_args
-        ):
-            launch_args.append("--headless=new")
-            launch_headless = False
-        launch_kwargs: dict[str, Any] = {"headless": launch_headless}
-        if launch_args:
-            launch_kwargs["args"] = launch_args
-        self._add_real_chrome_launch_kwargs(launch_kwargs)
-        launch_proxy_config = await self._launch_proxy_config_for_browser()
-        if launch_proxy_config is not None:
-            launch_kwargs["proxy"] = launch_proxy_config
-        return launch_kwargs
-
-    def _add_real_chrome_launch_kwargs(self, launch_kwargs: dict[str, Any]) -> None:
-        if self.browser_engine != _REAL_CHROME_BROWSER_ENGINE:
-            return
-        if not self.executable_path:
-            raise RuntimeError(
-                "Real Chrome executable is not available for browser runtime"
-            )
-        launch_kwargs["executable_path"] = self.executable_path
-        ignore_default_args = [
-            str(arg).strip()
-            for arg in (REAL_CHROME_IGNORE_DEFAULT_ARGS or ())
-            if str(arg).strip()
-        ]
-        if ignore_default_args:
-            launch_kwargs["ignore_default_args"] = ignore_default_args
+        await browser_runtime_lifecycle.ensure_browser_runtime(self)
 
     async def _open_context_page(
         self,
         *,
         context_options: dict[str, Any],
     ) -> tuple[BrowserContext, Any]:
-        last_error: Exception | None = None
-        for attempt in range(2):
-            if self._browser is None:
-                raise RuntimeError("Browser runtime failed to initialize")
-            context: BrowserContext | None = None
-            try:
-                context = await _wait_for_browser_step(
-                    self._browser.new_context(**cast(Any, context_options)),
-                    timeout_seconds=_browser_context_timeout_seconds(),
-                    message="Timed out opening browser context",
-                )
-                self._total_contexts_created += 1
-                page = await _wait_for_browser_step(
-                    context.new_page(),
-                    timeout_seconds=_browser_new_page_timeout_seconds(),
-                    message="Timed out opening browser page",
-                )
-                return context, page
-            except Exception as exc:
-                last_error = exc
-                if context is not None:
-                    await _close_browser_context_safely(context)
-                if attempt >= 1 or _browser_failure_kind(exc) not in {
-                    "browser_driver_closed",
-                    "page_closed",
-                }:
-                    raise
-                logger.warning(
-                    "Browser runtime disconnected during context bootstrap; recycling runtime"
-                )
-                await self._recycle_after_driver_disconnect()
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("Browser runtime failed to create page context")
-
-    async def _launch_proxy_config_for_browser(self) -> dict[str, str] | None:
-        if self.launch_proxy_config is None:
-            return None
-        if self._authenticated_socks5_proxy is None:
-            return dict(self.launch_proxy_config)
-        if self._socks5_auth_bridge is None:
-            bridge_cls = Socks5AuthBridge
-            self._socks5_auth_bridge = bridge_cls(self._authenticated_socks5_proxy)
-        bridge_proxy = await self._socks5_auth_bridge.start()
-        bridge_proxy_config = _build_browser_proxy_config(bridge_proxy)
-        if bridge_proxy_config is None:
-            raise RuntimeError("SOCKS5 auth bridge failed to expose a browser proxy")
-        return bridge_proxy_config
+        return await browser_context_lifecycle.open_context_page(
+            self, context_options=context_options
+        )
 
     async def _acquire_context_slot(
         self,
         *,
         phase_timings_ms: dict[str, int] | None,
     ) -> None:
-        self._update_queue_count(1)
-        slot_timeout_seconds = _browser_context_slot_timeout_seconds()
-        slot_wait_started_at = time.perf_counter()
-        slot_deadline = time.monotonic() + slot_timeout_seconds
-        slot_acquired = False
-        try:
-            await asyncio.wait_for(
-                self._semaphore.acquire(),
-                timeout=slot_timeout_seconds,
-            )
-            slot_acquired = True
-            await self._yield_slot_until_recycle_window(
-                max(0.0, slot_deadline - time.monotonic())
-            )
-            _record_timing(
-                phase_timings_ms,
-                "context_slot_wait_ms",
-                slot_wait_started_at,
-            )
-        except asyncio.TimeoutError as exc:
-            _record_timing(
-                phase_timings_ms,
-                "context_slot_wait_ms",
-                slot_wait_started_at,
-            )
-            raise asyncio.TimeoutError(
-                "Timed out waiting for browser context slot "
-                f"after {slot_timeout_seconds:.1f}s"
-            ) from exc
-        except BaseException:
-            if slot_acquired:
-                self._semaphore.release()
-            raise
-        finally:
-            self._update_queue_count(-1)
+        await browser_context_lifecycle.acquire_context_slot(
+            self, phase_timings_ms=phase_timings_ms
+        )
 
     async def _ensure_with_timing(
         self,
         *,
         phase_timings_ms: dict[str, int] | None,
     ) -> None:
-        should_time_browser_start = (
-            self._browser is None or self._should_recycle_browser()
+        await browser_context_lifecycle.ensure_with_timing(
+            self, phase_timings_ms=phase_timings_ms
         )
-        browser_start_started_at = time.perf_counter()
-        await self._ensure()
-        if should_time_browser_start:
-            _record_timing(
-                phase_timings_ms,
-                "browser_start_ms",
-                browser_start_started_at,
-            )
 
     def touch(self) -> None:
         self._last_used_at = time.monotonic()
@@ -467,45 +263,14 @@ class SharedBrowserRuntime:
         )
 
     def _release_context_capacity(self) -> None:
-        self._update_active_contexts(-1)
-        self._semaphore.release()
+        browser_context_lifecycle.release_context_capacity(self)
 
     async def close(self) -> None:
         async with self._lock:
-            await self._close_locked()
-
-    async def _close_locked(self) -> None:
-        components = (
-            ("closing browser runtime", self._browser, "close"),
-            ("stopping playwright", self._playwright, "stop"),
-            ("closing SOCKS5 auth bridge", self._socks5_auth_bridge, "close"),
-        )
-        for label, component, close_method in components:
-            if component is None:
-                continue
-            try:
-                closed = await await_without_cancelling(
-                    getattr(component, close_method)(),
-                    timeout_seconds=_browser_close_timeout_seconds(),
-                )
-                if not closed:
-                    logger.warning(
-                        "Timed out %s after %.1fs",
-                        label,
-                        _browser_close_timeout_seconds(),
-                    )
-            except Exception:
-                logger.debug("Failed while %s", label, exc_info=True)
-        self._browser = None
-        self._playwright = None
-        self._socks5_auth_bridge = None
-        self._browser_launched_at = 0.0
+            await browser_runtime_lifecycle.close_browser_runtime_locked(self)
 
     def _update_active_contexts(self, delta: int) -> None:
-        self._active_contexts = max(0, self._active_contexts + delta)
-
-    def _update_queue_count(self, delta: int) -> None:
-        self._queued_count = max(0, self._queued_count + delta)
+        browser_context_lifecycle.update_active_contexts(self, delta)
 
     def snapshot(self) -> dict[str, object]:
         snapshot: dict[str, object] = {
