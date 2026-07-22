@@ -39,6 +39,20 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    # Opt-OUT markers for the heavy autouse stubs below (audit 4.14): the
+    # suite-wide defaults stay stubbed (1,700+ tests depend on them), but a
+    # marked test gets the real wiring.
+    config.addinivalue_line(
+        "markers",
+        "real_dns: do not stub public DNS resolution for this test",
+    )
+    config.addinivalue_line(
+        "markers",
+        "real_redis: do not install the FakeRedis client for this test",
+    )
+
+
 class FakeRedis:
     def __init__(self) -> None:
         self._values: dict[str, str] = {}
@@ -171,7 +185,12 @@ def _isolate_artifact_storage(
 
 
 @pytest.fixture(autouse=True)
-def _stub_public_dns_resolution(monkeypatch: pytest.MonkeyPatch):
+def _stub_public_dns_resolution(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+):
+    if request.node.get_closest_marker("real_dns") is not None:
+        return
+
     async def _resolve(_hostname, _port, **_kwargs):
         return ["93.184.216.34"]
 
@@ -182,7 +201,11 @@ def _stub_public_dns_resolution(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
-def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
+def fake_redis(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> FakeRedis | None:
+    if request.node.get_closest_marker("real_redis") is not None:
+        return None
     client = FakeRedis()
     monkeypatch.setattr(app_redis, "_client", client)
     monkeypatch.setattr(app_redis, "_pool", None)
