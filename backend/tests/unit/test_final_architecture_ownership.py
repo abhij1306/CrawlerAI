@@ -20,11 +20,17 @@ OVERSIZED_MODULE_DEBT = {
     # coderabbit findings 1-7): browser_readiness re-entered the ledger at the
     # threshold edge; extraction collectors shrank with the srcset helper
     # dedup; extraction_memory grew with the bounded persist lock-wait seam.
+    # Audit-fix reconciliation (2026-07-22, measured against working tree):
+    # extraction/resolution/__init__.py left the ledger (2,044 -> 175 facade
+    # after the god-package split); enrichment/service.py grew with the
+    # Celery job runner (2.7); intelligence/service.py entered with the
+    # concurrent candidate polling; extraction_memory grew with the
+    # knowledge.py query-layer move (4.6).
     "acquisition/browser_readiness.py": 702,
-    "acquisition/browser_recovery.py": 724,
-    "acquisition/browser_result_builder.py": 740,
+    "acquisition/browser_recovery.py": 723,
+    "acquisition/browser_result_builder.py": 744,
     "core/config/extraction_rules/_detail.py": 1026,
-    "enrichment/service.py": 714,
+    "enrichment/service.py": 903,
     "extraction/collectors/dom.py": 1062,
     "extraction/collectors/js_state.py": 914,
     "extraction/collectors/jsonld.py": 783,
@@ -32,13 +38,13 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/engine.py": 1059,
     "extraction/entities.py": 850,
     "extraction/pipeline.py": 781,
-    "extraction/resolution/__init__.py": 1931,
     "extraction/result_building.py": 738,
     "extraction/validation.py": 743,
+    "intelligence/service.py": 750,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 1215,
+    "persistence/extraction_memory.py": 1375,
 }
 # SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
 # into _listing_discovery_signals/_listing_readiness_verdict and left the
@@ -92,23 +98,29 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/pipeline.py", "_title_flags"): 29,
     ("extraction/publication.py", "commerce_detail_projection"): 43,
     ("extraction/publication.py", "serialize_commerce_detail_projection"): 26,
+    ("enrichment/service.py", "run_job"): 25,
     ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
-    ("extraction/resolution/__init__.py", "resolve"): 31,
-    ("extraction/resolution/__init__.py", "_reconcile_variant_prices"): 25,
+    # Audit-fix reconciliation (2026-07-22): the seven resolution entries moved
+    # from the retired god-package __init__ to the split modules, values
+    # unchanged; enrichment run_job + intelligence _poll_candidates_and_score
+    # entered with the Celery job migration (2.7).
+    ("extraction/resolution/decisions.py", "_resolve_scalar"): 22,
+    ("extraction/resolution/derived.py", "_semantic_derived_facts"): 25,
+    ("extraction/resolution/derived.py", "_brand_from_title"): 22,
     (
-        "extraction/resolution/__init__.py",
+        "extraction/resolution/offers.py",
         "_offer_atomic_price_currency_preferences",
     ): 22,
-    ("extraction/resolution/__init__.py", "_inherit_variant_offer_facts"): 22,
-    ("extraction/resolution/__init__.py", "_resolve_scalar"): 22,
-    ("extraction/resolution/__init__.py", "_semantic_derived_facts"): 25,
-    ("extraction/resolution/__init__.py", "_brand_from_title"): 22,
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
+    ("extraction/resolution/resolver.py", "resolve"): 31,
+    ("extraction/resolution/variant_rollup.py", "_reconcile_variant_prices"): 25,
+    ("extraction/resolution/variant_rollup.py", "_inherit_variant_offer_facts"): 22,
     ("extraction/result_building.py", "field_evidence_states"): 46,
     ("extraction/result_building.py", "projection_field_states"): 78,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
+    ("intelligence/service.py", "_poll_candidates_and_score"): 25,
     ("intelligence/matching.py", "_apply_identity_floor"): 21,
     ("intelligence/matching.py", "extract_search_result_snapshot"): 22,
     ("observability/diagnose.py", "build_diagnosis"): 25,
@@ -166,20 +178,25 @@ PACKAGE_LOC_BUDGETS = {
     # claim/lease, resume-seeding, and bounded-summary machinery (net of the
     # dead-code deletions); batch_runtime.py itself ratcheted back under the
     # 700-line oversized threshold.
-    "acquisition": 16_828,
+    # Audit-fix reconciliation (2026-07-22, measured on working tree):
+    # acquisition grew (16,828 -> 17,104) with the browser-pool collaborator
+    # modules + SSRF redirect validation; extraction grew (16,437 -> 16,753)
+    # with the resolution split modules; enrichment (2,057 -> 2,250) and
+    # intelligence (3,277 -> 3,448) grew with the Celery job runners.
+    # Budgets are only raised, never lowered.
+    "acquisition": 17_104,
     "crawl": 9_250,
     "core": 20_761,
-    "enrichment": 2_057,
+    "enrichment": 2_250,
     "connectors": 2_444,
-    "intelligence": 3_277,
-    "extraction": 16_437,
+    "intelligence": 3_448,
+    "extraction": 16_753,
     "evaluation": 2_009,
 }
-# Closeout hardening: total grew (86_288 -> 86_376) with the coderabbit
-# findings (bounded lock-wait seam + typed error, readiness terminal states,
-# fast-finalize status gate) and the cyclic-import-busting injection seams.
-# The next cleanup slice should drive this back below 86k.
-TOTAL_APP_LOC_BUDGET = 86_376
+# Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,144) with
+# the resolution split, browser-pool collaborators, SSRF hardening, and
+# Celery job runners (net of the dead-code purge). Measured on working tree.
+TOTAL_APP_LOC_BUDGET = 87_144
 
 
 def test_production_package_loc_budgets() -> None:
