@@ -243,6 +243,9 @@ async def recover_orphaned_data_enrichment_jobs(
     stale_before = now - timedelta(
         seconds=product_intelligence_settings.job_orphaned_after_seconds
     )
+    pending_stale_before = now - timedelta(
+        seconds=product_intelligence_settings.job_orphaned_pending_after_seconds
+    )
     jobs = list(
         (
             await session.scalars(
@@ -260,6 +263,7 @@ async def recover_orphaned_data_enrichment_jobs(
             job.summary,
             exclude_task_id=exclude_task_id,
             stale=stale,
+            pending_stale=updated_at <= pending_stale_before,
             task_state=celery_task_state,
         ):
             continue

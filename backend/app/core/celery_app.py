@@ -123,6 +123,7 @@ def celery_task_is_gone(
     *,
     exclude_task_id: str | None,
     stale: bool,
+    pending_stale: bool | None = None,
     task_state: Callable[[str], str | None] = celery_task_state,
 ) -> bool:
     """True when a running job has no live Celery task behind it."""
@@ -141,9 +142,12 @@ def celery_task_is_gone(
         # Task finished (or was revoked) but the job was never finalized.
         return True
     if state == "PENDING":
-        # PENDING also covers lost/expired task records, so require the row to
-        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
-        return stale
+        # PENDING covers lost/expired task records AND tasks legitimately
+        # waiting in the broker queue (worker backlog). A queued task that is
+        # merely stale past the normal orphan window may still run, so require
+        # the longer pending window when provided. STARTED/RETRY/RECEIVED mean
+        # a worker holds the task.
+        return stale if pending_stale is None else pending_stale
     return False
 
 

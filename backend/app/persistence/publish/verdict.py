@@ -72,13 +72,38 @@ def run_health_verdict(summary: dict[str, object] | object) -> dict[str, object]
         url_count = int(payload.get("url_count") or 0)
     except (TypeError, ValueError):
         url_count = 0
+    # In-flight fixed-size progress patches carry verdict_counts instead of
+    # the full url_verdicts list; derive the same failure signal from counts.
+    count_processed = 0
+    count_failures = 0
+    raw_counts = payload.get("verdict_counts")
+    if not isinstance(raw_verdicts, list) and isinstance(raw_counts, Mapping):
+        for key, value in raw_counts.items():
+            verdict_key = str(key or "").strip()
+            if not verdict_key:
+                continue
+            try:
+                count = int(value or 0)
+            except (TypeError, ValueError):
+                continue
+            if count <= 0:
+                continue
+            count_processed += count
+            if verdict_key not in {VERDICT_SUCCESS, VERDICT_PARTIAL}:
+                count_failures += count
     if isinstance(raw_verdicts, list):
         total = max(url_count, len(verdicts)) if verdicts else 0
+        failures = sum(
+            1
+            for verdict in verdicts
+            if verdict not in {VERDICT_SUCCESS, VERDICT_PARTIAL}
+        )
+    elif count_processed:
+        total = max(url_count, count_processed)
+        failures = count_failures
     else:
         total = url_count
-    failures = sum(
-        1 for verdict in verdicts if verdict not in {VERDICT_SUCCESS, VERDICT_PARTIAL}
-    )
+        failures = 0
     failure_rate = failures / total if total else 0.0
     status = "unknown"
     if total:
