@@ -195,10 +195,12 @@ PACKAGE_LOC_BUDGETS = {
     # envelope in cookie_store.py; core +9 for the envelope constants (1.6).
     # Chunk D (same day): core +23 for ensure_valid_proxy_endpoints +
     # proxy_endpoint_validation_enabled; crawl +1 for the call site (1.10).
+    # Logout slice (same day): core +23 for revoke_user_sessions +
+    # get_current_user_optional shared resolver (5.3 backend).
     # Budgets are only raised, never lowered.
     "acquisition": 17_151,
     "crawl": 9_269,
-    "core": 20_800,
+    "core": 20_823,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -216,7 +218,8 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk B (same day): +40 for the non-dev docs/metrics gating in main.py.
 # Chunk C (same day): +57 for the cookie-state encryption-at-rest helpers.
 # Chunk D (same day): +24 for proxy endpoint validation at run creation.
-TOTAL_APP_LOC_BUDGET = 87_384
+# Logout slice (same day): +46 for POST /api/auth/logout + shared auth resolvers.
+TOTAL_APP_LOC_BUDGET = 87_430
 
 
 def test_production_package_loc_budgets() -> None:

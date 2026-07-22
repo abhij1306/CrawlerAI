@@ -36,6 +36,15 @@ async def get_user(session: AsyncSession, user_id: int) -> User | None:
     return await session.get(User, user_id)
 
 
+async def revoke_user_sessions(session: AsyncSession, user_id: int) -> None:
+    """Invalidate all outstanding access tokens for a user (token_version bump)."""
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(token_version=func.coalesce(User.token_version, 0) + 1)
+    )
+
+
 async def update_user(session: AsyncSession, user: User, payload: dict) -> User:
     should_revoke_sessions = False
     for key, value in payload.items():
@@ -43,11 +52,7 @@ async def update_user(session: AsyncSession, user: User, payload: dict) -> User:
             should_revoke_sessions = True
         setattr(user, key, value)
     if should_revoke_sessions:
-        await session.execute(
-            update(User)
-            .where(User.id == user.id)
-            .values(token_version=func.coalesce(User.token_version, 0) + 1)
-        )
+        await revoke_user_sessions(session, user.id)
     await session.commit()
     await session.refresh(user)
     return user
