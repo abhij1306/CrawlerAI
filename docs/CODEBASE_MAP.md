@@ -19,7 +19,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
-| `crawls.py` | Run creation, CSV ingestion, run listing/detail/control, commit fields, and logs |
+| `crawls.py` | Run creation, CSV ingestion, run listing/detail/control, commit fields, logs, and Crawl Studio category discovery |
 | `crawl_domain.py` | Crawl domain recipe/profile/feedback/cookie-memory routes |
 | `records.py` | Record listing, exports, provenance |
 | `review.py` | Review payloads and approved mapping save |
@@ -30,9 +30,10 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
 | `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create |
 | `public/*` | Public API v1 envelope, rate-limit helpers, HTTP-only extraction, domain info, capabilities, and deferred batch routes |
-| `crawls.py` | Run creation plus Crawl Studio category discovery API |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
+
+(`crawls.py` above is the single run-API owner — the former duplicate row for the category discovery endpoint is folded into it.)
 
 ### `core/` — infrastructure only
 
@@ -243,14 +244,21 @@ Verdict set:
 
 | File | Purpose |
 |---|---|
-| `review/__init__.py` | Review payloads and approved field mapping persistence |
-| `selectors_runtime.py` | Selector CRUD and runtime lookup over extraction-memory recipes |
-| `selector_auto_learn.py` | Strict DOM-observed selector auto-save into extraction memory |
-| `selector_suggestions.py` | Selector suggestion assembly from extraction memory, deterministic DOM patterns, listing cards, and LLM candidates |
-| `selector_self_heal.py` | Selector synthesis and validation |
-| `domain_memory_service.py` | Compatibility service over domain-scoped selector recipes |
+| `crawl/review/__init__.py` | Review and promotion service: review payloads and approved field mapping persistence |
+| `crawl/review/domain_recipe_support.py` | Domain-recipe helpers: selector signatures, acquisition info, selector-candidate collection, feedback serialization |
+| `core/records/selectors_runtime.py` | Selector CRUD and runtime lookup over extraction-memory recipes; suggest/test/preview |
+| `crawl/domain_memory_service.py` | Domain-scoped selector recipe memory: load/save/list `SelectorMemory` and compose runtime selector rules |
+| `api/selectors.py` | Selector HTTP routes (CRUD, suggest, test, preview) |
+| `schemas/selectors.py` | Selector request/response DTOs |
+| `core/config/selectors.py` | Deterministic DOM candidate patterns (anchor/card selectors) |
+| `core/config/selector_runtime.py` | Selector runtime tunables |
+| `models/domain_memory.py` | `DomainRunProfile` / `DomainCookieMemory` ORM rows (see the `models/` table) |
 
 All selector recipes are scoped by normalized `(domain, surface)`.
+The legacy flat modules (`review/__init__.py`, `selector_auto_learn.py`,
+`selector_suggestions.py`, `selector_self_heal.py`, top-level
+`selectors_runtime.py`/`domain_memory_service.py`) are deleted — the owners
+above replaced them.
 
 ---
 
@@ -285,6 +293,19 @@ All selector recipes are scoped by normalized `(domain, surface)`.
 | `alembic/versions/20260702_0004_extraction_memory.py` | Migrates five prior stores, then removes generic graph tables |
 
 Extraction memory is the single owner for learned structural state. Run releases and URL manifests are relational rows, not payloads embedded in run settings. See `docs/INVARIANTS.md` §17.
+
+---
+
+## Duplicate basenames — canonical owners
+
+Several backend modules share a basename. Resolve ambiguity with this table instead of renaming files.
+
+| Basename | Canonical owners |
+|---|---|
+| `contracts.py` ×5 | `acquisition/contracts.py` (browser fetch attempt specs) · `ai_visibility/contracts.py` (provider-neutral answer-engine adapter contracts) · `crawl/contracts.py` (run-facing DTOs: `UrlResult`, `RunSummary`) · `extraction/contracts.py` (extraction execution context/bundle contracts) · `persistence/contracts.py` (artifact store reference) |
+| `extraction_memory.py` ×3 | `core/config/extraction_memory.py` (store vocabulary/versions) · `models/extraction_memory.py` (ORM tables) · `persistence/extraction_memory.py` (upsert/compile/release/observe/purge) |
+| `service.py` ×4 | `crawl/service.py` (run lifecycle control: dispatch/pause/resume/kill/cancel) · `enrichment/service.py` (data-enrichment job lifecycle) · `intelligence/service.py` (product-intelligence job lifecycle) · `ai_visibility/service.py` (AI-visibility project CRUD and run planning) |
+| `types.py` ×3 | `acquisition/fetch/types.py` (fetch runtime context and attempt state) · `connectors/llm/types.py` (LLM connector task results) · `crawl/pipeline/types.py` (URL-processing result and record-writer protocol) |
 
 ---
 
