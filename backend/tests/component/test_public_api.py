@@ -15,6 +15,7 @@ from starlette.requests import Request
 from app.api.public.rate_limit import _retry_after, _trim
 from app.core import config
 from app.core import metrics as metrics_module
+from app.core import public_auth
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db
 from app.core.public_auth import (
@@ -49,6 +50,8 @@ from app.core.config.public_api import (
     PUBLIC_API_ERROR_API_KEY_REQUIRED,
     PUBLIC_API_ERROR_AUTH_UNAVAILABLE,
     PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
+    PUBLIC_API_LAST_USED_TOUCH_SECONDS,
+    PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 
@@ -70,6 +73,15 @@ async def public_api_client(db_session):
 @pytest.fixture(autouse=True)
 def reset_runtime_app_env(monkeypatch):
     monkeypatch.setattr(config, "_RUNTIME_APP_ENV", None)
+
+
+@pytest.fixture(autouse=True)
+def _clear_public_api_principal_cache():
+    # 2.12: the module-level principal cache must not leak across tests
+    # (each db_session test gets a fresh database schema).
+    public_auth._PRINCIPAL_CACHE.clear()
+    yield
+    public_auth._PRINCIPAL_CACHE.clear()
 
 
 @pytest.mark.asyncio
@@ -676,6 +688,137 @@ async def test_authenticate_public_api_key_fails_when_touch_commit_fails() -> No
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["code"] == PUBLIC_API_ERROR_AUTH_UNAVAILABLE
     assert session.rolled_back is True
+
+
+def _seed_public_api_key(db_session, user_id: int, raw_key: str) -> ApiKey:
+    api_key = ApiKey(
+        user_id=user_id,
+        name="cached",
+        key_prefix="crawlerai",
+        key_hash=hash_api_key(raw_key),
+        is_active=True,
+    )
+    db_session.add(api_key)
+    return api_key
+
+
+def _count_commits(db_session, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    counts = [0]
+    original_commit = db_session.commit
+
+    async def _counting_commit():
+        counts[0] += 1
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _counting_commit)
+    return counts
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_api_principal_cache_skips_touch_update_within_ttl(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_key = "crawlerai_cached_principal_key"
+    _seed_public_api_key(db_session, test_user.id, raw_key)
+    await db_session.commit()
+    commit_counts = _count_commits(db_session, monkeypatch)
+
+    first = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert commit_counts[0] == 1  # cold path: last_used_at touch commit
+
+    second = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert second == first
+    # Warm hit inside the throttle window: no last_used_at UPDATE at all.
+    assert commit_counts[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_api_principal_cache_throttled_touch_advances_after_interval(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_key = "crawlerai_throttled_touch_key"
+    _seed_public_api_key(db_session, test_user.id, raw_key)
+    await db_session.commit()
+    clock = {"now": 1_000.0}
+    monkeypatch.setattr(public_auth, "_monotonic", lambda: clock["now"])
+    commit_counts = _count_commits(db_session, monkeypatch)
+
+    await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert commit_counts[0] == 1
+
+    clock["now"] += PUBLIC_API_LAST_USED_TOUCH_SECONDS - 1
+    await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert commit_counts[0] == 1  # still throttled
+
+    clock["now"] += 2
+    await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert commit_counts[0] == 2  # throttle elapsed: touch UPDATE landed
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_api_principal_cache_bounds_revocation_staleness_by_ttl(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_key = "crawlerai_revoked_cached_key"
+    api_key = _seed_public_api_key(db_session, test_user.id, raw_key)
+    await db_session.commit()
+    clock = {"now": 2_000.0}
+    monkeypatch.setattr(public_auth, "_monotonic", lambda: clock["now"])
+
+    principal = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+
+    api_key.is_active = False
+    await db_session.commit()
+
+    # Within the cache TTL the revoked key is still accepted (bounded staleness).
+    cached = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert cached == principal
+
+    # After the TTL the revocation is observed and the key is rejected.
+    clock["now"] += PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS + 1
+    with pytest.raises(HTTPException) as exc_info:
+        await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_api_principal_cache_warm_touch_failure_is_best_effort(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_key = "crawlerai_best_effort_touch_key"
+    _seed_public_api_key(db_session, test_user.id, raw_key)
+    await db_session.commit()
+    clock = {"now": 3_000.0}
+    monkeypatch.setattr(public_auth, "_monotonic", lambda: clock["now"])
+    # Keep the entry warm past the touch-throttle interval.
+    monkeypatch.setattr(public_auth, "PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS", 10_000)
+
+    principal = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+
+    clock["now"] += PUBLIC_API_LAST_USED_TOUCH_SECONDS + 1
+
+    async def _failing_commit():
+        raise SQLAlchemyError("boom")
+
+    monkeypatch.setattr(db_session, "commit", _failing_commit)
+    with caplog.at_level(logging.ERROR, logger="app.core.public_auth"):
+        warmed = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
+
+    assert warmed == principal  # warm-path touch failure logs, never 503s
+    assert "best-effort" in caplog.text
 
 
 @pytest.mark.asyncio

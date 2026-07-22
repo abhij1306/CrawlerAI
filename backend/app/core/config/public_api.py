@@ -44,6 +44,15 @@ PUBLIC_API_READ_RATE_LIMIT = 600
 PUBLIC_API_READ_BURST_LIMIT = 100
 PUBLIC_API_RATE_LIMIT_MAX_BUCKETS = 10_000
 
+# Principal cache (2.12): a validated API-key principal is cached per process
+# for the TTL, skipping the per-request ApiKey+User SELECTs on warm hits.
+# Key revocation/disable takes effect within the TTL. last_used_at writes are
+# throttled per key and are best-effort on the warm path (the cold path keeps
+# its 503-on-touch-failure behavior).
+PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS = 60
+PUBLIC_API_LAST_USED_TOUCH_SECONDS = 300
+PUBLIC_API_PRINCIPAL_CACHE_MAX_ENTRIES = 1024
+
 PUBLIC_API_ERROR_API_KEY_REQUIRED = "API_KEY_REQUIRED"
 PUBLIC_API_ERROR_AUTH_UNAVAILABLE = "AUTH_UNAVAILABLE"
 PUBLIC_API_ERROR_INVALID_API_KEY = "INVALID_API_KEY"
