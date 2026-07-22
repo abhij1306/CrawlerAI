@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TypedDict
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.core.records.confidence import score_record_confidence
@@ -32,6 +32,18 @@ class PersistedRecordBatch:
         return len(self.records)
 
 
+class _StoredRecordUpdate(TypedDict):
+    """Full column payload applied when a stored record's data changed."""
+
+    url_result_id: int | None
+    source_url: str
+    data: dict[str, object]
+    raw_data: dict[str, object]
+    discovered_data: dict[str, object]
+    source_trace: dict[str, object]
+    content_fingerprint: str | None
+
+
 @dataclass(slots=True)
 class _StagedRecordWrite:
     """One record write staged for the URL's single batched flush.
@@ -47,7 +59,7 @@ class _StagedRecordWrite:
     source_trace: dict[str, object]
     counts_as_change: bool
     is_new: bool
-    full_update: dict[str, object] | None = None
+    full_update: _StoredRecordUpdate | None = None
     trace_refresh: dict[str, object] | None = None
 
 
@@ -298,7 +310,7 @@ def _stage_existing_record_update(
         discovered_data=discovered_data,
         content_fingerprint=content_fingerprint,
     )
-    full_update: dict[str, object] | None = None
+    full_update: _StoredRecordUpdate | None = None
     trace_refresh: dict[str, object] | None = None
     if public_changed:
         full_update = {
@@ -404,7 +416,8 @@ async def _flush_staged_writes_individually(state: _RecordPersistenceState) -> N
         if write.is_new:
             if write.record in session:
                 session.expunge(write.record)
-            write.record.id = None
+            # Clear any server-assigned PK so the retry INSERTs cleanly.
+            write.record.id = None  # type: ignore[assignment]
     for write in state.pending:
         try:
             async with _flush_savepoint(session):
@@ -420,7 +433,8 @@ async def _flush_staged_writes_individually(state: _RecordPersistenceState) -> N
                 # Keep the failed row from poisoning the next record's flush.
                 if write.record in session:
                     session.expunge(write.record)
-                write.record.id = None
+                # Clear any server-assigned PK so the retry INSERTs cleanly.
+                write.record.id = None  # type: ignore[assignment]
             continue
         _finalize_staged_write(state, write)
 

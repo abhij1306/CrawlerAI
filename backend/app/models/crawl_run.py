@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 import uuid
 
 from sqlalchemy import (
     CheckConstraint,
+    CursorResult,
     DateTime,
     ForeignKey,
     Index,
@@ -212,7 +214,7 @@ async def claim_run(session: AsyncSession, *, run_id: int, owner: str) -> bool:
         )
         .execution_options(synchronize_session=False)
     )
-    result = await session.execute(stmt)
+    result = cast(CursorResult[Any], await session.execute(stmt))
     return result.rowcount == 1
 
 
@@ -229,7 +231,7 @@ async def renew_run_lease(session: AsyncSession, *, run_id: int, owner: str) -> 
         )
         .execution_options(synchronize_session=False)
     )
-    result = await session.execute(stmt)
+    result = cast(CursorResult[Any], await session.execute(stmt))
     if result.rowcount != 1:
         raise RunClaimLostError(f"Run {run_id} queue claim lost to a newer owner")
 
@@ -247,7 +249,7 @@ async def release_run_lease(session: AsyncSession, *, run_id: int, owner: str) -
         )
         .execution_options(synchronize_session=False)
     )
-    result = await session.execute(stmt)
+    result = cast(CursorResult[Any], await session.execute(stmt))
     return result.rowcount == 1
 
 
