@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
@@ -21,10 +21,10 @@ from app.intelligence.service import (
     build_job_payload,
     create_product_intelligence_job,
     discover_product_intelligence_candidates,
+    dispatch_product_intelligence_job,
     get_product_intelligence_job,
     list_product_intelligence_jobs,
     review_product_intelligence_match,
-    run_product_intelligence_job,
 )
 
 router = APIRouter(prefix="/api/product-intelligence", tags=["product-intelligence"])
@@ -58,7 +58,6 @@ async def product_intelligence_discover(
 @router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
 async def product_intelligence_create_job(
     payload: ProductIntelligenceJobCreate,
-    background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> ProductIntelligenceJobResponse:
@@ -76,7 +75,7 @@ async def product_intelligence_create_job(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
-    background_tasks.add_task(run_product_intelligence_job, job.id)
+    await dispatch_product_intelligence_job(session, job)
     return ProductIntelligenceJobResponse.model_validate(job, from_attributes=True)
 
 

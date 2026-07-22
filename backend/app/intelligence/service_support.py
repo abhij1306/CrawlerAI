@@ -276,27 +276,35 @@ async def _build_llm_enrichment(
 async def _update_job_summary(
     session: AsyncSession, job: ProductIntelligenceJob
 ) -> None:
-    source_count = await session.scalar(
-        select(func.count())
-        .select_from(ProductIntelligenceSourceProduct)
-        .where(ProductIntelligenceSourceProduct.job_id == job.id)
-    )
-    candidate_count = await session.scalar(
-        select(func.count())
-        .select_from(ProductIntelligenceCandidate)
-        .where(ProductIntelligenceCandidate.job_id == job.id)
-    )
-    match_count = await session.scalar(
-        select(func.count())
-        .select_from(ProductIntelligenceMatch)
-        .where(ProductIntelligenceMatch.job_id == job.id)
-    )
+    # One round trip: three per-table COUNT(*) scalar subqueries in a single
+    # SELECT instead of three separate count queries.
+    counts = (
+        await session.execute(
+            select(
+                select(func.count())
+                .select_from(ProductIntelligenceSourceProduct)
+                .where(ProductIntelligenceSourceProduct.job_id == job.id)
+                .scalar_subquery()
+                .label("source_count"),
+                select(func.count())
+                .select_from(ProductIntelligenceCandidate)
+                .where(ProductIntelligenceCandidate.job_id == job.id)
+                .scalar_subquery()
+                .label("candidate_count"),
+                select(func.count())
+                .select_from(ProductIntelligenceMatch)
+                .where(ProductIntelligenceMatch.job_id == job.id)
+                .scalar_subquery()
+                .label("match_count"),
+            )
+        )
+    ).one()
     job.summary = {
         **dict(job.summary or {}),
-        "source_count": int(source_count or 0),
-        "candidate_count": int(candidate_count or 0),
+        "source_count": int(counts.source_count or 0),
+        "candidate_count": int(counts.candidate_count or 0),
         "search_provider": str((job.options or {}).get("search_provider") or ""),
-        "match_count": int(match_count or 0),
+        "match_count": int(counts.match_count or 0),
         "updated_at": datetime.now(UTC).isoformat(),
     }
 

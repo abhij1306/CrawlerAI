@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import FrameType
@@ -122,7 +122,9 @@ def _install_task_signal_handlers() -> Iterator[dict[int, _SignalPreviousHandler
             signal.signal(signum, signal.SIG_DFL if previous is None else previous)
 
 
-def _run_task_in_worker_loop(run_id: int) -> None:
+def _run_coro_in_worker_loop(
+    task_name: str, coro_factory: Callable[[], Coroutine[None, None, None]]
+) -> None:
     _WORKER_TASK_STATE.termination_requested = False
     loop = _WORKER_TASK_STATE.worker_loop
     if loop is None or loop.is_closed():
@@ -130,7 +132,7 @@ def _run_task_in_worker_loop(run_id: int) -> None:
         _WORKER_TASK_STATE.worker_loop = loop
     asyncio.set_event_loop(loop)
     install_asyncio_exception_filter(loop)
-    task = loop.create_task(_run_with_session(run_id), name=f"crawl-run-{run_id}")
+    task = loop.create_task(coro_factory(), name=task_name)
     _WORKER_TASK_STATE.active_task_loop = loop
     _WORKER_TASK_STATE.active_run_task = task
     try:
@@ -145,7 +147,38 @@ def _run_task_in_worker_loop(run_id: int) -> None:
         _WORKER_TASK_STATE.active_task_loop = None
 
 
+def _run_task_in_worker_loop(run_id: int) -> None:
+    _run_coro_in_worker_loop(
+        f"crawl-run-{run_id}", lambda: _run_with_session(run_id)
+    )
+
+
 @celery_app.task(name="crawl.process_run", **_crawl_task_time_limits())
 def process_run_task(run_id: int) -> None:
     with _install_task_signal_handlers():
         _run_task_in_worker_loop(run_id)
+
+
+# Product Intelligence / Data Enrichment jobs run on workers so they survive API
+# restarts. No time limits: job wall time is bounded by discovery + the
+# candidate poll window / per-product enrichment, not by the crawl wall clock.
+# With task_acks_late a worker loss redelivers the task; the service entry
+# detects the redelivery of an interrupted run and fails the job cleanly.
+@celery_app.task(name="product_intelligence.run_job", bind=True)
+def product_intelligence_run_job_task(self, job_id: int) -> None:
+    from app.intelligence.service import run_product_intelligence_job
+
+    _run_coro_in_worker_loop(
+        f"product-intelligence-job-{job_id}",
+        lambda: run_product_intelligence_job(job_id, task_id=self.request.id),
+    )
+
+
+@celery_app.task(name="data_enrichment.run_job", bind=True)
+def data_enrichment_run_job_task(self, job_id: int) -> None:
+    from app.enrichment.service import run_data_enrichment_job
+
+    _run_coro_in_worker_loop(
+        f"data-enrichment-job-{job_id}",
+        lambda: run_data_enrichment_job(job_id, task_id=self.request.id),
+    )
