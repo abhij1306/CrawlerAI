@@ -23,7 +23,6 @@ from app.extraction.resolution.lineage import (
 )
 
 
-
 def _reconcile_variant_prices(
     variant_decisions: tuple[VariantDecision, ...],
     *,

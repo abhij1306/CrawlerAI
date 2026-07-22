@@ -46,7 +46,6 @@ from app.extraction.resolution.variants import (
 )
 
 
-
 def resolve(
     evidence: tuple[Evidence, ...],
     entities: EntitySet,

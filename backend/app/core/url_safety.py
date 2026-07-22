@@ -318,15 +318,11 @@ def _raise_if_non_public_ip(
         or ip_value.is_link_local
         or ip_value.is_reserved
         or (isinstance(ip_value, ipaddress.IPv4Address) and ip_value in CGNAT_NETWORK)
+        or not ip_value.is_global
     ):
         raise SecurityError(
             f"{label} host resolves to a non-public IP address: {host_label} -> {ip_value}"
         )
-    if ip_value.is_global:
-        return
-    raise SecurityError(
-        f"{label} host resolves to a non-public IP address: {host_label} -> {ip_value}"
-    )
 
 
 def _rebuild_url(original: str, target: ValidatedTarget) -> str:

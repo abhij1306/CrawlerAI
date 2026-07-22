@@ -6,7 +6,6 @@ from app.core.shared.ids import stable_id
 from app.extraction.contracts import Decision, DerivedFact, Evidence
 
 
-
 def _resolved_value_and_lineage(
     entity_id: str,
     fact_type: str,

@@ -149,6 +149,13 @@ class Settings(BaseSettings):
     # Hard input caps for run creation.
     max_run_urls: int = 10_000
     max_run_records: int = 100_000
+    # Max accepted size for CSV run-upload payloads (413 above this).
+    csv_upload_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        validation_alias=AliasChoices(
+            "CRAWLER_CSV_UPLOAD_MAX_BYTES", "csv_upload_max_bytes"
+        ),
+    )
 
     @field_validator(
         "artifacts_dir",

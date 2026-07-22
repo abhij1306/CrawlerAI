@@ -47,7 +47,6 @@ from app.extraction.resolution.lineage import (
 from app.extraction.resolution.offers import _offer_rank
 
 
-
 def inherit_variant_id_from_sku(
     row: dict[str, object], lineage_row: dict[str, object]
 ) -> None:

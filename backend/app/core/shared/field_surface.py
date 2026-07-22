@@ -137,6 +137,3 @@ def surface_fields(
         ):
             fields.append(field_name)
     return fields
-
-
-

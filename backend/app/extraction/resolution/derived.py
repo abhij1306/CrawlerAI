@@ -22,7 +22,6 @@ from app.extraction.contracts import Decision, DerivedFact, Evidence
 from app.extraction.resolution.decisions import _invalidity_reason
 
 
-
 def _derived(
     decisions: list[Decision],
     by_id: dict[str, Evidence],
