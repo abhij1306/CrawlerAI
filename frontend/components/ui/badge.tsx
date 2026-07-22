@@ -1,18 +1,10 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 
 import { cn } from '../../lib/utils';
-import {
-  badgeBase,
-  classificationBadge,
-  neutralBadge,
-  runStatusBadge,
-  sentimentBadge,
-  statusBadge,
-  type ClassificationValue,
-  type RunStatusValue,
-  type SentimentValue,
-  type StatusValue,
-} from './badge-variants';
+
+/** Shared typography for the badge (dot + text, no pill anatomy). */
+const badgeBase =
+  'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium capitalize';
 
 const toneText = {
   neutral: 'text-muted',
@@ -30,42 +22,17 @@ const toneBox: Partial<Record<keyof typeof toneText, string>> = {
 };
 
 /**
- * Badge — discriminated on `variant` so each family only accepts its own
- * values, and each value resolves to the correct bridged token classes.
- * Supports legacy `tone` and `flat` props for CrawlerAI backward compatibility.
+ * Badge — semantic `tone` resolves to the correct bridged token classes;
+ * `flat` drops the neutral chip box for subdued statuses.
  */
 export type BadgeProps = {
   children: ReactNode;
   className?: string;
-} & (
-  | { variant: 'status'; value: StatusValue; tone?: never; flat?: never }
-  | { variant: 'sentiment'; value: SentimentValue; tone?: never; flat?: never }
-  | { variant: 'classification'; value: ClassificationValue; tone?: never; flat?: never }
-  | { variant: 'run-status'; value: RunStatusValue; tone?: never; flat?: never }
-  | { variant?: 'neutral'; value?: undefined; tone?: keyof typeof toneText; flat?: boolean }
-) &
-  Omit<HTMLAttributes<HTMLSpanElement>, 'children'>;
+  tone?: keyof typeof toneText;
+  flat?: boolean;
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'children'>;
 
-function badgeClasses(props: BadgeProps): string {
-  if (props.variant && props.variant !== 'neutral') {
-    switch (props.variant) {
-      case 'status':
-        return statusBadge[props.value];
-      case 'sentiment':
-        return sentimentBadge[props.value];
-      case 'classification':
-        return classificationBadge[props.value];
-      case 'run-status':
-        return runStatusBadge[props.value];
-      default:
-        return neutralBadge;
-    }
-  }
-
-  // Backward compatible tone mapping
-  const tone = props.tone ?? 'neutral';
-  const flat = props.flat ?? false;
-
+function badgeClasses(tone: keyof typeof toneText, flat: boolean): string {
   if (flat) {
     return toneText[tone];
   }
@@ -74,35 +41,15 @@ function badgeClasses(props: BadgeProps): string {
 }
 
 export function Badge(props: Readonly<BadgeProps>) {
-  const {
-    children,
-    className,
-    variant: _variant,
-    value: _value,
-    tone: _tone,
-    flat: _flat,
-    ...rest
-  } = props;
+  const { children, className, tone = 'neutral', flat = false, ...rest } = props;
 
   return (
-    <span className={cn(badgeBase, badgeClasses(props), className)} {...rest}>
+    <span className={cn(badgeBase, badgeClasses(tone, flat), className)} {...rest}>
       <span
-        className={cn(
-          'size-1.5 rounded-full bg-current',
-          props.tone === 'accent' && 'animate-pulse',
-        )}
+        className={cn('size-1.5 rounded-full bg-current', tone === 'accent' && 'animate-pulse')}
         aria-hidden
       />
       {children}
     </span>
   );
 }
-export type { StatusValue, SentimentValue, ClassificationValue, RunStatusValue };
-export {
-  statusBadge,
-  sentimentBadge,
-  classificationBadge,
-  runStatusBadge,
-  neutralBadge,
-  badgeBase,
-};

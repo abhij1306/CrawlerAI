@@ -1,6 +1,6 @@
 # Frontend Architecture
 
-> Last updated: 2026-07-04
+> Last updated: 2026-07-22
 
 This document describes the live frontend structure, what it actually calls in the backend, and the remaining client/backend drift that should stay visible.
 
@@ -11,7 +11,8 @@ Frontend is a React + Vite+ UI for:
 - auth/session handling
 - crawl configuration and launch
 - run history and record inspection
-- selectors workflow
+- selector tooling embedded in Crawl Studio and Domain Memory (no standalone selectors page)
+- intelligence surfaces: data enrichment, product intelligence, AI visibility
 - dashboard/history/jobs operations
 - admin users and LLM configuration
 
@@ -33,9 +34,9 @@ Runtime notes:
 
 ## 2. Route Map
 
-The data router in `frontend/src/app/app.tsx` maps these routes:
+The data router in `frontend/src/app/app.tsx` maps the lazy route modules declared in `frontend/src/app/route-registry.ts` (the sole route authority) plus a handful of redirect shims:
 
-- `/` -> redirect-style entry page
+- `/` -> redirect to `/dashboard`
 - `/login`
 - `/register`
 - `/dashboard`
@@ -46,16 +47,22 @@ The data router in `frontend/src/app/app.tsx` maps these routes:
 - `/runs`
 - `/runs/:run_id`
 - `/jobs`
-- `/selectors`
+- `/data-enrichment`
+- `/product-intelligence`
+- `/ai-visibility`
 - `/domain-memory`
 - `/admin/users`
 - `/admin/llm`
+- `*` -> redirect to `/dashboard`
+
+Every registry route lazy-imports its page from `app/<route>/page-view.tsx`.
 
 Important route behavior:
 
 - `/crawl` switches between config mode and run workspace based on `run_id`
 - `/crawl/category`, `/crawl/pdp`, and `/crawl/bulk` are route shims into `/crawl?...`
 - `/runs/:run_id` routes back into the crawl workspace
+- the standalone `/selectors` route no longer exists; selector tooling lives in Crawl Studio field configuration and the `/domain-memory` surface
 
 ## 3. Main Frontend Subsystems
 
@@ -98,12 +105,15 @@ Primary files:
 - `lib/api/crawls.ts`
 - `lib/api/data-enrichment.ts`
 - `lib/api/product-intelligence.ts`
+- `lib/api/ai-visibility.ts`
 - `lib/api/domain-memory.ts`
 - `lib/api/selectors.ts`
 - `lib/api/knowledge.ts`
 - `lib/api/admin.ts`
 - `lib/api/jobs.ts`
 - `lib/api/types.ts`
+- `lib/api/schemas.ts`
+- `lib/api/shared.ts`
 
 Responsibilities:
 
@@ -111,9 +121,15 @@ Responsibilities:
 - one query-key factory and application query defaults
 - typed domain endpoint modules for backend calls
 - short compatibility facade for callers not yet migrated to direct domain imports
-- API typing
+- API typing and zod response schemas (`lib/api/schemas.ts`)
 - auth-aware fetch wrapper
 - URL helpers for review HTML and selector preview HTML
+
+AI Visibility ownership notes:
+
+- AI Visibility endpoints moved from `src/api/ai-visibility.ts` to `lib/api/ai-visibility.ts`; the old `src/api` module is deleted and app code imports the domain module directly.
+- The module keeps its types module-local (shared `lib/api/types.ts` is owned separately) and exports `aiVisibilityQueryKeys`, which extends the central `queryKeys.aiVisibility` factory with module-only keys such as the Best&Less preset key.
+- The dead `getProject`/`deleteProject` exports (zero callers) were dropped during the move.
 
 This layer is the frontend/backend contract chokepoint.
 
@@ -134,7 +150,6 @@ Primary files:
 - `components/crawl/use-crawl-submission.ts`
 - `components/crawl/domain-surface-config.ts`
 - `lib/crawl/run-profile.ts`
-- `components/crawl/crawl.module.css`
 - `components/crawl/shared.tsx`
 - `lib/constants/crawl-defaults.ts`
 
@@ -197,26 +212,42 @@ Important live data features:
 
 Primary files:
 
-- `app/dashboard/page.tsx`
+- `app/dashboard/page-view.tsx`
 - `app/runs/page-view.tsx`
 - `app/runs/use-runs-page-state.ts`
 - `app/runs/run-row.tsx`
-- `app/jobs/page.tsx`
-- `app/selectors/page.tsx`
+- `app/jobs/page-view.tsx`
 - `app/data-enrichment/page-view.tsx`
 - `app/data-enrichment/data-enrichment-state.ts`
 - `app/data-enrichment/enriched-product-view.tsx`
 - `app/data-enrichment/source-record-list.tsx`
-- `app/admin/users/page.tsx`
-- `app/admin/llm/page.tsx`
+- `app/data-enrichment/enrichment-components.tsx`
+- `app/product-intelligence/page-view.tsx`
+- `app/product-intelligence/use-product-intelligence.ts`
+- `app/product-intelligence/product-intelligence-components.tsx`
+- `app/product-intelligence/product-intelligence-results.tsx`
+- `app/product-intelligence/product-intelligence-candidate-card.tsx`
+- `app/product-intelligence/product-intelligence-settings-drawer.tsx`
+- `app/ai-visibility/page-view.tsx` (thin composition over the hook and dialogs below)
+- `app/ai-visibility/use-ai-visibility.ts` (page state, queries, mutations)
+- `app/ai-visibility/domain-workspace.tsx`
+- `app/ai-visibility/project-form-dialog.tsx`
+- `app/ai-visibility/run-report-section.tsx`
+- `app/ai-visibility/execution-detail-dialog.tsx`
+- `app/ai-visibility/ai-visibility-status.ts` (status tone/label helpers delegating to `lib/ui/status`)
+- `app/domain-memory/page-view.tsx`
+- `app/admin/users/page-view.tsx`
+- `app/admin/llm/page-view.tsx`
 
 Responsibilities:
 
 - dashboard metrics and recent runs
 - run history
 - active jobs view
-- selector picker/test/save workflow
-- domain-memory management across domains and surfaces
+- data enrichment record normalization and review
+- product discovery and price comparison
+- AI visibility benchmark projects, run progress, and report/execution inspection
+- domain-memory management across domains and surfaces, including selector operations (the standalone selectors page was removed)
 - admin user management
 - LLM provider/config/cost-log management
 
@@ -224,7 +255,7 @@ Responsibilities:
 
 Primary files:
 
-- `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, and `dialog.tsx` for typed primitive owners
+- `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `table.tsx`, `alert.tsx`, and `dialog.tsx` for typed primitive owners
 - `components/ui/primitives.tsx` as the compatibility barrel plus dropdown, toggle, tooltip, skeleton, and field helpers
 - `components/ui/patterns.tsx` for shared operator-page patterns
 - `components/ui/table.tsx` for typed table primitives (`Table`, `TableHeader`, `TableRow`, `TableCell`) styled with semantic Tailwind tokens; `components/crawl/records-table.tsx` for the virtualized crawl-records grid
@@ -256,14 +287,16 @@ The frontend currently uses live backend routes for:
 - users: `/api/users`
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
 - jobs: `/api/jobs/active`
+- data enrichment: `/api/data-enrichment/jobs`
+- product intelligence: `/api/product-intelligence/discover`, `/api/product-intelligence/jobs`, `/api/product-intelligence/jobs/{id}/matches/{match_id}/review`
+- ai visibility: `/api/ai-visibility/providers`, `/api/ai-visibility/presets/best-and-less`, `/api/ai-visibility/projects`, `/api/ai-visibility/runs`, `/api/ai-visibility/runs/{id}/cancel`, `/api/ai-visibility/runs/{id}/export.{csv,md}`, `/api/ai-visibility/executions/{id}`
 
 ## 5. Known Client/Backend Drift
 
 There is still some API-surface drift and it should remain documented:
 
-- `frontend/lib/api/index.ts` exposes `previewSelectors()` for `/api/review/{run_id}/selector-preview`, but that backend route does not exist.
 - `ReviewPayload` types in the frontend still include `selector_memory` and `selector_suggestions`, while the current backend review response is centered on run, canonical/discovered fields, mapping, and records.
-- The main selector UX is no longer LLM-first on `/selectors`; older docs claiming “selectors page missing backend integration” are stale.
+- The standalone `/selectors` page has been removed; selector tooling lives in Crawl Studio field configuration and the `/domain-memory` surface. Older docs claiming “selectors page missing backend integration” are stale.
 
 ## 6. Current Data Contracts That Matter To Frontend
 
@@ -303,9 +336,9 @@ The frontend has a typed provenance object:
 The selectors UI is built on:
 
 - selector CRUD records, now queryable across all surfaces for a domain when `surface` is omitted
-- preview HTML loaded into a same-origin iframe so the selector tool can compute XPath directly from the loaded DOM
+- preview HTML loaded into a same-origin iframe so selector tooling can compute XPath directly from the loaded DOM
 - manual test response with count and matched value
-- optional LLM suggestion flow from Crawl Studio field configuration, not from the selector tool page
+- optional LLM suggestion flow from Crawl Studio field configuration
 
 Domain Memory also includes a Knowledge Graph tab. It loads graph-only domains from `/api/knowledge/sites`, renders bounded graph neighborhoods from `/api/knowledge/graph`, fetches page-template contracts, and lets operators choose retained source candidates with graph-version conflict checks. It uses the existing UI primitives and pattern components; it does not add a separate graph canvas dependency.
 - a dedicated `/domain-memory` surface for edit/delete/toggle operations
@@ -338,6 +371,7 @@ Frontend tests currently cover:
 - visible-dataset live record polling
 - explicit transport retry opt-in and React Query retry ownership
 - Data Enrichment, App Shell, and architecture policy checks
+- AI Visibility page composition, `useAiVisibility` hook, project form dialog payload mapping, and status tone/label helpers
 
 There is also Playwright e2e coverage under `frontend/e2e`.
 

@@ -75,8 +75,9 @@ describe('AppShell reset workspace', () => {
     const trigger = screen.getByRole('button', { name: /reset workspace/i });
     trigger.focus();
     fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: /reset workspace data/i });
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /reset workspace data/i })).toHaveFocus();
+      expect(dialog.contains(document.activeElement)).toBe(true);
     });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
@@ -84,6 +85,30 @@ describe('AppShell reset workspace', () => {
         screen.queryByRole('dialog', { name: /reset workspace data/i }),
       ).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
+    });
+  });
+
+  it('keeps the dialog open and surfaces API errors on confirm failure', async () => {
+    apiMock.resetApplicationData.mockRejectedValue(new Error('reset failed: database busy'));
+    renderShell();
+    fireEvent.click(screen.getByRole('button', { name: /reset workspace/i }));
+    const dialog = await screen.findByRole('dialog', { name: /reset workspace data/i });
+    fireEvent.click(screen.getByRole('button', { name: /reset workspace data/i }));
+    expect(apiMock.resetApplicationData).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('alert')).toHaveTextContent('reset failed: database busy');
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it('ignores Escape while the reset is pending', async () => {
+    apiMock.resetApplicationData.mockReturnValue(new Promise(() => {}));
+    renderShell();
+    fireEvent.click(screen.getByRole('button', { name: /reset workspace/i }));
+    await screen.findByRole('dialog', { name: /reset workspace data/i });
+    fireEvent.click(screen.getByRole('button', { name: /reset workspace data/i }));
+    expect(await screen.findByRole('button', { name: 'Working...' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: /reset workspace data/i })).toBeInTheDocument();
     });
   });
 

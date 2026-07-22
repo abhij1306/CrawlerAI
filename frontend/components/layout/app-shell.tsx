@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { routeMetadataForPath } from '../../src/app/route-registry';
 import { useSession } from '../../src/app/session';
 import { Button } from '../ui/button';
-import { ConfirmDialog } from '../ui/confirm-dialog';
+import { ConfirmDialog } from '../ui/dialog';
 import type { TopBarState } from './top-bar-context';
 import { TopBarProvider, useTopBarHeader } from './top-bar-context';
 import { ThemeToggle } from '../ui/theme-toggle';
@@ -67,7 +67,6 @@ function ShellContent({
   const {
     executeReset,
     handleSelectedReset,
-    resetConfirmRef,
     resetDialogOpen,
     resetDialogRef,
     resetError,
@@ -109,19 +108,19 @@ function ShellContent({
         <div className="mx-auto w-full max-w-[1440px] p-[var(--content-gutter)]">{children}</div>
       </main>
 
-      {canResetWorkspace && resetDialogOpen ? (
+      {canResetWorkspace ? (
         <ConfirmDialog
-          dialogRef={resetDialogRef}
-          confirmRef={resetConfirmRef}
-          titleId="reset-workspace-title"
-          descriptionId="reset-workspace-description"
+          open={resetDialogOpen}
+          onOpenChange={setResetDialogOpen}
           title={resetDialogCopy.title}
           description={resetDialogCopy.description}
-          error={resetError}
-          pending={resetPending}
-          pendingLabel="Working…"
           confirmLabel={resetDialogCopy.confirmLabel}
-          onCancel={() => setResetDialogOpen(false)}
+          pending={resetPending}
+          danger
+          error={resetError}
+          contentRef={(node) => {
+            resetDialogRef.current = node as HTMLDialogElement | null;
+          }}
           onConfirm={() => void executeReset()}
         />
       ) : null}

@@ -1,6 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 import { cn } from '../../lib/utils';
 import { Button } from './button';
@@ -118,6 +118,7 @@ type ConfirmDialogProps = Readonly<{
   pending?: boolean;
   danger?: boolean;
   error?: string;
+  contentRef?: Ref<HTMLDivElement>;
   onConfirm: () => void;
 }>;
 
@@ -131,6 +132,7 @@ export function ConfirmDialog({
   pending = false,
   danger = false,
   error,
+  contentRef,
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -141,6 +143,7 @@ export function ConfirmDialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="overlay-scrim fixed inset-0 z-[100]" />
         <DialogPrimitive.Content
+          ref={contentRef}
           className={cn(
             'fixed top-1/2 left-1/2 z-[101] w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2',
             'border-border card-gradient rounded-lg border p-5',

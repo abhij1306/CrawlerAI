@@ -32,6 +32,25 @@ export function dashboardStatusTone(status: string): Tone {
   return DASHBOARD_STATUS_CONFIG[status]?.tone ?? 'neutral';
 }
 
+// Aliases kept for non-run status vocabularies (e.g. history entries,
+// ai-visibility executions).
+const GENERIC_STATUS_TONE_ALIASES: Record<string, Tone> = {
+  complete: 'success',
+  success: 'success',
+  error: 'danger',
+  cancelled: 'warning',
+};
+
+/** Generic status → tone for any status string; unknown statuses are neutral. */
+export function statusTone(status: string): Tone {
+  const normalized = status.trim().toLowerCase();
+  return (
+    GENERIC_STATUS_TONE_ALIASES[normalized] ??
+    DASHBOARD_STATUS_CONFIG[normalized]?.tone ??
+    'neutral'
+  );
+}
+
 export function dashboardStatusLabel(status: string): string {
   return DASHBOARD_STATUS_CONFIG[status]?.label ?? status;
 }
