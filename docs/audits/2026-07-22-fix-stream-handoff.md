@@ -77,6 +77,22 @@ leave — internal review subagent already covered the diff.
 
 After 1–4. Commit per area; do not squash away the per-stream history if avoidable.
 
+## 7. CI resolution (2026-07-22, DONE)
+
+PR #34 CI is fully green at `eda1544`. Three failure modes fixed in `6fc5a1a`, `af1cf38`, `eda1544`:
+
+1. **Mypy (15 errors → 0)**: `CeleryJobRow` Protocol narrowed to the concrete `Mapped[...]` column types
+   (`id: int`, `summary: dict[str, Any]` — Protocol attributes are invariant, so `object`/`... | None` did not
+   match the job models); `CursorResult[Any]` casts for `rowcount` on DML results in `models/crawl_run.py`;
+   `_StoredRecordUpdate` TypedDict for the staged full-update `**kwargs` in `crawl/pipeline/persistence.py`;
+   two `type: ignore[assignment]` on the deliberate PK-clear-before-retry.
+2. **CodeQL (2 error alerts → 0)**: `py/module-level-cyclic-import` on the two lifecycle modules cleared by
+   switching the `TYPE_CHECKING` import to the module form (`from app.acquisition import browser_pool` +
+   `browser_pool.SharedBrowserRuntime` annotations). Remaining open alerts on the branch are note-severity
+   (`py/cyclic-import`, `py/unused-import`, `py/unused-global-variable`) and do not fail the check.
+3. **Ledger re-key**: the two fix commits added +16 non-blank LOC; `TOTAL_APP_LOC_BUDGET` 87,196 → 87,212 and
+   crawl package 9,257 → 9,268 (measured, raise-only). Backend CI: 1,986 passed, 6 skipped.
+
 ## Environment gotchas
 
 - `frontend/.vite-hooks/pre-commit` was broken (bare `vp staged` runs from repo root: no config, then PATH breaks).
