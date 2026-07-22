@@ -103,12 +103,16 @@ def celery_task_state(task_id: str) -> str | None:
 
 
 class CeleryJobRow(Protocol):
-    """Structural row shared by the Celery-dispatched job models."""
+    """Structural row shared by the Celery-dispatched job models.
 
-    id: object
+    Member types mirror the concrete ``Mapped[...]`` columns on the job
+    models exactly, since Protocol attributes are invariant.
+    """
+
+    id: int
     status: str
     completed_at: datetime | None
-    summary: dict[str, Any] | None
+    summary: dict[str, Any]
 
 
 def celery_task_id_of(summary: object) -> str:
