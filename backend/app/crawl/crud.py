@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
+from app.core.config import settings
 from app.core.telemetry import generate_correlation_id, get_correlation_id
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.crawl_settings import CrawlRunSettings
@@ -31,9 +35,12 @@ from app.connectors.llm.config_service import snapshot_active_configs
 from app.persistence.extraction_memory import create_release_snapshot
 from app.core.records.normalizers import normalize_value
 from app.core.url_safety import ensure_public_crawl_targets, ensure_valid_proxy_endpoints
+from app.persistence.artifacts import ArtifactRepository
 from app.schemas.crawl import enforce_run_url_limit
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 async def create_crawl_run(
@@ -185,6 +192,15 @@ async def delete_run(session: AsyncSession, run: CrawlRun) -> None:
         raise ValueError(f"Cannot delete run in state: {db_run.status}")
     await session.delete(db_run)
     await session.commit()
+    # 2.14: best-effort artifact cleanup after the DB delete; a disk failure
+    # must not fail the delete (the retention sweeper reconciles leftovers).
+    try:
+        repository = ArtifactRepository(root_dir=settings.artifacts_dir)
+        await asyncio.to_thread(repository.remove_run_tree, int(db_run.id))
+    except Exception:
+        logger.warning(
+            "Failed to remove artifact tree for run=%s", db_run.id, exc_info=True
+        )
 
 
 async def get_run_records(

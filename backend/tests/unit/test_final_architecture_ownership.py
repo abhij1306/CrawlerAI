@@ -208,10 +208,12 @@ PACKAGE_LOC_BUDGETS = {
     # (2.12) in public_auth.py + its config constants.
     # Chunk I (same day): crawl +7 for the source_trace browser_diagnostics
     # allowlist (2.13); core +8 for its diagnose config constant.
+    # Chunk J (same day): crawl +14 for delete_run artifact cleanup (2.14);
+    # core +10 for the retention setting + beat schedule.
     # Budgets are only raised, never lowered.
     "acquisition": 17_235,
-    "crawl": 9_334,
-    "core": 21_053,
+    "crawl": 9_348,
+    "core": 21_063,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -235,7 +237,9 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk G (same day): +16 for worker-pool URL scheduling (2.11).
 # Chunk H (same day): +71 for the public API-key principal cache (2.12).
 # Chunk I (same day): +15 for the slim per-record source_trace (2.13).
-TOTAL_APP_LOC_BUDGET = 87_898
+# Chunk J (same day): +82 for artifact cleanup on delete + the retention
+# sweeper task (2.14).
+TOTAL_APP_LOC_BUDGET = 87_980
 
 
 def test_production_package_loc_budgets() -> None:

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     redis_state_enabled: bool = False
     celery_dispatch_enabled: bool = True
     artifacts_dir: Path = Field(default=BASE_DIR / "artifacts")
+    # 2.14: days to keep runs/{run_id}/ artifact trees for terminal runs;
+    # trees whose run row is missing are always swept. 0 disables the sweeper.
+    run_artifacts_retention_days: int = 30
     cookie_store_dir: Path = Field(default=BASE_DIR / "cookie_store")
     playwright_headless: bool = True
     browser_pool_size: int = 4
