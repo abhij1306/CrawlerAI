@@ -44,7 +44,9 @@ OVERSIZED_MODULE_DEBT = {
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 1375,
+    # Audit-debt chunk K (2026-07-22): grew with the single-query
+    # find_contract_location join (2.15).
+    "persistence/extraction_memory.py": 1396,
 }
 # SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
 # into _listing_discovery_signals/_listing_readiness_verdict and left the
@@ -210,9 +212,10 @@ PACKAGE_LOC_BUDGETS = {
     # allowlist (2.13); core +8 for its diagnose config constant.
     # Chunk J (same day): crawl +14 for delete_run artifact cleanup (2.14);
     # core +10 for the retention setting + beat schedule.
+    # Chunk K (same day): crawl +19 for the shared robots client (2.16).
     # Budgets are only raised, never lowered.
     "acquisition": 17_235,
-    "crawl": 9_348,
+    "crawl": 9_367,
     "core": 21_063,
     "enrichment": 2_254,
     "connectors": 2_444,
@@ -239,7 +242,9 @@ PACKAGE_LOC_BUDGETS = {
 # Chunk I (same day): +15 for the slim per-record source_trace (2.13).
 # Chunk J (same day): +82 for artifact cleanup on delete + the retention
 # sweeper task (2.14).
-TOTAL_APP_LOC_BUDGET = 87_980
+# Chunk K (same day): +40 for the single-query contract lookup (2.15) + the
+# shared robots client (2.16).
+TOTAL_APP_LOC_BUDGET = 88_020
 
 
 def test_production_package_loc_budgets() -> None:

@@ -21,7 +21,11 @@ from app.core.config.extraction_memory import (
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.main import app
 from app.models.crawl_run import CrawlRun
-from app.persistence.extraction_memory import ensure_template, upsert_recipe
+from app.persistence.extraction_memory import (
+    ensure_template,
+    find_contract_location,
+    upsert_recipe,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.component]
 
@@ -226,6 +230,51 @@ async def test_contract_selection_updates_stored_contract(
         "/api/knowledge/contracts", params={"domain": "example.com"}
     )
     assert reread.json()["contracts"][0]["selected_source"] == "dom:.price"
+
+
+async def test_find_contract_location_uses_single_query(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2.15: JSONB containment replaces the template scan + per-template queries."""
+    template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="fp-single-query-lookup",
+        route_pattern="/products/{slug}",
+    )
+    contract_id = uuid.uuid4()
+    contract = _contract_payload(
+        template.id,
+        canonical_field="price",
+        selection_origin="generic",
+        contract_id=contract_id,
+    )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={"contracts": [contract]},
+    )
+    await db_session.commit()
+
+    real_execute = db_session.execute
+    execute_count = 0
+
+    async def _counting_execute(*args, **kwargs):
+        nonlocal execute_count
+        execute_count += 1
+        return await real_execute(*args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", _counting_execute)
+
+    location = await find_contract_location(db_session, str(contract_id))
+
+    assert location is not None
+    assert location.template.id == template.id
+    assert location.contract["id"] == str(contract_id)
+    assert execute_count == 1
 
 
 async def test_contract_selection_error_contracts(
