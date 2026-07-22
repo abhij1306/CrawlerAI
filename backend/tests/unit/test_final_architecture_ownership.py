@@ -189,10 +189,12 @@ PACKAGE_LOC_BUDGETS = {
     # Review-fix reconciliation (same day): review-driven hardening (route-
     # blocking guard order, settings.urls cap, pending-orphan window,
     # verdict_counts health) nudged crawl/enrichment/intelligence further.
+    # Audit-debt Stream A chunk B (2026-07-22): core +7 for the public
+    # is_non_dev_environment gate + metrics_auth_token setting (1.13).
     # Budgets are only raised, never lowered.
     "acquisition": 17_104,
     "crawl": 9_268,
-    "core": 20_761,
+    "core": 20_768,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -207,7 +209,8 @@ PACKAGE_LOC_BUDGETS = {
 # Audit-debt Stream A chunk A (2026-07-22): +51 for the csv_safety module,
 # CSV formula-injection call sites, WS Origin check, and the register/login
 # schema split (core package landed exactly at its 20,761 budget).
-TOTAL_APP_LOC_BUDGET = 87_263
+# Chunk B (same day): +40 for the non-dev docs/metrics gating in main.py.
+TOTAL_APP_LOC_BUDGET = 87_303
 
 
 def test_production_package_loc_budgets() -> None:

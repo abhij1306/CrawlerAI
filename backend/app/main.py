@@ -3,6 +3,7 @@ from __future__ import annotations
 # pylint: disable=missing-function-docstring
 
 import asyncio
+import hmac
 import inspect
 import logging
 import re
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, cast
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,7 +40,12 @@ from app.api.records import router as records_router
 from app.api.review import router as review_router
 from app.api.selectors import router as selectors_router
 from app.api.users import router as users_router
-from app.core.config import get_frontend_origins, runtime_app_env, settings
+from app.core.config import (
+    get_frontend_origins,
+    is_non_dev_environment,
+    runtime_app_env,
+    settings,
+)
 from app.core.dependencies import get_db, shutdown_run_dispatchers
 from app.core.logfire_integration import instrument_fastapi
 from app.core.metrics import (
@@ -140,7 +146,22 @@ async def lifespan(_fastapi_app: FastAPI):
         await dispose_engine()
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+def _api_docs_urls(env: str) -> dict[str, str | None]:
+    # Interactive API docs are a dev/test convenience; shut them off everywhere
+    # else so the schema surface is not publicly enumerable.
+    enabled = not is_non_dev_environment(env)
+    return {
+        "docs_url": "/docs" if enabled else None,
+        "redoc_url": "/redoc" if enabled else None,
+        "openapi_url": "/openapi.json" if enabled else None,
+    }
+
+
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    **_api_docs_urls(runtime_app_env()),  # type: ignore[arg-type]
+)
 app.state.crawler = CrawlerAppState()
 instrument_fastapi(app)
 app.add_middleware(
@@ -603,7 +624,21 @@ async def health() -> dict[str, object]:
 
 
 @app.get("/api/metrics")
-async def metrics() -> Response:
+async def metrics(request: Request) -> Response:
+    if is_non_dev_environment(runtime_app_env()):
+        # Prometheus metrics expose internal label cardinality; gate them in
+        # non-dev. Token unset means the endpoint is disabled outright (404)
+        # rather than publicly scrapeable. /health stays open for orchestrators.
+        expected = settings.metrics_auth_token
+        if not expected:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        scheme, _, credentials = (request.headers.get("authorization") or "").partition(
+            " "
+        )
+        if scheme.lower() != "bearer" or not hmac.compare_digest(
+            credentials.strip(), expected
+        ):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     payload, content_type = await render_prometheus_metrics()
     return Response(content=payload, media_type=content_type)
 

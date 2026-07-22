@@ -156,6 +156,21 @@ Responsibilities:
 - correlation IDs
 - health and metrics
 
+Security posture notes:
+
+- Outside dev/test (`APP_ENV` other than development/dev/local/test/testing) the
+  interactive API docs are disabled (`docs_url`/`redoc_url`/`openapi_url=None`)
+  and `/api/metrics` requires `Authorization: Bearer <METRICS_AUTH_TOKEN>`
+  (constant-time compare; 404 when the token is unset, 401 otherwise). The
+  `/health` + `/api/health` probes stay open because orchestrators scrape them
+  unauthenticated.
+- Password hashing is argon2id. `passlib` stays in the dependency tree solely
+  to verify legacy pbkdf2_sha256 hashes at login; successful legacy logins are
+  rehashed to argon2 transparently, so passlib must not be used for new hashes.
+- The backend image builds with `uv sync --locked --no-dev --extra prod`: the
+  lockfile is the only dependency source, dev extras never ship, and the prod
+  extra keeps `psycopg2` install-time compilation isolated to the image build.
+
 ### 6.2 Crawl ingestion and orchestration
 
 Primary files:

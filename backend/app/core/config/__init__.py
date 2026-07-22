@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     )
     # When false, POST /api/auth/register returns 403 (POC single-admin dev). Enable for production multi-tenant.
     registration_enabled: bool = False
+    # Bearer token required on /api/metrics outside dev/test; empty means the
+    # endpoint stays disabled (404) in non-dev environments.
+    metrics_auth_token: str = ""
 
     # Database pool tuning (ignored for SQLite). Sized for per-process demand:
     # 1 parent run session + up to system_max_concurrent_urls URL sessions +
@@ -188,6 +191,12 @@ _MIN_ADMIN_PASSWORD_LENGTH = 16
 def _is_non_dev_environment(env_name: str) -> bool:
     normalized = str(env_name or "").strip().lower()
     return normalized not in {"", "development", "dev", "local", "test", "testing"}
+
+
+def is_non_dev_environment(env_name: str) -> bool:
+    """Public gate for surfaces that must shut off outside dev/test (API docs,
+    unauthenticated metrics)."""
+    return _is_non_dev_environment(env_name)
 
 
 def admin_password_strength_issues(password: str) -> list[str]:

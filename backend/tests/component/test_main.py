@@ -239,3 +239,121 @@ async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
 
     assert calls[:4] == ["session", "bootstrap", "recover", "report"]
     assert "yield" in calls
+
+
+@pytest.mark.component
+async def test_api_docs_enabled_in_dev_and_test_env() -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        assert (await client.get("/docs")).status_code == 200
+        assert (await client.get("/openapi.json")).status_code == 200
+
+
+@pytest.mark.component
+async def test_api_docs_disabled_in_non_dev_env() -> None:
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import _api_docs_urls
+
+    prod_kwargs = _api_docs_urls("production")
+    assert prod_kwargs == {
+        "docs_url": None,
+        "redoc_url": None,
+        "openapi_url": None,
+    }
+    assert _api_docs_urls("staging")["docs_url"] is None
+    assert _api_docs_urls("development")["docs_url"] == "/docs"
+    assert _api_docs_urls("test")["openapi_url"] == "/openapi.json"
+
+    prod_app = FastAPI(**prod_kwargs)
+    async with AsyncClient(
+        transport=ASGITransport(app=prod_app), base_url="http://testserver"
+    ) as client:
+        assert (await client.get("/docs")).status_code == 404
+        assert (await client.get("/redoc")).status_code == 404
+        assert (await client.get("/openapi.json")).status_code == 404
+
+
+@pytest.mark.component
+async def test_metrics_open_in_dev_env() -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/metrics")
+
+    assert response.status_code == 200
+
+
+def _patched_prod_metrics_env(monkeypatch, token: str) -> None:
+    monkeypatch.setattr("app.main.runtime_app_env", lambda: "production")
+    monkeypatch.setattr("app.main.settings.metrics_auth_token", token)
+
+
+@pytest.mark.component
+async def test_metrics_returns_404_in_prod_when_token_unset(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/metrics")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+async def test_metrics_requires_bearer_token_in_prod(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "scrape-token-123")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        missing = await client.get("/api/metrics")
+        wrong = await client.get(
+            "/api/metrics", headers={"Authorization": "Bearer nope"}
+        )
+        wrong_scheme = await client.get(
+            "/api/metrics", headers={"Authorization": "Basic scrape-token-123"}
+        )
+        ok = await client.get(
+            "/api/metrics", headers={"Authorization": "Bearer scrape-token-123"}
+        )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert wrong_scheme.status_code == 401
+    assert ok.status_code == 200
+
+
+@pytest.mark.component
+async def test_health_stays_open_in_prod_env(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/health")
+
+    assert response.status_code == 200
