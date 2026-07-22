@@ -50,6 +50,3 @@ async def dashboard_reset_domain_memory(
     result = await reset_domain_memory(session)
     await session.commit()
     return result
-
-
-

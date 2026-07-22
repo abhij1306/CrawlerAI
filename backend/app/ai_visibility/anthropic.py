@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai_visibility._provider_http import _execute_post
+from app.ai_visibility._provider_http import AiVisibilityProviderError, _execute_post
 from app.ai_visibility.anthropic_parser import parse_anthropic_message
 from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
-from app.ai_visibility.gemini import AiVisibilityProviderError
 from app.core.config.ai_visibility import (
     AI_VISIBILITY_ERROR_RATE_LIMIT,
     AI_VISIBILITY_ERROR_SERVER,

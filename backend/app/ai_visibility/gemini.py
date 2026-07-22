@@ -17,9 +17,9 @@ import httpx
 
 from app.ai_visibility._provider_http import (
     AiVisibilityProviderError,
+    _execute_post,
     classify_provider_status,
 )
-from app.ai_visibility._provider_http import _execute_post
 from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
 from app.ai_visibility.gemini_parser import parse_interaction
 from app.core.config.ai_visibility import (

@@ -305,7 +305,11 @@ PACKAGE_LOC_BUDGETS = {
 # (PublicRecord/URLMetrics TypedDicts + seam adoption, 4.13).
 # Stream B commit 14 (same day): +378 for the >150-line function
 # decompositions (4.15) — raised to measured.
-TOTAL_APP_LOC_BUDGET = 87_848
+# Simplify pass (same day): -1 for consolidating the ai_visibility adapter
+# imports onto the neutral _provider_http owner (anthropic/openrouter dropped
+# their gemini re-export hop) — ratcheted down to measured; no budgeted
+# package moved.
+TOTAL_APP_LOC_BUDGET = 87_847
 
 
 def test_production_package_loc_budgets() -> None:

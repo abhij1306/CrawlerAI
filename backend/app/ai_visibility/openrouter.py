@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai_visibility._provider_http import _execute_post
+from app.ai_visibility._provider_http import AiVisibilityProviderError, _execute_post
 from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
-from app.ai_visibility.gemini import AiVisibilityProviderError
 from app.ai_visibility.openrouter_parser import parse_openrouter_completion
 from app.core.config.ai_visibility import (
     AI_VISIBILITY_ERROR_INVALID_SURFACE,

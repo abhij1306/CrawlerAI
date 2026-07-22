@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from math import ceil
@@ -44,7 +45,7 @@ def public_rate_scope(path: str) -> str:
 
 async def consume_public_rate_limit(
     buckets: OrderedDict[str, deque[float]],
-    lock,
+    lock: asyncio.Lock,
     *,
     api_key_id: int,
     scope: str,
