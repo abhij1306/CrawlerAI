@@ -10,7 +10,9 @@ from cachetools import TTLCache
 import httpx
 
 from app.core.config import settings
+from app.core.config.block_signatures import MAX_VALIDATED_REDIRECTS
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.url_safety import get_with_validated_redirects
 
 ROBOTS_ALLOWED = "allowed"
 ROBOTS_DISALLOWED = "disallowed"
@@ -92,16 +94,6 @@ async def reset_robots_policy_cache() -> None:
         _ROBOTS_CACHE.clear()
 
 
-async def shutdown_robots_policy() -> None:
-    tracked_tasks = list(_get_tracked_tasks())
-    for task in tracked_tasks:
-        task.cancel()
-    if tracked_tasks:
-        await asyncio.gather(*tracked_tasks, return_exceptions=True)
-    _get_tracked_tasks().clear()
-    await reset_robots_policy_cache()
-
-
 async def check_url_crawlability(
     url: str,
     *,
@@ -159,13 +151,24 @@ async def _load_robots_snapshot(base_url: str) -> _RobotsSnapshot:
 async def _fetch_robots_snapshot(base_url: str) -> _RobotsSnapshot:
     robots_url = f"{base_url}/robots.txt"
     try:
+        # Redirects are followed manually with each hop target validated
+        # against the SSRF guard before the request is issued.
         async with httpx.AsyncClient(
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=settings.http_timeout_seconds,
             headers={"User-Agent": crawler_runtime_settings.robots_fetch_user_agent},
         ) as client:
-            response = await client.get(robots_url)
+            response = await get_with_validated_redirects(
+                client,
+                robots_url,
+                max_redirects=MAX_VALIDATED_REDIRECTS,
+            )
     except httpx.RequestError as exc:
+        return _error_snapshot(robots_url, str(exc))
+    except ValueError as exc:
+        # SecurityError (non-public redirect target) or redirect-cap overflow:
+        # treat like any other robots fetch failure (fail open, consistent
+        # with existing unreachable-robots behavior).
         return _error_snapshot(robots_url, str(exc))
 
     if response.status_code in {404, 410}:

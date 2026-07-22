@@ -39,7 +39,7 @@ from app.crawl.sitemap_nav import (
 )
 from app.crawl.utils import normalize_target_url
 from app.core.shared.url_utils import absolute_url
-from app.core.url_safety import validate_public_target
+from app.core.url_safety import get_with_validated_redirects, validate_public_target
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 logger = logging.getLogger(__name__)
@@ -221,9 +221,10 @@ async def resolve_category_urls_from_sitemap_result(
     last_sitemap_error: ValueError | None = None
     sitemap_attempts: list[dict[str, str]] = []
 
+    # Redirects are followed manually with per-hop SSRF validation inside
+    # _fetch_response (get_with_validated_redirects); never auto-follow.
     async with httpx.AsyncClient(
-        follow_redirects=True,
-        max_redirects=SITEMAP_FETCH_MAX_REDIRECTS,
+        follow_redirects=False,
         timeout=SITEMAP_FETCH_TIMEOUT_SECONDS,
     ) as client:
         sitemap_result: SitemapResolutionResult | None = None
@@ -419,8 +420,7 @@ async def _resolve_child_sitemap_urls(
 ) -> list[str]:
     all_urls: list[str] = []
     async with httpx.AsyncClient(
-        follow_redirects=True,
-        max_redirects=SITEMAP_FETCH_MAX_REDIRECTS,
+        follow_redirects=False,
         timeout=SITEMAP_FETCH_TIMEOUT_SECONDS,
     ) as client:
         for child_url in child_urls:
@@ -517,12 +517,18 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str) -> ElementTree.Element
 
 
 async def _fetch_response(client: httpx.AsyncClient, url: str) -> httpx.Response:
-    await validate_public_target(url)
     attempts = max(1, int(SITEMAP_FETCH_RETRY_ATTEMPTS) + 1)
     retry_status_codes = {int(code) for code in SITEMAP_FETCH_RETRY_STATUS_CODES}
     response: httpx.Response | None = None
     for attempt in range(attempts):
-        response = await client.get(url, headers={"User-Agent": SITEMAP_USER_AGENT})
+        # Validates the initial URL and every redirect hop target BEFORE the
+        # request is issued (SSRF guard), then follows the chain manually.
+        response = await get_with_validated_redirects(
+            client,
+            url,
+            max_redirects=SITEMAP_FETCH_MAX_REDIRECTS,
+            headers={"User-Agent": SITEMAP_USER_AGENT},
+        )
         await _validate_response_redirect_chain(response)
         if response.status_code == 200:
             break
@@ -551,6 +557,12 @@ async def _safe_locs(xml: ElementTree.Element) -> list[str]:
 
 
 async def _validate_response_redirect_chain(response: httpx.Response) -> None:
+    # Defense in depth: clients here are built with follow_redirects=False and
+    # every hop is pre-validated by get_with_validated_redirects, so history
+    # is empty and this is a no-op. If a client ever auto-follows, validate
+    # every hop it visited before the body is consumed.
+    if not response.history:
+        return
     for redirect_response in response.history:
         await validate_public_target(str(redirect_response.url))
     await validate_public_target(str(response.url))

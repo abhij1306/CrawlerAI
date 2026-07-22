@@ -5,9 +5,13 @@ import ipaddress
 import socket
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import cast
-from urllib.parse import ParseResult, urlparse
+from typing import Any, cast
+from urllib.parse import ParseResult, urljoin, urlparse
 
+from app.core.config.block_signatures import (
+    MAX_VALIDATED_REDIRECTS,
+    REDIRECT_FOLLOW_STATUS_CODES,
+)
 from app.core.config.security_rules import (
     ALLOWED_PROXY_SCHEMES,
     ALLOWED_TARGET_SCHEMES,
@@ -96,6 +100,80 @@ async def validate_proxy_endpoint(proxy_url: str) -> ValidatedTarget:
         unresolved_detail="Proxy host could not be resolved to a valid IP address",
         wrap_resolution_error=False,
     )
+
+
+def validate_public_url_host(url: str) -> None:
+    """Synchronous host-level SSRF check for contexts where DNS resolution is
+    not feasible (browser route interception runs per request and cannot stall
+    on resolver I/O). Blocks literal non-public IPs and configured internal /
+    blocked hostnames. Regular hostnames pass here and are fully validated
+    (with DNS resolution) at the fetch / post-navigation boundary instead.
+    Non-http(s) URLs are out of scope and pass through."""
+    parsed = urlparse(str(url or "").strip())
+    if str(parsed.scheme or "").lower() not in ALLOWED_TARGET_SCHEMES:
+        return
+    hostname = str(parsed.hostname or "").strip().lower()
+    if not hostname:
+        return
+    _raise_if_blocked_hostname(hostname, "Target")
+    literal_ip = _parse_ip(hostname)
+    if literal_ip is not None:
+        _raise_if_non_public_ip(literal_ip, hostname, "Target")
+
+
+def get_redirect_location(response: Any) -> str | None:
+    """Return the redirect Location for a 3xx response, else None."""
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    if status_code not in REDIRECT_FOLLOW_STATUS_CODES:
+        return None
+    headers = getattr(response, "headers", None)
+    get_header = getattr(headers, "get", None)
+    if get_header is None:
+        return None
+    location = str(get_header("location", "") or "").strip()
+    return location or None
+
+
+async def get_with_validated_redirects(
+    client: Any,
+    url: str,
+    *,
+    max_redirects: int = MAX_VALIDATED_REDIRECTS,
+    **request_kwargs: Any,
+) -> Any:
+    """Issue a GET against ``client`` following redirects manually.
+
+    Every request target — the initial URL and each 3xx ``Location`` — is
+    validated with :func:`validate_public_target` immediately BEFORE the
+    request is issued, so a validated public URL cannot bounce the fetcher
+    into loopback / link-local / RFC1918 / metadata address space via a
+    redirect. Re-validating (with fresh DNS resolution) right before each
+    request is also the chosen DNS-rebinding TOCTOU mitigation: the window
+    between guard resolution and connect-time resolution shrinks to the
+    request issue path. Pinning validated IPs at connect time (custom httpx
+    transport / curl ``--resolve``) is not exposed by the installed
+    curl_cffi/httpx APIs without rewriting TLS/SNI handling, so pre-request
+    re-validation is the feasible enforcement point.
+
+    ``client`` must be built with ``follow_redirects=False``; each hop is a
+    plain ``client.get(current_url, **request_kwargs)`` call so client cookie
+    jars keep their normal redirect-chain behavior.
+    """
+    current_url = str(url or "").strip()
+    redirect_count = 0
+    while True:
+        await validate_public_target(current_url)
+        response = await client.get(current_url, **request_kwargs)
+        location = get_redirect_location(response)
+        if location is None:
+            return response
+        redirect_count += 1
+        if redirect_count > max(0, int(max_redirects)):
+            raise ValueError(
+                f"Too many redirects while fetching {url} "
+                f"(limit {max(0, int(max_redirects))})"
+            )
+        current_url = urljoin(current_url, location)
 
 
 async def _validate_endpoint_host(
