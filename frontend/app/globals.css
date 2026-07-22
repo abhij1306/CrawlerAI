@@ -619,26 +619,6 @@ textarea:disabled {
    T4 LABEL    column headers, captions   — uppercase, tracked
 ═══════════════════════════════════════════════════════════════════════ */
 
-/* T2 — Headings */
-.type-heading-1 {
-  font-family: var(--font-display-family);
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-semibold);
-  line-height: 1.1;
-  letter-spacing: var(--tracking-tight);
-  color: var(--text-primary);
-  text-wrap: balance;
-}
-
-.type-heading-2 {
-  font-family: var(--font-display-family);
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
 /* Auth card title — sample .auth-title (24px; sits between --text-xl and --text-2xl) */
 .type-auth-title {
   font-family: var(--font-display-family);
@@ -759,29 +739,6 @@ textarea:disabled {
   line-height: 1.35;
   color: var(--text-primary);
   margin-bottom: var(--space-1);
-}
-
-.field-hint {
-  display: block;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: var(--text-muted);
-  margin-top: var(--space-1);
-}
-
-/* aria-hidden="true" in markup; CSS asterisk is decorative only */
-.field-label-required::after {
-  content: ' *';
-  color: var(--danger);
-}
-
-.field-error {
-  display: block;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  line-height: 1.5;
-  color: var(--danger-text);
-  margin-top: var(--space-1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -972,26 +929,6 @@ a.bg-success,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   CODE BLOCK
-═══════════════════════════════════════════════════════════════════════ */
-.code-block {
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
-  font-family: var(--font-mono-family);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  letter-spacing: 0;
-  font-synthesis: none;
-  color: var(--text-secondary);
-  overflow-x: auto;
-  margin: 0;
-  white-space: pre-wrap;
-  tab-size: 2;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
    CRAWL TERMINAL
 ═══════════════════════════════════════════════════════════════════════ */
 .crawl-terminal {
@@ -1027,8 +964,6 @@ a.bg-success,
 
 /* JSON viewer — always dark regardless of theme */
 .crawl-terminal-json,
-.bg-zinc-950,
-.bg-zinc-900,
 [data-json-dark-theme='true'] {
   --syntax-key: #9cdcfe;
   --syntax-string: #ce9178;
@@ -1319,8 +1254,7 @@ html:not([data-theme='dark']) .compact-data-table {
     background-image: none !important;
   }
 
-  .crawl-terminal,
-  .code-block {
+  .crawl-terminal {
     border: 1px solid #ccc;
     background: #f9f9f9 !important;
     color: #000 !important;

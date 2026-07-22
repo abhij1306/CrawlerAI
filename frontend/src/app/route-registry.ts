@@ -23,7 +23,7 @@ export type AppRoute = {
   lazy: () => Promise<RouteModule>;
   metadata: { title: string; description?: string };
   nav?: {
-    group: 'Primary' | 'Intelligence' | 'Memory' | 'Admin';
+    group: 'Primary' | 'Intelligence' | 'Admin';
     label: string;
     icon: LucideIcon;
     exact?: boolean;

@@ -152,12 +152,6 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['src/routing/image.tsx'],
-        rules: {
-          'jsx-a11y/alt-text': 'off',
-        },
-      },
-      {
         files: [
           'components/crawl/form-fields.tsx',
           'components/crawl/records-table.tsx',

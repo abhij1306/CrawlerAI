@@ -25,7 +25,7 @@ export type DataEnrichmentAction =
   | { type: 'historyJobSelected'; jobId: number }
   | { type: 'initialJobResolved'; jobId: number };
 
-export const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
+const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
   llmEnabled: false,
   activeJobId: null,
   error: '',
@@ -33,7 +33,7 @@ export const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
   selectedProductId: null,
 };
 
-export function dataEnrichmentReducer(
+function dataEnrichmentReducer(
   state: DataEnrichmentState,
   action: DataEnrichmentAction,
 ): DataEnrichmentState {
