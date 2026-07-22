@@ -46,6 +46,8 @@ export const crawlRunSchema: z.ZodSchema<CrawlRun> = z.object({
   settings: z.record(z.string(), z.unknown()),
   requested_fields: z.array(z.string()),
   result_summary: resultSummarySchema,
+  // Output-required but tolerates absent input from older backends.
+  run_health: z.record(z.string(), z.unknown()).default({}),
   created_at: z.string(),
   updated_at: z.string(),
   completed_at: z.string().nullable(),

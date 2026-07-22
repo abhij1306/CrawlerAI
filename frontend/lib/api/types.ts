@@ -62,6 +62,7 @@ export type CrawlRun = {
   settings: Record<string, unknown>;
   requested_fields: string[];
   result_summary: ResultSummary;
+  run_health: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -78,12 +79,6 @@ export type ActiveJob = {
   elapsed_seconds?: number;
   records_collected?: number;
   max_records?: number;
-};
-
-export type ReviewSelection = {
-  source_field: string;
-  output_field: string;
-  selected: boolean;
 };
 
 export type CrawlRecord = {
@@ -138,18 +133,6 @@ export type Dashboard = {
   total_records: number;
   recent_runs: CrawlRun[];
   top_domains: { domain: string; count: number }[];
-};
-
-export type ReviewPayload = {
-  run: CrawlRun;
-  normalized_fields: string[];
-  discovered_fields: string[];
-  canonical_fields: string[];
-  domain_mapping: Record<string, string>;
-  suggested_mapping: Record<string, string>;
-  selector_memory: Array<Record<string, unknown>>;
-  selector_suggestions: Record<string, Array<Record<string, unknown>>>;
-  records: CrawlRecord[];
 };
 
 export type SelectorRecord = {

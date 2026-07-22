@@ -123,7 +123,7 @@ Responsibilities:
 - short compatibility facade for callers not yet migrated to direct domain imports
 - API typing and zod response schemas (`lib/api/schemas.ts`)
 - auth-aware fetch wrapper
-- URL helpers for review HTML and selector preview HTML
+- URL helpers for selector preview HTML
 
 AI Visibility ownership notes:
 
@@ -281,7 +281,6 @@ The frontend currently uses live backend routes for:
 - provenance: `/api/records/{id}/provenance`
 - exports: `/api/crawls/{id}/export/*`
 - logs + websocket: `/api/crawls/{id}/logs`, `/api/crawls/{id}/logs/ws`
-- review: `/api/review/{id}`, `/api/review/{id}/artifact-html`, `/api/review/{id}/save`
 - selectors: `/api/selectors`, `/api/selectors/suggest`, `/api/selectors/test`, `/api/selectors/preview-html`
 - Knowledge Graph: `/api/knowledge/sites`, `/api/knowledge/graph`, `/api/knowledge/contracts/{template_id}`, `/api/knowledge/contracts/{contract_id}/selection`, `/api/knowledge/contracts/selector`
 - users: `/api/users`
@@ -295,7 +294,6 @@ The frontend currently uses live backend routes for:
 
 There is still some API-surface drift and it should remain documented:
 
-- `ReviewPayload` types in the frontend still include `selector_memory` and `selector_suggestions`, while the current backend review response is centered on run, canonical/discovered fields, mapping, and records.
 - The standalone `/selectors` page has been removed; selector tooling lives in Crawl Studio field configuration and the `/domain-memory` surface. Older docs claiming “selectors page missing backend integration” are stale.
 
 ## 6. Current Data Contracts That Matter To Frontend

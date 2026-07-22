@@ -280,6 +280,7 @@ describe('DomainMemoryPage', () => {
           settings: {},
           requested_fields: [],
           result_summary: { domain: 'example.com' },
+          run_health: {},
           created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
           updated_at: new Date('2026-04-08T10:10:00Z').toISOString(),
           completed_at: new Date('2026-04-08T10:10:00Z').toISOString(),
