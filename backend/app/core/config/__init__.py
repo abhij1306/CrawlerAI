@@ -33,8 +33,6 @@ class Settings(BaseSettings):
         default="development",
         validation_alias=AliasChoices("APP_ENV", "app_env"),
     )
-    backend_host: str = "127.0.0.1"
-    backend_port: int = 8000
     frontend_url: str = "http://127.0.0.1:3000"
     frontend_origins: str = ""
     jwt_secret_key: str = Field(
@@ -50,9 +48,6 @@ class Settings(BaseSettings):
     redis_state_enabled: bool = False
     celery_dispatch_enabled: bool = True
     artifacts_dir: Path = Field(default=BASE_DIR / "artifacts")
-    acquisition_cache_dir: Path = Field(
-        default=BASE_DIR / "artifacts" / "acquisition_cache"
-    )
     cookie_store_dir: Path = Field(default=BASE_DIR / "cookie_store")
     playwright_headless: bool = True
     browser_pool_size: int = 4
@@ -92,7 +87,6 @@ class Settings(BaseSettings):
     crawl_log_db_url_progress_sample_rate: int = 4
     crawl_log_db_max_rows_per_run: int = 1000
     crawl_log_file_enabled: bool = True
-    crawl_log_file_dir: Path = Field(default=BASE_DIR / "artifacts" / "run_logs")
     logfire_enabled: bool = False
     logfire_token: str = Field(
         default="",
@@ -159,9 +153,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "artifacts_dir",
-        "acquisition_cache_dir",
         "cookie_store_dir",
-        "crawl_log_file_dir",
         mode="before",
     )
     @classmethod

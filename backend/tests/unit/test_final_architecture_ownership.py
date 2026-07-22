@@ -30,7 +30,7 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_recovery.py": 723,
     "acquisition/browser_result_builder.py": 744,
     "core/config/extraction_rules/_detail.py": 1026,
-    "enrichment/service.py": 903,
+    "enrichment/service.py": 907,
     "extraction/collectors/dom.py": 1062,
     "extraction/collectors/js_state.py": 914,
     "extraction/collectors/jsonld.py": 783,
@@ -40,7 +40,7 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/pipeline.py": 781,
     "extraction/result_building.py": 738,
     "extraction/validation.py": 743,
-    "intelligence/service.py": 750,
+    "intelligence/service.py": 763,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
@@ -82,7 +82,7 @@ COMPLEX_FUNCTION_DEBT = {
     ("core/shared/url_utils.py", "extract_urls"): 25,
     ("core/extraction_memory/contract_runtime.py", "match_template"): 23,
     ("core/extraction_memory/contract_runtime.py", "resolved_contract_outcomes"): 23,
-    ("crawl/crud.py", "create_crawl_run"): 23,
+    ("crawl/crud.py", "create_crawl_run"): 24,
     ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
     ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
@@ -126,6 +126,9 @@ COMPLEX_FUNCTION_DEBT = {
     ("observability/diagnose.py", "build_diagnosis"): 25,
     ("observability/run_report.py", "_root_causes"): 37,
     ("persistence/publish/metrics.py", "build_url_metrics"): 30,
+    # Review-fix reconciliation (2026-07-22): verdict_counts in-flight health
+    # derivation added the counts branch (run_health_verdict 18 -> 28).
+    ("persistence/publish/verdict.py", "run_health_verdict"): 28,
 }
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
@@ -183,20 +186,24 @@ PACKAGE_LOC_BUDGETS = {
     # modules + SSRF redirect validation; extraction grew (16,437 -> 16,753)
     # with the resolution split modules; enrichment (2,057 -> 2,250) and
     # intelligence (3,277 -> 3,448) grew with the Celery job runners.
+    # Review-fix reconciliation (same day): review-driven hardening (route-
+    # blocking guard order, settings.urls cap, pending-orphan window,
+    # verdict_counts health) nudged crawl/enrichment/intelligence further.
     # Budgets are only raised, never lowered.
     "acquisition": 17_104,
-    "crawl": 9_250,
+    "crawl": 9_257,
     "core": 20_761,
-    "enrichment": 2_250,
+    "enrichment": 2_254,
     "connectors": 2_444,
-    "intelligence": 3_448,
+    "intelligence": 3_461,
     "extraction": 16_753,
     "evaluation": 2_009,
 }
-# Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,144) with
-# the resolution split, browser-pool collaborators, SSRF hardening, and
-# Celery job runners (net of the dead-code purge). Measured on working tree.
-TOTAL_APP_LOC_BUDGET = 87_144
+# Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
+# the resolution split, browser-pool collaborators, SSRF hardening, Celery
+# job runners, and the review-driven hardening fixes (net of the dead-code
+# purge). Measured on working tree.
+TOTAL_APP_LOC_BUDGET = 87_196
 
 
 def test_production_package_loc_budgets() -> None:
