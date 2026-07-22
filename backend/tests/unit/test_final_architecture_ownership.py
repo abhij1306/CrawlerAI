@@ -41,12 +41,15 @@ OVERSIZED_MODULE_DEBT = {
     "enrichment/service.py": 907,
     "extraction/collectors/dom.py": 1069,
     "extraction/collectors/js_state.py": 914,
-    "extraction/collectors/jsonld.py": 783,
+    # Stream B commit 14 (same day): jsonld.py re-keyed (783 -> 871) and
+    # result_building.py re-keyed (738 -> 824) with the >150-line function
+    # decompositions (4.15) — raised to measured.
+    "extraction/collectors/jsonld.py": 871,
     "extraction/contracts.py": 856,
     "extraction/engine.py": 1059,
     "extraction/entities.py": 850,
     "extraction/pipeline.py": 781,
-    "extraction/result_building.py": 738,
+    "extraction/result_building.py": 824,
     "extraction/validation.py": 743,
     "intelligence/service.py": 763,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
@@ -62,6 +65,11 @@ OVERSIZED_MODULE_DEBT = {
 # tracked for the next cleanup slice: infer_brand_from_product_url 69 -> 86,
 # infer_brand_from_page_identity 38 -> 39, field_evidence_states 41 -> 46,
 # projection_field_states 70 -> 78.
+# Stream B commit 14 (2026-07-22): the four >150-line functions (4.15) were
+# decomposed into stage helpers and left the ledger —
+# projection_field_states 78 -> 3, commerce_detail_projection 43 -> <=18,
+# _acquire_browser_retry_result (never ledgered) -> <=10, jsonld _variant
+# 30 -> <=15, resolve 31 -> 8.
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
     ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
@@ -97,7 +105,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
     ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
     ("extraction/collectors/_helpers.py", "_subject_id"): 23,
-    ("extraction/collectors/jsonld.py", "_variant"): 30,
     ("extraction/collectors/js_state.py", "network_row"): 41,
     ("extraction/collectors/js_state.py", "_looks_like_variant"): 23,
     ("extraction/engine.py", "_assess"): 27,
@@ -106,7 +113,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/pipeline.py", "_flag_brand_conflicts"): 30,
     ("extraction/pipeline.py", "normalize_evidence"): 40,
     ("extraction/pipeline.py", "_title_flags"): 29,
-    ("extraction/publication.py", "commerce_detail_projection"): 43,
     ("extraction/publication.py", "serialize_commerce_detail_projection"): 26,
     ("enrichment/service.py", "run_job"): 25,
     ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
@@ -122,11 +128,9 @@ COMPLEX_FUNCTION_DEBT = {
         "_offer_atomic_price_currency_preferences",
     ): 22,
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
-    ("extraction/resolution/resolver.py", "resolve"): 31,
     ("extraction/resolution/variant_rollup.py", "_reconcile_variant_prices"): 25,
     ("extraction/resolution/variant_rollup.py", "_inherit_variant_offer_facts"): 22,
     ("extraction/result_building.py", "field_evidence_states"): 46,
-    ("extraction/result_building.py", "projection_field_states"): 78,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
@@ -245,15 +249,17 @@ PACKAGE_LOC_BUDGETS = {
     # Stream B commit 12 (same day): crawl +132 for the PublicRecord/
     # URLMetrics TypedDict seam in pipeline/types.py (4.13) — raised to
     # measured.
+    # Stream B commit 14 (same day): extraction +318, crawl +60 for the
+    # >150-line function decompositions (4.15) — raised to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
     "acquisition": 17_343,
-    "crawl": 9_463,
+    "crawl": 9_523,
     "core": 21_010,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_462,
-    "extraction": 16_711,
+    "extraction": 17_029,
     "evaluation": 1_571,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
@@ -297,7 +303,9 @@ PACKAGE_LOC_BUDGETS = {
 # Stream B commit 10 (same day): +247 for the silent-except diagnostics (4.8).
 # Stream B commit 12 (same day): +132 for the typed pipeline boundary
 # (PublicRecord/URLMetrics TypedDicts + seam adoption, 4.13).
-TOTAL_APP_LOC_BUDGET = 87_470
+# Stream B commit 14 (same day): +378 for the >150-line function
+# decompositions (4.15) — raised to measured.
+TOTAL_APP_LOC_BUDGET = 87_848
 
 
 def test_production_package_loc_budgets() -> None:

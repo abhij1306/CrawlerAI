@@ -519,6 +519,194 @@ def _variants(
     return out
 
 
+def _variant_fact_value(
+    key: str,
+    row: dict[str, Any],
+    *,
+    product_brand: str,
+    guarded_offer_url: str | None,
+) -> str | None:
+    """Decision table for one variant-signal value by fact key."""
+    if key == "color":
+        return _variant_color(row, product_brand=product_brand)
+    if key == "size":
+        return _variant_size(row)
+    return text_value(row.get(key)) or (guarded_offer_url if key == "url" else "")
+
+
+def _variant_fact_locator(
+    key: str,
+    value: str,
+    row: dict[str, Any],
+    path: str,
+    guarded_offer_url: str | None,
+) -> str:
+    """Decision table for the JSON pointer of one variant-signal value."""
+    if key == "url" and value == guarded_offer_url and not text_value(row.get(key)):
+        return f"{path}/offers/url"
+    return f"{path}/{key}"
+
+
+def _variant_shared_kwargs(
+    *,
+    group: str,
+    hint: EntityHint,
+    product_subject: str,
+    source_subject_ids: tuple[str, ...],
+) -> dict[str, Any]:
+    """Constant evidence kwargs shared by every variant-scoped signal."""
+    return {
+        "group_id": group,
+        "hint": hint,
+        "directness": "embedded",
+        "confidence": 0.88,
+        "subject_id": group,
+        "subject_scope": "variant",
+        "parent_subject_id": product_subject,
+        "parent_scope": "product",
+        "relation_type": "product_variant",
+        "source_subject_ids": source_subject_ids,
+    }
+
+
+def _variant_id_row(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    path: str,
+    *,
+    hint: EntityHint,
+    shared: dict[str, Any],
+) -> list[Evidence]:
+    if not hint.variant_id or any(
+        text_value(row.get(key)) for key in ("sku", "gtin", "url")
+    ):
+        return []
+    return [
+        evidence(
+            bundle,
+            artifact_id,
+            "jsonld",
+            "variant.id",
+            hint.variant_id,
+            SourceLocator(
+                kind="json_pointer",
+                value=(
+                    f"{path}/{_JSONLD_ID_KEY}"
+                    if text_value(row.get(_JSONLD_ID_KEY))
+                    else f"{path}/offers/url"
+                ),
+            ),
+            **shared,
+        )
+    ]
+
+
+def _variant_fact_rows(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    path: str,
+    *,
+    product_brand: str,
+    guarded_offer_url: str | None,
+    shared: dict[str, Any],
+) -> tuple[list[Evidence], set[str]]:
+    """Mapped variant fact signals; returns the rows and the axes they cover."""
+    out: list[Evidence] = []
+    emitted_axes: set[str] = set()
+    for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
+        value = _variant_fact_value(
+            key,
+            row,
+            product_brand=product_brand,
+            guarded_offer_url=guarded_offer_url,
+        )
+        if not value:
+            continue
+        if fact.startswith("variant.option."):
+            emitted_axes.add(fact.rsplit(".", 1)[-1])
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                "jsonld",
+                fact,
+                value,
+                SourceLocator(
+                    kind="json_pointer",
+                    value=_variant_fact_locator(
+                        key, value, row, path, guarded_offer_url
+                    ),
+                ),
+                **shared,
+            )
+        )
+    return out, emitted_axes
+
+
+def _variant_option_rows(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    path: str,
+    *,
+    declared_axes: tuple[str, ...],
+    emitted_axes: set[str],
+    shared: dict[str, Any],
+) -> list[Evidence]:
+    """Free-form variant option axes not already covered by a mapped fact."""
+    out: list[Evidence] = []
+    for locator_key, axis, value in _jsonld_variant_options(row, declared_axes):
+        if axis in emitted_axes:
+            continue
+        emitted_axes.add(axis)
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                "jsonld",
+                f"variant.option.{axis}",
+                value,
+                SourceLocator(kind="json_pointer", value=f"{path}/{locator_key}"),
+                **shared,
+            )
+        )
+    return out
+
+
+def _variant_image_rows(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    path: str,
+    *,
+    sku: str,
+    subject_id: str,
+) -> list[Evidence]:
+    raw_image = row.get("image")
+    images = raw_image if isinstance(raw_image, list) else [raw_image]
+    return [
+        evidence(
+            bundle,
+            artifact_id,
+            "jsonld",
+            "asset.image_url",
+            url,
+            SourceLocator(kind="json_pointer", value=f"{path}/image/{index}"),
+            hint=EntityHint(entity_type="asset", sku=sku or None),
+            directness="embedded",
+            confidence=0.85,
+            parent_subject_id=subject_id,
+            parent_scope="variant",
+            relation_type="variant_asset",
+        )
+        for index, url in enumerate(
+            text_value(item) for item in images if text_value(item)
+        )
+    ]
+
+
 def _variant(
     bundle: CaptureBundle,
     artifact_id: str,
@@ -541,123 +729,37 @@ def _variant(
         url=text_value(row.get("url")) or guarded_offer_url or None,
     )
     group = f"variant:{artifact_id}:{variant_identity}"
-    subject_id = group
-    source_subject_ids = _source_subject_ids(bundle, row, include_sku=True)
-    out: list[Evidence] = []
-    if hint.variant_id and not any(
-        text_value(row.get(key)) for key in ("sku", "gtin", "url")
-    ):
-        out.append(
-            evidence(
-                bundle,
-                artifact_id,
-                "jsonld",
-                "variant.id",
-                hint.variant_id,
-                SourceLocator(
-                    kind="json_pointer",
-                    value=(
-                        f"{path}/{_JSONLD_ID_KEY}"
-                        if text_value(row.get(_JSONLD_ID_KEY))
-                        else f"{path}/offers/url"
-                    ),
-                ),
-                group_id=group,
-                hint=hint,
-                directness="embedded",
-                confidence=0.88,
-                subject_id=subject_id,
-                subject_scope="variant",
-                parent_subject_id=product_subject,
-                parent_scope="product",
-                relation_type="product_variant",
-                source_subject_ids=source_subject_ids,
-            )
+    shared = _variant_shared_kwargs(
+        group=group,
+        hint=hint,
+        product_subject=product_subject,
+        source_subject_ids=_source_subject_ids(bundle, row, include_sku=True),
+    )
+    out = _variant_id_row(bundle, artifact_id, row, path, hint=hint, shared=shared)
+    fact_rows, emitted_axes = _variant_fact_rows(
+        bundle,
+        artifact_id,
+        row,
+        path,
+        product_brand=product_brand,
+        guarded_offer_url=guarded_offer_url,
+        shared=shared,
+    )
+    out.extend(fact_rows)
+    out.extend(
+        _variant_option_rows(
+            bundle,
+            artifact_id,
+            row,
+            path,
+            declared_axes=declared_axes,
+            emitted_axes=emitted_axes,
+            shared=shared,
         )
-    emitted_axes: set[str] = set()
-    for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
-        value = (
-            _variant_color(row, product_brand=product_brand)
-            if key == "color"
-            else _variant_size(row)
-            if key == "size"
-            else text_value(row.get(key)) or (guarded_offer_url if key == "url" else "")
-        )
-        if value:
-            if fact.startswith("variant.option."):
-                emitted_axes.add(fact.rsplit(".", 1)[-1])
-            locator_value = (
-                f"{path}/offers/url"
-                if key == "url"
-                and value == guarded_offer_url
-                and not text_value(row.get(key))
-                else f"{path}/{key}"
-            )
-            out.append(
-                evidence(
-                    bundle,
-                    artifact_id,
-                    "jsonld",
-                    fact,
-                    value,
-                    SourceLocator(kind="json_pointer", value=locator_value),
-                    group_id=group,
-                    hint=hint,
-                    directness="embedded",
-                    confidence=0.88,
-                    subject_id=subject_id,
-                    subject_scope="variant",
-                    parent_subject_id=product_subject,
-                    parent_scope="product",
-                    relation_type="product_variant",
-                    source_subject_ids=source_subject_ids,
-                )
-            )
-    for locator_key, axis, value in _jsonld_variant_options(row, declared_axes):
-        if axis in emitted_axes:
-            continue
-        emitted_axes.add(axis)
-        out.append(
-            evidence(
-                bundle,
-                artifact_id,
-                "jsonld",
-                f"variant.option.{axis}",
-                value,
-                SourceLocator(kind="json_pointer", value=f"{path}/{locator_key}"),
-                group_id=group,
-                hint=hint,
-                directness="embedded",
-                confidence=0.88,
-                subject_id=subject_id,
-                subject_scope="variant",
-                parent_subject_id=product_subject,
-                parent_scope="product",
-                relation_type="product_variant",
-                source_subject_ids=source_subject_ids,
-            )
-        )
-    raw_image = row.get("image")
-    images = raw_image if isinstance(raw_image, list) else [raw_image]
-    for index, url in enumerate(
-        text_value(item) for item in images if text_value(item)
-    ):
-        out.append(
-            evidence(
-                bundle,
-                artifact_id,
-                "jsonld",
-                "asset.image_url",
-                url,
-                SourceLocator(kind="json_pointer", value=f"{path}/image/{index}"),
-                hint=EntityHint(entity_type="asset", sku=sku or None),
-                directness="embedded",
-                confidence=0.85,
-                parent_subject_id=subject_id,
-                parent_scope="variant",
-                relation_type="variant_asset",
-            )
-        )
+    )
+    out.extend(
+        _variant_image_rows(bundle, artifact_id, row, path, sku=sku, subject_id=group)
+    )
     out.extend(
         _offers(
             bundle,
@@ -665,7 +767,7 @@ def _variant(
             row.get("offers"),
             path,
             hint,
-            subject_id,
+            group,
             "variant",
             variant_subject_ids,
         )

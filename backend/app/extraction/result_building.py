@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 import typing
 from typing import Any
 
@@ -318,15 +319,24 @@ def field_evidence_states(
     return tuple(states)
 
 
-def projection_field_states(
-    projection: PublicationProjection,
-    evidence: tuple[Evidence, ...],
-    dispositions: tuple[EvidenceDisposition, ...],
-    request: ExtractionRequest,
-    findings: tuple[Finding, ...] = (),
-) -> tuple[FieldEvidenceState, ...]:
-    """Derive field state from evidence and publication policy, never records."""
+@dataclass(frozen=True, slots=True)
+class _FieldStateContext:
+    """Precomputed lookups shared by every per-field state derivation."""
 
+    requested: frozenset[str]
+    surface_fields: frozenset[str]
+    contract_required: frozenset[str]
+    disposition_by_id: dict[str, EvidenceDisposition]
+    join_failed_evidence_ids: frozenset[str]
+    unavailable_families: frozenset[str]
+    terminal_unavailable: bool
+    fact_by_field: dict[str, str]
+    fields: tuple[str, ...]
+
+
+def _bucket_projection_entries(
+    projection: PublicationProjection,
+) -> tuple[dict[str, list], dict[str, list]]:
     entries_by_field: dict[str, list] = {}
     variant_entries_by_field: dict[str, list] = {}
     for entry in projection.entries:
@@ -344,50 +354,14 @@ def projection_field_states(
             ).append(entry)
         else:
             entries_by_field.setdefault(entry.path.rsplit(".", 1)[-1], []).append(entry)
-    requested = {
-        "image_url" if field == "image" else field for field in request.requested_fields
-    }
-    surface_fields = {
-        "url" if field == "canonical_url" else field
-        for field in canonical_fields_for_surface(request.surface.value)
-    }
-    contract_required = set(
-        field_mappings.SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ())
-    )
-    disposition_by_id = {row.evidence_id: row for row in dispositions}
-    join_failed_evidence_ids = {
-        evidence_id
-        for finding in findings
-        if finding.rule_id == CHILD_JOIN_FAILED_RULE_ID
-        for evidence_id in finding.evidence_ids
-    }
-    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
-        "source_capabilities"
-    )
-    unavailable_families = set(
-        source_capabilities.get("affected_field_families", ())
-        if isinstance(source_capabilities, dict)
-        else ()
-    )
-    detail_outcome = (
-        str(source_capabilities.get("detail_outcome") or "").strip()
-        if isinstance(source_capabilities, dict)
-        else ""
-    ) or normalized_detail_outcome(
-        http_status=request.capture.http_status,
-        blocked=bool(request.capture.blocked),
-        acquisition_outcome=request.capture.acquisition_outcome,
-    )
-    terminal_unavailable = (
-        request.surface.value == "ecommerce_detail"
-        and detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
-    )
+    return entries_by_field, variant_entries_by_field
+
+
+def _field_state_fact_map(surface: str) -> dict[str, str]:
     fact_by_field = {
         **field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
-        "title": "job.title"
-        if request.surface.value.startswith("job_")
-        else "product.title",
-        "url": "job.url" if request.surface.value.startswith("job_") else "product.url",
+        "title": "job.title" if surface.startswith("job_") else "product.title",
+        "url": "job.url" if surface.startswith("job_") else "product.url",
         "company": "job.company",
         "location": "job.location",
         "apply_url": "job.apply_url",
@@ -399,6 +373,64 @@ def projection_field_states(
     for fact_type in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.values():
         field = fact_type.rsplit(".", 1)[-1]
         fact_by_field.setdefault(field, fact_type)
+    return fact_by_field
+
+
+def _terminal_source_unavailable(request: ExtractionRequest) -> bool:
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    detail_outcome = (
+        str(source_capabilities.get("detail_outcome") or "").strip()
+        if isinstance(source_capabilities, dict)
+        else ""
+    ) or normalized_detail_outcome(
+        http_status=request.capture.http_status,
+        blocked=bool(request.capture.blocked),
+        acquisition_outcome=request.capture.acquisition_outcome,
+    )
+    return (
+        request.surface.value == "ecommerce_detail"
+        and detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    )
+
+
+def _unavailable_field_families(request: ExtractionRequest) -> frozenset[str]:
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    return frozenset(
+        source_capabilities.get("affected_field_families", ())
+        if isinstance(source_capabilities, dict)
+        else ()
+    )
+
+
+def _build_field_state_context(
+    evidence: tuple[Evidence, ...],
+    dispositions: tuple[EvidenceDisposition, ...],
+    request: ExtractionRequest,
+    findings: tuple[Finding, ...],
+    entries_by_field: dict[str, list],
+) -> _FieldStateContext:
+    requested = frozenset(
+        "image_url" if field == "image" else field for field in request.requested_fields
+    )
+    surface_fields = frozenset(
+        "url" if field == "canonical_url" else field
+        for field in canonical_fields_for_surface(request.surface.value)
+    )
+    contract_required = frozenset(
+        field_mappings.SURFACE_FIELD_REPAIR_TARGETS.get(request.surface.value, ())
+    )
+    disposition_by_id = {row.evidence_id: row for row in dispositions}
+    join_failed_evidence_ids = frozenset(
+        evidence_id
+        for finding in findings
+        if finding.rule_id == CHILD_JOIN_FAILED_RULE_ID
+        for evidence_id in finding.evidence_ids
+    )
+    fact_by_field = _field_state_fact_map(request.surface.value)
     field_by_fact = {
         fact_type: field for field, fact_type in fact_by_field.items() if fact_type
     }
@@ -416,76 +448,119 @@ def projection_field_states(
             | evidence_fields
         )
     )
+    return _FieldStateContext(
+        requested=requested,
+        surface_fields=surface_fields,
+        contract_required=contract_required,
+        disposition_by_id=disposition_by_id,
+        join_failed_evidence_ids=join_failed_evidence_ids,
+        unavailable_families=_unavailable_field_families(request),
+        terminal_unavailable=_terminal_source_unavailable(request),
+        fact_by_field=fact_by_field,
+        fields=fields,
+    )
+
+
+def _unpublished_field_state(
+    field: str,
+    *,
+    ctx: _FieldStateContext,
+    evidence: tuple[Evidence, ...],
+) -> tuple[FieldStateName, tuple[str, ...]]:
+    """State for a field with no publication entry, from raw evidence."""
+    fact_type = ctx.fact_by_field.get(field, field)
+    candidates = tuple(row for row in evidence if row.fact_type == fact_type)
+    evidence_ids = tuple(row.evidence_id for row in candidates)
+    candidate_dispositions = tuple(
+        ctx.disposition_by_id[row.evidence_id]
+        for row in candidates
+        if row.evidence_id in ctx.disposition_by_id
+    )
+    state: FieldStateName
+    if field in ctx.unavailable_families or (
+        field == "image_url" and "images" in ctx.unavailable_families
+    ):
+        state = "source_unavailable"
+    elif any(row.evidence_id in ctx.join_failed_evidence_ids for row in candidates):
+        state = "join_failed"
+    elif any(row.status == "unowned" for row in candidate_dispositions):
+        state = "captured_unowned"
+    elif any(row.status == "conflicted" for row in candidate_dispositions):
+        state = "captured_conflicting"
+    elif candidates:
+        state = "captured_but_rejected"
+    elif field in ctx.requested or field in ctx.contract_required:
+        state = "not_present_in_captured_sources"
+    else:
+        state = "not_requested"
+    return state, evidence_ids
+
+
+def _published_disposition_state(entries: list) -> FieldStateName | None:
+    """Publication-entry disposition ladder: publish > suppress > review."""
+    if any(entry.disposition == "publish" for entry in entries):
+        return "captured_published"
+    if any(entry.disposition == "suppress" for entry in entries):
+        return "captured_suppressed"
+    if any(entry.disposition == "review" for entry in entries):
+        return "captured_conflicting"
+    return None
+
+
+def _record_field_state(
+    field: str,
+    *,
+    ctx: _FieldStateContext,
+    entries: list,
+    variant_entity_ids: tuple[str, ...],
+    evidence: tuple[Evidence, ...],
+) -> FieldEvidenceState:
+    state: FieldStateName
+    evidence_ids = tuple(
+        dict.fromkeys(
+            evidence_id for entry in entries for evidence_id in entry.evidence_ids
+        )
+    )
+    disposition_state = _published_disposition_state(entries)
+    if ctx.terminal_unavailable and (
+        field in ctx.requested
+        or field in ctx.contract_required
+        or field in ctx.surface_fields
+    ):
+        state = "source_unavailable"
+    elif field == "variants" and variant_entity_ids:
+        state = "captured_published"
+    elif disposition_state is not None:
+        state = disposition_state
+    else:
+        state, evidence_ids = _unpublished_field_state(
+            field, ctx=ctx, evidence=evidence
+        )
+    disposition_reason_codes = tuple(
+        row.reason_code
+        for evidence_id in evidence_ids
+        if (row := ctx.disposition_by_id.get(evidence_id)) is not None
+        and row.reason_code
+    )
+    state_reason_codes = (
+        ("product_data_source_unavailable",) if state == "source_unavailable" else ()
+    )
+    return field_state(
+        field=field,
+        state=state,
+        evidence_ids=evidence_ids,
+        reason_codes=(
+            *(entry.reason_code for entry in entries if entry.reason_code),
+            *(code for code in disposition_reason_codes if code),
+            *state_reason_codes,
+        ),
+    )
+
+
+def _variant_field_states(
+    variant_entries_by_field: dict[str, list],
+) -> list[FieldEvidenceState]:
     states: list[FieldEvidenceState] = []
-    for field in fields:
-        state: FieldStateName
-        entries = entries_by_field.get(field, [])
-        variant_entity_ids = tuple(getattr(projection, "variant_entity_ids", ()) or ())
-        evidence_ids = tuple(
-            dict.fromkeys(
-                evidence_id for entry in entries for evidence_id in entry.evidence_ids
-            )
-        )
-        if terminal_unavailable and (
-            field in requested or field in contract_required or field in surface_fields
-        ):
-            state = "source_unavailable"
-        elif field == "variants" and variant_entity_ids:
-            state = "captured_published"
-        elif any(entry.disposition == "publish" for entry in entries):
-            state = "captured_published"
-        elif any(entry.disposition == "suppress" for entry in entries):
-            state = "captured_suppressed"
-        elif any(entry.disposition == "review" for entry in entries):
-            state = "captured_conflicting"
-        else:
-            fact_type = fact_by_field.get(field, field)
-            candidates = tuple(row for row in evidence if row.fact_type == fact_type)
-            evidence_ids = tuple(row.evidence_id for row in candidates)
-            candidate_dispositions = tuple(
-                disposition_by_id[row.evidence_id]
-                for row in candidates
-                if row.evidence_id in disposition_by_id
-            )
-            if field in unavailable_families or (
-                field == "image_url" and "images" in unavailable_families
-            ):
-                state = "source_unavailable"
-            elif any(row.evidence_id in join_failed_evidence_ids for row in candidates):
-                state = "join_failed"
-            elif any(row.status == "unowned" for row in candidate_dispositions):
-                state = "captured_unowned"
-            elif any(row.status == "conflicted" for row in candidate_dispositions):
-                state = "captured_conflicting"
-            elif candidates:
-                state = "captured_but_rejected"
-            elif field in requested or field in contract_required:
-                state = "not_present_in_captured_sources"
-            else:
-                state = "not_requested"
-        disposition_reason_codes = tuple(
-            row.reason_code
-            for evidence_id in evidence_ids
-            if (row := disposition_by_id.get(evidence_id)) is not None
-            and row.reason_code
-        )
-        state_reason_codes = (
-            ("product_data_source_unavailable",)
-            if state == "source_unavailable"
-            else ()
-        )
-        states.append(
-            field_state(
-                field=field,
-                state=state,
-                evidence_ids=evidence_ids,
-                reason_codes=(
-                    *(entry.reason_code for entry in entries if entry.reason_code),
-                    *(code for code in disposition_reason_codes if code),
-                    *state_reason_codes,
-                ),
-            )
-        )
     for field in sorted(variant_entries_by_field):
         variant_entries = variant_entries_by_field[field]
         variant_state: FieldStateName
@@ -511,6 +586,38 @@ def projection_field_states(
                 ),
             )
         )
+    return states
+
+
+def projection_field_states(
+    projection: PublicationProjection,
+    evidence: tuple[Evidence, ...],
+    dispositions: tuple[EvidenceDisposition, ...],
+    request: ExtractionRequest,
+    findings: tuple[Finding, ...] = (),
+) -> tuple[FieldEvidenceState, ...]:
+    """Derive field state from evidence and publication policy, never records."""
+
+    entries_by_field, variant_entries_by_field = _bucket_projection_entries(projection)
+    ctx = _build_field_state_context(
+        evidence,
+        dispositions,
+        request,
+        findings,
+        entries_by_field,
+    )
+    variant_entity_ids = tuple(getattr(projection, "variant_entity_ids", ()) or ())
+    states = [
+        _record_field_state(
+            field,
+            ctx=ctx,
+            entries=entries_by_field.get(field, []),
+            variant_entity_ids=variant_entity_ids,
+            evidence=evidence,
+        )
+        for field in ctx.fields
+    ]
+    states.extend(_variant_field_states(variant_entries_by_field))
     return tuple(states)
 
 

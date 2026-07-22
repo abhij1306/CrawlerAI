@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 import time
 
 from app.models.crawl_settings import CrawlRunSettings
@@ -126,26 +126,35 @@ def remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
     )
 
 
-async def _acquire_browser_retry_result(
+@dataclass(slots=True)
+class _BrowserRetryPlan:
+    """One bounded browser-rung plan (``AttemptPlanState`` precedent).
+
+    ``skip_reason`` set means the ladder stops honestly before spending a
+    rung; otherwise ``profile_updates`` + ``remaining_budget`` drive the
+    acquisition request for the next rung.
+    """
+
+    skip_reason: str | None
+    remaining_budget: float = 0.0
+    profile_updates: dict[str, object] = field(default_factory=dict)
+
+
+async def _browser_retry_plan(
     context: _URLProcessingContext,
-    fetched: _FetchedURLStage,
+    acquisition_result,
     *,
     retry_reason: str,
-    required_artifacts: tuple[str, ...] = (),
-    max_attempts: int = 1,
-    forced_browser_engine: str | None = None,
-):
-    acquisition_result = fetched.acquisition_result
+    required_artifacts: tuple[str, ...],
+    max_attempts: int,
+    forced_browser_engine: str | None,
+) -> _BrowserRetryPlan:
+    """Budget-check step: decide whether another browser rung may start."""
     # Budget-first: the ladder may climb up to ``max_attempts`` browser rungs
     # (contract-clamped to CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP). Once the budget
     # is spent, stop honestly.
     if context.browser_escalation_count >= max(1, max_attempts):
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"Skipping browser retry for {context.url}: browser retry budget exhausted",
-        )
-        return None
+        return _BrowserRetryPlan(skip_reason="browser retry budget exhausted")
     browser_attempted = PageEvidence.from_acquisition_result(
         acquisition_result
     ).browser_attempted
@@ -158,20 +167,10 @@ async def _acquire_browser_retry_result(
         and browser_attempted
         and _required_retry_artifacts_present(acquisition_result, required_artifacts)
     ):
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"Skipping browser retry for {context.url}: required artifacts already captured",
-        )
-        return None
+        return _BrowserRetryPlan(skip_reason="required artifacts already captured")
     remaining_budget = remaining_url_budget_seconds(context)
     if remaining_budget <= 0.0:
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"Skipping browser retry for {context.url}: URL time budget exhausted",
-        )
-        return None
+        return _BrowserRetryPlan(skip_reason="URL time budget exhausted")
     profile_updates: dict[str, object] = {
         "fetch_mode": "browser_only",
         "prefer_browser": True,
@@ -185,12 +184,14 @@ async def _acquire_browser_retry_result(
         profile_updates["capture_network"] = CAPTURE_NETWORK_ALL_SMALL_JSON
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
-    request = replace(
-        (await build_acquisition_request(context)).with_profile_updates(
-            **profile_updates
-        ),
-        attempt_timeout_seconds=remaining_budget,
+    return _BrowserRetryPlan(
+        skip_reason=None,
+        remaining_budget=remaining_budget,
+        profile_updates=profile_updates,
     )
+
+
+async def _commit_before_browser_rung(context: _URLProcessingContext) -> None:
     session = getattr(context, "session", None)
     commit = getattr(session, "commit", None) if session is not None else None
     if callable(commit):
@@ -201,6 +202,72 @@ async def _acquire_browser_retry_result(
             "warning",
             "Skipping browser retry pre-acquire commit: context.session is missing or has no async commit API",
         )
+
+
+def _classify_rung_outcome(exc: BaseException) -> str:
+    """Outcome-classify step: timeouts are reported separately from failures."""
+    return "timeout" if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) else "failed"
+
+
+async def _handle_failed_browser_rung(
+    context: _URLProcessingContext,
+    fetched: _FetchedURLStage,
+    attempt: EscalationAttemptDiagnostics,
+    *,
+    retry_reason: str,
+    rung_max_attempts: int,
+    exc: Exception,
+) -> None:
+    context.escalation_attempts[-1] = replace_escalation_outcome(
+        attempt,
+        outcome=_classify_rung_outcome(exc),
+        error=f"{type(exc).__name__}: {exc}",
+    )
+    # The failed rung must stay visible in diagnose.v3: the original
+    # acquisition result is what gets published, so the escalation history
+    # (including this failure) is attached to it.
+    acquisition_result = fetched.acquisition_result
+    failed_diagnostics = dict(
+        getattr(acquisition_result, "acquisition_diagnostics", None) or {}
+    )
+    failed_diagnostics["escalation"] = {
+        "rung": attempt.rung,
+        "attempt": attempt.attempt,
+        "max_attempts": rung_max_attempts,
+        "capability_requests": list(context.escalation_attempts),
+    }
+    acquisition_result.acquisition_diagnostics = failed_diagnostics
+    _merge_browser_diagnostics(
+        acquisition_result,
+        build_failed_browser_diagnostics(
+            browser_reason=f"{retry_reason.replace('_', '-')} retry",
+            exc=exc,
+        ),
+    )
+    fetched.url_metrics = build_url_metrics(
+        acquisition_result,
+        requested_fields=list(context.requested_fields),
+    )
+    await _log_pipeline_event(
+        context,
+        "warning",
+        (
+            f"Browser retry failed for {context.url}: "
+            f"{type(exc).__name__}: {exc}; using the original HTTP payload"
+        ),
+    )
+
+
+async def _attempt_browser_rung(
+    context: _URLProcessingContext,
+    fetched: _FetchedURLStage,
+    request: AcquisitionRequest,
+    *,
+    retry_reason: str,
+    required_artifacts: tuple[str, ...],
+    max_attempts: int,
+):
+    """Attempt step: run one typed browser rung and record its outcome."""
     # The typed attempt is recorded before acquisition so failed/timed-out
     # rungs — the most important ones — still appear in diagnose.v3.
     context.browser_escalation_count += 1
@@ -219,67 +286,74 @@ async def _acquire_browser_retry_result(
 
         acquire_impl = getattr(extraction_loop, "acquire", acquire)
         browser_result = await acquire_impl(request)
-        context.escalation_attempts[-1] = replace_escalation_outcome(
-            attempt, outcome="acquired"
-        )
-        diagnostics = dict(browser_result.acquisition_diagnostics or {})
-        diagnostics["escalation"] = {
-            "rung": attempt.rung,
-            "attempt": attempt.attempt,
-            "max_attempts": rung_max_attempts,
-            "capability_requests": list(context.escalation_attempts),
-        }
-        browser_result.acquisition_diagnostics = diagnostics
-        return browser_result
     except asyncio.CancelledError:
         context.escalation_attempts[-1] = replace_escalation_outcome(
             attempt, outcome="cancelled"
         )
         raise
     except Exception as exc:
-        outcome = (
-            "timeout"
-            if isinstance(exc, (asyncio.TimeoutError, TimeoutError))
-            else "failed"
-        )
-        context.escalation_attempts[-1] = replace_escalation_outcome(
-            attempt,
-            outcome=outcome,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-        # The failed rung must stay visible in diagnose.v3: the original
-        # acquisition result is what gets published, so the escalation history
-        # (including this failure) is attached to it.
-        failed_diagnostics = dict(
-            getattr(acquisition_result, "acquisition_diagnostics", None) or {}
-        )
-        failed_diagnostics["escalation"] = {
-            "rung": attempt.rung,
-            "attempt": attempt.attempt,
-            "max_attempts": rung_max_attempts,
-            "capability_requests": list(context.escalation_attempts),
-        }
-        acquisition_result.acquisition_diagnostics = failed_diagnostics
-        _merge_browser_diagnostics(
-            acquisition_result,
-            build_failed_browser_diagnostics(
-                browser_reason=f"{retry_reason.replace('_', '-')} retry",
-                exc=exc,
-            ),
-        )
-        fetched.url_metrics = build_url_metrics(
-            acquisition_result,
-            requested_fields=list(context.requested_fields),
-        )
-        await _log_pipeline_event(
+        await _handle_failed_browser_rung(
             context,
-            "warning",
-            (
-                f"Browser retry failed for {context.url}: "
-                f"{type(exc).__name__}: {exc}; using the original HTTP payload"
-            ),
+            fetched,
+            attempt,
+            retry_reason=retry_reason,
+            rung_max_attempts=rung_max_attempts,
+            exc=exc,
         )
         return None
+    context.escalation_attempts[-1] = replace_escalation_outcome(
+        attempt, outcome="acquired"
+    )
+    diagnostics = dict(browser_result.acquisition_diagnostics or {})
+    diagnostics["escalation"] = {
+        "rung": attempt.rung,
+        "attempt": attempt.attempt,
+        "max_attempts": rung_max_attempts,
+        "capability_requests": list(context.escalation_attempts),
+    }
+    browser_result.acquisition_diagnostics = diagnostics
+    return browser_result
+
+
+async def _acquire_browser_retry_result(
+    context: _URLProcessingContext,
+    fetched: _FetchedURLStage,
+    *,
+    retry_reason: str,
+    required_artifacts: tuple[str, ...] = (),
+    max_attempts: int = 1,
+    forced_browser_engine: str | None = None,
+):
+    plan = await _browser_retry_plan(
+        context,
+        fetched.acquisition_result,
+        retry_reason=retry_reason,
+        required_artifacts=required_artifacts,
+        max_attempts=max_attempts,
+        forced_browser_engine=forced_browser_engine,
+    )
+    if plan.skip_reason is not None:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Skipping browser retry for {context.url}: {plan.skip_reason}",
+        )
+        return None
+    request = replace(
+        (await build_acquisition_request(context)).with_profile_updates(
+            **plan.profile_updates
+        ),
+        attempt_timeout_seconds=plan.remaining_budget,
+    )
+    await _commit_before_browser_rung(context)
+    return await _attempt_browser_rung(
+        context,
+        fetched,
+        request,
+        retry_reason=retry_reason,
+        required_artifacts=required_artifacts,
+        max_attempts=max_attempts,
+    )
 
 
 def replace_escalation_outcome(
