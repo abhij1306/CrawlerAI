@@ -15,6 +15,16 @@ if (!scriptPath) {
   throw new Error(`Could not locate ${scriptName} from ${process.cwd()}`);
 }
 
+const frontendScriptName = 'check-frontend-architecture.mjs';
+const frontendScriptPath = [
+  join(process.cwd(), 'scripts', frontendScriptName),
+  join(process.cwd(), 'frontend', 'scripts', frontendScriptName),
+].find(existsSync);
+
+if (!frontendScriptPath) {
+  throw new Error(`Could not locate ${frontendScriptName} from ${process.cwd()}`);
+}
+
 const requiredOwnerFiles = [
   'use-crawl-field-actions.ts',
   'use-crawl-domain-memory.ts',
@@ -22,6 +32,8 @@ const requiredOwnerFiles = [
   'crawl-advanced-execution.tsx',
   'crawl-advanced-limits.tsx',
   'crawl-advanced-diagnostics.tsx',
+  'use-run-log-stream.ts',
+  'records-table.tsx',
 ];
 
 function writeRequiredOwners(workspace: string) {
@@ -40,6 +52,36 @@ function writeCrawlPage(workspace: string) {
     ].join('\n'),
     'utf8',
   );
+}
+
+const requiredFrontendApiOwners = [
+  'admin.ts',
+  'auth.ts',
+  'crawls.ts',
+  'dashboard.ts',
+  'data-enrichment.ts',
+  'domain-memory.ts',
+  'jobs.ts',
+  'knowledge.ts',
+  'product-intelligence.ts',
+  'selectors.ts',
+];
+
+function writeLines(filePath: string, lineCount: number) {
+  writeFileSync(filePath, new Array(lineCount).fill('// filler').join('\n'), 'utf8');
+}
+
+function writeFrontendArchitectureBase(workspace: string) {
+  mkdirSync(join(workspace, 'app', 'data-enrichment'), { recursive: true });
+  mkdirSync(join(workspace, 'app', 'runs'), { recursive: true });
+  mkdirSync(join(workspace, 'components', 'layout'), { recursive: true });
+  mkdirSync(join(workspace, 'lib', 'api'), { recursive: true });
+  writeFileSync(join(workspace, 'app', 'data-enrichment', 'page-view.tsx'), 'export {};\n', 'utf8');
+  writeFileSync(join(workspace, 'app', 'runs', 'page-view.tsx'), 'export {};\n', 'utf8');
+  writeFileSync(join(workspace, 'components', 'layout', 'app-shell.tsx'), 'export {};\n', 'utf8');
+  for (const owner of requiredFrontendApiOwners) {
+    writeFileSync(join(workspace, 'lib', 'api', owner), 'export {};\n', 'utf8');
+  }
 }
 
 describe('check-crawl-architecture', () => {
@@ -142,6 +184,45 @@ describe('check-crawl-architecture', () => {
           stdio: 'pipe',
         });
       }).toThrow(/must use React Router navigation/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('check-frontend-architecture default LOC cap', () => {
+  it('fails for a >400-LOC file not on the exceptions list', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'frontend-architecture-'));
+    try {
+      writeFrontendArchitectureBase(workspace);
+      writeLines(join(workspace, 'lib', 'bloated.ts'), 401);
+      // Test files are exempt from the cap.
+      writeLines(join(workspace, 'lib', 'bloated.test.ts'), 600);
+
+      expect(() => {
+        execFileSync(process.execPath, [frontendScriptPath], {
+          cwd: workspace,
+          stdio: 'pipe',
+        });
+      }).toThrow(/lib\/bloated\.ts has 401 lines; limit is 400/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('passes for a file covered by a measured exception', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'frontend-architecture-'));
+    try {
+      writeFrontendArchitectureBase(workspace);
+      // Over the 400 default cap but under the measured exception budget (875).
+      writeLines(join(workspace, 'lib', 'api', 'types.ts'), 870);
+
+      expect(() => {
+        execFileSync(process.execPath, [frontendScriptPath], {
+          cwd: workspace,
+          stdio: 'pipe',
+        });
+      }).not.toThrow();
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

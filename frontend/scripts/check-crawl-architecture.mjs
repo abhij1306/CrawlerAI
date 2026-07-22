@@ -32,6 +32,14 @@ const checks = [
     file: 'components/crawl/crawl-advanced-diagnostics.tsx',
     maxLines: 170,
   },
+  {
+    file: 'components/crawl/use-run-log-stream.ts',
+    maxLines: 330,
+  },
+  {
+    file: 'components/crawl/records-table.tsx',
+    maxLines: 375,
+  },
 ];
 
 const failures = [];
