@@ -79,18 +79,6 @@ def _matches_domain(host: str, pattern: str) -> bool:
     )
 
 
-def platform_family_names() -> set[str]:
-    return {config.family for config in platform_configs() if config.family}
-
-
-def job_platform_families() -> set[str]:
-    return {
-        config.family
-        for config in platform_configs()
-        if config.family and bool(config.job_platform)
-    }
-
-
 def known_job_adapter_names() -> set[str]:
     names: set[str] = set()
     for config in platform_configs():
@@ -107,36 +95,6 @@ def known_job_adapter_names() -> set[str]:
     return names
 
 
-def known_ats_domains() -> list[str]:
-    values = {
-        pattern.strip().lower()
-        for config in platform_configs()
-        if config.job_platform
-        for pattern in config.domain_patterns
-        if pattern and pattern.strip()
-    }
-    return sorted(values)
-
-
-def browser_first_platform_families() -> set[str]:
-    return {
-        config.family
-        for config in platform_configs()
-        if config.family and bool(config.requires_browser)
-    }
-
-
-def browser_first_domains() -> list[str]:
-    values = {
-        normalize_domain(pattern)
-        for config in platform_configs()
-        if bool(config.requires_browser)
-        for pattern in config.domain_patterns
-        if normalize_domain(pattern)
-    }
-    return sorted(values)
-
-
 def configured_adapter_names() -> tuple[str, ...]:
     ordered_names: list[str] = []
     for config in platform_configs():
@@ -147,18 +105,7 @@ def configured_adapter_names() -> tuple[str, ...]:
     return tuple(ordered_names)
 
 
-def acquisition_hint_tokens() -> tuple[str, ...]:
-    tokens = {
-        token.strip().lower().strip("/")
-        for config in platform_configs()
-        for token in [
-            *config.domain_patterns,
-            *config.url_contains,
-            *config.adapter_names,
-        ]
-        if token and token.strip()
-    }
-    return tuple(sorted(token for token in tokens if len(token) >= 3))
+
 
 
 def platform_config_for_family(
@@ -182,26 +129,6 @@ def classify_network_endpoint_family(response_url: str) -> str:
             if pattern and pattern in lowered_url:
                 return config.family
     return "generic"
-
-
-def platform_js_state_extractors(
-    *,
-    surface: str,
-    state_key: str,
-) -> list[JSStateExtractorConfig]:
-    normalized_surface = str(surface or "").strip().lower()
-    normalized_state_key = str(state_key or "").strip()
-    if not normalized_surface or not normalized_state_key:
-        return []
-    extractors: list[JSStateExtractorConfig] = []
-    for config in platform_configs():
-        for extractor in config.js_state_extractors:
-            if str(extractor.surface or "").strip().lower() != normalized_surface:
-                continue
-            extractor_state_keys = [str(k or "").strip() for k in extractor.state_keys]
-            if normalized_state_key in extractor_state_keys:
-                extractors.append(extractor)
-    return extractors
 
 
 def is_job_platform_signal(
@@ -382,19 +309,6 @@ def resolve_browser_readiness_policy(
         "networkidle_reason": networkidle_reason,
         "navigation_wait_until": "domcontentloaded",
     }
-
-
-def listing_readiness_domains() -> dict[str, list[str]]:
-    mapping: dict[str, list[str]] = {}
-    for config in platform_configs():
-        domains = _normalize_patterns(config.readiness_domains)
-        if not domains or not config.family:
-            continue
-        existing = mapping.setdefault(config.family, [])
-        for domain in domains:
-            if domain not in existing:
-                existing.append(domain)
-    return mapping
 
 
 def _resolve_http_browser_escalation_policy(surface: str | None) -> dict[str, bool]:

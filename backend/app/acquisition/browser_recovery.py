@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from app.core.config.block_signatures import CLOUDFLARE_PROVIDER_TOKENS
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.selectors import CLOUDFLARE_TURNSTILE_SELECTORS
 from app.acquisition.listing_cards import (
@@ -301,9 +302,7 @@ def _is_solvable_interactive_challenge(classification: Any) -> bool:
         str(item).strip().lower()
         for item in getattr(classification, "active_provider_hits", None) or []
     }
-    is_cloudflare = bool(
-        {"cloudflare", "cf-challenge", "cf-browser-verification"} & providers
-    )
+    is_cloudflare = bool(CLOUDFLARE_PROVIDER_TOKENS & providers)
     has_challenge_element = bool(
         getattr(classification, "challenge_element_hits", None)
     )

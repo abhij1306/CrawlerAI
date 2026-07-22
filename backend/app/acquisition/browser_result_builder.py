@@ -199,7 +199,10 @@ class BrowserAcquisitionResultBuilder:
             )
             blocked = bool(classification.blocked)
             evidence = list(classification.evidence or [])
-            low_content = self.classify_low_content_reason(
+            # CPU-heavy text analysis stays off the event loop (same pattern
+            # as the analyze_html offload above).
+            low_content = await asyncio.to_thread(
+                self.classify_low_content_reason,
                 payload.html,
                 html_bytes=html_bytes,
                 analysis=payload.html_analysis,
@@ -408,7 +411,8 @@ class BrowserAcquisitionResultBuilder:
             for probe in payload.readiness_probes
         ]
         html_bytes = len(payload.html.encode("utf-8"))
-        low_content_reason = self.classify_low_content_reason(
+        low_content_reason = await asyncio.to_thread(
+            self.classify_low_content_reason,
             payload.html,
             html_bytes=html_bytes,
             analysis=payload.html_analysis,

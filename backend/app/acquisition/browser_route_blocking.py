@@ -8,6 +8,7 @@ from app.core.config.network_capture import (
     BLOCKED_BROWSER_ROUTE_TOKENS,
     PROTECTED_CHALLENGE_ROUTE_TOKENS,
 )
+from app.core.url_safety import SecurityError, validate_public_url_host
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,27 @@ logger = logging.getLogger(__name__)
 async def block_unneeded_route(route: Any) -> None:
     request = getattr(route, "request", None)
     resource_type = str(getattr(request, "resource_type", "") or "").lower()
-    request_url = str(getattr(request, "url", "") or "").lower()
+    raw_url = str(getattr(request, "url", "") or "")
+    request_url = raw_url.lower()
     if any(token in request_url for token in PROTECTED_CHALLENGE_ROUTE_TOKENS):
         await _continue_route(route, request_url=request_url, protected=True)
+        return
+    # SSRF guard: abort requests (document navigations incl. redirect hops,
+    # and subresources) targeting literal non-public IPs or internal/blocked
+    # hostnames. Hostname targets that need DNS are validated at the
+    # fetch / post-navigation boundary instead (see validate_public_url_host).
+    try:
+        validate_public_url_host(raw_url)
+    except SecurityError as exc:
+        logger.warning(
+            "Aborting browser request to non-public target resource_type=%s url=%s: %s",
+            resource_type,
+            request_url,
+            exc,
+        )
+        await _abort_or_continue(
+            route, resource_type=resource_type, request_url=request_url
+        )
         return
     if resource_type in BLOCKED_BROWSER_RESOURCE_TYPES or any(
         token in request_url for token in BLOCKED_BROWSER_ROUTE_TOKENS
