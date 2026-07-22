@@ -7,14 +7,23 @@ from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.db_utils import mapping_or_empty
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
-from app.models.crawl_run import CrawlRun
+from app.models.crawl_run import (
+    TERMINAL_STATUS_VALUES,
+    CrawlRun,
+    RunClaimLostError,
+    checkpoint_status_stops_run,
+    claim_run,
+    release_run_lease,
+    renew_run_lease,
+    run_dispatch_token,
+)
 from app.crawl.state import (
+    CONTROL_REQUEST_KEY,
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
-    TERMINAL_STATUSES,
     CrawlStatus,
-    get_control_request,
     set_control_request,
     update_run_status,
 )
@@ -31,7 +40,12 @@ from app.core.config.runtime_settings import (
 from app.core.domain_utils import normalize_domain
 from app.crawl.pipeline.extraction_loop import process_single_url
 from app.crawl.pipeline.run_complete_callbacks import on_run_complete
-from app.crawl.pipeline.run_progress import BatchRunProgressState
+from app.crawl.pipeline.run_progress import (
+    BatchRunProgressState,
+    ProgressCommitGate,
+    load_completed_url_entries,
+    seed_progress_from_completed_entries,
+)
 from app.crawl.pipeline.runtime_helpers import (
     STAGE_ACQUIRE,
     STAGE_PERSIST,
@@ -47,11 +61,11 @@ from app.crawl.pipeline.url_worker import (
 )
 from app.persistence.publish import VERDICT_ERROR, aggregate_verdict
 from app.persistence.run_summary import as_int
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
-
 
 async def resolve_category_urls_from_sitemap(
     domain: str,
@@ -152,9 +166,13 @@ def _allow_sitemap_homepage_fallback(run: CrawlRun, settings_view) -> bool:
 
 async def _resolve_run_urls(run: CrawlRun, settings_view) -> list[str]:
     urls = settings_view.urls()
-    if run.run_type == "batch" and urls:
+    if run.run_type in ("batch", "csv") and urls:
+        # CSV ingestion persists the parsed URL list (not the raw CSV), so csv
+        # runs resolve identically to batch runs.
         url_list = urls
     elif run.run_type == "csv" and settings_view.get("csv_content"):
+        # Legacy fallback for runs created before csv_content stopped being
+        # persisted in settings.
         url_list = await parse_csv_urls_async(settings_view.get("csv_content"))
     elif settings_view.get("sitemap_domain"):
         url_list = await resolve_category_urls_from_sitemap(
@@ -181,8 +199,24 @@ def _current_duration_ms(run: CrawlRun) -> int:
     return max(0, int((datetime.now(UTC) - run.created_at).total_seconds() * 1000))
 
 
-def _touch_run_heartbeat(run: CrawlRun) -> None:
-    run.last_heartbeat_at = datetime.now(UTC)
+async def _run_control_checkpoint(run_id: int) -> tuple[str | None, str | None]:
+    """Read (status, control_request) via a short dedicated transaction.
+
+    Replaces per-URL session.refresh(run): only two small values cross the
+    wire, and the parent session never sits idle-in-transaction (nor gets its
+    ORM state expired by checkpoint rollbacks) across the awaits that follow.
+    """
+    control_column = CrawlRun.result_summary[CONTROL_REQUEST_KEY].astext
+    async with SessionLocal() as checkpoint_session:
+        result = await checkpoint_session.execute(
+            select(CrawlRun.status, control_column).where(CrawlRun.id == run_id)
+        )
+        row = result.first()
+    if row is None:
+        return None, None
+    status_value = str(row[0] or "").strip().lower() or None
+    control_request = str(row[1] or "").strip().lower() or None
+    return status_value, control_request
 
 
 def _url_timeout_seconds(settings_view) -> float:
@@ -260,6 +294,8 @@ async def _record_url_result(
     idx: int,
     url: str,
     url_result: URLProcessingResult,
+    owner: str,
+    commit_gate: ProgressCommitGate,
 ) -> tuple[str, int]:
     verdict = str(url_result.verdict or VERDICT_ERROR)
     records_count = _url_result_record_count(url_result)
@@ -269,7 +305,14 @@ async def _record_url_result(
         verdict=verdict,
         url_metrics=url_result.url_metrics,
     )
-    _touch_run_heartbeat(run)
+    if not commit_gate.due():
+        # Throttled: the durable outcome already lives in crawl_url_results
+        # (committed by the URL session); this patch lands on the next commit point.
+        return verdict, records_count
+    await renew_run_lease(session, run_id=int(run.id), owner=owner)
+    # Reload only the (now small) summary column so this merge cannot clobber
+    # control requests written by other sessions since the last commit.
+    await session.refresh(run, attribute_names=["result_summary"])
     run.update_summary(
         **progress_state.build_progress_patch(
             current_url=url,
@@ -278,6 +321,7 @@ async def _record_url_result(
         duration_ms=_current_duration_ms(run),
     )
     await session.commit()
+    commit_gate.mark_committed()
     return verdict, records_count
 
 
@@ -296,9 +340,18 @@ async def _apply_control_checkpoint(
     session: AsyncSession,
     run: CrawlRun,
     control_request: str | None,
+    *,
+    owner: str | None = None,
 ) -> bool:
     if control_request not in (CONTROL_REQUEST_PAUSE, CONTROL_REQUEST_KILL):
         return False
+    if owner is not None and not await release_run_lease(
+        session, run_id=int(run.id), owner=owner
+    ):
+        raise RunClaimLostError(f"Run {int(run.id)} claim lost before checkpoint")
+    await session.refresh(
+        run, attribute_names=["status", "result_summary", "completed_at"]
+    )
     new_status = (
         CrawlStatus.PAUSED
         if control_request == CONTROL_REQUEST_PAUSE
@@ -317,12 +370,13 @@ async def _process_urls_in_parallel(
     *,
     run: CrawlRun,
     settings_view,
-    url_list: list[str],
+    pending_items: list[tuple[int, str]],
+    total_urls: int,
     progress_state: BatchRunProgressState,
     max_records: int,
     url_timeout_seconds: float,
+    owner: str,
 ) -> tuple[list[str], int]:
-    total_urls = len(url_list)
     concurrency = _parallel_url_concurrency(total_urls, settings_view)
     record_limit = _parallel_worker_record_limit(max_records, concurrency)
     await log_event(
@@ -334,6 +388,7 @@ async def _process_urls_in_parallel(
     await session.commit()
     semaphore = asyncio.Semaphore(concurrency)
     run_id = int(run.id)
+    commit_gate = ProgressCommitGate(settings.run_progress_commit_interval_seconds)
 
     async def _guarded(
         idx: int, url: str, record_limit: int
@@ -355,10 +410,10 @@ async def _process_urls_in_parallel(
         asyncio.create_task(
             _guarded(idx, url, record_limit), name=f"crawl-run-{run_id}-url-{idx}"
         )
-        for idx, url in enumerate(url_list, start=1)
+        for idx, url in pending_items
     ]
     verdicts: list[str] = []
-    record_count = as_int(run.get_summary("record_count", 0))
+    record_count = progress_state.persisted_record_count
 
     async def _record_task_result(task: asyncio.Task) -> tuple[int, str]:
         nonlocal record_count
@@ -370,6 +425,8 @@ async def _process_urls_in_parallel(
             idx=idx,
             url=url,
             url_result=url_result,
+            owner=owner,
+            commit_gate=commit_gate,
         )
         verdicts.append(verdict)
         record_count += records_count
@@ -384,16 +441,24 @@ async def _process_urls_in_parallel(
             for task in done:
                 await _record_task_result(task)
 
-            await session.refresh(run)
-
-            control_request = get_control_request(run)
+            status_value, control_request = await _run_control_checkpoint(run_id)
             if control_request in (CONTROL_REQUEST_PAUSE, CONTROL_REQUEST_KILL):
                 await _drain_completed_parallel_tasks(
                     pending,
                     record_task_result=_record_task_result,
                 )
                 await _cancel_pending_tasks(list(pending))
-                await _apply_control_checkpoint(session, run, control_request)
+                await _apply_control_checkpoint(
+                    session, run, control_request, owner=owner
+                )
+                return verdicts, record_count
+
+            if checkpoint_status_stops_run(status_value):
+                await _drain_completed_parallel_tasks(
+                    pending,
+                    record_task_result=_record_task_result,
+                )
+                await _cancel_pending_tasks(list(pending))
                 return verdicts, record_count
 
             if record_count >= max_records:
@@ -444,20 +509,26 @@ async def _process_urls_sequential(
     session: AsyncSession,
     *,
     run: CrawlRun,
-    url_list: list[str],
+    pending_items: list[tuple[int, str]],
+    total_urls: int,
     progress_state: BatchRunProgressState,
     max_records: int,
     sleep_ms: int,
     url_timeout_seconds: float,
     run_span,
+    owner: str,
 ) -> tuple[list[str], int]:
-    total_urls = len(url_list)
     verdicts: list[str] = []
-    record_count = as_int(run.get_summary("record_count", 0))
-    for idx, url in enumerate(url_list, start=1):
-        await session.refresh(run)
-        _touch_run_heartbeat(run)
-        if await _apply_control_checkpoint(session, run, get_control_request(run)):
+    record_count = progress_state.persisted_record_count
+    commit_gate = ProgressCommitGate(settings.run_progress_commit_interval_seconds)
+    last_pending_idx = pending_items[-1][0] if pending_items else 0
+    for idx, url in pending_items:
+        status_value, control_request = await _run_control_checkpoint(int(run.id))
+        if checkpoint_status_stops_run(status_value):
+            return verdicts, record_count
+        if await _apply_control_checkpoint(
+            session, run, control_request, owner=owner
+        ):
             return verdicts, record_count
         await _log_sequential_url_start(
             session,
@@ -487,7 +558,6 @@ async def _process_urls_sequential(
             url_timeout_seconds=url_timeout_seconds,
             log_start=False,
         )
-        await session.refresh(run)
         verdict, records_count = await _record_url_result(
             session,
             run=run,
@@ -495,6 +565,8 @@ async def _process_urls_sequential(
             idx=idx,
             url=url,
             url_result=url_result,
+            owner=owner,
+            commit_gate=commit_gate,
         )
         verdicts.append(verdict)
         record_count += records_count
@@ -512,7 +584,7 @@ async def _process_urls_sequential(
             )
             await session.commit()
             break
-        if sleep_ms > 0 and idx < total_urls:
+        if sleep_ms > 0 and idx < last_pending_idx:
             await asyncio.sleep(sleep_ms / 1000)
     return verdicts, record_count
 
@@ -522,32 +594,35 @@ async def _finalize_completed_run(
     *,
     run: CrawlRun,
     run_span,
-    verdicts: list[str],
     record_count: int,
     progress_state: BatchRunProgressState,
+    owner: str,
 ) -> None:
-    await session.refresh(run)
-    if run.status_value in TERMINAL_STATUSES:
+    status_value, _ = await _run_control_checkpoint(int(run.id))
+    if status_value is None or status_value in TERMINAL_STATUS_VALUES:
         return
-    aggregate_verdict_value = aggregate_verdict(verdicts)
+    aggregate_verdict_value = aggregate_verdict(progress_state.url_verdicts)
     set_logfire_attributes(
         run_span,
         verdict=aggregate_verdict_value,
         record_count=record_count,
     )
+    # Lease release and terminal write commit atomically; a newer claim owner finalizes instead.
+    if not await release_run_lease(session, run_id=int(run.id), owner=owner):
+        logger.warning(
+            "Run %s queue claim lost before finalize; skipping completion write", run.id
+        )
+        await session.rollback()
+        return
+    await session.refresh(run, attribute_names=["status", "result_summary"])
     update_run_status(run, CrawlStatus.COMPLETED)
-    _touch_run_heartbeat(run)
     run.update_summary(
         **progress_state.build_final_patch(aggregate_verdict_value),
         current_stage=STAGE_PERSIST,
         duration_ms=_current_duration_ms(run),
     )
-    await log_event(
-        session,
-        run.id,
-        "info",
-        f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}",
-    )
+    finished_message = f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}"
+    await log_event(session, run.id, "info", finished_message)
     await session.commit()
     try:
         await on_run_complete(run.id)
@@ -572,21 +647,25 @@ async def _process_run_with_span(
 ) -> None:
     try:
         run = await session.get(CrawlRun, run_id, populate_existing=True)
-        if run is None or run.status_value in TERMINAL_STATUSES:
+        if run is None or run.status_value in TERMINAL_STATUS_VALUES:
             return
-        await session.refresh(run)
         set_logfire_attributes(
-            run_span,
-            surface=run.surface,
-            run_type=run.run_type,
+            run_span, surface=run.surface, run_type=run.run_type,
             llm_enabled=run.settings_view.llm_enabled(),
         )
         if run.status_value == CrawlStatus.PAUSED:
             return
+        # Claim before any work: a redelivery matching a live owner's token is
+        # refused; a stale/dead owner's lease may be taken over.
+        owner = run_dispatch_token(run)
+        if not await claim_run(session, run_id=int(run.id), owner=owner):
+            logger.info(
+                "Skipping duplicate execution for run=%s: claimed by a live owner", run_id
+            )
+            await session.rollback()
+            return
         if run.status_value == CrawlStatus.PENDING:
             update_run_status(run, CrawlStatus.RUNNING)
-
-        _touch_run_heartbeat(run)
         await session.commit()
         settings_view = run.settings_view
         url_list = await _resolve_run_urls(run, settings_view)
@@ -594,60 +673,83 @@ async def _process_run_with_span(
         if total_urls == 0:
             raise ValueError("No URL provided")
         await _prewarm_browser_pool()
-        set_logfire_attributes(
-            run_span,
-            url_count=total_urls,
-            domain=normalize_domain(url_list[0]) if url_list else "",
-        )
+        run_domain = normalize_domain(url_list[0]) if url_list else ""
+        set_logfire_attributes(run_span, url_count=total_urls, domain=run_domain)
 
         max_records = settings_view.max_records()
         sleep_ms = settings_view.sleep_ms()
         url_timeout_seconds = _url_timeout_seconds(settings_view)
 
         progress_state = BatchRunProgressState(
-            total_urls=total_urls,
-            url_domain=normalize_domain(url_list[0]) if url_list else "",
-            persisted_record_count=as_int(run.get_summary("record_count", 0)),
+            total_urls=total_urls, url_domain=run_domain
         )
-        run.update_summary(
-            **progress_state.build_progress_patch(
-                current_url=url_list[0] if url_list else "",
-                current_url_index=0,
-            ),
-            current_stage=STAGE_ACQUIRE,
-            resolved_url_list=url_list,
+        completed_entries = await load_completed_url_entries(session, run_id)
+        pending_items = seed_progress_from_completed_entries(
+            progress_state, url_list, completed_entries
         )
+        if completed_entries:
+            # Re-entry: keep the bounded aggregate summaries from the previous executor.
+            progress_state.acquisition_summary = mapping_or_empty(
+                run.get_summary("acquisition_summary")
+            )
+            progress_state.quality_summary = mapping_or_empty(
+                run.get_summary("quality_summary")
+            )
+            logger.info(
+                "Resuming run=%s: %s/%s URL(s) already completed",
+                run_id, progress_state.completed_count, total_urls,
+            )
+
+        first_pending = pending_items[0] if pending_items else (0, "")
+        first_pending_idx, first_pending_url = first_pending
+        # Merge into a freshly read summary so externally written control keys are preserved.
+        await session.refresh(run, attribute_names=["result_summary"])
+        initial_patch = progress_state.build_progress_patch(
+            current_url=first_pending_url, current_url_index=first_pending_idx
+        )
+        run.update_summary(**initial_patch, current_stage=STAGE_ACQUIRE)
         await session.commit()
 
-        if total_urls > 1 and _parallel_url_concurrency(total_urls, settings_view) > 1:
-            verdicts, record_count = await _process_urls_in_parallel(
-                session,
-                run=run,
-                settings_view=settings_view,
-                url_list=url_list,
-                progress_state=progress_state,
-                max_records=max_records,
-                url_timeout_seconds=url_timeout_seconds,
-            )
-        else:
-            verdicts, record_count = await _process_urls_sequential(
-                session,
-                run=run,
-                url_list=url_list,
-                progress_state=progress_state,
-                max_records=max_records,
-                sleep_ms=sleep_ms,
-                url_timeout_seconds=url_timeout_seconds,
-                run_span=run_span,
-            )
+        if pending_items:
+            if total_urls > 1 and _parallel_url_concurrency(total_urls, settings_view) > 1:
+                await _process_urls_in_parallel(
+                    session,
+                    run=run,
+                    settings_view=settings_view,
+                    pending_items=pending_items,
+                    total_urls=total_urls,
+                    progress_state=progress_state,
+                    max_records=max_records,
+                    url_timeout_seconds=url_timeout_seconds,
+                    owner=owner,
+                )
+            else:
+                await _process_urls_sequential(
+                    session,
+                    run=run,
+                    pending_items=pending_items,
+                    total_urls=total_urls,
+                    progress_state=progress_state,
+                    max_records=max_records,
+                    sleep_ms=sleep_ms,
+                    url_timeout_seconds=url_timeout_seconds,
+                    run_span=run_span,
+                    owner=owner,
+                )
         await _finalize_completed_run(
             session,
             run=run,
             run_span=run_span,
-            verdicts=verdicts,
-            record_count=record_count,
+            record_count=progress_state.persisted_record_count,
             progress_state=progress_state,
+            owner=owner,
         )
+    except RunClaimLostError:
+        logger.warning(
+            "Run=%s lost its queue claim to a newer owner; stopping this execution",
+            run_id,
+        )
+        await rollback_url_session(session, context="run claim lost")
     except (RuntimeError, ValueError, TypeError, SQLAlchemyError) as exc:
         logger.exception("Run-level failure for run=%s", run_id)
         await rollback_url_session(session, context="run failure marking")

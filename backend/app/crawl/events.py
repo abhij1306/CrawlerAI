@@ -12,7 +12,6 @@ from app.core.database import SessionLocal
 from app.core.redis import redis_fail_open, schedule_fail_open
 from app.models.crawl_run import CrawlLog, CrawlRun
 from app.core.config.runtime_settings import crawler_runtime_settings
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -44,17 +43,6 @@ def clear_url_progress_counter(run_id: int) -> None:
             _url_progress_counter_key(run_id),
             _db_log_counter_key(run_id),
         ),
-        operation_name=f"clear_url_progress_counter:{run_id}",
-    )
-
-
-async def clear_url_progress_counter_async(run_id: int) -> None:
-    await redis_fail_open(
-        lambda redis: redis.delete(
-            _url_progress_counter_key(run_id),
-            _db_log_counter_key(run_id),
-        ),
-        default=0,
         operation_name=f"clear_url_progress_counter:{run_id}",
     )
 
@@ -271,45 +259,3 @@ async def append_log_event(
                     "message": formatted_message,
                     "created_at": created_at.isoformat(),
                 }
-
-
-async def persist_run_summary_patch(
-    *,
-    run_id: int,
-    summary_patch: dict[str, Any],
-    session: AsyncSession | None = None,
-) -> dict[str, Any] | None:
-    async def _do_patch(s: AsyncSession) -> CrawlRun | None:
-        result = await s.execute(
-            select(CrawlRun).where(CrawlRun.id == run_id).with_for_update()
-        )
-        run = result.scalar_one_or_none()
-        if run is None:
-            return None
-        result_summary = run.summary_dict()
-        if run.merge_summary_patch(summary_patch) == result_summary:
-            return run
-        await s.flush()
-        return run
-
-    if session is not None:
-        run = await _do_patch(session)
-        if run is None:
-            return None
-        return serialize_run_snapshot(run)
-
-    async with SessionLocal() as new_session:
-        run = await _do_patch(new_session)
-        if run is None:
-            return None
-        await new_session.commit()
-        await new_session.refresh(run)
-        return serialize_run_snapshot(run)
-
-
-async def load_run_for_events(
-    session: AsyncSession,
-    *,
-    run_id: int,
-) -> CrawlRun | None:
-    return await session.get(CrawlRun, run_id)

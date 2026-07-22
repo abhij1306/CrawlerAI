@@ -162,8 +162,12 @@ PACKAGE_LOC_BUDGETS = {
     # grew slightly with readiness terminal states, the bounded persist
     # lock-wait, and the discovery dependency-injection seams; extraction
     # ratcheted DOWN with the srcset helper dedup.
+    # Run-lifecycle scalability reconciliation: crawl grew with the run queue
+    # claim/lease, resume-seeding, and bounded-summary machinery (net of the
+    # dead-code deletions); batch_runtime.py itself ratcheted back under the
+    # 700-line oversized threshold.
     "acquisition": 16_828,
-    "crawl": 9_082,
+    "crawl": 9_250,
     "core": 20_761,
     "enrichment": 2_057,
     "connectors": 2_444,

@@ -2,7 +2,7 @@ from __future__ import annotations
 # pylint: disable=missing-function-docstring
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import uuid
 
 from sqlalchemy import (
@@ -13,19 +13,26 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    or_,
     text,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.config import settings
+from app.core.config.runtime_settings import (
+    CELERY_TASK_ID_KEY,
+    crawler_runtime_settings,
+)
 from app.core.database import Base
 from app.models.crawl_domain import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
     CrawlStatus,
     normalize_status,
-    transition_status,
 )
 from app.models.crawl_settings import CrawlRunSettings
 from app.core.config.data_enrichment import DATA_ENRICHMENT_STATUS_UNENRICHED
@@ -117,37 +124,6 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
     def is_active(self) -> bool:
         return self.status_value in ACTIVE_STATUSES
 
-    def is_terminal(self) -> bool:
-        return self.status_value in TERMINAL_STATUSES
-
-    def can_transition_to(self, target: str | CrawlStatus) -> bool:
-        try:
-            transition_status(self.status, target)
-        except ValueError:
-            return False
-        return True
-
-    def set_status(self, target: str | CrawlStatus) -> CrawlStatus:
-        next_status = transition_status(self.status, target)
-        self.status = next_status.value
-        if next_status in TERMINAL_STATUSES:
-            if self.completed_at is None:
-                self.completed_at = _utcnow()
-        else:
-            if self.completed_at is not None:
-                self.completed_at = None
-        return next_status
-
-    def get_setting(self, key: str, default: object = None) -> object:
-        settings = self.settings if isinstance(self.settings, Mapping) else {}
-        return settings.get(key, default)
-
-    def update_settings(self, **updates: object) -> dict[str, object]:
-        merged = dict(self.settings if isinstance(self.settings, Mapping) else {})
-        merged.update(updates)
-        self.settings = merged
-        return merged
-
     def summary_dict(self) -> dict[str, object]:
         return mapping_or_empty(self.result_summary)
 
@@ -171,6 +147,108 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
         merged = merge_run_summary_patch(self.summary_dict(), dict(patch))
         self.result_summary = merged
         return merged
+
+
+_CLAIMABLE_STATUS_VALUES = (CrawlStatus.PENDING.value, CrawlStatus.RUNNING.value)
+TERMINAL_STATUS_VALUES = tuple(sorted(status.value for status in TERMINAL_STATUSES))
+
+
+class RunClaimLostError(Exception):
+    """The current executor lost the run's queue claim to a newer owner."""
+
+
+def checkpoint_status_stops_run(status_value: str | None) -> bool:
+    # Run deleted or externally terminated/paused: stop without writing further
+    # state; the owning writer of that status finalizes it.
+    return (
+        status_value is None
+        or status_value in TERMINAL_STATUS_VALUES
+        or status_value == CrawlStatus.PAUSED.value
+    )
+
+
+def _run_lease_seconds() -> float:
+    configured = max(0.0, float(settings.run_claim_lease_seconds or 0))
+    # A lease must outlive the slowest allowed single-URL processing window,
+    # otherwise a healthy executor looks dead mid-URL.
+    url_window = 2 * max(
+        0.0, float(crawler_runtime_settings.max_url_process_timeout_seconds)
+    )
+    return max(configured, url_window, 60.0)
+
+
+def run_dispatch_token(run: CrawlRun) -> str:
+    """Owner identity for claiming: the dispatch token written by the dispatcher.
+
+    Redelivered Celery tasks keep the same task id, so a redelivery is refused
+    while the original execution holds a live lease; a fresh dispatch (resume,
+    retry) writes a new token and may take over from a stale or dead owner.
+    """
+    token = str(run.get_summary(CELERY_TASK_ID_KEY) or "").strip()
+    return token or f"manual-{uuid.uuid4().hex}"
+
+
+async def claim_run(session: AsyncSession, *, run_id: int, owner: str) -> bool:
+    """Atomically claim a run for this owner; False when a live same-token owner exists."""
+    now = datetime.now(UTC)
+    stmt = (
+        update(CrawlRun)
+        .where(CrawlRun.id == run_id)
+        .where(CrawlRun.status.in_(_CLAIMABLE_STATUS_VALUES))
+        .where(
+            or_(
+                CrawlRun.queue_owner.is_(None),
+                CrawlRun.queue_owner != owner,
+                CrawlRun.lease_expires_at.is_(None),
+                CrawlRun.lease_expires_at <= now,
+            )
+        )
+        .values(
+            queue_owner=owner,
+            lease_expires_at=now + timedelta(seconds=_run_lease_seconds()),
+            last_claimed_at=now,
+            last_heartbeat_at=now,
+            claim_count=CrawlRun.claim_count + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
+    return result.rowcount == 1
+
+
+async def renew_run_lease(session: AsyncSession, *, run_id: int, owner: str) -> None:
+    """Refresh the lease/heartbeat, but only while this owner still holds the claim."""
+    now = datetime.now(UTC)
+    stmt = (
+        update(CrawlRun)
+        .where(CrawlRun.id == run_id)
+        .where(CrawlRun.queue_owner == owner)
+        .values(
+            lease_expires_at=now + timedelta(seconds=_run_lease_seconds()),
+            last_heartbeat_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
+    if result.rowcount != 1:
+        raise RunClaimLostError(f"Run {run_id} queue claim lost to a newer owner")
+
+
+async def release_run_lease(session: AsyncSession, *, run_id: int, owner: str) -> bool:
+    """Release the claim on run stop; False when the claim is no longer ours."""
+    stmt = (
+        update(CrawlRun)
+        .where(CrawlRun.id == run_id)
+        .where(CrawlRun.queue_owner == owner)
+        .values(
+            queue_owner=None,
+            lease_expires_at=None,
+            last_heartbeat_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
+    return result.rowcount == 1
 
 
 class CrawlUrlResult(UpdatedAtMixin, CompletedAtMixin, Base):
