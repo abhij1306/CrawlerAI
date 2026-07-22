@@ -1,11 +1,16 @@
 from __future__ import annotations
+import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
+from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.celery_app import CELERY_UNREADY_STATES, celery_task_state
+from app.core.config import settings
+from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.core.database import SessionLocal
 from app.core.shared.coerce_primitives import (
     bounded_int,
@@ -29,6 +34,7 @@ from app.core.config.data_enrichment import (
     ECOMMERCE_DETAIL_SURFACE,
     data_enrichment_settings,
 )
+from app.core.config.product_intelligence import product_intelligence_settings
 from app.crawl.access_service import (
     AccessDeniedError,
     require_accessible_run,
@@ -137,12 +143,215 @@ async def create_data_enrichment_job(
     return job
 
 
-async def run_data_enrichment_job(job_id: int) -> None:
-    async with SessionLocal() as session:
-        job = await session.get(DataEnrichmentJob, job_id)
-        if job is None or job.status != DATA_ENRICHMENT_STATUS_PENDING:
+_BACKGROUND_JOB_TASKS: set[asyncio.Task[None]] = set()
+
+
+async def dispatch_data_enrichment_job(
+    session: AsyncSession, job: DataEnrichmentJob
+) -> None:
+    """Hand a pending job to a Celery worker; fall back to an in-process task.
+
+    Mirrors the crawl run dispatcher: with Celery dispatch enabled the job row
+    records its task id (used to detect interrupted redeliveries and orphaned
+    runs); with it disabled the job runs as an in-process asyncio task, the
+    legacy BackgroundTasks behavior for local development.
+    """
+    if settings.celery_dispatch_enabled:
+        from app.tasks import data_enrichment_run_job_task
+
+        task_id = f"data-enrichment-job-{int(job.id)}-{uuid4().hex}"
+        job.summary = {**dict(job.summary or {}), CELERY_TASK_ID_KEY: task_id}
+        await session.commit()
+        try:
+            data_enrichment_run_job_task.apply_async(args=[int(job.id)], task_id=task_id)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "Celery enqueue failed for Data Enrichment job %s; "
+                "falling back to in-process execution",
+                job.id,
+            )
+            job.summary = {
+                key: value
+                for key, value in dict(job.summary or {}).items()
+                if key != CELERY_TASK_ID_KEY
+            }
+            await session.commit()
+        else:
             return
-        await run_job(session, job)
+    task = asyncio.create_task(run_data_enrichment_job(int(job.id)))
+    _BACKGROUND_JOB_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_JOB_TASKS.discard)
+
+
+def _job_task_is_gone(
+    job: DataEnrichmentJob,
+    *,
+    exclude_task_id: str | None,
+    stale: bool,
+) -> bool:
+    """Return True when a running job has no live Celery task behind it."""
+    task_id = str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "")
+    if not task_id:
+        # Legacy BackgroundTasks row or in-process fallback: no task to check,
+        # so only a row stale beyond the orphan window is safe to recover.
+        return stale
+    if exclude_task_id is not None and task_id == exclude_task_id:
+        return False
+    state = celery_task_state(task_id)
+    if state is None:
+        # Result backend unavailable: stay conservative, never fail live work.
+        return False
+    if state not in CELERY_UNREADY_STATES:
+        # Task finished (or was revoked) but the job was never finalized.
+        return True
+    if state == "PENDING":
+        # PENDING also covers lost/expired task records, so require the row to
+        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
+        return stale
+    return False
+
+
+async def _fail_stuck_job(
+    session: AsyncSession, job: DataEnrichmentJob, *, now: datetime, error: str
+) -> None:
+    """Fail a stuck job and release its non-terminal products/records.
+
+    Products still pending/running are marked failed and their source records
+    are reset from pending/running to failed so a later job can re-enrich them
+    (job creation skips records in pending/running).
+    """
+    job.status = DATA_ENRICHMENT_STATUS_FAILED
+    job.completed_at = now
+    job.summary = {
+        **dict(job.summary or {}),
+        "error": error,
+        "recovered_at": now.isoformat(),
+    }
+    products = list(
+        (
+            await session.scalars(
+                select(EnrichedProduct).where(
+                    EnrichedProduct.job_id == job.id,
+                    EnrichedProduct.status.in_(
+                        [
+                            DATA_ENRICHMENT_STATUS_PENDING,
+                            DATA_ENRICHMENT_STATUS_RUNNING,
+                        ]
+                    ),
+                )
+            )
+        ).all()
+    )
+    record_ids = [
+        int(product.source_record_id)
+        for product in products
+        if product.source_record_id is not None
+    ]
+    if record_ids:
+        records = list(
+            (
+                await session.scalars(
+                    select(CrawlRecord).where(
+                        CrawlRecord.id.in_(record_ids),
+                        CrawlRecord.enrichment_status.in_(
+                            DATA_ENRICHMENT_SKIP_RECORD_STATUSES
+                        ),
+                    )
+                )
+            ).all()
+        )
+        for record in records:
+            record.enrichment_status = DATA_ENRICHMENT_STATUS_FAILED
+    for product in products:
+        product.status = DATA_ENRICHMENT_STATUS_FAILED
+        product.diagnostics = {"error": "job_orphaned"}
+
+
+async def recover_orphaned_data_enrichment_jobs(
+    session: AsyncSession,
+    *,
+    exclude_task_id: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Fail Data Enrichment jobs stuck in ``running`` with no live task.
+
+    Invoked on job-task entry (see ``run_data_enrichment_job``): jobs left
+    ``running`` by a dead API process (legacy BackgroundTasks) or a lost worker
+    are marked failed instead of lingering forever.
+    """
+    now = now or datetime.now(UTC)
+    stale_before = now - timedelta(
+        seconds=product_intelligence_settings.job_orphaned_after_seconds
+    )
+    jobs = list(
+        (
+            await session.scalars(
+                select(DataEnrichmentJob).where(
+                    DataEnrichmentJob.status == DATA_ENRICHMENT_STATUS_RUNNING
+                )
+            )
+        ).all()
+    )
+    recovered = 0
+    for job in jobs:
+        updated_at = job.updated_at or job.created_at or now
+        stale = updated_at <= stale_before
+        if not _job_task_is_gone(job, exclude_task_id=exclude_task_id, stale=stale):
+            continue
+        await _fail_stuck_job(
+            session,
+            job,
+            now=now,
+            error="OrphanedJobRecovery: no live Celery task for running job",
+        )
+        recovered += 1
+    if recovered:
+        logger.warning("Recovered %s orphaned Data Enrichment job(s)", recovered)
+        await session.commit()
+    return recovered
+
+
+async def run_data_enrichment_job(job_id: int, *, task_id: str | None = None) -> None:
+    async with SessionLocal() as session:
+        await recover_orphaned_data_enrichment_jobs(
+            session, exclude_task_id=task_id
+        )
+        job = await session.get(DataEnrichmentJob, job_id)
+        if job is None:
+            return
+        if job.status == DATA_ENRICHMENT_STATUS_RUNNING:
+            # A running job whose recorded task id matches ours means Celery
+            # redelivered an interrupted execution (acks-late worker loss):
+            # fail cleanly instead of leaving the row stuck.
+            if task_id is not None and (
+                str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "") == task_id
+            ):
+                await _fail_stuck_job(
+                    session,
+                    job,
+                    now=datetime.now(UTC),
+                    error="WorkerInterrupted: job interrupted by worker loss",
+                )
+                await session.commit()
+            return
+        if job.status != DATA_ENRICHMENT_STATUS_PENDING:
+            return
+        try:
+            await run_job(session, job)
+        except Exception as exc:  # keep jobs from sticking in ``running``
+            logger.exception("Data Enrichment job failed: %s", job_id)
+            if isinstance(exc, SQLAlchemyError):
+                await session.rollback()
+            refreshed_job = await session.get(DataEnrichmentJob, job_id)
+            if refreshed_job is None:
+                return
+            await _fail_stuck_job(
+                session,
+                refreshed_job,
+                now=datetime.now(UTC),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            await session.commit()
 
 
 async def list_data_enrichment_jobs(
@@ -209,9 +418,39 @@ async def run_job(session: AsyncSession, job: DataEnrichmentJob) -> None:
     enriched_count = 0
     failed_count = 0
     llm_enabled = bool((job.options or {}).get("llm_enabled"))
+    # Batch-load products and their source records with two IN queries instead
+    # of two session.get() round trips per product (N+1). Per-product commit
+    # semantics below are unchanged.
+    products_by_id: dict[int, EnrichedProduct] = {}
+    records_by_id: dict[int, CrawlRecord] = {}
+    if product_refs:
+        products_by_id = {
+            int(product.id): product
+            for product in (
+                await session.scalars(
+                    select(EnrichedProduct).where(
+                        EnrichedProduct.id.in_(
+                            [product_id for product_id, _ in product_refs]
+                        )
+                    )
+                )
+            ).all()
+        }
+        records_by_id = {
+            int(record.id): record
+            for record in (
+                await session.scalars(
+                    select(CrawlRecord).where(
+                        CrawlRecord.id.in_(
+                            [source_record_id for _, source_record_id in product_refs]
+                        )
+                    )
+                )
+            ).all()
+        }
     for product_id, source_record_id in product_refs:
-        product = await session.get(EnrichedProduct, product_id)
-        record = await session.get(CrawlRecord, source_record_id)
+        product = products_by_id.get(product_id)
+        record = records_by_id.get(source_record_id)
         if product is None or record is None:
             if product is None:
                 failed_count += 1
@@ -730,11 +969,6 @@ def _normalized_options(value: object) -> dict[str, object]:
         "taxonomy_version": DATA_ENRICHMENT_TAXONOMY_VERSION,
         "max_concurrency": data_enrichment_settings.max_concurrency,
     }
-
-
-def _clear_enriched_fields(product: EnrichedProduct) -> None:
-    for field_name in _empty_enriched_product_values():
-        setattr(product, field_name, None)
 
 
 def _empty_enriched_product_values() -> dict[str, object | None]:

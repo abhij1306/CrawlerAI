@@ -42,6 +42,11 @@ DEFAULT_SCORE_LABEL_HIGH = "high"
 DEFAULT_SCORE_LABEL_MEDIUM = "medium"
 DEFAULT_SCORE_LABEL_LOW = "low"
 DEFAULT_SCORE_LABEL_UNCERTAIN = "uncertain"
+# Score -> label cutoffs (score_label): a score at or above a cutoff maps to that
+# label band; anything below LOW is "uncertain".
+SCORE_LABEL_HIGH_CUTOFF = 0.85
+SCORE_LABEL_MEDIUM_CUTOFF = 0.60
+SCORE_LABEL_LOW_CUTOFF = 0.40
 
 ECOMMERCE_DETAIL_SURFACE = "ecommerce_detail"
 RUN_TYPE_CRAWL = "crawl"
@@ -511,6 +516,20 @@ DISCOVERY_VOLATILE_QUERY_PARAMS = frozenset(
 MATCH_TITLE_SIM_HIGH = 0.90
 MATCH_TITLE_SIM_MEDIUM = 0.75
 MATCH_DTC_MIN_TITLE_SIM = 0.50
+# Minimum title similarity for a GTIN+brand match to claim the GTIN floor. Distinct
+# from MATCH_SCORE_WEIGHTS["title_similarity"] (also 0.45), which is the additive
+# weight of the title-similarity signal, not a gate.
+MATCH_GTIN_MIN_TITLE_SIM = 0.45
+# Title-similarity expansion blend (_title_similarity): when the smaller title is
+# almost fully contained in the larger one, the larger title is mostly covered too,
+# and the overlap carries real specificity (>= MIN_OVERLAP_TOKENS shared tokens),
+# blend containment with larger-title coverage instead of plain overlap/sequence
+# similarity so near-complete descriptive expansions score high.
+TITLE_SIM_EXPANSION_MIN_CONTAINMENT = 0.85
+TITLE_SIM_EXPANSION_MIN_COVERAGE = 0.60
+TITLE_SIM_EXPANSION_MIN_OVERLAP_TOKENS = 3
+TITLE_SIM_EXPANSION_CONTAINMENT_WEIGHT = 0.80
+TITLE_SIM_EXPANSION_COVERAGE_WEIGHT = 0.20
 MATCH_SCORE_FLOOR_GTIN = 0.92
 MATCH_SCORE_FLOOR_BRAND_DTC = 0.90
 MATCH_SCORE_FLOOR_BRAND_TITLE_HIGH = 0.85
@@ -586,6 +605,12 @@ class ProductIntelligenceSettings(BaseSettings):
     serpapi_immersive_products_per_query: int = 2
     candidate_poll_seconds: float = 30.0
     candidate_poll_interval_seconds: float = 2.0
+    # Stuck-job recovery: a Product Intelligence / Data Enrichment job left in a
+    # live ("running") status without a live Celery task for longer than this is
+    # treated as orphaned and marked failed by the recovery sweep that runs on
+    # job-task entry. Must comfortably exceed the longest stretch in which a
+    # healthy job does not update its row (one candidate poll window).
+    job_orphaned_after_seconds: float = 900.0
     confidence_threshold: float = 0.4
     title_token_limit: int = 6
     price_band_ratio: float = 0.25
@@ -620,6 +645,9 @@ class ProductIntelligenceSettings(BaseSettings):
         self.candidate_poll_interval_seconds = max(
             0.5,
             float(self.candidate_poll_interval_seconds),
+        )
+        self.job_orphaned_after_seconds = max(
+            60.0, float(self.job_orphaned_after_seconds)
         )
         self.confidence_threshold = min(max(float(self.confidence_threshold), 0.0), 1.0)
         self.title_token_limit = max(1, int(self.title_token_limit))

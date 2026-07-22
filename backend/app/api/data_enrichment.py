@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
@@ -16,9 +16,9 @@ from app.crawl.access_service import AccessDeniedError
 from app.enrichment.service import (
     build_data_enrichment_job_payload,
     create_data_enrichment_job,
+    dispatch_data_enrichment_job,
     get_data_enrichment_job,
     list_data_enrichment_jobs,
-    run_data_enrichment_job,
 )
 
 router = APIRouter(prefix="/api/data-enrichment", tags=["data-enrichment"])
@@ -27,7 +27,6 @@ router = APIRouter(prefix="/api/data-enrichment", tags=["data-enrichment"])
 @router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
 async def data_enrichment_create_job(
     payload: DataEnrichmentJobCreate,
-    background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> DataEnrichmentJobResponse:
@@ -45,7 +44,7 @@ async def data_enrichment_create_job(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
-    background_tasks.add_task(run_data_enrichment_job, job.id)
+    await dispatch_data_enrichment_job(session, job)
     return DataEnrichmentJobResponse.model_validate(job, from_attributes=True)
 
 

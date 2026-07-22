@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.celery_app import CELERY_UNREADY_STATES, celery_task_state
+from app.core.config import settings
+from app.core.config.runtime_settings import CELERY_TASK_ID_KEY
 from app.core.database import SessionLocal
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
@@ -18,6 +23,7 @@ from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.core.config.product_intelligence import (
     ADMIN_ROLE,
+    CRAWL_RUN_FINAL_STATUSES,
     ECOMMERCE_DETAIL_SURFACE,
     PRIVATE_LABEL_EXCLUDE,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED,
@@ -182,10 +188,158 @@ async def create_product_intelligence_job(
     return job
 
 
-async def run_product_intelligence_job(job_id: int) -> None:
+_BACKGROUND_JOB_TASKS: set[asyncio.Task[None]] = set()
+
+
+async def dispatch_product_intelligence_job(
+    session: AsyncSession, job: ProductIntelligenceJob
+) -> None:
+    """Hand a queued job to a Celery worker; fall back to an in-process task.
+
+    Mirrors the crawl run dispatcher: with Celery dispatch enabled the job row
+    records its task id (used to detect interrupted redeliveries and orphaned
+    runs); with it disabled the job runs as an in-process asyncio task, the
+    legacy BackgroundTasks behavior for local development.
+    """
+    if settings.celery_dispatch_enabled:
+        from app.tasks import product_intelligence_run_job_task
+
+        task_id = f"product-intelligence-job-{int(job.id)}-{uuid4().hex}"
+        job.summary = {**dict(job.summary or {}), CELERY_TASK_ID_KEY: task_id}
+        await session.commit()
+        try:
+            product_intelligence_run_job_task.apply_async(
+                args=[int(job.id)], task_id=task_id
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "Celery enqueue failed for Product Intelligence job %s; "
+                "falling back to in-process execution",
+                job.id,
+            )
+            job.summary = {
+                key: value
+                for key, value in dict(job.summary or {}).items()
+                if key != CELERY_TASK_ID_KEY
+            }
+            await session.commit()
+        else:
+            return
+    task = asyncio.create_task(run_product_intelligence_job(int(job.id)))
+    _BACKGROUND_JOB_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_JOB_TASKS.discard)
+
+
+def _job_task_is_gone(
+    job: ProductIntelligenceJob,
+    *,
+    exclude_task_id: str | None,
+    stale: bool,
+) -> bool:
+    """Return True when a running job has no live Celery task behind it."""
+    task_id = str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "")
+    if not task_id:
+        # Legacy BackgroundTasks row or in-process fallback: no task to check,
+        # so only a row stale beyond the orphan window is safe to recover.
+        return stale
+    if exclude_task_id is not None and task_id == exclude_task_id:
+        return False
+    state = celery_task_state(task_id)
+    if state is None:
+        # Result backend unavailable: stay conservative, never fail live work.
+        return False
+    if state not in CELERY_UNREADY_STATES:
+        # Task finished (or was revoked) but the job was never finalized.
+        return True
+    if state == "PENDING":
+        # PENDING also covers lost/expired task records, so require the row to
+        # be stale. STARTED/RETRY/RECEIVED mean a worker holds the task.
+        return stale
+    return False
+
+
+def _mark_job_failed(
+    job: ProductIntelligenceJob, *, now: datetime, error: str
+) -> None:
+    job.status = PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED
+    job.completed_at = now
+    job.summary = {
+        **dict(job.summary or {}),
+        "error": error,
+        "recovered_at": now.isoformat(),
+    }
+
+
+async def recover_orphaned_product_intelligence_jobs(
+    session: AsyncSession,
+    *,
+    exclude_task_id: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Fail Product Intelligence jobs stuck in ``running`` with no live task.
+
+    Invoked on job-task entry (see ``run_product_intelligence_job``): jobs left
+    ``running`` by a dead API process (legacy BackgroundTasks) or a lost worker
+    are marked failed instead of lingering forever.
+    """
+    now = now or datetime.now(UTC)
+    stale_before = now - timedelta(
+        seconds=product_intelligence_settings.job_orphaned_after_seconds
+    )
+    jobs = list(
+        (
+            await session.scalars(
+                select(ProductIntelligenceJob).where(
+                    ProductIntelligenceJob.status
+                    == PRODUCT_INTELLIGENCE_JOB_STATUS_RUNNING
+                )
+            )
+        ).all()
+    )
+    recovered = 0
+    for job in jobs:
+        updated_at = job.updated_at or job.created_at or now
+        stale = updated_at <= stale_before
+        if not _job_task_is_gone(job, exclude_task_id=exclude_task_id, stale=stale):
+            continue
+        _mark_job_failed(
+            job,
+            now=now,
+            error="OrphanedJobRecovery: no live Celery task for running job",
+        )
+        recovered += 1
+    if recovered:
+        logger.warning(
+            "Recovered %s orphaned Product Intelligence job(s)", recovered
+        )
+        await session.commit()
+    return recovered
+
+
+async def run_product_intelligence_job(
+    job_id: int, *, task_id: str | None = None
+) -> None:
     async with SessionLocal() as session:
+        await recover_orphaned_product_intelligence_jobs(
+            session, exclude_task_id=task_id
+        )
         job = await session.get(ProductIntelligenceJob, job_id)
         if job is None:
+            return
+        if job.status == PRODUCT_INTELLIGENCE_JOB_STATUS_RUNNING:
+            # A running job whose recorded task id matches ours means Celery
+            # redelivered an interrupted execution (acks-late worker loss).
+            # Discovery is not resumable, so fail cleanly instead of
+            # duplicating candidates/crawls or leaving the row stuck.
+            if task_id is not None and (
+                str((job.summary or {}).get(CELERY_TASK_ID_KEY) or "") == task_id
+            ):
+                _mark_job_failed(
+                    job,
+                    now=datetime.now(UTC),
+                    error="WorkerInterrupted: job interrupted by worker loss",
+                )
+                await session.commit()
             return
         if job.status != PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED:
             return
@@ -199,6 +353,8 @@ async def run_product_intelligence_job(job_id: int) -> None:
             await _run_job(session, job)
         except Exception as exc:
             logger.exception("Product Intelligence job failed: %s", job_id)
+            if isinstance(exc, SQLAlchemyError):
+                await session.rollback()
             await session.refresh(job)
             job.status = PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED
             job.summary = {
@@ -541,14 +697,16 @@ async def _run_job(session: AsyncSession, job: ProductIntelligenceJob) -> None:
                 await _create_candidate_crawl(session, job, candidate, options=options)
                 candidates_to_poll.append(candidate)
 
-    # Commit changes before entering sequential status checking loops
+    # Commit changes before entering the polling phase
     await session.commit()
 
-    # Poll candidates. Background crawls execute concurrently on workers, so resolution is fast
-    for candidate in candidates_to_poll:
-        await _poll_candidate_and_score(session, job, candidate)
-        await _update_job_summary(session, job)
-        await session.commit()
+    # Poll all candidates in batched run-status rounds. Candidate crawls
+    # execute concurrently on workers, so one status lookup per round covers
+    # every pending candidate instead of blocking up to candidate_poll_seconds
+    # on each candidate in turn.
+    await _poll_candidates_and_score(session, job, candidates_to_poll)
+    await _update_job_summary(session, job)
+    await session.commit()
 
     await _score_completed_candidates(session, job)
     job.status = PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE
@@ -587,49 +745,95 @@ async def _create_candidate_crawl(
     return run
 
 
+async def _poll_candidates_and_score(
+    session: AsyncSession,
+    job: ProductIntelligenceJob,
+    candidates: list[ProductIntelligenceCandidate],
+) -> None:
+    """Drive candidate crawl runs to completion in batched status rounds.
+
+    Replaces the old per-candidate sequential polling loop (each candidate
+    previously blocked up to ``candidate_poll_seconds`` before the next was
+    checked, ~150 candidates per 10-product job). Each round performs a single
+    run-status lookup for every still-pending candidate and only scores
+    candidates whose run reached a final status, keeping the pacing interval
+    polite regardless of candidate count. Matching/scoring itself is unchanged.
+    """
+    job_id = int(job.id)
+    pending: dict[int, int | None] = {
+        int(candidate.id): (
+            int(candidate.candidate_crawl_run_id)
+            if candidate.candidate_crawl_run_id is not None
+            else None
+        )
+        for candidate in candidates
+    }
+    if not pending:
+        return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + product_intelligence_settings.candidate_poll_seconds
+    interval = product_intelligence_settings.candidate_poll_interval_seconds
+    while pending and loop.time() <= deadline:
+        run_ids = [run_id for run_id in pending.values() if run_id is not None]
+        status_by_run_id: dict[int, str] = {}
+        if run_ids:
+            status_by_run_id = {
+                int(run_id): str(run_status)
+                for run_id, run_status in (
+                    await session.execute(
+                        select(CrawlRun.id, CrawlRun.status).where(
+                            CrawlRun.id.in_(run_ids)
+                        )
+                    )
+                ).all()
+            }
+        progressed = False
+        for candidate_id, run_id in list(pending.items()):
+            if run_id is None:
+                # Never dispatched: cannot score, times out at the deadline
+                # (same outcome as the legacy sequential loop).
+                continue
+            run_status = status_by_run_id.get(run_id)
+            if run_status is not None and run_status not in CRAWL_RUN_FINAL_STATUSES:
+                continue
+            # Refresh the run row: this session created it, so the identity map
+            # holds a stale pre-dispatch copy (expire_on_commit=False).
+            await session.get(CrawlRun, run_id, populate_existing=True)
+            current_job = await session.get(ProductIntelligenceJob, job_id)
+            candidate = await session.get(ProductIntelligenceCandidate, candidate_id)
+            if current_job is None or candidate is None:
+                pending.pop(candidate_id, None)
+                continue
+            scored = await _score_candidate_if_ready(session, current_job, candidate)
+            if scored:
+                progressed = True
+                pending.pop(candidate_id, None)
+        if session.in_transaction():
+            await session.commit()
+        if progressed:
+            await _update_job_summary(session, job)
+            await session.commit()
+        if pending and loop.time() <= deadline:
+            await asyncio.sleep(interval)
+    if not pending:
+        return
+    refreshed_job = await session.get(ProductIntelligenceJob, job_id)
+    for candidate_id in pending:
+        candidate = await session.get(ProductIntelligenceCandidate, candidate_id)
+        if candidate is not None:
+            candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
+    if refreshed_job is not None:
+        await _update_job_summary(session, refreshed_job)
+    await session.commit()
+
+
 async def _poll_candidate_and_score(
     session: AsyncSession,
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
 ) -> None:
-    job_id = int(job.id)
-    candidate_id = int(candidate.id)
-    deadline = (
-        asyncio.get_running_loop().time()
-        + product_intelligence_settings.candidate_poll_seconds
-    )
-    while asyncio.get_running_loop().time() <= deadline:
-        scored = await _score_candidate_if_ready(session, job, candidate)
-        if scored:
-            return
-        if session.in_transaction():
-            await session.commit()
-        await asyncio.sleep(
-            product_intelligence_settings.candidate_poll_interval_seconds
-        )
-        refreshed_job = await session.get(
-            ProductIntelligenceJob, job_id, populate_existing=True
-        )
-        refreshed_candidate = await session.get(
-            ProductIntelligenceCandidate, candidate_id, populate_existing=True
-        )
-        if refreshed_job is None or refreshed_candidate is None:
-            return
-        job = refreshed_job
-        candidate = refreshed_candidate
-    refreshed_job = await session.get(
-        ProductIntelligenceJob, job_id, populate_existing=True
-    )
-    refreshed_candidate = await session.get(
-        ProductIntelligenceCandidate, candidate_id, populate_existing=True
-    )
-    if refreshed_job is None or refreshed_candidate is None:
-        return
-    job = refreshed_job
-    candidate = refreshed_candidate
-    candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
-    await _update_job_summary(session, job)
-    await session.flush()
+    """Poll a single candidate to completion (batched poller, one candidate)."""
+    await _poll_candidates_and_score(session, job, [candidate])
 
 
 async def _score_completed_candidates(

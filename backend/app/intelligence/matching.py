@@ -23,6 +23,7 @@ from app.core.config.product_intelligence import (
     MATCH_BASIS_TITLE,
     MATCH_DTC_MIN_TITLE_SIM,
     MATCH_GENERIC_PRODUCT_TOKENS,
+    MATCH_GTIN_MIN_TITLE_SIM,
     MATCH_MODEL_TOKEN_MIN_CONTAINMENT,
     MATCH_SCORE_FLOOR_BRAND_DTC,
     MATCH_SCORE_FLOOR_BRAND_TITLE_HIGH,
@@ -40,6 +41,9 @@ from app.core.config.product_intelligence import (
     PRIVATE_LABEL_BRANDS,
     PRODUCT_STYLE_CODE_MIN_LENGTH,
     PRODUCT_STYLE_CODE_PATTERN,
+    SCORE_LABEL_HIGH_CUTOFF,
+    SCORE_LABEL_LOW_CUTOFF,
+    SCORE_LABEL_MEDIUM_CUTOFF,
     SOURCE_AVAILABILITY_FIELDS,
     SOURCE_BRAND_FIELDS,
     SOURCE_CURRENCY_FIELDS,
@@ -53,6 +57,11 @@ from app.core.config.product_intelligence import (
     SOURCE_TYPE_AUTHORITY_BONUS,
     SOURCE_TYPE_BRAND_DTC,
     SOURCE_URL_FIELDS,
+    TITLE_SIM_EXPANSION_CONTAINMENT_WEIGHT,
+    TITLE_SIM_EXPANSION_COVERAGE_WEIGHT,
+    TITLE_SIM_EXPANSION_MIN_CONTAINMENT,
+    TITLE_SIM_EXPANSION_MIN_COVERAGE,
+    TITLE_SIM_EXPANSION_MIN_OVERLAP_TOKENS,
     VARIANT_SPEC_N_IN_ONE_PATTERN,
     VARIANT_SPEC_NUMBER_UNIT_PATTERN,
     VARIANT_SPEC_UNIT_ALIASES,
@@ -250,7 +259,7 @@ def _apply_identity_floor(
     variant_mismatch: bool = bool(reasons.get("variant_mismatch"))
 
     match_basis = MATCH_BASIS_TITLE
-    if gtin_match and brand_match and title_similarity >= 0.45:
+    if gtin_match and brand_match and title_similarity >= MATCH_GTIN_MIN_TITLE_SIM:
         score = max(score, MATCH_SCORE_FLOOR_GTIN)
         match_basis = MATCH_BASIS_GTIN
     elif style_code_match and not variant_mismatch:
@@ -420,11 +429,11 @@ def build_search_result_intelligence(
 
 
 def score_label(score: float) -> str:
-    if score >= 0.85:
+    if score >= SCORE_LABEL_HIGH_CUTOFF:
         return DEFAULT_SCORE_LABEL_HIGH
-    if score >= 0.60:
+    if score >= SCORE_LABEL_MEDIUM_CUTOFF:
         return DEFAULT_SCORE_LABEL_MEDIUM
-    if score >= 0.40:
+    if score >= SCORE_LABEL_LOW_CUTOFF:
         return DEFAULT_SCORE_LABEL_LOW
     return DEFAULT_SCORE_LABEL_UNCERTAIN
 
@@ -551,8 +560,16 @@ def _title_similarity(left: str, right: str) -> float:
 
     # Reward near-complete descriptive expansions, but only when the larger title is
     # also mostly covered and the overlap carries real specificity.
-    if containment >= 0.85 and larger_coverage >= 0.60 and len(intersection) >= 3:
-        return max(0.80 * containment + 0.20 * larger_coverage, sequence)
+    if (
+        containment >= TITLE_SIM_EXPANSION_MIN_CONTAINMENT
+        and larger_coverage >= TITLE_SIM_EXPANSION_MIN_COVERAGE
+        and len(intersection) >= TITLE_SIM_EXPANSION_MIN_OVERLAP_TOKENS
+    ):
+        return max(
+            TITLE_SIM_EXPANSION_CONTAINMENT_WEIGHT * containment
+            + TITLE_SIM_EXPANSION_COVERAGE_WEIGHT * larger_coverage,
+            sequence,
+        )
 
     return max(overlap, sequence)
 
