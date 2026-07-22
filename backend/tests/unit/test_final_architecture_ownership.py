@@ -191,7 +191,7 @@ PACKAGE_LOC_BUDGETS = {
     # verdict_counts health) nudged crawl/enrichment/intelligence further.
     # Budgets are only raised, never lowered.
     "acquisition": 17_104,
-    "crawl": 9_257,
+    "crawl": 9_268,
     "core": 20_761,
     "enrichment": 2_254,
     "connectors": 2_444,
@@ -202,8 +202,9 @@ PACKAGE_LOC_BUDGETS = {
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
 # the resolution split, browser-pool collaborators, SSRF hardening, Celery
 # job runners, and the review-driven hardening fixes (net of the dead-code
-# purge). Measured on working tree.
-TOTAL_APP_LOC_BUDGET = 87_196
+# purge). Re-keyed to 87,212 after the CI mypy/CodeQL fixes added the typed
+# staged-update payload and CursorResult casts. Measured on working tree.
+TOTAL_APP_LOC_BUDGET = 87_212
 
 
 def test_production_package_loc_budgets() -> None:
