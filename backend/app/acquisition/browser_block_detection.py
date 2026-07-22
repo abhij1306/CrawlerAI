@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
-from app.core.config.block_signatures import BLOCK_SIGNATURES
+from app.core.config.block_signatures import BLOCK_SIGNATURES, CLOUDFLARE_PROVIDER_TOKENS
 from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
 from app.core.db_utils import mapping_or_empty
 from app.core.shared.text_coerce import slug_tokens
@@ -282,11 +282,10 @@ def _block_policy_matches(evidence: _BlockEvidence) -> bool:
         or "access denied" in strong
         or (
             "just a moment" in strong
-            and (
-                "cloudflare" in providers
-                or "cf-challenge" in providers
-                or "cf-browser-verification" in active
-            )
+            # cf-browser-verification is in both provider_markers and
+            # active_provider_markers, so an active hit always implies a
+            # provider hit; checking providers alone is equivalent.
+            and bool(CLOUDFLARE_PROVIDER_TOKENS & providers)
         )
         or (elements and (providers or active))
         or (active and strong and not evidence.has_extractable_content)

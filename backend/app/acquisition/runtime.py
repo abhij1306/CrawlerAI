@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
+from urllib.parse import urljoin
 
 import httpx
 
@@ -14,13 +16,22 @@ from app.acquisition.browser_block_detection import (
 )
 from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
 from app.core.config import settings
-from app.core.config.block_signatures import BLOCK_SIGNATURES
+from app.core.config.block_signatures import (
+    BLOCK_SIGNATURES,
+    BOT_VENDOR_HEADER_MARKERS,
+    MAX_VALIDATED_REDIRECTS,
+)
 from app.core.config.content_types import HTML_CONTENT_TYPE
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.records.network_resolution import (
     address_family_preference,
     build_async_http_client,
     default_request_headers,
+)
+from app.core.url_safety import (
+    get_redirect_location,
+    get_with_validated_redirects,
+    validate_public_target,
 )
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
@@ -66,19 +77,6 @@ class NetworkPayloadReadResult:
     body: bytes | None
     outcome: str
     error: str | None = None
-
-
-_BOT_VENDOR_HEADER_MARKERS: tuple[tuple[str, str, str], ...] = (
-    ("x-datadome", "", "datadome"),
-    ("x-datadome-cid", "", "datadome"),
-    ("server", "datadome", "datadome"),
-    ("cf-mitigated", "challenge", "cloudflare"),  # only when value = "challenge"
-    ("x-sucuri-id", "", "sucuri"),
-    ("x-sucuri-cache", "", "sucuri"),
-    ("x-akamai-transformed", "", "akamai"),
-    ("akamai-grn", "", "akamai"),
-    ("x-px-block", "", "perimeterx"),
-)
 
 
 def is_retryable_http_status(status_code: int) -> bool:
@@ -131,7 +129,7 @@ def classify_block_from_headers(headers: Any) -> str | None:
     normalized: dict[str, str] = {}
     for key, value in items:
         normalized[str(key or "").strip().lower()] = str(value or "").strip().lower()
-    for header_name, must_contain, vendor in _BOT_VENDOR_HEADER_MARKERS:
+    for header_name, must_contain, vendor in BOT_VENDOR_HEADER_MARKERS:
         value = normalized.get(header_name)
         if value is None:
             continue
@@ -271,8 +269,11 @@ async def get_shared_http_client(
     async with _SHARED_HTTP_CLIENT_LOCK:
         client = _SHARED_HTTP_CLIENTS.get(key)
         if client is None or client.is_closed:
+            # Redirects are followed manually per request with each Location
+            # target re-validated against the SSRF guard (see
+            # get_with_validated_redirects); never auto-follow here.
             client = build_async_http_client(
-                follow_redirects=True,
+                follow_redirects=False,
                 timeout=crawler_runtime_settings.http_timeout_seconds,
                 limits=httpx.Limits(
                     max_connections=settings.http_max_connections,
@@ -305,20 +306,34 @@ async def http_fetch(
     if client_builder is not None:
         get_client = client_builder
     client = await get_client(proxy=proxy)
-    response = await client.get(url, timeout=timeout_seconds)
+    # Manual redirect following: every hop target (including the initial URL)
+    # is re-validated against the SSRF guard immediately before the request.
+    response = await get_with_validated_redirects(
+        client,
+        url,
+        max_redirects=MAX_VALIDATED_REDIRECTS,
+        timeout=timeout_seconds,
+    )
     html = response.text or ""
     headers = copy_headers(response.headers)
-    analysis = analyze_html(html)
+    # CPU-heavy HTML analysis runs off the event loop (same pattern as
+    # should_escalate_to_browser_async / the browser result builder).
+    analysis = await asyncio.to_thread(analyze_html, html)
     blocked_result = blocked_html_checker(html, response.status_code)
     if inspect.isawaitable(blocked_result):
         blocked_result = await blocked_result
-    blocked = bool(blocked_result) or _content_aware_http_blocked(
+    blocked = bool(blocked_result) or await asyncio.to_thread(
+        _content_aware_http_blocked,
         headers,
         html,
         response.status_code,
         analysis=analysis,
     )
-    runtime_policy = resolve_platform_runtime_policy(str(response.url), html)
+    runtime_policy = await asyncio.to_thread(
+        resolve_platform_runtime_policy,
+        str(response.url),
+        html,
+    )
     return PageFetchResult(
         url=url,
         final_url=str(response.url),
@@ -340,13 +355,95 @@ async def curl_fetch(
     proxy: str | None = None,
     cookie_header: str | None = None,
 ) -> PageFetchResult:
+    # Manual redirect following: each hop runs in a worker thread (sync
+    # curl_cffi), and every hop target — including the initial URL — is
+    # re-validated against the SSRF guard on the event loop immediately
+    # before the request is issued. Set-Cookie values from intermediate hops
+    # are forwarded into the next request, preserving the cookie behavior
+    # curl applies when it follows a redirect chain natively.
+    from curl_cffi import requests as curl_requests
+
+    deadline = time.monotonic() + max(0.001, float(timeout_seconds))
+    current_url = str(url or "").strip()
+    merged_cookie_header = str(cookie_header or "").strip()
+    redirect_count = 0
+    while True:
+        await validate_public_target(current_url)
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            raise TimeoutError(
+                f"curl fetch timed out following redirects for {url}"
+            )
+        response = await asyncio.to_thread(
+            _curl_get_once,
+            curl_requests,
+            current_url,
+            remaining_seconds,
+            proxy=proxy,
+            cookie_header=merged_cookie_header,
+        )
+        location = get_redirect_location(response)
+        if location is None:
+            break
+        redirect_count += 1
+        if redirect_count > MAX_VALIDATED_REDIRECTS:
+            raise ValueError(
+                f"Too many redirects while fetching {url} "
+                f"(limit {MAX_VALIDATED_REDIRECTS})"
+            )
+        merged_cookie_header = _merge_cookie_header(
+            merged_cookie_header,
+            _response_set_cookie_values(getattr(response, "headers", None)),
+        )
+        current_url = urljoin(current_url, location)
     return await asyncio.to_thread(
-        _curl_fetch_sync,
+        _curl_response_to_fetch_result,
         url,
-        timeout_seconds,
-        proxy=proxy,
-        cookie_header=cookie_header,
+        response,
     )
+
+
+def _response_set_cookie_values(headers: Any) -> list[str]:
+    if headers is None:
+        return []
+    get_list = getattr(headers, "get_list", None)
+    if callable(get_list):
+        return [str(value or "") for value in get_list("set-cookie")]
+    multi_items = getattr(headers, "multi_items", None)
+    if callable(multi_items):
+        return [
+            str(value or "")
+            for key, value in multi_items()
+            if str(key or "").lower() == "set-cookie"
+        ]
+    get_header = getattr(headers, "get", None)
+    if callable(get_header):
+        value = get_header("set-cookie")
+        return [str(value)] if value else []
+    return []
+
+
+def _merge_cookie_header(existing: str, set_cookie_values: list[str]) -> str:
+    pairs: dict[str, str] = {}
+    order: list[str] = []
+
+    def _add(pair: str) -> None:
+        name, _, value = pair.partition("=")
+        name = name.strip()
+        if not name:
+            return
+        if name not in pairs:
+            order.append(name)
+        pairs[name] = f"{name}={value.strip()}"
+
+    for chunk in existing.split(";"):
+        if chunk.strip():
+            _add(chunk.strip())
+    for header in set_cookie_values:
+        first_pair = header.split(";", 1)[0].strip()
+        if first_pair:
+            _add(first_pair)
+    return "; ".join(pairs[name] for name in order)
 
 
 def copy_headers(headers: Any) -> httpx.Headers:
@@ -359,15 +456,14 @@ def copy_headers(headers: Any) -> httpx.Headers:
     return httpx.Headers(list(getattr(headers, "items", lambda: [])()))
 
 
-def _curl_fetch_sync(
+def _curl_get_once(
+    curl_requests: Any,
     url: str,
     timeout_seconds: float,
     *,
     proxy: str | None = None,
     cookie_header: str | None = None,
-) -> PageFetchResult:
-    from curl_cffi import requests as curl_requests
-
+) -> Any:
     raw_impersonate_target = str(
         ""
         if crawler_runtime_settings.curl_impersonate_target is None
@@ -378,14 +474,17 @@ def _curl_fetch_sync(
     normalized_cookie_header = str(cookie_header or "").strip()
     if normalized_cookie_header:
         request_headers["Cookie"] = normalized_cookie_header
-    response = curl_requests.get(
+    return curl_requests.get(
         url,
         impersonate=impersonate_target,
-        allow_redirects=True,
+        allow_redirects=False,
         timeout=timeout_seconds,
         proxy=proxy,
         headers=request_headers,
     )
+
+
+def _curl_response_to_fetch_result(url: str, response: Any) -> PageFetchResult:
     html = response.text or ""
     response_headers = copy_headers(response.headers)
     analysis = analyze_html(html)

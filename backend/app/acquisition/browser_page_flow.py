@@ -21,9 +21,25 @@ from app.acquisition.runtime import classify_blocked_page_async
 from app.acquisition.platform_policy import (
     resolve_browser_readiness_policy,
 )
+from app.core.url_safety import validate_public_target
 from app.extraction.documents import HtmlAnalysis
 
 logger = logging.getLogger(__name__)
+
+
+async def _ensure_public_landed_url(page: Any, response: Any) -> None:
+    """SSRF guard for browser navigation: Chromium follows redirect chains
+    natively, so the final landed URL is validated (scheme + blocked hosts +
+    DNS-resolved public IPs) after goto/challenge recovery and the navigation
+    fails with SecurityError when it landed on a non-public target. Literal
+    non-public IP hops are additionally aborted mid-chain by the route
+    interceptor (browser_route_blocking)."""
+    landed_url = str(getattr(response, "url", "") or "") if response is not None else ""
+    if not landed_url:
+        landed_url = str(getattr(page, "url", "") or "")
+    if not landed_url.lower().startswith(("http://", "https://")):
+        return
+    await validate_public_target(landed_url)
 
 
 def remaining_timeout_factory(deadline: float):
@@ -209,6 +225,7 @@ async def navigate_browser_page(
         recovered_strategy = getattr(response, "browser_navigation_strategy", None)
         if recovered_strategy is not None:
             navigation_strategy = str(recovered_strategy) or navigation_strategy
+    await _ensure_public_landed_url(page, response)
     return response, navigation_strategy
 
 
