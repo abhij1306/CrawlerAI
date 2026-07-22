@@ -193,10 +193,12 @@ PACKAGE_LOC_BUDGETS = {
     # is_non_dev_environment gate + metrics_auth_token setting (1.13).
     # Chunk C (same day): acquisition +48 for the storage-state encryption
     # envelope in cookie_store.py; core +9 for the envelope constants (1.6).
+    # Chunk D (same day): core +23 for ensure_valid_proxy_endpoints +
+    # proxy_endpoint_validation_enabled; crawl +1 for the call site (1.10).
     # Budgets are only raised, never lowered.
     "acquisition": 17_151,
-    "crawl": 9_268,
-    "core": 20_777,
+    "crawl": 9_269,
+    "core": 20_800,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_461,
@@ -213,7 +215,8 @@ PACKAGE_LOC_BUDGETS = {
 # schema split (core package landed exactly at its 20,761 budget).
 # Chunk B (same day): +40 for the non-dev docs/metrics gating in main.py.
 # Chunk C (same day): +57 for the cookie-state encryption-at-rest helpers.
-TOTAL_APP_LOC_BUDGET = 87_360
+# Chunk D (same day): +24 for proxy endpoint validation at run creation.
+TOTAL_APP_LOC_BUDGET = 87_384
 
 
 def test_production_package_loc_budgets() -> None:

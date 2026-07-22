@@ -9,6 +9,7 @@ import pytest
 from app.core import database as database_module
 from app.core import dependencies as dependencies_module
 from app.core.config import settings
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.domain_memory import DomainRunProfile
 from app.models.extraction_memory import ExtractionOperatorLabel as ReviewPromotion
@@ -1415,3 +1416,98 @@ async def test_get_session_rolls_back_when_consumer_raises(
         await generator.athrow(RuntimeError("boom"))
 
     assert session.rollback_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_create_crawl_run_rejects_malformed_proxy_endpoints(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    with pytest.raises(ValueError, match="proxy endpoints are allowed"):
+        await create_crawl_run(
+            db_session,
+            test_user.id,
+            {
+                "run_type": "crawl",
+                "url": "https://example.com/product/widget",
+                "surface": "ecommerce_detail",
+                "settings": {"proxy_list": ["ftp://proxy.internal:21"]},
+            },
+        )
+
+    with pytest.raises(ValueError, match="must include a hostname"):
+        await create_crawl_run(
+            db_session,
+            test_user.id,
+            {
+                "run_type": "crawl",
+                "url": "https://example.com/product/widget",
+                "surface": "ecommerce_detail",
+                "settings": {"proxy_list": ["http://:8080"]},
+            },
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_create_crawl_run_rejects_private_ip_proxy_when_validation_enabled(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    with pytest.raises(ValueError, match="Proxy host resolves to a non-public IP"):
+        await create_crawl_run(
+            db_session,
+            test_user.id,
+            {
+                "run_type": "crawl",
+                "url": "https://example.com/product/widget",
+                "surface": "ecommerce_detail",
+                "settings": {"proxy_list": ["http://10.0.0.8:8080"]},
+            },
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_create_crawl_run_accepts_private_ip_proxy_when_validation_disabled(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        crawler_runtime_settings, "proxy_endpoint_validation_enabled", False
+    )
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+            "settings": {"proxy_list": ["http://10.0.0.8:8080"]},
+        },
+    )
+
+    assert run.id is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_create_crawl_run_accepts_public_proxy_when_validation_enabled(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+            "settings": {"proxy_list": ["http://93.184.216.34:8080"]},
+        },
+    )
+
+    assert run.id is not None

@@ -201,6 +201,10 @@ class CrawlerRuntimeSettings(BaseSettings):
         "real_chrome",
         "patchright",
     )
+    # Validate run proxy endpoints (scheme/host + DNS/public-IP SSRF guard) at
+    # creation; operators routing through internal proxies can opt out (structural
+    # validation still applies).
+    proxy_endpoint_validation_enabled: bool = True
     proxy_rotation_sticky_tokens: tuple[str, ...] = ("sticky", "session", "affinity")
     proxy_rotation_rotating_tokens: tuple[str, ...] = ("rotating", "rotate", "random")
     proxy_sticky_username_markers: tuple[str, ...] = ("-session-", "session-")
