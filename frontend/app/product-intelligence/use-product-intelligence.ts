@@ -5,7 +5,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { queryKeys } from '@/api/query-keys';
 import type { HistoryItem } from '../../components/ui/history-drawer';
 import { api } from '../../lib/api';
-import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
+import type {
+  ProductIntelligenceDiscoveryResponse,
+  ProductIntelligenceSourceRecordInput,
+} from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { searchProviderLabel } from './product-intelligence-utils';
@@ -19,9 +22,7 @@ import {
   searchProvider,
 } from './product-intelligence-utils';
 
-type SourceRecord = NonNullable<
-  ReturnType<typeof loadPrefillPayload>['payload']['records']
->[number];
+type SourceRecord = ProductIntelligenceSourceRecordInput;
 
 function historyFromJobs(
   jobs: Awaited<ReturnType<typeof api.listProductIntelligenceJobs>> | undefined,

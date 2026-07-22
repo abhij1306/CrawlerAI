@@ -1,6 +1,6 @@
-import type { CrawlRecord } from '../../lib/api/types';
-import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
-import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import type { CrawlRecord } from '../api/types';
+import { CRAWL_DEFAULTS } from '../constants/crawl-defaults';
+import { STORAGE_KEYS } from '../constants/storage-keys';
 
 export type ProductIntelligencePrefillPayload = {
   source_run_id: number | null;
@@ -12,6 +12,25 @@ export type DataEnrichmentPrefillPayload = {
   source_run_id: number | null;
   records: Array<Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>>;
 };
+
+/**
+ * Reader-side guard for sessionStorage prefill payloads: keeps only plain
+ * records carrying the numeric id/run_id pair the job-create flows depend on
+ * and drops malformed entries instead of failing the whole load.
+ */
+export function parsePrefillRecords<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is T =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof (item as Record<string, unknown>).id === 'number' &&
+      typeof (item as Record<string, unknown>).run_id === 'number',
+  );
+}
 
 function isStorageQuotaError(error: unknown) {
   return (

@@ -43,3 +43,13 @@ export function isSpecialUseDomain(value: string) {
     SPECIAL_USE_HOSTNAMES.has(host) || SPECIAL_USE_SUFFIXES.some((suffix) => host.endsWith(suffix))
   );
 }
+
+// Canonical surface label. Unknown surfaces fall back to a humanized form
+// (`forum_thread_x` → `forum thread x`) rather than the raw key.
+export function surfaceLabel(surface: string) {
+  if (surface === 'ecommerce_listing') return 'Commerce Listing';
+  if (surface === 'ecommerce_detail') return 'Commerce Detail';
+  if (surface === 'job_listing') return 'Job Listing';
+  if (surface === 'job_detail') return 'Job Detail';
+  return surface.replace(/_/g, ' ');
+}

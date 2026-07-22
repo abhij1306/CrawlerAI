@@ -8,7 +8,7 @@ import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timi
 import { TopBarProvider } from '../layout/top-bar-context';
 import { LogTerminal } from './log-terminal';
 import { CrawlRunScreen } from './crawl-run-screen';
-import { storeProductIntelligencePrefill } from './crawl-run-prefill';
+import { storeProductIntelligencePrefill } from '../../lib/crawl/prefill';
 
 const replaceMock = vi.fn();
 const pushMock = vi.fn();

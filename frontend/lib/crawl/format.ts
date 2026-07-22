@@ -15,6 +15,28 @@ export function clampNumber(value: string | number, min: number, max: number, fa
   return Math.min(max, Math.max(min, parsed));
 }
 
+/**
+ * Canonical optional-number input parser. Empty input always yields null;
+ * `onInvalid` picks the non-numeric-input policy — crawl limits fall back to
+ * `min` ('clamp-to-min'), domain-memory drafts reject to null ('null').
+ */
+export function parseOptionalClampedNumber(
+  value: string,
+  min: number,
+  max: number,
+  onInvalid: 'clamp-to-min' | 'null',
+) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  if (Number.isNaN(parsed)) {
+    return onInvalid === 'clamp-to-min' ? min : null;
+  }
+  return Math.min(max, Math.max(min, parsed));
+}
+
 // skipcq: JS-0067
 export function normalizeField(value: string) {
   return value

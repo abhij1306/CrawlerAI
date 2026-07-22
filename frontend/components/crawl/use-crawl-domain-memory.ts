@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
 import { api } from '../../lib/api';
 import type { CrawlSurface, DomainRunProfile } from '../../lib/api/types';
+import { surfaceLabel } from '../../lib/format/domain';
 import {
   buildFieldRowFromSelectorRecord,
   cloneRunProfile,
@@ -12,7 +13,6 @@ import {
   normalizeHttpLookupDomain,
   selectRelevantSelectorRecords,
   stripDomainMemoryFieldRows,
-  surfaceLabel,
 } from './crawl-config-logic';
 import type { bindCrawlConfigLocalDispatch } from './crawl-config-state';
 import type { FieldRow } from './shared';

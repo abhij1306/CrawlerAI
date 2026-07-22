@@ -1,10 +1,10 @@
 import { Globe, Info, SlidersHorizontal, Sparkles } from 'lucide-react';
 
 import type { CrawlDomain, CrawlSurface } from '../../lib/api/types';
+import { surfaceLabel } from '../../lib/format/domain';
 import { Card, Dropdown, Textarea, Toggle, Tooltip } from '../ui/primitives';
 import { TabBar } from '../ui/patterns';
 import type { StudioMode } from './crawl-config-logic';
-import { surfaceLabel } from './crawl-config-logic';
 import {
   RUN_SETUP_CONTROL_CLASS,
   RUN_SETUP_LABEL_CLASS,

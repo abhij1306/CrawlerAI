@@ -1,9 +1,9 @@
 import type { AdvancedCrawlMode, DomainRunProfile } from '../../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../../lib/constants/crawl-defaults';
+import { parseOptionalClampedNumber } from '../../../lib/crawl/format';
 import { Dropdown, Field, Input } from '../../ui/primitives';
 import type { SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
-import { parseOptionalClampedNumber } from './utils';
 
 type RunProfileFieldsProps = {
   domain: string;
@@ -130,6 +130,7 @@ export function RunProfileFields({
                   event.target.value,
                   CRAWL_LIMITS.MIN_HOST_MEMORY_TTL_SECONDS,
                   CRAWL_LIMITS.MAX_HOST_MEMORY_TTL_SECONDS,
+                  'null',
                 ),
               },
             }))

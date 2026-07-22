@@ -4,9 +4,8 @@ import type { DomainRunProfile } from '../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
 import { cn } from '../../lib/utils';
 import { Input, Tooltip } from '../ui/primitives';
-import { clampNumber } from '../../lib/crawl/format';
+import { clampNumber, parseOptionalClampedNumber } from '../../lib/crawl/format';
 import { SliderRow } from './form-fields';
-import { parseOptionalClampedNumber } from './crawl-config-logic';
 import {
   ADVANCED_COLUMN_CLASS,
   ADVANCED_CONTROL_ROW_CLASS,
@@ -103,6 +102,7 @@ export function CrawlAdvancedLimits({
                     event.target.value,
                     CRAWL_LIMITS.MIN_HOST_MEMORY_TTL_SECONDS,
                     CRAWL_LIMITS.MAX_HOST_MEMORY_TTL_SECONDS,
+                    'clamp-to-min',
                   ),
                 },
               }))

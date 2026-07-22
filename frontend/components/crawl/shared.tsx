@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 
-import { Button } from '../ui/primitives';
 import type { FieldRow, FieldRowMessageTone } from './form-fields';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
 import type { CrawlDomain, CrawlLog, CrawlRun, CrawlSurface } from '../../lib/api/types';
@@ -130,26 +129,6 @@ export function inferDomainFromSurface(surface: string | null | undefined): Craw
     return 'commerce';
   }
   return null;
-}
-
-export function ActionButton({
-  label,
-  danger,
-  disabled,
-  onClick,
-}: Readonly<{ label: string; danger?: boolean; disabled?: boolean; onClick?: () => void }>) {
-  return (
-    <Button
-      type="button"
-      variant={danger ? 'destructive' : 'neutral'}
-      size="sm"
-      disabled={disabled}
-      onClick={onClick}
-      className="min-w-0"
-    >
-      {label}
-    </Button>
-  );
 }
 
 /** The one approved tint chip in the refined-minimal sample (mockup .chip/.cdot). */

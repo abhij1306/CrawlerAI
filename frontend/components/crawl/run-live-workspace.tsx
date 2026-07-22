@@ -4,8 +4,8 @@ import { ChevronsDown, Clock } from 'lucide-react';
 import type { CrawlLog, CrawlRecord, CrawlRun } from '../../lib/api/types';
 import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';
 import { Card } from '../ui/primitives';
+import { ActionButton } from '../ui/action-button';
 import { LogTerminal } from './log-terminal';
-import { ActionButton } from './shared';
 
 type RunLiveWorkspaceProps = {
   run: CrawlRun | undefined;

@@ -8,14 +8,6 @@ import { isSpecialUseDomain } from '../../../lib/format/domain';
 import { defaultRunProfileBase, mergeRunProfile } from '../../../lib/crawl/run-profile';
 import type { SurfaceWorkspace } from './types';
 
-export function surfaceLabel(surface: string) {
-  if (surface === 'ecommerce_listing') return 'Commerce Listing';
-  if (surface === 'ecommerce_detail') return 'Commerce Detail';
-  if (surface === 'job_listing') return 'Job Listing';
-  if (surface === 'job_detail') return 'Job Detail';
-  return surface.replace(/_/g, ' ');
-}
-
 function titleCaseToken(value: string | null | undefined) {
   return String(value || '')
     .split(/[_\s]+/)
@@ -187,14 +179,6 @@ export function cloneDomainRunProfile(
   profile: DomainRunProfile | null | undefined,
 ): DomainRunProfile {
   return mergeRunProfile(defaultDomainRunProfile(), profile);
-}
-
-export function parseOptionalClampedNumber(value: string, min: number, max: number) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (Number.isNaN(parsed)) return null;
-  return Math.min(max, Math.max(min, parsed));
 }
 
 export function profileDraftKey(domain: string, surface: string) {

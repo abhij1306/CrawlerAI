@@ -1,6 +1,7 @@
 import { CheckCircle2, RefreshCcw, SlidersHorizontal } from 'lucide-react';
 
 import type { KnowledgeContract, KnowledgeSiteRecord } from '../../../lib/api/types';
+import { surfaceLabel } from '../../../lib/format/domain';
 import {
   DataRegionEmpty,
   DataRegionError,
@@ -10,7 +11,7 @@ import {
 import { Badge, Button, Dropdown } from '../../ui/primitives';
 import type { DomainWorkspace } from './types';
 import { useKnowledgeGraph } from './use-knowledge-graph';
-import { knowledgeFieldLabel, knowledgeSourceOptions, surfaceLabel } from './utils';
+import { knowledgeFieldLabel, knowledgeSourceOptions } from './utils';
 
 type KnowledgeGraphTabProps = {
   selectedWorkspace: DomainWorkspace;

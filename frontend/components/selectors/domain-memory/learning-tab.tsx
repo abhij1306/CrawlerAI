@@ -1,7 +1,8 @@
+import { surfaceLabel } from '../../../lib/format/domain';
 import { Badge } from '../../ui/primitives';
 import { DataRegionEmpty, DetailRow, SurfaceSection } from '../../ui/patterns';
 import type { DomainWorkspace } from './types';
-import { formatTimestamp, surfaceLabel } from './utils';
+import { formatTimestamp } from './utils';
 
 const MAX_LEARNING_DISPLAY = 8;
 

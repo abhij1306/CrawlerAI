@@ -2,9 +2,10 @@ import { useMemo, useReducer } from 'react';
 
 import type { CrawlConfig } from '../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
+import { surfaceLabel } from '../../lib/format/domain';
 import { InlineAlert } from '../ui/patterns';
 import { clampNumber, deriveSurface, parseLines, uniqueRequestedFields } from './shared';
-import { canPreview, isSingleUrlMode, surfaceLabel } from './crawl-config-logic';
+import { canPreview, isSingleUrlMode } from './crawl-config-logic';
 import {
   bindCrawlConfigLocalDispatch,
   buildInitialLocalState,
