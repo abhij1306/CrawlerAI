@@ -68,15 +68,9 @@ async def test_redis_path_allows_up_to_limit_then_denies_with_retry_after(
 ) -> None:
     key = sliding_window_redis_key("client-a", window_seconds=60)
 
-    first = await consume_redis_sliding_window(
-        key, window_seconds=60, max_requests=2
-    )
-    second = await consume_redis_sliding_window(
-        key, window_seconds=60, max_requests=2
-    )
-    third = await consume_redis_sliding_window(
-        key, window_seconds=60, max_requests=2
-    )
+    first = await consume_redis_sliding_window(key, window_seconds=60, max_requests=2)
+    second = await consume_redis_sliding_window(key, window_seconds=60, max_requests=2)
+    third = await consume_redis_sliding_window(key, window_seconds=60, max_requests=2)
 
     assert first is not None and first[0] is True
     assert first[2] == 1  # remaining
@@ -93,16 +87,12 @@ async def test_redis_path_window_slides_with_server_clock(
 ) -> None:
     key = sliding_window_redis_key("client-b", window_seconds=60)
     await consume_redis_sliding_window(key, window_seconds=60, max_requests=1)
-    denied = await consume_redis_sliding_window(
-        key, window_seconds=60, max_requests=1
-    )
+    denied = await consume_redis_sliding_window(key, window_seconds=60, max_requests=1)
     assert denied is not None and denied[0] is False
 
     fake_redis_client.now_ms += 61_000
 
-    allowed = await consume_redis_sliding_window(
-        key, window_seconds=60, max_requests=1
-    )
+    allowed = await consume_redis_sliding_window(key, window_seconds=60, max_requests=1)
     assert allowed is not None and allowed[0] is True
 
 

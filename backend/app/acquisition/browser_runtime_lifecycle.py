@@ -46,7 +46,9 @@ def should_recycle_browser(runtime: browser_pool.SharedBrowserRuntime) -> bool:
     return False
 
 
-def context_recycle_threshold_reached(runtime: browser_pool.SharedBrowserRuntime) -> bool:
+def context_recycle_threshold_reached(
+    runtime: browser_pool.SharedBrowserRuntime,
+) -> bool:
     max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
     return max_contexts > 0 and runtime._total_contexts_created >= max_contexts
 
@@ -62,9 +64,7 @@ async def yield_slot_until_recycle_window(
         return False
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     runtime._semaphore.release()
-    while (
-        runtime._active_contexts > 0 and context_recycle_threshold_reached(runtime)
-    ):
+    while runtime._active_contexts > 0 and context_recycle_threshold_reached(runtime):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise asyncio.TimeoutError(
@@ -75,8 +75,7 @@ async def yield_slot_until_recycle_window(
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise asyncio.TimeoutError(
-            "Timed out waiting for browser context slot "
-            f"after {timeout_seconds:.1f}s"
+            f"Timed out waiting for browser context slot after {timeout_seconds:.1f}s"
         )
     await asyncio.wait_for(runtime._semaphore.acquire(), timeout=remaining)
     return True
@@ -119,13 +118,17 @@ async def ensure_browser_runtime(runtime: browser_pool.SharedBrowserRuntime) -> 
             raise
 
 
-async def recycle_after_driver_disconnect(runtime: browser_pool.SharedBrowserRuntime) -> None:
+async def recycle_after_driver_disconnect(
+    runtime: browser_pool.SharedBrowserRuntime,
+) -> None:
     async with runtime._lock:
         await close_browser_runtime_locked(runtime)
     await runtime.ensure()
 
 
-async def browser_launch_kwargs(runtime: browser_pool.SharedBrowserRuntime) -> dict[str, Any]:
+async def browser_launch_kwargs(
+    runtime: browser_pool.SharedBrowserRuntime,
+) -> dict[str, Any]:
     launch_args = [
         str(value).strip()
         for value in crawler_runtime_settings.browser_launch_args or ()
@@ -185,7 +188,9 @@ async def launch_proxy_config_for_browser(
     return bridge_proxy_config
 
 
-async def close_browser_runtime_locked(runtime: browser_pool.SharedBrowserRuntime) -> None:
+async def close_browser_runtime_locked(
+    runtime: browser_pool.SharedBrowserRuntime,
+) -> None:
     components = (
         ("closing browser runtime", runtime._browser, "close"),
         ("stopping playwright", runtime._playwright, "stop"),

@@ -182,8 +182,7 @@ async def enqueue_celery_job(
         task.apply_async(args=[int(job.id)], task_id=task_id)
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception(
-            "Celery enqueue failed for %s job %s; "
-            "falling back to in-process execution",
+            "Celery enqueue failed for %s job %s; falling back to in-process execution",
             label,
             job.id,
         )

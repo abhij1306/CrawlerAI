@@ -37,7 +37,9 @@ class _FakeGetClient:
         return self._responses[url]
 
 
-def _redirect_response(url: str, location: str, status_code: int = 302) -> httpx.Response:
+def _redirect_response(
+    url: str, location: str, status_code: int = 302
+) -> httpx.Response:
     return httpx.Response(
         status_code,
         headers={"location": location},
@@ -45,7 +47,9 @@ def _redirect_response(url: str, location: str, status_code: int = 302) -> httpx
     )
 
 
-def _ok_response(url: str, text: str = "<html><body>ok</body></html>") -> httpx.Response:
+def _ok_response(
+    url: str, text: str = "<html><body>ok</body></html>"
+) -> httpx.Response:
     return httpx.Response(
         200,
         text=text,
@@ -348,7 +352,9 @@ async def test_curl_fetch_blocks_redirect_to_private_ip(
     start_url = "https://example.com/products/1"
     requested_urls: list[str] = []
 
-    def _fake_curl_get_once(curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _fake_curl_get_once(
+        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+    ):
         del curl_requests, timeout_seconds, proxy, cookie_header
         requested_urls.append(url)
         return SimpleNamespace(
@@ -392,7 +398,9 @@ async def test_curl_fetch_follows_redirect_to_public_url(
         ),
     }
 
-    def _fake_curl_get_once(curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _fake_curl_get_once(
+        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+    ):
         del curl_requests, timeout_seconds, proxy, cookie_header
         requested_urls.append(url)
         return responses[url]
@@ -416,7 +424,9 @@ async def test_curl_fetch_redirect_chain_is_capped(
 ) -> None:
     requested_urls: list[str] = []
 
-    def _fake_curl_get_once(curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _fake_curl_get_once(
+        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+    ):
         del curl_requests, timeout_seconds, proxy, cookie_header
         requested_urls.append(url)
         next_url = f"https://example.com/hop-{len(requested_urls)}"
@@ -464,7 +474,9 @@ async def test_curl_fetch_forwards_redirect_cookies_to_next_hop(
         ),
     }
 
-    def _fake_curl_get_once(curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _fake_curl_get_once(
+        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+    ):
         del curl_requests, timeout_seconds, proxy
         seen_cookie_headers.append(str(cookie_header or ""))
         return responses[url]

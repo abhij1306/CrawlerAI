@@ -1,4 +1,5 @@
 """Lineage construction and resolved-value lookups shared by resolvers."""
+
 from __future__ import annotations
 
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
@@ -41,6 +42,7 @@ def _resolved_value_and_lineage(
         return None
     return evidence.value, _decision_lineage(decision)
 
+
 def _aggregate_fact(
     entity_id: str,
     fact_type: str,
@@ -62,12 +64,14 @@ def _aggregate_fact(
         rule_id=rule_id,
     )
 
+
 def _has_parent_inherited_lineage(values) -> bool:
     return any(
         isinstance(item, dict)
         and item.get("rule_id") == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
         for item in values
     )
+
 
 def _lineage_evidence_ids(values) -> tuple[str, ...]:
     out: list[str] = []
@@ -80,6 +84,7 @@ def _lineage_evidence_ids(values) -> tuple[str, ...]:
         out.extend(str(evidence_id) for evidence_id in evidence_ids)
     return tuple(dict.fromkeys(out))
 
+
 def _lineage_reference_ids(values, key: str) -> tuple[str, ...]:
     out: list[str] = []
     for value in values:
@@ -90,6 +95,7 @@ def _lineage_reference_ids(values, key: str) -> tuple[str, ...]:
             out.append(str(reference))
     return tuple(dict.fromkeys(out))
 
+
 def _put_decision_value(values, lineage, field, decision, evidence_by_id) -> None:
     if not decision or not decision.accepted_evidence_ids:
         return
@@ -98,6 +104,7 @@ def _put_decision_value(values, lineage, field, decision, evidence_by_id) -> Non
         return
     values[field] = evidence.value
     lineage[field] = _decision_lineage(decision)
+
 
 def _resolved_product_url(decisions: list[Decision], evidence_by_id) -> str:
     for decision in decisions:
@@ -111,6 +118,7 @@ def _resolved_product_url(decisions: list[Decision], evidence_by_id) -> str:
                 return str(evidence.value or "")
     return ""
 
+
 def _decision_lineage(decision: Decision) -> dict[str, object]:
     return {
         "decision_id": decision.decision_id,
@@ -118,6 +126,7 @@ def _decision_lineage(decision: Decision) -> dict[str, object]:
         "evidence_ids": list(decision.accepted_evidence_ids),
         "rule_id": decision.rule_id,
     }
+
 
 def _derived_lineage(derived: DerivedFact) -> dict[str, object]:
     return {

@@ -60,9 +60,7 @@ async def test_domain_cookie_memory_encrypts_storage_state_at_rest(db_session) -
     await db_session.commit()
 
     assert changed is True
-    row = (
-        await db_session.execute(select(DomainCookieMemory))
-    ).scalar_one()
+    row = (await db_session.execute(select(DomainCookieMemory))).scalar_one()
     assert "ct" in row.storage_state
     assert row.storage_state["v"] == 1
     assert "cookies" not in row.storage_state

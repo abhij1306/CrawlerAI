@@ -27,9 +27,7 @@ def start_plan(runner: AttemptRunner) -> None:
     runner.plan.plan_deadline = runner.plan.plan_started_at + timedelta(
         seconds=remaining
     )
-    plan_key = (
-        f"{runner.context.url}|browser|{runner.plan.plan_started_at.isoformat()}"
-    )
+    plan_key = f"{runner.context.url}|browser|{runner.plan.plan_started_at.isoformat()}"
     runner.plan.plan_id = sha256(plan_key.encode("utf-8")).hexdigest()[:20]
 
 
@@ -104,8 +102,7 @@ async def raise_if_no_budget(
     )
     if remaining < minimum_attempt_budget():
         raise TimeoutError(
-            "Acquisition browser retry budget exhausted before "
-            f"{engine} could {phase}"
+            f"Acquisition browser retry budget exhausted before {engine} could {phase}"
         )
 
 

@@ -36,20 +36,18 @@ def record_executor_attempt_error(
     exc = TimeoutError(attempt_result.error or "browser attempt failed")
     setattr(exc, "browser_failure_stage", "attempt")
     runner.outcome.last_browser_error = exc
-    runner.context.last_browser_attempt_diagnostics = (
-        build_failed_browser_diagnostics(
-            browser_reason=runner.reason,
-            exc=exc,
-            proxy=proxy,
-            proxy_attempt_index=proxy_index,
-            browser_engine=engine,
-            browser_binary=engine,
-            bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=host_policy_snapshot(
-                attempt_host_policy.active_host_policy(runner)
-            ),
-        )
+    runner.context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
+        browser_reason=runner.reason,
+        exc=exc,
+        proxy=proxy,
+        proxy_attempt_index=proxy_index,
+        browser_engine=engine,
+        browser_binary=engine,
+        bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+        escalation_lane=escalation_lane,
+        host_policy_snapshot=host_policy_snapshot(
+            attempt_host_policy.active_host_policy(runner)
+        ),
     )
     attach_exception_browser_diagnostics(
         runner.outcome.last_browser_error,
@@ -222,18 +220,16 @@ async def record_attempt_exception(
     policy_snapshot: dict[str, object],
 ) -> None:
     runner.outcome.last_browser_error = exc
-    runner.context.last_browser_attempt_diagnostics = (
-        build_failed_browser_diagnostics(
-            browser_reason=runner.reason,
-            exc=exc,
-            proxy=proxy,
-            proxy_attempt_index=proxy_index,
-            browser_engine=engine,
-            browser_binary=engine,
-            bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=policy_snapshot,
-        )
+    runner.context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
+        browser_reason=runner.reason,
+        exc=exc,
+        proxy=proxy,
+        proxy_attempt_index=proxy_index,
+        browser_engine=engine,
+        browser_binary=engine,
+        bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+        escalation_lane=escalation_lane,
+        host_policy_snapshot=policy_snapshot,
     )
     attach_exception_browser_diagnostics(
         exc, runner.context.last_browser_attempt_diagnostics

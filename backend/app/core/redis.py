@@ -131,9 +131,7 @@ async def redis_execute(
                 "operation": _safe_log_extra_token(operation_name),
             },
         )
-        raise RedisUnavailableError(
-            f"Redis operation {operation_name} failed"
-        ) from exc
+        raise RedisUnavailableError(f"Redis operation {operation_name} failed") from exc
 
 
 async def close_redis() -> None:

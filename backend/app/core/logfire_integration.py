@@ -99,7 +99,9 @@ def _patch_opentelemetry_fastapi() -> None:
         otel_fastapi._get_route_details = patched_get_route_details
         logger.debug("Successfully patched opentelemetry.instrumentation.fastapi")
     except Exception:
-        logger.debug("Optional opentelemetry patch not applied; library may not be present")
+        logger.debug(
+            "Optional opentelemetry patch not applied; library may not be present"
+        )
 
 
 def instrument_fastapi(app: FastAPI) -> bool:

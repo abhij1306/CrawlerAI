@@ -137,7 +137,9 @@ def release_context_capacity(runtime: browser_pool.SharedBrowserRuntime) -> None
     runtime._semaphore.release()
 
 
-def update_active_contexts(runtime: browser_pool.SharedBrowserRuntime, delta: int) -> None:
+def update_active_contexts(
+    runtime: browser_pool.SharedBrowserRuntime, delta: int
+) -> None:
     runtime._active_contexts = max(0, runtime._active_contexts + delta)
 
 

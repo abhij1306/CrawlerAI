@@ -227,9 +227,7 @@ async def crawls_create_csv(
     if len(raw) > CSV_UPLOAD_MAX_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=(
-                f"CSV upload exceeds the {CSV_UPLOAD_MAX_BYTES}-byte size limit"
-            ),
+            detail=(f"CSV upload exceeds the {CSV_UPLOAD_MAX_BYTES}-byte size limit"),
         )
     content = raw.decode("utf-8", errors="ignore")
     try:

@@ -152,9 +152,7 @@ async def test_create_job_skips_ineligible_records(
     job = await create_data_enrichment_job(
         db_session,
         user=test_user,
-        payload={
-            "source_record_ids": [eligible.id, in_flight.id, wrong_surface.id]
-        },
+        payload={"source_record_ids": [eligible.id, in_flight.id, wrong_surface.id]},
     )
 
     assert job.status == "pending"

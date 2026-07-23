@@ -62,4 +62,3 @@ def detail_path_markers(surface: str) -> tuple[str, ...]:
     if selected in {"job_detail", "job_listing"}:
         return JOB_DETAIL_PATH_MARKERS
     return ()
-

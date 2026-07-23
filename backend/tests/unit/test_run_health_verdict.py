@@ -4,6 +4,7 @@ Fixed-size progress patches carry ``verdict_counts`` (not the full
 ``url_verdicts`` list), so run health must derive failures from counts while a
 run is in flight instead of defaulting every running run to "healthy".
 """
+
 from __future__ import annotations
 
 import pytest

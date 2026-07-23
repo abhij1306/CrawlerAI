@@ -1,4 +1,5 @@
 """Variant row assembly and publishability eligibility."""
+
 from __future__ import annotations
 
 import re
@@ -65,6 +66,7 @@ def inherit_variant_id_from_sku(
         **(dict(sku_lineage) if isinstance(sku_lineage, Mapping) else {}),
         "rule_id": "variant_id_from_unique_sku",
     }
+
 
 def _resolve_variants(
     entities: EntitySet,
@@ -148,6 +150,7 @@ def _resolve_variants(
         )
     return tuple((*eligible, *rejected))
 
+
 def _resolved_variant_row(
     variant: VariantEntity,
     offer: OfferEntity | None,
@@ -187,6 +190,7 @@ def _resolved_variant_row(
             lineage["image_url"] = _decision_lineage(asset_decision)
     return values, lineage
 
+
 def _put_variant_options(values, lineage, variant, decisions, evidence_by_id) -> None:
     identity_values = {
         str(values.get(field) or "").strip().casefold()
@@ -205,6 +209,7 @@ def _put_variant_options(values, lineage, variant, decisions, evidence_by_id) ->
             continue
         values[field] = value
         lineage[field] = _decision_lineage(decision)
+
 
 def _put_variant_offer(
     values, lineage, variant, offer, decisions, derived, evidence_by_id
@@ -251,6 +256,7 @@ def _put_variant_offer(
         lineage.pop("price", None)
         lineage.pop("original_price", None)
 
+
 def _variant_rejection_reason(
     variant,
     values,
@@ -280,6 +286,7 @@ def _variant_rejection_reason(
     if _variant_url_conflicts(product_url, str(values.get("url") or ""), values):
         return "variant_url_conflicts_product"
     return None
+
 
 def _explicit_partial_child_is_publishable(
     variant: VariantEntity,
@@ -312,6 +319,7 @@ def _explicit_partial_child_is_publishable(
         )
     )
 
+
 def _variant_url_conflicts(product_url: str, variant_url: str, values) -> bool:
     if not product_url or not variant_url or product_url == variant_url:
         return False
@@ -334,6 +342,7 @@ def _variant_url_conflicts(product_url: str, variant_url: str, values) -> bool:
         for token in semantic_identity_tokens(str(values.get(field) or ""))
     }
     return bool((variant_tokens - product_tokens) - option_tokens)
+
 
 def _variant_url_is_option_endpoint(
     product_url: str, variant_url: str, values: Mapping[str, object]
@@ -363,6 +372,7 @@ def _variant_url_is_option_endpoint(
             matched_axis = True
     return matched_axis
 
+
 def _has_variant_option(values) -> bool:
     transport = {
         "variant_id",
@@ -380,6 +390,7 @@ def _has_variant_option(values) -> bool:
         for key, value in values.items()
     )
 
+
 def _variant_decision(entity_id, values, lineage, reason) -> VariantDecision:
     return VariantDecision(
         variant_entity_id=entity_id,
@@ -388,6 +399,7 @@ def _variant_decision(entity_id, values, lineage, reason) -> VariantDecision:
         values=values,
         lineage=lineage,
     )
+
 
 def _resolve_variant(
     variant: VariantEntity,

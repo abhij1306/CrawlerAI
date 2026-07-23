@@ -206,7 +206,9 @@ async def _commit_before_browser_rung(context: _URLProcessingContext) -> None:
 
 def _classify_rung_outcome(exc: BaseException) -> str:
     """Outcome-classify step: timeouts are reported separately from failures."""
-    return "timeout" if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) else "failed"
+    return (
+        "timeout" if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) else "failed"
+    )
 
 
 async def _handle_failed_browser_rung(

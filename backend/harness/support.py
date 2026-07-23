@@ -16,7 +16,7 @@ from app.models.user import User
 from app.crawl.batch_runtime import process_run
 from app.crawl.crud import create_crawl_run, get_run_records
 from app.crawl.pipeline.extraction_loop import process_single_url
-from app.crawl.pipeline.types import URLProcessingConfig
+from app.crawl.pipeline.types import URLMetrics, URLProcessingConfig
 from app.acquisition.platform_policy import (
     configured_adapter_names,
     platform_config_for_family,
@@ -347,7 +347,7 @@ async def run_site_harness(*, url: str, surface: str, mode: str) -> dict[str, ob
                 prefetch_only=True,
             ),
         )
-        metrics = dict(url_result.url_metrics or {})
+        metrics: URLMetrics = url_result.url_metrics or URLMetrics()
         challenge_summary = _challenge_summary_from_diagnostics(
             dict(metrics.get("browser_diagnostics") or {})
         )

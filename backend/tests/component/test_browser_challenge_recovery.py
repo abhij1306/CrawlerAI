@@ -99,7 +99,9 @@ async def test_suppress_new_context_openers_is_best_effort() -> None:
     await suppress_new_context_openers(_BrokenPage())
 
 
-def _retry_context(page: object, response: object, **overrides) -> _ChallengeRecoveryContext:
+def _retry_context(
+    page: object, response: object, **overrides
+) -> _ChallengeRecoveryContext:
     values = {
         "page": page,
         "url": "https://shop.test/products/1",
@@ -155,9 +157,7 @@ async def test_failed_post_retry_assessment_logs_warning(caplog) -> None:
         raise RuntimeError("dom read exploded")
 
     original_response = SimpleNamespace(status=403)
-    context = _retry_context(
-        _Page(), original_response, get_page_html=_raising_html
-    )
+    context = _retry_context(_Page(), original_response, get_page_html=_raising_html)
 
     with caplog.at_level(logging.WARNING, logger="app.acquisition.browser_recovery"):
         result = await _retry_challenge_navigation(

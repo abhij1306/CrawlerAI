@@ -1,4 +1,5 @@
 """Resolve orchestration: decisions, derived facts, variants, assets."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

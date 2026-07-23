@@ -5,6 +5,7 @@ in the broker queue. A queued job that is merely stale past the normal orphan
 window (worker backlog) must not be failed; only staleness past the longer
 pending window may recover it.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -116,12 +117,8 @@ def test_unavailable_backend_stays_conservative() -> None:
 
 @pytest.mark.unit
 def test_missing_task_id_uses_normal_staleness() -> None:
-    assert (
-        celery_task_is_gone({}, exclude_task_id=None, stale=True) is True
-    )
-    assert (
-        celery_task_is_gone({}, exclude_task_id=None, stale=False) is False
-    )
+    assert celery_task_is_gone({}, exclude_task_id=None, stale=True) is True
+    assert celery_task_is_gone({}, exclude_task_id=None, stale=False) is False
 
 
 @pytest.mark.unit

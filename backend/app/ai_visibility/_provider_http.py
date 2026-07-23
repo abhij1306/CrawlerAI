@@ -106,9 +106,7 @@ async def _execute_post(
         message_suffix = ""
         retry_after_seconds = None
         if on_error_status is not None:
-            message_suffix, retry_after_seconds = on_error_status(
-                response, error_code
-            )
+            message_suffix, retry_after_seconds = on_error_status(response, error_code)
         raise AiVisibilityProviderError(
             f"{provider_label} returned HTTP {response.status_code}{message_suffix}",
             error_code=error_code,

@@ -104,9 +104,7 @@ def _db_log_counter_key(run_id: int) -> str:
     return f"{_REDIS_KEY_PREFIX}:db:{int(run_id)}"
 
 
-def _bump_fallback_log_counter(
-    counts: OrderedDict[int, int], run_id: int
-) -> int:
+def _bump_fallback_log_counter(counts: OrderedDict[int, int], run_id: int) -> int:
     next_value = counts.get(run_id, 0) + 1
     counts[run_id] = next_value
     counts.move_to_end(run_id)
@@ -134,9 +132,7 @@ async def _should_persist_log_fallback(
             and log_level == "info"
             and _URL_PROGRESS_PATTERN.match(message)
         ):
-            counter = _bump_fallback_log_counter(
-                _FALLBACK_URL_PROGRESS_COUNTS, run_id
-            )
+            counter = _bump_fallback_log_counter(_FALLBACK_URL_PROGRESS_COUNTS, run_id)
             return counter % sample_rate == 1
         max_rows = max(1, int(settings.crawl_log_db_max_rows_per_run or 1))
         db_count = _bump_fallback_log_counter(_FALLBACK_DB_LOG_COUNTS, run_id)

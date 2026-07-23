@@ -72,9 +72,7 @@ def test_should_recycle_browser_rules(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime._browser = SimpleNamespace(is_connected=lambda: True)
     runtime._active_contexts = 1
     runtime._browser_launched_at = time.monotonic() - 100.0
-    monkeypatch.setattr(
-        crawler_runtime_settings, "browser_max_lifetime_seconds", 1
-    )
+    monkeypatch.setattr(crawler_runtime_settings, "browser_max_lifetime_seconds", 1)
     assert browser_runtime_lifecycle.should_recycle_browser(runtime) is False
     runtime._active_contexts = 0
     assert browser_runtime_lifecycle.should_recycle_browser(runtime) is True
@@ -139,9 +137,7 @@ async def test_context_entry_points_delegate_to_context_collaborator(
     monkeypatch.setattr(
         browser_context_lifecycle, "ensure_with_timing", _fake_ensure_with_timing
     )
-    monkeypatch.setattr(
-        browser_context_lifecycle, "open_context_page", _fake_open
-    )
+    monkeypatch.setattr(browser_context_lifecycle, "open_context_page", _fake_open)
     monkeypatch.setattr(
         browser_context_lifecycle, "release_context_capacity", _fake_release
     )
@@ -175,9 +171,7 @@ async def test_acquire_context_slot_dispatches_instance_level_yield_patch() -> N
         return False
 
     runtime._yield_slot_until_recycle_window = _fake_yield
-    await browser_context_lifecycle.acquire_context_slot(
-        runtime, phase_timings_ms=None
-    )
+    await browser_context_lifecycle.acquire_context_slot(runtime, phase_timings_ms=None)
     assert len(calls) == 1
     assert runtime._queued_count == 0
     assert runtime._semaphore.locked()

@@ -1,4 +1,5 @@
 """Variant-to-parent aggregation and parent/variant price reconciliation."""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -115,6 +116,7 @@ def _reconcile_variant_prices(
         reconciliation_facts.append(fact)
     return tuple(reconciled), tuple(reconciliation_facts)
 
+
 def _drop_leaf_variant_prices_conflicting_parent(
     variant_decisions: tuple[VariantDecision, ...],
     *,
@@ -148,6 +150,7 @@ def _drop_leaf_variant_prices_conflicting_parent(
         )
     return tuple(updated)
 
+
 def _same_currency_variant_amount(
     row: VariantDecision, parent_currency: str
 ) -> Decimal | None:
@@ -158,10 +161,12 @@ def _same_currency_variant_amount(
     except (InvalidOperation, TypeError, ValueError):
         return None
 
+
 def _price_scale_conflicts(left: Decimal, right: Decimal) -> bool:
     smaller = min(abs(left), abs(right))
     larger = max(abs(left), abs(right))
     return bool(smaller and larger / smaller >= Decimal("20"))
+
 
 def _parent_derived_from_variants(
     *,
@@ -224,6 +229,7 @@ def _parent_derived_from_variants(
         out.extend(_single_variant_sku(primary_product_entity_id, leaf_variants))
     return tuple(out)
 
+
 def _leaf_variant_decisions(
     variants: tuple[VariantDecision, ...],
 ) -> tuple[VariantDecision, ...]:
@@ -240,6 +246,7 @@ def _leaf_variant_decisions(
     return tuple(
         row for row, depth in zip(variants, depths, strict=False) if depth == maximum
     )
+
 
 def _aggregate_variant_field(
     entity_id: str,
@@ -327,6 +334,7 @@ def _aggregate_variant_field(
         ),
     )
 
+
 def _aggregate_partial_variant_price(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
@@ -394,6 +402,7 @@ def _aggregate_partial_variant_price(
             )
     return tuple(out)
 
+
 def _aggregate_variant_availability(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
@@ -431,6 +440,7 @@ def _aggregate_variant_availability(
         ),
     )
 
+
 def _single_variant_sku(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
@@ -455,6 +465,7 @@ def _single_variant_sku(
             ),
         ),
     )
+
 
 def _inherit_variant_offer_facts(
     entities: EntitySet,

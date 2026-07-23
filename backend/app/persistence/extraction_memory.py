@@ -1488,9 +1488,7 @@ async def find_contract_location(
     recipe, template = row
     for contract in recipe.payload.get("contracts", []):
         if str(contract.get("id")) == str(contract_id):
-            return KnowledgeContractLocation(
-                template=template, contract=dict(contract)
-            )
+            return KnowledgeContractLocation(template=template, contract=dict(contract))
     return None
 
 

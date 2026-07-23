@@ -67,6 +67,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+
 async def resolve_category_urls_from_sitemap(
     domain: str,
     filter_keyword: str,
@@ -373,8 +374,8 @@ async def _process_urls_in_parallel(
     # loop) keeps peak live tasks at O(concurrency); stop ends intake only.
     stop_event = asyncio.Event()
     size_factor = max(1, crawler_runtime_settings.parallel_result_queue_size_factor)
-    result_queue: asyncio.Queue[tuple[int, str, URLProcessingResult]] = (
-        asyncio.Queue(maxsize=concurrency * size_factor)
+    result_queue: asyncio.Queue[tuple[int, str, URLProcessingResult]] = asyncio.Queue(
+        maxsize=concurrency * size_factor
     )
     work_iter = iter(pending_items)
 
@@ -449,6 +450,7 @@ async def _process_urls_in_parallel(
             try:
                 item = await asyncio.wait_for(result_queue.get(), tick_seconds)
             except TimeoutError:
+                # No completion arrived this tick; fall through to re-check worker state.
                 pass
             if item is not None:
                 # Batch ready completions (mirrors the old done-set cadence).
@@ -530,9 +532,7 @@ async def _process_urls_sequential(
         status_value, control_request = await _run_control_checkpoint(int(run.id))
         if checkpoint_status_stops_run(status_value):
             return verdicts, record_count
-        if await _apply_control_checkpoint(
-            session, run, control_request, owner=owner
-        ):
+        if await _apply_control_checkpoint(session, run, control_request, owner=owner):
             return verdicts, record_count
         await _log_sequential_url_start(
             session,
@@ -625,7 +625,9 @@ async def _finalize_completed_run(
         current_stage=STAGE_PERSIST,
         duration_ms=_current_duration_ms(run),
     )
-    finished_message = f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}"
+    finished_message = (
+        f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}"
+    )
     await log_event(session, run.id, "info", finished_message)
     await session.commit()
     try:
@@ -654,7 +656,9 @@ async def _process_run_with_span(
         if run is None or run.status_value in TERMINAL_STATUS_VALUES:
             return
         set_logfire_attributes(
-            run_span, surface=run.surface, run_type=run.run_type,
+            run_span,
+            surface=run.surface,
+            run_type=run.run_type,
             llm_enabled=run.settings_view.llm_enabled(),
         )
         if run.status_value == CrawlStatus.PAUSED:
@@ -664,7 +668,8 @@ async def _process_run_with_span(
         owner = run_dispatch_token(run)
         if not await claim_run(session, run_id=int(run.id), owner=owner):
             logger.info(
-                "Skipping duplicate execution for run=%s: claimed by a live owner", run_id
+                "Skipping duplicate execution for run=%s: claimed by a live owner",
+                run_id,
             )
             await session.rollback()
             return
@@ -701,7 +706,9 @@ async def _process_run_with_span(
             )
             logger.info(
                 "Resuming run=%s: %s/%s URL(s) already completed",
-                run_id, progress_state.completed_count, total_urls,
+                run_id,
+                progress_state.completed_count,
+                total_urls,
             )
 
         first_pending = pending_items[0] if pending_items else (0, "")
@@ -715,7 +722,10 @@ async def _process_run_with_span(
         await session.commit()
 
         if pending_items:
-            if total_urls > 1 and _parallel_url_concurrency(total_urls, settings_view) > 1:
+            if (
+                total_urls > 1
+                and _parallel_url_concurrency(total_urls, settings_view) > 1
+            ):
                 await _process_urls_in_parallel(
                     session,
                     run=run,

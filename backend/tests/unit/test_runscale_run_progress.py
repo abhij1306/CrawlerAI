@@ -1,4 +1,5 @@
 """Progress patch shape: per-URL patches must stay small and fixed-size."""
+
 from __future__ import annotations
 
 import pytest
@@ -21,7 +22,9 @@ def _state_with_results(total: int) -> BatchRunProgressState:
 @pytest.mark.unit
 def test_build_progress_patch_excludes_growing_per_url_payloads() -> None:
     state = _state_with_results(3)
-    patch = state.build_progress_patch(current_url="https://example.com/c", current_url_index=3)
+    patch = state.build_progress_patch(
+        current_url="https://example.com/c", current_url_index=3
+    )
     assert "url_verdicts" not in patch
     assert "resolved_url_list" not in patch
     assert patch["completed_urls"] == 3

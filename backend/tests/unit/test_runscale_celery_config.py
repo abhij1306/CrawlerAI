@@ -1,4 +1,5 @@
 """Celery broker durability config: visibility timeout must cover the task wall limit."""
+
 from __future__ import annotations
 
 import pytest

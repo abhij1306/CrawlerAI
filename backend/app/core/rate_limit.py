@@ -137,9 +137,7 @@ def _parse_sliding_window_result(raw: object) -> tuple[bool, int, int, int] | No
         )
         return None
     try:
-        allowed_raw, retry_after_ms, remaining, reset_ms = (
-            int(value) for value in raw
-        )
+        allowed_raw, retry_after_ms, remaining, reset_ms = (int(value) for value in raw)
     except (TypeError, ValueError):
         logger.debug(
             "Unexpected Redis sliding-window response values; using in-process fallback"
@@ -148,9 +146,7 @@ def _parse_sliding_window_result(raw: object) -> tuple[bool, int, int, int] | No
     if allowed_raw not in (0, 1):
         return None
     allowed = bool(allowed_raw)
-    retry_after_seconds = (
-        0 if allowed else max(1, ceil(max(0, retry_after_ms) / 1000))
-    )
+    retry_after_seconds = 0 if allowed else max(1, ceil(max(0, retry_after_ms) / 1000))
     reset_seconds = max(1, ceil(max(0, reset_ms) / 1000))
     return allowed, retry_after_seconds, max(0, remaining), reset_seconds
 

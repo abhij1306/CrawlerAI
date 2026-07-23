@@ -69,9 +69,7 @@ async def get_current_user(
         )
     user, detail = await _resolve_token_user(session, token)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=detail
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
     return user
 
 

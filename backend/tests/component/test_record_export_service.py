@@ -277,7 +277,7 @@ async def test_export_csv_neutralizes_spreadsheet_formula_cells(
             run_id=run.id,
             source_url=run.url,
             data={
-                "title": "=HYPERLINK(\"https://evil.example\", \"click\")",
+                "title": '=HYPERLINK("https://evil.example", "click")',
                 "price": "19.99",
                 "+stock": "4",
             },

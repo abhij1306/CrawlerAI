@@ -1,4 +1,5 @@
 """Scalar/asset decision machinery: admissibility, ranking, rejection."""
+
 from __future__ import annotations
 
 from app.core.config import field_mappings
@@ -68,6 +69,7 @@ def _asset_publication_facts(
             )
     return tuple(facts)
 
+
 def _url_mismatched_product_subjects(
     evidence: tuple[Evidence, ...],
 ) -> frozenset[str]:
@@ -99,6 +101,7 @@ def _url_mismatched_product_subjects(
         and "title_url_match" not in flags
         and subject_id not in url_confirmed_subjects
     )
+
 
 def _resolve_asset(
     asset: AssetEntity,
@@ -149,6 +152,7 @@ def _resolve_asset(
     if preferred and decision.accepted_evidence_ids == (preferred.evidence_id,):
         return decision.model_copy(update={"rule_id": "ASSET_DELIVERY_QUALITY"})
     return decision
+
 
 def _resolve_scalar(
     entity_id: str,
@@ -239,6 +243,7 @@ def _resolve_scalar(
         status="resolved",
     )
 
+
 _GENERIC_INVALIDITY_FLAGS = frozenset(
     {
         "ambiguous_page_price",
@@ -265,6 +270,7 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
         VARIANT_COLOR_BRAND_CONFLICT_FLAG,
     }
 )
+
 
 def _invalidity_reason(ev: Evidence) -> str | None:
     """Return the concrete rejection reason, or ``None`` when admissible."""

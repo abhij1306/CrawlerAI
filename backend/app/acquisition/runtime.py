@@ -129,8 +129,7 @@ def classify_block_from_headers(headers: Any) -> str | None:
         items = list(headers.items()) if hasattr(headers, "items") else list(headers)
     except Exception:
         logger.debug(
-            "Unusable headers object for block classification; skipping header "
-            "markers",
+            "Unusable headers object for block classification; skipping header markers",
             exc_info=True,
         )
         return None
@@ -379,9 +378,7 @@ async def curl_fetch(
         await validate_public_target(current_url)
         remaining_seconds = deadline - time.monotonic()
         if remaining_seconds <= 0:
-            raise TimeoutError(
-                f"curl fetch timed out following redirects for {url}"
-            )
+            raise TimeoutError(f"curl fetch timed out following redirects for {url}")
         response = await asyncio.to_thread(
             _curl_get_once,
             curl_requests,

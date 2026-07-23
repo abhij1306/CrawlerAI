@@ -5,6 +5,7 @@ Exported CSVs are opened in spreadsheet applications that interpret a leading
 reference marker (CSV injection / formula injection). Prefixing those cells
 with a single quote neutralizes execution while keeping the value readable.
 """
+
 from __future__ import annotations
 
 from app.core.config.export_settings import CSV_FORMULA_PREFIX_PATTERN
@@ -25,6 +26,5 @@ def sanitize_csv_row(row: dict[str, object]) -> dict[str, object]:
     Keys are sanitized because CSV header fieldnames derive from record keys.
     """
     return {
-        str(csv_safe_cell(str(key))): csv_safe_cell(value)
-        for key, value in row.items()
+        str(csv_safe_cell(str(key))): csv_safe_cell(value) for key, value in row.items()
     }

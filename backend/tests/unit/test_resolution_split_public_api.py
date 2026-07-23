@@ -177,7 +177,9 @@ def test_facade_reexports_are_the_same_objects() -> None:
     assert resolution._resolve_scalar is decisions._resolve_scalar
     assert resolution._resolve_offer is offers._resolve_offer
     assert resolution._resolve_variants is variants._resolve_variants
-    assert resolution._reconcile_variant_prices is variant_rollup._reconcile_variant_prices
+    assert (
+        resolution._reconcile_variant_prices is variant_rollup._reconcile_variant_prices
+    )
     assert resolution._derived is derived._derived
     assert resolution._aggregate_fact is lineage._aggregate_fact
     assert resolution._rank is resolution.rank

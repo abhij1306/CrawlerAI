@@ -109,12 +109,8 @@ def test_ladder_gtin_rung_wins_and_short_circuits_style_code() -> None:
 
 
 def test_ladder_gtin_rung_blocked_below_config_title_sim_gate() -> None:
-    source = _snapshot(
-        "Nike Promina Men's Walking Shoes", "Nike", gtin="0123456789012"
-    )
-    candidate = _snapshot(
-        "qzwx kv jytrx bnmp fdgs", "Nike", gtin="0123456789012"
-    )
+    source = _snapshot("Nike Promina Men's Walking Shoes", "Nike", gtin="0123456789012")
+    candidate = _snapshot("qzwx kv jytrx bnmp fdgs", "Nike", gtin="0123456789012")
     result = matching.score_candidate(
         source=source, candidate=candidate, source_type="retailer"
     )
@@ -128,9 +124,7 @@ def test_ladder_gtin_rung_blocked_below_config_title_sim_gate() -> None:
 
 def test_ladder_style_code_rung_with_brand() -> None:
     source = _snapshot("Nike Promina Sneakers", "Nike", style_code="fv5285")
-    candidate = _snapshot(
-        "Nike Promina Shoes FV5285-002", "Nike", style_code="fv5285"
-    )
+    candidate = _snapshot("Nike Promina Shoes FV5285-002", "Nike", style_code="fv5285")
     result = matching.score_candidate(
         source=source, candidate=candidate, source_type="retailer"
     )
@@ -147,8 +141,10 @@ def test_ladder_style_code_rung_without_brand_uses_lower_floor() -> None:
     )
     assert result["reasons"]["brand_match"] is False
     assert result["reasons"]["match_basis"] == config.MATCH_BASIS_STYLE_CODE
-    assert config.MATCH_SCORE_FLOOR_STYLE_CODE_NO_BRAND <= result["score"] < (
-        config.MATCH_SCORE_FLOOR_STYLE_CODE
+    assert (
+        config.MATCH_SCORE_FLOOR_STYLE_CODE_NO_BRAND
+        <= result["score"]
+        < (config.MATCH_SCORE_FLOOR_STYLE_CODE)
     )
 
 
@@ -300,9 +296,7 @@ def test_identity_floor_style_rung_brand_selects_floor() -> None:
     assert score == pytest.approx(config.MATCH_SCORE_FLOOR_STYLE_CODE)
     assert reasons["match_basis"] == config.MATCH_BASIS_STYLE_CODE
 
-    score, reasons = _apply(
-        0.10, _floor_reasons(style=True), title_similarity=0.10
-    )
+    score, reasons = _apply(0.10, _floor_reasons(style=True), title_similarity=0.10)
     assert score == pytest.approx(config.MATCH_SCORE_FLOOR_STYLE_CODE_NO_BRAND)
     assert reasons["match_basis"] == config.MATCH_BASIS_STYLE_CODE
 
@@ -557,8 +551,7 @@ def test_infer_brand_falls_back_to_title_marker() -> None:
 def test_infer_brand_returns_empty_without_any_signal() -> None:
     assert matching._infer_brand(source_url="", title="") == ""
     assert (
-        matching._infer_brand(source_url="https://example.com/", title="qzwx kv")
-        == ""
+        matching._infer_brand(source_url="https://example.com/", title="qzwx kv") == ""
     )
 
 

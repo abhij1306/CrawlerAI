@@ -1,4 +1,5 @@
 """2.14: artifact cleanup on run delete + retention sweeper."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -26,7 +27,9 @@ def _write_run_tree(root: Path, run_id: int) -> Path:
     return root / "runs" / str(run_id)
 
 
-async def _make_run(db_session: AsyncSession, test_user, status: CrawlStatus) -> CrawlRun:
+async def _make_run(
+    db_session: AsyncSession, test_user, status: CrawlStatus
+) -> CrawlRun:
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -44,7 +47,9 @@ async def _make_run(db_session: AsyncSession, test_user, status: CrawlStatus) ->
     return run
 
 
-async def _backdate_updated_at(db_session: AsyncSession, run_id: int, days: int) -> None:
+async def _backdate_updated_at(
+    db_session: AsyncSession, run_id: int, days: int
+) -> None:
     await db_session.execute(
         update(CrawlRun)
         .where(CrawlRun.id == run_id)
@@ -96,9 +101,7 @@ async def test_sweep_run_artifacts_deletes_missing_and_old_terminal_trees(
 ) -> None:
     monkeypatch.setattr(settings, "artifacts_dir", tmp_path)
     monkeypatch.setattr(settings, "run_artifacts_retention_days", 30)
-    session_factory = async_sessionmaker(
-        bind=db_session.bind, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
     monkeypatch.setattr(app_tasks, "SessionLocal", session_factory)
 
     missing_tree = _write_run_tree(tmp_path, 999_001)
@@ -132,9 +135,7 @@ async def test_sweep_run_artifacts_disabled_at_zero_retention(
 ) -> None:
     monkeypatch.setattr(settings, "artifacts_dir", tmp_path)
     monkeypatch.setattr(settings, "run_artifacts_retention_days", 0)
-    session_factory = async_sessionmaker(
-        bind=db_session.bind, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
     monkeypatch.setattr(app_tasks, "SessionLocal", session_factory)
     missing_tree = _write_run_tree(tmp_path, 999_002)
 
@@ -154,9 +155,7 @@ async def test_sweep_run_artifacts_task_invokes_worker_loop(
     """The Celery task delegates to the async sweep on the worker loop."""
     monkeypatch.setattr(settings, "artifacts_dir", tmp_path)
     monkeypatch.setattr(settings, "run_artifacts_retention_days", 30)
-    session_factory = async_sessionmaker(
-        bind=db_session.bind, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
     monkeypatch.setattr(app_tasks, "SessionLocal", session_factory)
     missing_tree = _write_run_tree(tmp_path, 999_003)
     captured: dict[str, object] = {}

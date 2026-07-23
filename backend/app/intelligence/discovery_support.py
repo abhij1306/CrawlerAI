@@ -170,8 +170,7 @@ def _page_url(page: object) -> str:
             value = value()
         except Exception:
             logger.debug(
-                "Page-url read failed on a discovery page object; using empty "
-                "value",
+                "Page-url read failed on a discovery page object; using empty value",
                 exc_info=True,
             )
             value = ""

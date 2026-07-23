@@ -73,7 +73,9 @@ def _envelope_rows(bind: sa.engine.Connection, last_id: int) -> list[dict]:
     )
 
 
-def _write_storage_state(bind: sa.engine.Connection, row_id: int, payload: dict) -> None:
+def _write_storage_state(
+    bind: sa.engine.Connection, row_id: int, payload: dict
+) -> None:
     bind.execute(
         sa.text(
             "UPDATE domain_cookie_memory "

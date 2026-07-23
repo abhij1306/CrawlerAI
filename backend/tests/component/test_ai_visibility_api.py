@@ -346,7 +346,7 @@ async def test_export_csv_neutralizes_spreadsheet_formula_cells() -> None:
     execution = SimpleNamespace(
         prompt_index=0,
         repetition=1,
-        prompt_text_snapshot="=HYPERLINK(\"https://evil.example\")",
+        prompt_text_snapshot='=HYPERLINK("https://evil.example")',
         prompt_theme_snapshot="brand",
         prompt_intent_snapshot=None,
         randomized_position=0,

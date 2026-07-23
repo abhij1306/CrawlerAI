@@ -154,9 +154,7 @@ def _run_coro_in_worker_loop(
 
 
 def _run_task_in_worker_loop(run_id: int) -> None:
-    _run_coro_in_worker_loop(
-        f"crawl-run-{run_id}", lambda: _run_with_session(run_id)
-    )
+    _run_coro_in_worker_loop(f"crawl-run-{run_id}", lambda: _run_with_session(run_id))
 
 
 @celery_app.task(name="crawl.process_run", **_crawl_task_time_limits())

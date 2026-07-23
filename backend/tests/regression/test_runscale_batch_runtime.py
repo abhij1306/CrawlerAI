@@ -1,4 +1,5 @@
 """Run-lifecycle scalability: queue claiming, resume, bounded run summary."""
+
 from __future__ import annotations
 
 import asyncio
@@ -250,7 +251,9 @@ async def test_result_summary_does_not_grow_per_url(
     for snapshot in committed_summaries:
         assert "url_verdicts" not in snapshot
         assert "resolved_url_list" not in snapshot
-    completed_values = [snapshot.get("completed_urls") for snapshot in committed_summaries]
+    completed_values = [
+        snapshot.get("completed_urls") for snapshot in committed_summaries
+    ]
     assert completed_values == [0, 1, 2, 3]
 
     await db_session.refresh(run)
@@ -293,7 +296,9 @@ async def test_progress_commits_are_throttled_but_durable(
     # Only the first per-URL commit lands inside the throttle window; later
     # URLs stay durable via their own crawl_url_results commits, and the final
     # patch publishes the complete counters.
-    completed_values = [snapshot.get("completed_urls") for snapshot in committed_summaries]
+    completed_values = [
+        snapshot.get("completed_urls") for snapshot in committed_summaries
+    ]
     assert completed_values == [0, 1, 1]
     await db_session.refresh(run)
     assert run.result_summary["completed_urls"] == 3
@@ -354,9 +359,7 @@ async def test_parallel_run_bounds_live_worker_tasks_to_concurrency(
     """
     monkeypatch.setattr(app_settings, "celery_dispatch_enabled", True)
     patch_settings(url_batch_concurrency=3, browser_runtime_context_capacity=3)
-    monkeypatch.setattr(
-        app_settings, "system_max_concurrent_urls", 3, raising=False
-    )
+    monkeypatch.setattr(app_settings, "system_max_concurrent_urls", 3, raising=False)
     urls = [f"https://example.com/p/{idx}" for idx in range(24)]
     run = await _make_batch_run(db_session, test_user, urls)
     processed: list[str] = []
@@ -380,9 +383,7 @@ async def test_parallel_run_bounds_live_worker_tasks_to_concurrency(
         prefix = f"crawl-run-{run.id}-"
         while not monitor_stop.is_set():
             live = sum(
-                1
-                for task in asyncio.all_tasks()
-                if task.get_name().startswith(prefix)
+                1 for task in asyncio.all_tasks() if task.get_name().startswith(prefix)
             )
             peak_live_workers = max(peak_live_workers, live)
             await asyncio.sleep(0.001)

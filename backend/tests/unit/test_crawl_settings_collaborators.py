@@ -1,5 +1,6 @@
 """CrawlRunSettings god-class split: derived-view collaborators keep the public
 call surface behavior-identical."""
+
 from __future__ import annotations
 
 import pytest

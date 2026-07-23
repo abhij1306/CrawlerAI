@@ -78,7 +78,12 @@ def test_job_response_serialization_is_byte_identical_across_providers() -> None
 
 
 def test_source_record_inputs_share_the_base_shape() -> None:
-    assert list(BaseSourceRecordInput.model_fields) == ["id", "run_id", "source_url", "data"]
+    assert list(BaseSourceRecordInput.model_fields) == [
+        "id",
+        "run_id",
+        "source_url",
+        "data",
+    ]
     assert list(ProductIntelligenceSourceRecordInput.model_fields) == list(
         DataEnrichmentSourceRecordInput.model_fields
     )

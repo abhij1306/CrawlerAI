@@ -136,7 +136,9 @@ async def _load_storage_state(
         )
     if storage_state:
         context_options["storage_state"] = storage_state
-    _browser_pool()._record_timing(phase_timings_ms, "storage_state_load_ms", started_at)
+    _browser_pool()._record_timing(
+        phase_timings_ms, "storage_state_load_ms", started_at
+    )
 
 
 async def _persist_and_close_context(

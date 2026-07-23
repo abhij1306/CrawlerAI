@@ -78,7 +78,9 @@ async def api_client(db_session, test_user):
 
 
 def _make_pi_job(user_id: int, *, status: str = "queued") -> ProductIntelligenceJob:
-    return ProductIntelligenceJob(user_id=user_id, status=status, options={}, summary={})
+    return ProductIntelligenceJob(
+        user_id=user_id, status=status, options={}, summary={}
+    )
 
 
 async def _make_pi_source(
@@ -494,8 +496,7 @@ async def test_recover_orphaned_product_intelligence_jobs(
     # window: still plausibly queued behind a worker backlog — must survive.
     # PENDING + stale past the pending window: treated as a lost task record.
     pending_lost_time = datetime.now(UTC) - timedelta(
-        seconds=product_intelligence_settings.job_orphaned_pending_after_seconds
-        + 300
+        seconds=product_intelligence_settings.job_orphaned_pending_after_seconds + 300
     )
     await db_session.execute(
         update(ProductIntelligenceJob)

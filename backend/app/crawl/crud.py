@@ -34,7 +34,10 @@ from app.core.records.field_policy import normalize_field_key, preserve_requeste
 from app.connectors.llm.config_service import snapshot_active_configs
 from app.persistence.extraction_memory import create_release_snapshot
 from app.core.records.normalizers import normalize_value
-from app.core.url_safety import ensure_public_crawl_targets, ensure_valid_proxy_endpoints
+from app.core.url_safety import (
+    ensure_public_crawl_targets,
+    ensure_valid_proxy_endpoints,
+)
 from app.persistence.artifacts import ArtifactRepository
 from app.schemas.crawl import enforce_run_url_limit
 from sqlalchemy import and_, func, select

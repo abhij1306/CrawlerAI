@@ -3,6 +3,7 @@
 Audit 1.2: crawled page HTML served as text/html from the API origin must be
 sandboxed so embedded scripts cannot execute in the origin's security context.
 """
+
 from __future__ import annotations
 
 import pytest

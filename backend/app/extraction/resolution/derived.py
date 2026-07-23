@@ -1,4 +1,5 @@
 """Derived facts: money normalization, brand/currency/availability inference."""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -106,6 +107,7 @@ def _derived(
         )
     return tuple(out)
 
+
 def _semantic_derived_facts(
     decision: Decision,
     by_id: dict[str, Evidence],
@@ -209,6 +211,7 @@ def _semantic_derived_facts(
             )
     return ()
 
+
 def _derived_fact(
     decision: Decision,
     *,
@@ -242,6 +245,7 @@ def _derived_fact(
         rule_id=rule_id,
     )
 
+
 def _currency_for_price(evidence: Evidence, *, page_url: str) -> tuple[str, str] | None:
     raw = evidence.raw_value if isinstance(evidence.raw_value, str) else ""
     symbols = {
@@ -255,12 +259,14 @@ def _currency_for_price(evidence: Evidence, *, page_url: str) -> tuple[str, str]
         return currency, "currency_from_page_url_hint"
     return None
 
+
 def _availability_from_stock_quantity(evidence: Evidence) -> str | None:
     try:
         quantity = Decimal(str(evidence.value).strip())
     except (InvalidOperation, ValueError):
         return None
     return "in_stock" if quantity > 0 else "out_of_stock"
+
 
 def _brand_from_title(
     title: object,

@@ -85,9 +85,7 @@ def _snapshot(title: str, brand: str, gtin: str) -> dict[str, object]:
 
 
 def test_gtin_floor_requires_title_similarity_above_config_gate() -> None:
-    source = _snapshot(
-        "Nike Promina Men's Walking Shoes", "Nike", "0123456789012"
-    )
+    source = _snapshot("Nike Promina Men's Walking Shoes", "Nike", "0123456789012")
     same_title = matching.score_candidate(
         source=source,
         candidate=_snapshot(
@@ -108,7 +106,9 @@ def test_gtin_floor_requires_title_similarity_above_config_gate() -> None:
     )
     assert disjoint_title["reasons"]["gtin_match"] is True
     assert disjoint_title["reasons"]["brand_match"] is True
-    assert disjoint_title["reasons"]["title_similarity"] < config.MATCH_GTIN_MIN_TITLE_SIM
+    assert (
+        disjoint_title["reasons"]["title_similarity"] < config.MATCH_GTIN_MIN_TITLE_SIM
+    )
     assert disjoint_title["reasons"]["match_basis"] != config.MATCH_BASIS_GTIN
     assert disjoint_title["score"] < config.MATCH_SCORE_FLOOR_GTIN
 

@@ -116,9 +116,7 @@ def test_minimum_attempt_budget_clamps_negative_setting_to_zero(
 def test_has_attempt_budget_uses_context_deadline() -> None:
     runner = _runner()
     assert attempt_plan.has_attempt_budget(runner) is True
-    expired = _runner(
-        context=_context(deadline_monotonic=time.perf_counter() - 1.0)
-    )
+    expired = _runner(context=_context(deadline_monotonic=time.perf_counter() - 1.0))
     assert attempt_plan.has_attempt_budget(expired) is False
 
 
@@ -191,7 +189,9 @@ def test_active_host_policy_raises_when_not_loaded() -> None:
         attempt_host_policy.active_host_policy(runner)
 
 
-def test_engine_attempts_after_failure_or_block_keeps_current_when_not_extended() -> None:
+def test_engine_attempts_after_failure_or_block_keeps_current_when_not_extended() -> (
+    None
+):
     runner = _runner()
     runner.active_host_policy = SimpleNamespace()
     current = ["patchright"]
@@ -246,9 +246,7 @@ def test_vendor_block_result_unready_requires_ready_probe() -> None:
     assert attempt_host_policy.vendor_block_result_unready(runner, ready) is False
     assert attempt_host_policy.vendor_block_result_unready(runner, unready) is True
     non_vendor = _runner(reason="detail")
-    assert (
-        attempt_host_policy.vendor_block_result_unready(non_vendor, unready) is False
-    )
+    assert attempt_host_policy.vendor_block_result_unready(non_vendor, unready) is False
 
 
 def test_browser_requested_fields_and_recovery_mode_fallbacks() -> None:

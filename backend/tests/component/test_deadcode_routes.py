@@ -1,5 +1,6 @@
 """Regression tests for dead-route removal (audit 3.2) and the CSV upload cap
 (audit 2.6)."""
+
 from __future__ import annotations
 
 import pytest
@@ -85,9 +86,7 @@ async def test_csv_upload_within_size_limit_accepted(
         return _FakeRun(), 1
 
     monkeypatch.setattr("app.api.crawls.CSV_UPLOAD_MAX_BYTES", 1024)
-    monkeypatch.setattr(
-        "app.api.crawls.create_crawl_run_from_csv", _fake_ingest
-    )
+    monkeypatch.setattr("app.api.crawls.create_crawl_run_from_csv", _fake_ingest)
 
     response = await deadcode_client.post(
         "/api/crawls/csv",

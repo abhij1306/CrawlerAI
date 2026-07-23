@@ -45,9 +45,7 @@ def engine_attempts(runner: AttemptRunner, proxy: str | None) -> list[str]:
     )
 
 
-def vendor_block_result_unready(
-    runner: AttemptRunner, result: PageFetchResult
-) -> bool:
+def vendor_block_result_unready(runner: AttemptRunner, result: PageFetchResult) -> bool:
     if not is_vendor_block_reason(runner.reason):
         return False
     diagnostics = dict(result.browser_diagnostics or {})
@@ -59,15 +57,12 @@ def vendor_block_result_unready(
     probes = diagnostics.get("readiness_probes")
     if isinstance(probes, list) and probes:
         return not any(
-            isinstance(probe, dict) and bool(probe.get("is_ready"))
-            for probe in probes
+            isinstance(probe, dict) and bool(probe.get("is_ready")) for probe in probes
         )
     return False
 
 
-async def record_blocked_result(
-    runner: AttemptRunner, result: PageFetchResult
-) -> None:
+async def record_blocked_result(runner: AttemptRunner, result: PageFetchResult) -> None:
     runner.outcome.last_blocked_result = result
     await runner.deps.update_host_result_memory(runner.context, result=result)
     runner.active_host_policy = await runner.deps.load_host_protection_policy(

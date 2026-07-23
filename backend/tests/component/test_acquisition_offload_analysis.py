@@ -95,7 +95,9 @@ async def test_curl_fetch_offloads_request_and_analysis_off_event_loop(
         _fake_to_thread,
     )
 
-    def _fake_curl_get_once(curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _fake_curl_get_once(
+        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+    ):
         del curl_requests, timeout_seconds, proxy, cookie_header
         return SimpleNamespace(
             text="<html><body>ok</body></html>",
@@ -119,9 +121,7 @@ async def test_curl_fetch_offloads_request_and_analysis_off_event_loop(
 
 @pytest.mark.component
 def test_html_analysis_computes_lowered_html_lazily() -> None:
-    analysis = HtmlAnalysis.from_html(
-        "<html><body><p>ShOuLd LoWeR</p></body></html>"
-    )
+    analysis = HtmlAnalysis.from_html("<html><body><p>ShOuLd LoWeR</p></body></html>")
 
     # The second full-page lowercase copy is only materialized on demand.
     assert analysis._lowered_html is None

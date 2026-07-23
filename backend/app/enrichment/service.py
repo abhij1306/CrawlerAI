@@ -282,9 +282,7 @@ async def recover_orphaned_data_enrichment_jobs(
 
 async def run_data_enrichment_job(job_id: int, *, task_id: str | None = None) -> None:
     async with SessionLocal() as session:
-        await recover_orphaned_data_enrichment_jobs(
-            session, exclude_task_id=task_id
-        )
+        await recover_orphaned_data_enrichment_jobs(session, exclude_task_id=task_id)
         job = await session.get(DataEnrichmentJob, job_id)
         if job is None:
             return

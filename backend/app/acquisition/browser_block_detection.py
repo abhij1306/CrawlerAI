@@ -6,7 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
-from app.core.config.block_signatures import BLOCK_SIGNATURES, CLOUDFLARE_PROVIDER_TOKENS
+from app.core.config.block_signatures import (
+    BLOCK_SIGNATURES,
+    CLOUDFLARE_PROVIDER_TOKENS,
+)
 from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
 from app.core.db_utils import mapping_or_empty
 from app.core.shared.text_coerce import slug_tokens

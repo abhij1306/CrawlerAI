@@ -38,7 +38,7 @@ def test_csv_safe_cell_passes_non_strings_through(value: object) -> None:
 
 def test_sanitize_csv_row_sanitizes_keys_and_string_values() -> None:
     row = {
-        "=cmd|'/c calc'!A1": "=HYPERLINK(\"http://evil.example\")",
+        "=cmd|'/c calc'!A1": '=HYPERLINK("http://evil.example")',
         "title": "Widget",
         "price": 19.99,
         "in-stock": True,
@@ -47,7 +47,7 @@ def test_sanitize_csv_row_sanitizes_keys_and_string_values() -> None:
     sanitized = sanitize_csv_row(row)
 
     assert sanitized == {
-        "'=cmd|'/c calc'!A1": "'=HYPERLINK(\"http://evil.example\")",
+        "'=cmd|'/c calc'!A1": '\'=HYPERLINK("http://evil.example")',
         "title": "Widget",
         "price": 19.99,
         "in-stock": True,

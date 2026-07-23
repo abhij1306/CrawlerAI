@@ -267,9 +267,7 @@ async def recover_orphaned_product_intelligence_jobs(
         )
         recovered += 1
     if recovered:
-        logger.warning(
-            "Recovered %s orphaned Product Intelligence job(s)", recovered
-        )
+        logger.warning("Recovered %s orphaned Product Intelligence job(s)", recovered)
         await session.commit()
     return recovered
 

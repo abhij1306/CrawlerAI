@@ -187,9 +187,7 @@ def _harvest_job_detail(request: ExtractionRequest) -> HarvestResult:
     structured+DOM fuse onto one subject. Job detail has no commerce
     normalization, so the harvest is returned directly.
     """
-    return run_detail_cascade(
-        request, request.artifact_reader, _surface_spec(request)
-    )
+    return run_detail_cascade(request, request.artifact_reader, _surface_spec(request))
 
 
 def _harvest_job_listing(request: ExtractionRequest) -> HarvestResult:

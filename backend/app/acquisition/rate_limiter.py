@@ -141,8 +141,7 @@ async def reset_pacing_state() -> None:
 
     async def _clear_redis_slots(redis) -> None:
         keys = [
-            key
-            async for key in redis.scan_iter(match=f"{_REDIS_KEY_PREFIX}:host:*")
+            key async for key in redis.scan_iter(match=f"{_REDIS_KEY_PREFIX}:host:*")
         ]
         if keys:
             await redis.delete(*keys)
@@ -150,6 +149,7 @@ async def reset_pacing_state() -> None:
     try:
         await redis_execute(_clear_redis_slots, operation_name="pacing:reset")
     except RedisUnavailableError:
+        # Best-effort reset: if Redis is unavailable there are no shared slots to clear.
         pass
 
 

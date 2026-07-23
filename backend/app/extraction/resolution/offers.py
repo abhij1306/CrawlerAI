@@ -1,4 +1,5 @@
 """Offer resolution: atomic price/currency pairing and parent selection."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -31,6 +32,7 @@ def _offer_rank(offer: OfferEntity) -> tuple[int, int, int, str]:
         sum(len(tuple(ids or ())) for ids in facts.values()),
         offer.entity_id,
     )
+
 
 def _resolve_offer(
     offer: OfferEntity,
@@ -73,6 +75,7 @@ def _resolve_offer(
         )
         for fact, ids in sorted(offer.fact_evidence.items())
     )
+
 
 def _offer_atomic_price_currency_preferences(
     offer: OfferEntity,
@@ -123,6 +126,7 @@ def _offer_atomic_price_currency_preferences(
         currency_fact: (currency.evidence_id,),
     }
 
+
 def _offer_evidence_compatible(price: Evidence, currency: Evidence) -> bool:
     if price.group_id and price.group_id == currency.group_id:
         return True
@@ -137,6 +141,7 @@ def _offer_evidence_compatible(price: Evidence, currency: Evidence) -> bool:
         and price.collector_id == currency.collector_id
         and price.subject_id == currency.subject_id
     )
+
 
 def _offer_atomic_unresolved_decision(
     offer: OfferEntity,
@@ -164,6 +169,7 @@ def _offer_atomic_unresolved_decision(
         rule_id="OFFER_ATOMIC_PRICE_CURRENCY",
         status="unresolved",
     )
+
 
 def _preferred_parent_offer_id(
     entities: EntitySet,
