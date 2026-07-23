@@ -30,7 +30,7 @@ Runtime notes:
 - `src/app/route-registry.ts` is the sole route authority. Files under `app/` are imported explicitly by this registry; Next App Router-only files such as `loading.tsx`, `layout.tsx`, and bracket route folders are dead code and blocked by the crawl architecture check.
 - Legacy routing, dynamic-import, link, and image compatibility wrappers have been removed.
 - `VITE_API_BASE_URL` is the frontend API base URL.
-- Production security headers and CSP are owned by the static hosting boundary, not frontend service code.
+- Production builds inject a baseline CSP via `<meta http-equiv="Content-Security-Policy">` (the build-only `csp-meta` plugin in `frontend/vite.config.ts`; the dev document is left untouched for HMR). Its `connect-src` mirrors the `VITE_API_BASE_URL` origin plus its `ws(s)://` sibling, so a build pointed at a new API origin must rebuild rather than re-point the same bundle. Remaining production security headers are still owned by the static hosting boundary, not frontend service code — ops callout: the host must keep sending `Content-Security-Policy: frame-ancestors 'none'` (meta CSP cannot express `frame-ancestors`), `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
 
 ## 2. Route Map
 
@@ -99,7 +99,6 @@ Primary files:
 - `src/api/errors.ts`
 - `src/api/query-client.ts`
 - `src/api/query-keys.ts`
-- `lib/api/index.ts`
 - `lib/api/auth.ts`
 - `lib/api/dashboard.ts`
 - `lib/api/crawls.ts`
@@ -120,10 +119,10 @@ Responsibilities:
 - HTTP transport, abort signals, and request IDs
 - one query-key factory and application query defaults
 - typed domain endpoint modules for backend calls
-- short compatibility facade for callers not yet migrated to direct domain imports
+- direct domain imports (`lib/api/<domain>.ts`) at every call site; the former `lib/api/index.ts` compatibility facade is deleted
 - API typing and zod response schemas (`lib/api/schemas.ts`)
 - auth-aware fetch wrapper
-- URL helpers for review HTML and selector preview HTML
+- URL helpers for selector preview HTML
 
 AI Visibility ownership notes:
 
@@ -236,6 +235,7 @@ Primary files:
 - `app/ai-visibility/execution-detail-dialog.tsx`
 - `app/ai-visibility/ai-visibility-status.ts` (status tone/label helpers delegating to `lib/ui/status`)
 - `app/domain-memory/page-view.tsx`
+- `components/domain-memory/` (feature owner for the domain-memory surface: workspace hook, tabs, sidebar)
 - `app/admin/users/page-view.tsx`
 - `app/admin/llm/page-view.tsx`
 
@@ -281,7 +281,6 @@ The frontend currently uses live backend routes for:
 - provenance: `/api/records/{id}/provenance`
 - exports: `/api/crawls/{id}/export/*`
 - logs + websocket: `/api/crawls/{id}/logs`, `/api/crawls/{id}/logs/ws`
-- review: `/api/review/{id}`, `/api/review/{id}/artifact-html`, `/api/review/{id}/save`
 - selectors: `/api/selectors`, `/api/selectors/suggest`, `/api/selectors/test`, `/api/selectors/preview-html`
 - Knowledge Graph: `/api/knowledge/sites`, `/api/knowledge/graph`, `/api/knowledge/contracts/{template_id}`, `/api/knowledge/contracts/{contract_id}/selection`, `/api/knowledge/contracts/selector`
 - users: `/api/users`
@@ -295,7 +294,6 @@ The frontend currently uses live backend routes for:
 
 There is still some API-surface drift and it should remain documented:
 
-- `ReviewPayload` types in the frontend still include `selector_memory` and `selector_suggestions`, while the current backend review response is centered on run, canonical/discovered fields, mapping, and records.
 - The standalone `/selectors` page has been removed; selector tooling lives in Crawl Studio field configuration and the `/domain-memory` surface. Older docs claiming “selectors page missing backend integration” are stale.
 
 ## 6. Current Data Contracts That Matter To Frontend
@@ -384,7 +382,9 @@ Policy and CI checks:
 ## 8. Architectural Notes
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
-- `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; `lib/api/index.ts` is a compatibility facade only.
+- `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; call sites import their domain modules directly (the `lib/api/index.ts` facade was removed in audit 7.8).
+- Feature components live in top-level `components/<feature>/` directories: `components/domain-memory/` owns the domain-memory surface (moved out of the removed `components/selectors/` parent in audit 7.9).
+- Import aliases: `@/*` → `src/*`, `@lib/*` → `lib/*`, `@ui/*` → `components/ui/*` (tsconfig paths + vite resolve.alias). Deep `../../../+` cross-area imports use the aliases; short intra-feature relative imports stay relative.
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.

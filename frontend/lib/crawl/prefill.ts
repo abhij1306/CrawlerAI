@@ -1,17 +1,61 @@
-import type { CrawlRecord } from '../../lib/api/types';
-import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
-import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import type { CrawlRecord } from '../api/types';
+import { CRAWL_DEFAULTS } from '../constants/crawl-defaults';
+import { STORAGE_KEYS } from '../constants/storage-keys';
+
+export type PrefillRecord = Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>;
 
 export type ProductIntelligencePrefillPayload = {
   source_run_id: number | null;
   source_domain: string;
-  records: Array<Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>>;
+  records: PrefillRecord[];
 };
 
 export type DataEnrichmentPrefillPayload = {
   source_run_id: number | null;
-  records: Array<Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>>;
+  records: PrefillRecord[];
 };
+
+/**
+ * Reader-side guard for sessionStorage prefill payloads: keeps only plain
+ * records carrying the numeric id/run_id pair the job-create flows depend on
+ * and drops malformed entries instead of failing the whole load.
+ */
+export function parsePrefillRecords(value: unknown): PrefillRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is PrefillRecord =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof (item as Record<string, unknown>).id === 'number' &&
+      typeof (item as Record<string, unknown>).run_id === 'number',
+  );
+}
+
+/**
+ * Shared reader for the sessionStorage prefill payloads: reads and removes the
+ * key in one shot, and reports whether JSON parsing succeeded so each caller can
+ * surface its own corrupt-payload copy (or stay silent). Shape normalization and
+ * record filtering stay with the caller via `normalize`.
+ */
+export function loadStoredPrefill<T extends { source_run_id: number | null }>(
+  storageKey: string,
+  emptyPayload: () => T,
+  normalize: (parsed: Partial<T>) => T,
+): { payload: T; ok: boolean } {
+  if (typeof window === 'undefined') return { payload: emptyPayload(), ok: true };
+  const stored = window.sessionStorage.getItem(storageKey);
+  if (!stored) return { payload: emptyPayload(), ok: true };
+  try {
+    return { payload: normalize(JSON.parse(stored) as Partial<T>), ok: true };
+  } catch {
+    return { payload: emptyPayload(), ok: false };
+  } finally {
+    window.sessionStorage.removeItem(storageKey);
+  }
+}
 
 function isStorageQuotaError(error: unknown) {
   return (

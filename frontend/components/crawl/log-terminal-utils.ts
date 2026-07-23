@@ -477,3 +477,18 @@ export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []
   flushPendingRunLogs(state);
   return groups.map((group) => finalizeLogSiteGroup(group, records));
 }
+
+export const LOG_GROUP_WINDOW_SIZE = 50;
+
+export function windowLogGroups<T>(
+  groups: T[],
+  visibleCount: number,
+): { visible: T[]; hiddenCount: number } {
+  if (groups.length <= visibleCount) {
+    return { visible: groups, hiddenCount: 0 };
+  }
+  return {
+    visible: groups.slice(groups.length - visibleCount),
+    hiddenCount: groups.length - visibleCount,
+  };
+}

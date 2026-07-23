@@ -8,6 +8,7 @@ type RunLogsOutputProps = {
   records: CrawlRecord[];
   requestedFields: string[];
   viewportRef: RefObject<HTMLDivElement | null>;
+  nowMs: number;
 };
 
 export function RunLogsOutput({
@@ -15,6 +16,7 @@ export function RunLogsOutput({
   records,
   requestedFields,
   viewportRef,
+  nowMs,
 }: Readonly<RunLogsOutputProps>) {
   return (
     <div className="min-h-[55vh]">
@@ -23,6 +25,7 @@ export function RunLogsOutput({
         records={records}
         requestedFields={requestedFields}
         viewportRef={viewportRef}
+        nowMs={nowMs}
       />
     </div>
   );

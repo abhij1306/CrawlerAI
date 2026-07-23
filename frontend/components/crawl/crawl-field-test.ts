@@ -1,4 +1,4 @@
-import { api } from '../../lib/api';
+import { selectorsApi } from '../../lib/api/selectors';
 import type { FieldRow, FieldRowMessageTone } from './shared';
 
 export async function testCrawlFieldRow({
@@ -23,7 +23,7 @@ export async function testCrawlFieldRow({
   }
   setActiveId(row.id);
   try {
-    const response = await api.testSelector({
+    const response = await selectorsApi.testSelector({
       url: target,
       css_selector: row.cssSelector.trim() || undefined,
       xpath: row.xpath.trim() || undefined,

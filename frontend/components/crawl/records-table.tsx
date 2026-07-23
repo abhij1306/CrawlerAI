@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, UIEvent } from 'react';
 
 import type { CrawlRecord } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
@@ -23,10 +23,24 @@ const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
 
 const SELECT_COLUMN_WIDTH = 48;
 const IMAGE_COLUMN_WIDTH = 80;
-// Virtualization constants — must match --table-header-height / --table-row-height
-// in globals.css (CSS vars can't feed the windowing math; keep in sync manually).
+// Virtualization fallbacks — must stay in sync with --table-header-height /
+// --table-row-height in globals.css (guarded by records-table.test.ts). The
+// component derives the live values from the computed CSS vars once at mount;
+// these constants are used only when a var is absent or unparseable.
 export const HEADER_HEIGHT = 30;
 export const ROW_HEIGHT = 38;
+
+function readCssHeightVar(name: string, fallback: number) {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return fallback;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!raw.endsWith('px')) {
+    return fallback;
+  }
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function getDataColumnWidth(col: string) {
   const colKey = col.toLowerCase();
@@ -47,13 +61,18 @@ function fixedColumnStyle(width: number, left?: number): CSSProperties {
   };
 }
 
-function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSProperties {
+function headerCellStyle(
+  width: number,
+  headerHeight: number,
+  left?: number,
+  isLast?: boolean,
+): CSSProperties {
   return {
     ...fixedColumnStyle(width, left),
     position: 'sticky',
     top: 0,
     zIndex: left === undefined ? 60 : 90,
-    height: HEADER_HEIGHT,
+    height: headerHeight,
     background: 'var(--bg-base)',
     color: 'var(--text-muted)',
     fontFamily: 'var(--table-header-font-family)',
@@ -164,7 +183,13 @@ export const RecordsTable = memo(function RecordsTable({
     (hasImageCol ? IMAGE_COLUMN_WIDTH : 0) +
     dataColumns.reduce((sum, col) => sum + getDataColumnWidth(col), 0);
 
-  const rowHeightPx = ROW_HEIGHT;
+  // Derived once at mount: the CSS vars own row sizing; the exported constants
+  // are the documented fallbacks when a var is missing.
+  const [heights] = useState(() => ({
+    header: readCssHeightVar('--table-header-height', HEADER_HEIGHT),
+    row: readCssHeightVar('--table-row-height', ROW_HEIGHT),
+  }));
+  const rowHeightPx = heights.row;
   const overscanRows = 8;
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(560);
@@ -175,9 +200,32 @@ export const RecordsTable = memo(function RecordsTable({
       setViewportHeight(node.clientHeight || 560);
     }
   }, []);
+  // rAF-throttled scroll: keep the latest scrollTop in a ref and commit at most
+  // one state write per animation frame; skip the write when nothing moved.
+  const pendingScrollTopRef = useRef(0);
+  const scrollFrameRef = useRef<number | null>(null);
+  const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    pendingScrollTopRef.current = event.currentTarget.scrollTop;
+    if (scrollFrameRef.current !== null) {
+      return;
+    }
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const next = pendingScrollTopRef.current;
+      setScrollTop((previous) => (previous === next ? previous : next));
+    });
+  }, []);
+  useEffect(
+    () => () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+      }
+    },
+    [],
+  );
   const totalCount = records.length;
-  const bodyScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
-  const bodyViewportHeight = Math.max(rowHeightPx, viewportHeight - HEADER_HEIGHT);
+  const bodyScrollTop = Math.max(0, scrollTop - heights.header);
+  const bodyViewportHeight = Math.max(rowHeightPx, viewportHeight - heights.header);
   const startIndex = Math.max(0, Math.floor(bodyScrollTop / rowHeightPx) - overscanRows);
   const visibleCount = Math.ceil(bodyViewportHeight / rowHeightPx) + overscanRows * 2;
   const endIndex = Math.min(totalCount, startIndex + visibleCount);
@@ -205,7 +253,7 @@ export const RecordsTable = memo(function RecordsTable({
     <div className="relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden">
       <div
         ref={setContainerRef}
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        onScroll={handleScroll}
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
         role="table"
         aria-rowcount={records.length + 1}
@@ -217,7 +265,7 @@ export const RecordsTable = memo(function RecordsTable({
           className="sticky top-0 z-[100] grid border-b border-border"
           style={{
             minWidth: totalTableWidth,
-            height: HEADER_HEIGHT,
+            height: heights.header,
             gridTemplateColumns,
             background: 'var(--bg-base)',
           }}
@@ -226,7 +274,7 @@ export const RecordsTable = memo(function RecordsTable({
             role="columnheader"
             aria-colindex={1}
             className="flex shrink-0 items-center justify-center px-3"
-            style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
+            style={headerCellStyle(SELECT_COLUMN_WIDTH, heights.header, 0)}
           >
             <input
               type="checkbox"
@@ -240,7 +288,7 @@ export const RecordsTable = memo(function RecordsTable({
               role="columnheader"
               aria-colindex={2}
               className="flex shrink-0 items-center justify-center px-2"
-              style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
+              style={headerCellStyle(IMAGE_COLUMN_WIDTH, heights.header, SELECT_COLUMN_WIDTH)}
             >
               IMG
             </div>
@@ -256,6 +304,7 @@ export const RecordsTable = memo(function RecordsTable({
                 className="flex shrink-0 items-center px-5 whitespace-nowrap"
                 style={headerCellStyle(
                   getDataColumnWidth(col),
+                  heights.header,
                   isFirstData ? pinnedDataLeft : undefined,
                   isLastData,
                 )}

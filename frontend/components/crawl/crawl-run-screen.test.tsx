@@ -8,7 +8,7 @@ import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timi
 import { TopBarProvider } from '../layout/top-bar-context';
 import { LogTerminal } from './log-terminal';
 import { CrawlRunScreen } from './crawl-run-screen';
-import { storeProductIntelligencePrefill } from './crawl-run-prefill';
+import { storeProductIntelligencePrefill } from '../../lib/crawl/prefill';
 
 const replaceMock = vi.fn();
 const pushMock = vi.fn();
@@ -75,8 +75,23 @@ class MockWebSocket {
   }
 }
 
-vi.mock('../../lib/api', () => ({
-  api: apiMock,
+vi.mock('../../lib/api/crawls', () => ({
+  crawlsApi: {
+    getCrawl: apiMock.getCrawl,
+    listCrawls: apiMock.listCrawls,
+    getRecords: apiMock.getRecords,
+    getCrawlLogs: apiMock.getCrawlLogs,
+    killCrawl: apiMock.killCrawl,
+    saveGroundedCorrection: apiMock.saveGroundedCorrection,
+    exportCsv: apiMock.exportCsv,
+    exportJson: apiMock.exportJson,
+  },
+}));
+
+vi.mock('../../lib/api/domain-memory', () => ({
+  domainMemoryApi: {
+    getDomainRecipe: apiMock.getDomainRecipe,
+  },
 }));
 
 function terminalRun(runId: number): CrawlRun {
@@ -93,6 +108,7 @@ function terminalRun(runId: number): CrawlRun {
       extraction_verdict: 'success',
       record_count: 2,
     },
+    run_health: {},
     created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
     updated_at: new Date('2026-04-08T10:05:00Z').toISOString(),
     completed_at: new Date('2026-04-08T10:05:00Z').toISOString(),
@@ -116,6 +132,7 @@ function runningRun(runId: number): CrawlRun {
       current_url_index: 1,
       total_urls: 5,
     },
+    run_health: {},
     created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
     updated_at: new Date('2026-04-08T10:01:00Z').toISOString(),
     completed_at: null,

@@ -1,5 +1,5 @@
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { authApi } from '../../lib/api/auth';
 
 export const AUTH_SESSION_QUERY_KEY = queryKeys.auth.me();
 
@@ -10,7 +10,7 @@ export function isAuthRoute(pathname: string | null) {
 export function getAuthSessionQueryOptions(pathname?: string | null) {
   return {
     queryKey: AUTH_SESSION_QUERY_KEY,
-    queryFn: ({ signal }: { signal: AbortSignal }) => api.me({ signal }),
+    queryFn: ({ signal }: { signal: AbortSignal }) => authApi.me({ signal }),
     enabled: pathname === undefined ? true : !isAuthRoute(pathname),
     retry: false,
     refetchOnWindowFocus: false,

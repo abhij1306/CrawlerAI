@@ -74,6 +74,76 @@ describe('apiClient', () => {
     expect(firstUrl).not.toEqual('');
   });
 
+  it('returns a generic message for 5xx JSON bodies while keeping the raw body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ detail: 'psycopg2.OperationalError: password authentication failed' }),
+          {
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: { 'content-type': 'application/json', 'x-request-id': 'req-server-1' },
+          },
+        ),
+      ),
+    );
+
+    const { apiClient, ApiError } = await import('./client');
+    const error = await apiClient.get('/api/ping').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    if (!(error instanceof ApiError)) throw error;
+    expect(error.message).toBe('Something went wrong on the server (request req-server-1).');
+    expect(error.status).toBe(500);
+    expect(error.body).toBe('psycopg2.OperationalError: password authentication failed');
+    expect(error.requestId).toBe('req-server-1');
+  });
+
+  it('returns a generic message for 5xx non-JSON bodies', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('upstream proxy stack trace', {
+          status: 502,
+          headers: { 'content-type': 'text/plain', 'x-request-id': 'req-server-2' },
+        }),
+      ),
+    );
+
+    const { apiClient, ApiError } = await import('./client');
+    const error = await apiClient.get('/api/ping').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    if (!(error instanceof ApiError)) throw error;
+    expect(error.message).toBe('Something went wrong on the server (request req-server-2).');
+    expect(error.body).toBe('upstream proxy stack trace');
+  });
+
+  it.each([
+    [400, 'Validation failed: url is required'],
+    [401, 'Not authenticated'],
+    [403, 'Admin role required'],
+  ])('preserves %i response detail for the UI', async (status, detail) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail }), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const { apiClient, ApiError } = await import('./client');
+    const error = await apiClient.get('/api/ping').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    if (!(error instanceof ApiError)) throw error;
+    expect(error.message).toBe(detail);
+    expect(error.body).toBe(detail);
+  });
+
   it('does not retry mutation network failures', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
     vi.stubGlobal('fetch', fetchMock);

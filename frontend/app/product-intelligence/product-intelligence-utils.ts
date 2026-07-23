@@ -2,9 +2,10 @@ import type {
   ProductIntelligenceDiscoveryResponse,
   ProductIntelligenceJobDetail,
   ProductIntelligenceOptions,
-  ProductIntelligenceSourceRecordInput,
 } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import type { ProductIntelligencePrefillPayload } from '../../lib/crawl/prefill';
+import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
 
 export const SEARCH_PROVIDER_OPTIONS: Array<{
   value: ProductIntelligenceOptions['search_provider'];
@@ -19,15 +20,9 @@ export function searchProviderLabel(provider: string) {
   return option?.label ?? provider;
 }
 
-export type PrefillPayload = {
-  source_run_id?: number | null;
-  source_domain?: string;
-  records?: ProductIntelligenceSourceRecordInput[];
-};
-
 export type PrefillLoadResult = {
   error: string;
-  payload: PrefillPayload;
+  payload: ProductIntelligencePrefillPayload;
 };
 
 export type ProductDiscoveryCandidate = ProductIntelligenceDiscoveryResponse['candidates'][number];
@@ -57,28 +52,20 @@ export const MAX_SOURCE_PRODUCTS_LIMIT = 500;
 export const MAX_CANDIDATES_PER_PRODUCT_LIMIT = 25;
 
 export function loadPrefillPayload(): PrefillLoadResult {
-  if (typeof globalThis.window === 'undefined') {
-    return { error: '', payload: {} };
-  }
-  const stored = globalThis.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-  if (!stored) {
-    return { error: '', payload: {} };
-  }
-  try {
-    const parsed = JSON.parse(stored) as PrefillPayload;
-    return {
-      error: '',
-      payload: {
-        source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
-        source_domain: parsed.source_domain ?? '',
-        records: Array.isArray(parsed.records) ? parsed.records : [],
-      },
-    };
-  } catch {
-    return { error: 'Unable to read Product Intelligence prefill.', payload: {} };
-  } finally {
-    globalThis.sessionStorage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-  }
+  const { payload, ok } = loadStoredPrefill(
+    STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL,
+    emptyPrefillPayload,
+    (parsed) => ({
+      source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
+      source_domain: parsed.source_domain ?? '',
+      records: parsePrefillRecords(parsed.records),
+    }),
+  );
+  return { error: ok ? '' : 'Unable to read Product Intelligence prefill.', payload };
+}
+
+function emptyPrefillPayload(): ProductIntelligencePrefillPayload {
+  return { source_run_id: null, source_domain: '', records: [] };
 }
 
 export function detailToDiscovery(

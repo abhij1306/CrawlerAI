@@ -7,8 +7,22 @@ const checks = [
   { file: 'app/data-enrichment/page-view.tsx', maxLines: 260 },
   { file: 'app/runs/page-view.tsx', maxLines: 260 },
   { file: 'components/layout/app-shell.tsx', maxLines: 260 },
-  { file: 'lib/api/index.ts', maxLines: 80 },
 ];
+
+// Default per-file LOC cap over app/, components/, lib/, src/ (non-test .ts/.tsx).
+const DEFAULT_MAX_LINES = 400;
+const scannedRoots = ['app', 'components', 'lib', 'src'];
+
+// Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
+const lineBudgetExceptions = new Map([
+  ['lib/api/types.ts', 875],
+  ['components/crawl/log-terminal.tsx', 1020],
+  ['components/crawl/form-fields.tsx', 630],
+  ['components/crawl/log-terminal-utils.ts', 520],
+  ['components/crawl/crawl-config-logic.ts', 465],
+  ['app/ai-visibility/project-form-dialog.tsx', 420],
+  ['components/crawl/records-table.tsx', 425],
+]);
 
 const requiredApiOwners = [
   'admin.ts',
@@ -51,13 +65,42 @@ for (const owner of requiredApiOwners) {
   }
 }
 
-const apiIndex = read('lib/api/index.ts');
-if (
-  apiIndex !== null &&
-  (/\bfrom\s+['"]@\/api\/client['"]/.test(apiIndex) ||
-    /\b(apiClient|getApiBaseUrl)\b/.test(apiIndex))
-) {
-  failures.push('lib/api/index.ts must stay a compatibility facade, not a transport owner.');
+function listSourceFiles(directory) {
+  const files = [];
+  if (!fs.existsSync(directory)) {
+    return files;
+  }
+  const stack = [directory];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) {
+        continue;
+      }
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+for (const scannedRoot of scannedRoots) {
+  for (const fullPath of listSourceFiles(path.join(root, scannedRoot))) {
+    const relativePath = path.relative(root, fullPath).replaceAll('\\', '/');
+    const budget = lineBudgetExceptions.get(relativePath) ?? DEFAULT_MAX_LINES;
+    const content = read(relativePath);
+    if (content === null) continue;
+    const lines = content.split(/\r?\n/).length;
+    if (lines > budget) {
+      failures.push(
+        `${relativePath} has ${lines} lines; limit is ${budget}. Split the owner before raising the budget.`,
+      );
+    }
+  }
 }
 
 const dataEnrichmentPage = read('app/data-enrichment/page-view.tsx');

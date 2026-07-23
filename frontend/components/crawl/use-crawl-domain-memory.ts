@@ -2,8 +2,10 @@ import { useDeferredValue, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { domainMemoryApi } from '../../lib/api/domain-memory';
+import { selectorsApi } from '../../lib/api/selectors';
 import type { CrawlSurface, DomainRunProfile } from '../../lib/api/types';
+import { surfaceLabel } from '../../lib/format/domain';
 import {
   buildFieldRowFromSelectorRecord,
   cloneRunProfile,
@@ -12,7 +14,6 @@ import {
   normalizeHttpLookupDomain,
   selectRelevantSelectorRecords,
   stripDomainMemoryFieldRows,
-  surfaceLabel,
 } from './crawl-config-logic';
 import type { bindCrawlConfigLocalDispatch } from './crawl-config-state';
 import type { FieldRow } from './shared';
@@ -66,7 +67,7 @@ export function useCrawlDomainMemory({
   } = useQuery({
     queryKey: queryKeys.domainRunProfiles.detail(deferredTargetDomain, deferredSurface),
     queryFn: ({ signal }) =>
-      api.getDomainRunProfile(
+      domainMemoryApi.getDomainRunProfile(
         {
           url: deferredTargetUrl,
           surface: deferredSurface,
@@ -88,7 +89,10 @@ export function useCrawlDomainMemory({
       surface: deferredSurface,
     }),
     queryFn: ({ signal }) =>
-      api.listSelectors({ domain: deferredTargetDomain, surface: deferredSurface }, { signal }),
+      selectorsApi.listSelectors(
+        { domain: deferredTargetDomain, surface: deferredSurface },
+        { signal },
+      ),
     enabled: queryEnabled,
     staleTime: 30_000,
   });

@@ -5,7 +5,7 @@ import { FormEvent, useState } from 'react';
 import { AUTH_SESSION_QUERY_KEY } from '../../components/layout/auth-session-query';
 import { InlineAlert } from '../../components/ui/patterns';
 import { Button, Field, Input, Subtitle, Title } from '../../components/ui/primitives';
-import { api } from '../../lib/api';
+import { authApi } from '../../lib/api/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       setError('');
-      const response = await api.login(email, password);
+      const response = await authApi.login(email, password);
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, response.user);
       navigate('/dashboard', { replace: true });
     } catch (err) {

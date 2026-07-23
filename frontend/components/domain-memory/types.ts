@@ -4,7 +4,7 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
   KnowledgeSiteRecord,
-} from '../../../lib/api/types';
+} from '@lib/api/types';
 
 export type SurfaceWorkspace = {
   surface: string;

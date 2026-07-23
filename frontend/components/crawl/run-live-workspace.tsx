@@ -4,14 +4,15 @@ import { ChevronsDown, Clock } from 'lucide-react';
 import type { CrawlLog, CrawlRecord, CrawlRun } from '../../lib/api/types';
 import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';
 import { Card } from '../ui/primitives';
+import { ActionButton } from '../ui/action-button';
 import { LogTerminal } from './log-terminal';
-import { ActionButton } from './shared';
 
 type RunLiveWorkspaceProps = {
   run: CrawlRun | undefined;
   logs: CrawlLog[];
   records: CrawlRecord[];
   elapsedLabel: string;
+  nowMs: number;
   socketOnline: boolean;
   liveJumpAvailable: boolean;
   viewportRef: RefObject<HTMLDivElement | null>;
@@ -25,6 +26,7 @@ export function RunLiveWorkspace({
   logs,
   records,
   elapsedLabel,
+  nowMs,
   socketOnline,
   liveJumpAvailable,
   viewportRef,
@@ -81,6 +83,7 @@ export function RunLiveWorkspace({
         requestedFields={run?.requested_fields ?? []}
         live
         viewportRef={viewportRef}
+        nowMs={nowMs}
       />
     </Card>
   );

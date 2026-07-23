@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, XCircle } from 'lucide-react';
-import type { ComponentType } from 'react';
 import { useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
+import { jobsApi } from '../../lib/api/jobs';
 import type { ActiveJob } from '../../lib/api/types';
 import { formatJobsTimestamp as formatTimestamp, formatTimeHms } from '../../lib/format/date';
 import { humanizeStatus, jobsStatusTone as statusTone } from '../../lib/ui/status';
-import { cn } from '../../lib/utils';
+import { ActionButton } from '../../components/ui/action-button';
 import {
   DataRegionEmpty,
   DataRegionError,
@@ -43,7 +43,7 @@ export default function JobsPage() {
     refetch: refetchJobs,
   } = useQuery({
     queryKey: queryKeys.jobs.active(),
-    queryFn: api.listJobs,
+    queryFn: jobsApi.listJobs,
     refetchInterval: 5000,
   });
 
@@ -58,7 +58,7 @@ export default function JobsPage() {
     setPendingAction(`${action}:${runId}`);
     try {
       setActionError('');
-      await api.killCrawl(runId);
+      await crawlsApi.killCrawl(runId);
       await refetchJobs();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `Unable to ${action} run ${runId}.`);
@@ -181,37 +181,6 @@ function StatusPill({ status }: Readonly<{ status: ActiveJob['status'] }>) {
     <Badge tone={tone} flat={status === 'killed'}>
       {humanizeStatus(status)}
     </Badge>
-  );
-}
-
-function ActionButton({
-  icon: Icon,
-  label,
-  disabled,
-  danger,
-  onClick,
-}: Readonly<{
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  disabled?: boolean;
-  danger?: boolean;
-  onClick?: () => void;
-}>) {
-  return (
-    <Button
-      type="button"
-      onClick={onClick}
-      variant={danger ? 'ghost' : 'secondary'}
-      disabled={disabled}
-      className={cn(
-        'type-control h-7 px-2.5',
-        danger && 'text-danger hover:bg-danger/10 hover:text-danger',
-      )}
-      title={label}
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </Button>
   );
 }
 

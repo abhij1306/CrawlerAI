@@ -21,6 +21,7 @@ function makeTerminalRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
     settings: {},
     requested_fields: [],
     result_summary: {},
+    run_health: {},
     created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
     updated_at: new Date('2026-04-08T10:05:00Z').toISOString(),
     completed_at: new Date('2026-04-08T10:05:00Z').toISOString(),

@@ -16,8 +16,6 @@ import type {
   GroundedCorrectionResponse,
   Paginated,
   ResultDiagnosis,
-  ReviewPayload,
-  ReviewSelection,
   RunReport,
 } from './types';
 
@@ -135,21 +133,6 @@ export const crawlsApi = {
   downloadJson: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/json`),
   exportCsv: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/csv`,
   exportJson: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/json`,
-  getReview: async (runId: number) => {
-    const res = await apiClient.get<ReviewPayload>(`/api/review/${runId}`);
-    if (res?.run) {
-      res.run = strictValidate(crawlRunSchema, res.run, `getReview(${runId}).run`);
-    }
-    if (res?.records) {
-      res.records = res.records.map((item) =>
-        strictValidate(crawlRecordSchema, item, `getReview(${runId}).records`),
-      );
-    }
-    return res;
-  },
-  reviewHtml: (runId: number) => `${getApiBaseUrl()}/api/review/${runId}/artifact-html`,
-  saveReview: (runId: number, payload: { selections: ReviewSelection[]; extra_fields: string[] }) =>
-    apiClient.post(`/api/review/${runId}/save`, payload),
   getRunReport: (runId: number) => apiClient.get<RunReport>(`/api/crawls/${runId}/report.json`),
   getResultDiagnosis: (runId: number, urlResultId: number) =>
     apiClient.get<ResultDiagnosis>(`/api/crawls/${runId}/results/${urlResultId}/diagnose.json`),

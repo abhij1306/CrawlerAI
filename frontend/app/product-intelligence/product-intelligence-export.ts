@@ -57,7 +57,11 @@ function toIntelligenceRow(candidate: ProductDiscoveryCandidate) {
   };
 }
 
-function toCsv(rows: Array<Record<string, unknown>>) {
+// Spreadsheet apps execute cells whose text starts with one of these characters as
+// formulas; neutralize by prepending a single quote before any other escaping.
+const FORMULA_PREFIX = /^[\t\r=+\-@]/;
+
+export function toCsv(rows: Array<Record<string, unknown>>) {
   const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
   const lines = [headers.join(',')];
   for (const row of rows) {
@@ -69,7 +73,8 @@ function toCsv(rows: Array<Record<string, unknown>>) {
 function csvCell(value: unknown) {
   const text =
     typeof value === 'object' && value !== null ? JSON.stringify(value) : scalarString(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  const safe = FORMULA_PREFIX.test(text) ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 function scalarString(value: unknown) {

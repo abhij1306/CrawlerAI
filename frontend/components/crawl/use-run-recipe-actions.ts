@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { DomainRecipeFieldLearningItem } from '../../lib/api/types';
 
 export type RecipeActionPendingKey = `field:${string}:activate`;
@@ -28,7 +28,7 @@ export function useRunRecipeActions({
     setPendingKey(`field:${item.field_name}:activate`);
     setError('');
     try {
-      await api.saveGroundedCorrection(runId, {
+      await crawlsApi.saveGroundedCorrection(runId, {
         activate: true,
         representative_url_result_ids: representativeIds,
         labels: [

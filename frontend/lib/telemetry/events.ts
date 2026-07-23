@@ -1,7 +1,9 @@
+import { getApiBaseUrl } from '@/api/client';
+
 type TelemetryPayload = Record<string, unknown>;
 
 const isBrowser = typeof window !== 'undefined';
-const TELEMETRY_ENDPOINT = '/api/telemetry/events';
+const TELEMETRY_PATH = '/api/telemetry/events';
 
 function safeString(value: unknown) {
   if (typeof value === 'string') {
@@ -39,13 +41,17 @@ export function trackEvent(name: string, payload: TelemetryPayload = {}) {
   }
 
   try {
+    // Resolve against the API base: a relative URL posts to the SPA origin and
+    // silently 404s in split-origin deploys. Resolution stays inside the try so
+    // a missing VITE_API_BASE_URL can never break a user action.
+    const endpoint = `${getApiBaseUrl()}${TELEMETRY_PATH}`;
     const body = JSON.stringify(event);
     if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
       const payloadBlob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon(TELEMETRY_ENDPOINT, payloadBlob);
+      navigator.sendBeacon(endpoint, payloadBlob);
       return;
     }
-    void fetch(TELEMETRY_ENDPOINT, {
+    void fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

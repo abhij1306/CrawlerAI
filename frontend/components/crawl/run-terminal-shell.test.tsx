@@ -15,6 +15,7 @@ function makeRun(url: string): CrawlRun {
     settings: {},
     requested_fields: [],
     result_summary: {},
+    run_health: {},
     created_at: '2026-07-01T00:00:00Z',
     updated_at: '2026-07-01T00:00:00Z',
     completed_at: null,

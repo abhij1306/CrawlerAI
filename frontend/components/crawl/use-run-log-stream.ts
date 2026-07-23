@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getApiWebSocketBaseUrl } from '@/api/client';
 import { queryKeys } from '@/api/query-keys';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlLog } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
-import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timing';
+import { LOG_STREAM, POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timing';
 import { appendLiveLog, mergeLogs, scrollViewportToBottom } from './shared';
 
 type UseRunLogStreamOptions = {
@@ -150,12 +150,25 @@ function useLogSocketConnection({
     }
 
     const socket = new WebSocket(logSocketUrl(runId, cursorRef.current));
+    // Buffer incoming log lines and fold them into a single state update per
+    // flush window so bursty streams don't trigger a render per message.
+    const pendingLogs: CrawlLog[] = [];
+    const flushPendingLogs = () => {
+      if (!pendingLogs.length) {
+        return;
+      }
+      const batch = pendingLogs.splice(0, pendingLogs.length);
+      setSocketLogItems((current) => batch.reduce(appendLiveLog, current));
+    };
+    const flushTimer = window.setInterval(flushPendingLogs, LOG_STREAM.FLUSH_INTERVAL_MS);
 
     socket.onopen = () => {
       reconnectAttemptRef.current = 0;
       setSocketConnected(true);
     };
     socket.onclose = () => {
+      window.clearInterval(flushTimer);
+      flushPendingLogs();
       setSocketConnected(false);
       void refetchRun();
       void refetch();
@@ -174,7 +187,7 @@ function useLogSocketConnection({
         const parsed = parseSocketLog(event.data);
         if (!parsed) return;
         cursorRef.current = parsed.id;
-        setSocketLogItems((current) => appendLiveLog(current, parsed));
+        pendingLogs.push(parsed);
       } catch {
         // Polling remains the fallback for malformed websocket payloads.
       }
@@ -182,6 +195,8 @@ function useLogSocketConnection({
 
     return () => {
       shouldReconnect = false;
+      window.clearInterval(flushTimer);
+      flushPendingLogs();
       if (reconnectTimer !== undefined) {
         window.clearTimeout(reconnectTimer);
       }
@@ -229,7 +244,7 @@ export function useRunLogStream({
   } = useQuery({
     queryKey: queryKeys.runs.logs(runId),
     queryFn: ({ signal }) =>
-      api.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
+      crawlsApi.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
     enabled,
     refetchInterval: logPollingInterval({
       enabled,

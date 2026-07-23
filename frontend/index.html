@@ -5,24 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CrawlerAI</title>
     <!-- Fonts are self-hosted via @fontsource-variable/geist in main.tsx — no CDN link needed -->
-    <script>
-      (() => {
-        let dark = false;
-        try {
-          const storedTheme = localStorage.getItem('crawlerai-theme');
-          if (storedTheme) {
-            dark = storedTheme === 'dark';
-          } else {
-            dark = window.matchMedia('(prefers-color-scheme:dark)').matches;
-          }
-        } catch {
-          dark =
-            typeof window.matchMedia === 'function' &&
-            window.matchMedia('(prefers-color-scheme:dark)').matches;
-        }
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      })();
-    </script>
+    <!-- WARNING: production builds inject a CSP meta with script-src 'self' (csp-meta plugin in
+         vite.config.ts), so inline scripts are blocked in prod builds. Keep head scripts external. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

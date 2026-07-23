@@ -1,13 +1,16 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { authApi } from '../../lib/api/auth';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
 import { navGroups } from '../../src/app/route-registry';
 import { Button } from '../ui/button';
 import { ThemeToggle } from '../ui/theme-toggle';
 import { Tooltip } from '../ui/tooltip';
+import { AUTH_SESSION_QUERY_KEY } from './auth-session-query';
 import { LogoMark } from './logo-mark';
 
 function isNavItemActive(pathname: string, item: (typeof navGroups)[number]['items'][number]) {
@@ -16,6 +19,9 @@ function isNavItemActive(pathname: string, item: (typeof navGroups)[number]['ite
 }
 
 export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAdmin: boolean }>) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [logoutPending, setLogoutPending] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
@@ -26,6 +32,33 @@ export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAd
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(collapsed));
   }, [collapsed]);
+
+  async function handleLogout() {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    try {
+      await authApi.logout();
+    } catch {
+      // Local sign-out proceeds even when the server logout call fails.
+    }
+    queryClient.removeQueries();
+    queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, null);
+    navigate('/login', { replace: true });
+  }
+
+  const logoutButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => void handleLogout()}
+      disabled={logoutPending}
+      aria-label="Log out"
+      title="Log out"
+      className="size-7 rounded-md"
+    >
+      <LogOut className="size-4 shrink-0 text-secondary" />
+    </Button>
+  );
 
   return (
     <aside
@@ -125,8 +158,12 @@ export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAd
           ))}
       </nav>
 
-      {!collapsed && (
-        <div className="mt-auto w-full border-t border-border-subtle pt-2">
+      <div className="mt-auto w-full border-t border-border-subtle pt-2">
+        {collapsed ? (
+          <div className="flex justify-center py-1">
+            <Tooltip content="Log out">{logoutButton}</Tooltip>
+          </div>
+        ) : (
           <div className="flex items-center justify-between px-2 py-1">
             <div className="min-w-0">
               <div className="text-2xs font-semibold tracking-wide text-muted uppercase">
@@ -134,10 +171,13 @@ export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAd
               </div>
               <div className="truncate text-[11px] text-secondary">Theme preference</div>
             </div>
-            <ThemeToggle />
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              {logoutButton}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }

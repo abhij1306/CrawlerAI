@@ -1,4 +1,4 @@
-import { api } from '../../lib/api';
+import { selectorsApi } from '../../lib/api/selectors';
 import type { CrawlSurface } from '../../lib/api/types';
 import {
   buildFieldRowFromSuggestion,
@@ -71,7 +71,7 @@ export function useCrawlFieldActions({
     localDispatch.setGeneratingSelectors(true);
     localDispatch.setFieldConfigError('');
     try {
-      const response = await api.suggestSelectors({
+      const response = await selectorsApi.suggestSelectors({
         url: target,
         expected_columns: expectedColumns,
         surface,

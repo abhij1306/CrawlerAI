@@ -1,7 +1,9 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+import { createAppQueryClient } from '../../src/api/query-client';
 import { SessionProvider } from '../../src/app/session';
 import { AppShell } from './app-shell';
 
@@ -9,26 +11,30 @@ const apiMock = vi.hoisted(() => ({
   resetApplicationData: vi.fn(),
 }));
 
-vi.mock('../../lib/api', () => ({ api: apiMock }));
+vi.mock('../../lib/api/dashboard', () => ({
+  dashboardApi: { resetApplicationData: apiMock.resetApplicationData },
+}));
 
 function renderShell(role: 'admin' | 'user' = 'admin') {
   render(
-    <MemoryRouter initialEntries={['/dashboard']}>
-      <SessionProvider
-        user={{
-          id: role === 'admin' ? 1 : 2,
-          email: `${role}@example.com`,
-          role,
-          is_active: true,
-          created_at: '2026-05-19T00:00:00Z',
-          updated_at: '2026-05-19T00:00:00Z',
-        }}
-      >
-        <AppShell>
-          <div>Child content</div>
-        </AppShell>
-      </SessionProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={createAppQueryClient()}>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <SessionProvider
+          user={{
+            id: role === 'admin' ? 1 : 2,
+            email: `${role}@example.com`,
+            role,
+            is_active: true,
+            created_at: '2026-05-19T00:00:00Z',
+            updated_at: '2026-05-19T00:00:00Z',
+          }}
+        >
+          <AppShell>
+            <div>Child content</div>
+          </AppShell>
+        </SessionProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

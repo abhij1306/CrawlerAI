@@ -15,7 +15,7 @@ import {
   PageHeader,
   TableSurface,
 } from '../../components/ui/patterns';
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 import type { CrawlRun } from '../../lib/api/types';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { RunRow } from './run-row';
@@ -46,7 +46,7 @@ export default function RunsPage() {
       limit: 50,
     }),
     queryFn: () =>
-      api.listCrawls({
+      crawlsApi.listCrawls({
         limit: 50,
         status: appliedStatusFilter || undefined,
         url_search: appliedDomainFilter || undefined,
@@ -66,7 +66,7 @@ export default function RunsPage() {
   }, [queryClient, queryData?.items]);
 
   const deleteMutation = useMutation({
-    mutationFn: (runId: number) => api.deleteCrawl(runId),
+    mutationFn: (runId: number) => crawlsApi.deleteCrawl(runId),
     onMutate: (runId) => {
       dispatch({ type: 'deleteStarted', runId });
     },

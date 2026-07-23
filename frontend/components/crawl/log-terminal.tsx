@@ -522,12 +522,14 @@ export const LogTerminal = memo(function LogTerminal({
   requestedFields = [],
   live = false,
   viewportRef,
+  nowMs,
 }: Readonly<{
   logs: CrawlLog[];
   records?: CrawlRecord[];
   requestedFields?: string[];
   live?: boolean;
   viewportRef?: RefObject<HTMLDivElement | null>;
+  nowMs?: number;
 }>) {
   const ref = useLogViewport(logs.length, viewportRef);
   const {
@@ -535,21 +537,25 @@ export const LogTerminal = memo(function LogTerminal({
     activeGroupKeys,
     activePeekedGroupKey,
     expandedGroupKey,
+    groupIndexByKey,
     groups,
+    hiddenGroupCount,
     inferredSerialEndMsByKey,
     jumpToGroup,
     navigateTriage,
-    nowMs,
+    nowMs: terminalNowMs,
     peekedGroup,
     peekedRecordJson,
     peekPanelRef,
     safePeekedRecordIndex,
     setPeekedGroupKey,
     setPeekedRecordIndex,
+    showEarlierGroups,
     siteOrdinalByKey,
     timelineTicks,
     toggleGroup,
-  } = useLogTerminalState({ logs, records, live });
+    visibleGroups,
+  } = useLogTerminalState({ logs, records, live, nowMs });
 
   return (
     <div
@@ -628,241 +634,258 @@ export const LogTerminal = memo(function LogTerminal({
         aria-atomic="false"
       >
         {groups.length ? (
-          groups.map((group, index) => {
-            const expanded = expandedGroupKey === group.key || group.key === activeGroupKey;
-            const isRunEventGroup = !group.url;
-            const payload = payloadSnapshot(group);
-            const coverage = groupFieldCoverage(group, requestedFields);
-            const confidence = groupConfidence(group);
-            const activeGroup = activeGroupKeys.has(group.key);
-            const inferredEndMs = !activeGroup
-              ? inferredSerialEndMsByKey.get(group.key)
-              : undefined;
-            const durationMs = groupDurationMs(group, activeGroup ? nowMs : inferredEndMs);
-            const lastLog = group.logs.at(-1);
-            const summaryLog =
-              [...group.logs].reverse().find((log) => !isPersistenceSummaryLog(log.message)) ??
-              lastLog;
-            return (
-              <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
-                <div
-                  className={cn(
-                    'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs text-inherit transition-colors',
-                    isRunEventGroup
-                      ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
-                      : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
-                    severityTone(group, index),
-                  )}
-                >
-                  <div className="font-mono text-xs text-subtle">
-                    {(group.index ?? siteOrdinalByKey.get(group.key) ?? index + 1)
-                      .toString()
-                      .padStart(2, '0')}
-                  </div>
-                  <div className="flex min-w-0 items-center gap-2">
-                    {!isRunEventGroup && <Globe className="size-3.5 shrink-0 text-muted" />}
-                    {isRunEventGroup ? (
-                      <span
-                        className="block truncate text-xs font-medium text-secondary"
-                        title={group.label}
-                      >
-                        {group.label}
-                      </span>
-                    ) : (
-                      <a
-                        href={group.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="block truncate text-xs font-normal text-info-text underline-offset-4 hover:underline"
-                        title={group.url}
-                      >
-                        {formatShortUrlLabel(group.url)}
-                      </a>
+          <>
+            {hiddenGroupCount > 0 ? (
+              <div className="surface-muted type-body m-2 flex items-center justify-between rounded-md px-6 py-2 text-muted">
+                <span>
+                  Showing the latest {visibleGroups.length} of {groups.length} groups
+                </span>
+                <Button variant="neutral" type="button" onClick={showEarlierGroups}>
+                  Show earlier groups
+                </Button>
+              </div>
+            ) : null}
+            {visibleGroups.map((group, index) => {
+              // Stable across window slides; `index` is window-relative and shifts.
+              const stableGroupIndex = groupIndexByKey.get(group.key) ?? index;
+              const expanded = expandedGroupKey === group.key || group.key === activeGroupKey;
+              const isRunEventGroup = !group.url;
+              const payload = payloadSnapshot(group);
+              const coverage = groupFieldCoverage(group, requestedFields);
+              const confidence = groupConfidence(group);
+              const activeGroup = activeGroupKeys.has(group.key);
+              const inferredEndMs = !activeGroup
+                ? inferredSerialEndMsByKey.get(group.key)
+                : undefined;
+              const durationMs = groupDurationMs(
+                group,
+                activeGroup ? terminalNowMs : inferredEndMs,
+              );
+              const lastLog = group.logs.at(-1);
+              const summaryLog =
+                [...group.logs].reverse().find((log) => !isPersistenceSummaryLog(log.message)) ??
+                lastLog;
+              return (
+                <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
+                  <div
+                    className={cn(
+                      'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs text-inherit transition-colors',
+                      isRunEventGroup
+                        ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
+                        : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
+                      severityTone(group, stableGroupIndex),
                     )}
-                  </div>
-                  {!isRunEventGroup ? (
-                    <>
-                      <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
-                        title="Fields Extracted"
-                      >
-                        <Database className="size-3 shrink-0 text-muted" />
-                        <span>
-                          {group.records.length
-                            ? `${coverage.foundCount}/${coverage.totalCount || 0}`
-                            : '--'}
+                  >
+                    <div className="font-mono text-xs text-subtle">
+                      {(group.index ?? siteOrdinalByKey.get(group.key) ?? stableGroupIndex + 1)
+                        .toString()
+                        .padStart(2, '0')}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2">
+                      {!isRunEventGroup && <Globe className="size-3.5 shrink-0 text-muted" />}
+                      {isRunEventGroup ? (
+                        <span
+                          className="block truncate text-xs font-medium text-secondary"
+                          title={group.label}
+                        >
+                          {group.label}
                         </span>
-                      </div>
+                      ) : (
+                        <a
+                          href={group.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="block truncate text-xs font-normal text-info-text underline-offset-4 hover:underline"
+                          title={group.url}
+                        >
+                          {formatShortUrlLabel(group.url)}
+                        </a>
+                      )}
+                    </div>
+                    {!isRunEventGroup ? (
+                      <>
+                        <div
+                          className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+                          title="Fields Extracted"
+                        >
+                          <Database className="size-3 shrink-0 text-muted" />
+                          <span>
+                            {group.records.length
+                              ? `${coverage.foundCount}/${coverage.totalCount || 0}`
+                              : '--'}
+                          </span>
+                        </div>
+                        <div
+                          className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+                          title="Confidence Score"
+                        >
+                          <CheckCircle2
+                            className={cn(
+                              'size-3 shrink-0',
+                              confidence ? toneForConfidence(confidence.level) : 'text-muted',
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              confidence ? toneForConfidence(confidence.level) : 'text-muted',
+                            )}
+                          >
+                            {confidence
+                              ? `${Math.round(normalizeConfidenceScore(confidence.score) * 100)}%`
+                              : '--'}
+                          </span>
+                        </div>
+                        <div
+                          className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+                          title="Duration"
+                        >
+                          <Clock className="size-3 shrink-0 text-muted" />
+                          <span>{durationMs !== null ? formatDurationMs(durationMs) : '--'}</span>
+                        </div>
+                      </>
+                    ) : null}
+                    <div className="flex items-center justify-center">
+                      {isRunEventGroup ? (
+                        <div className="type-label-mono text-xs uppercase">Run</div>
+                      ) : group.lastStage !== 'system' ? (
+                        <StageChip stage={group.lastStage} />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
                       <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
-                        title="Confidence Score"
+                        className="truncate text-xs text-secondary"
+                        title={summaryLog?.message || ''}
                       >
-                        <CheckCircle2
+                        {groupSummaryMessage(group, coverage, summaryLog)}
+                      </div>
+                    </div>
+                    {!isRunEventGroup ? (
+                      <div className="flex items-center justify-end">
+                        {payload ? (
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPeekedGroupKey(group.key);
+                              setPeekedRecordIndex(0);
+                            }}
+                          >
+                            Peek
+                          </Button>
+                        ) : (
+                          <span className="type-caption text-xs opacity-25">--</span>
+                        )}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
+                      disabled={group.key === activeGroupKey}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleGroup(group.key);
+                      }}
+                      className="flex items-center justify-end gap-1.5 pr-2 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-default"
+                    >
+                      <span className="font-mono text-xs text-muted uppercase">
+                        {group.key === activeGroupKey ? (
+                          <span className="flex items-center gap-1.5 font-semibold text-accent">
+                            <span className="relative flex size-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"></span>
+                              <span className="relative inline-flex size-1.5 rounded-full bg-accent"></span>
+                            </span>
+                            Active
+                          </span>
+                        ) : expanded ? (
+                          'Less'
+                        ) : (
+                          'More'
+                        )}
+                      </span>
+                      {group.key !== activeGroupKey && (
+                        <ChevronDown
                           className={cn(
-                            'size-3 shrink-0',
-                            confidence ? toneForConfidence(confidence.level) : 'text-muted',
+                            'text-muted size-3.5 transition-transform duration-200',
+                            expanded && 'rotate-180',
                           )}
                         />
-                        <span
-                          className={cn(
-                            confidence ? toneForConfidence(confidence.level) : 'text-muted',
-                          )}
-                        >
-                          {confidence
-                            ? `${Math.round(normalizeConfidenceScore(confidence.score) * 100)}%`
-                            : '--'}
-                        </span>
-                      </div>
-                      <div
-                        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
-                        title="Duration"
-                      >
-                        <Clock className="size-3 shrink-0 text-muted" />
-                        <span>{durationMs !== null ? formatDurationMs(durationMs) : '--'}</span>
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="flex items-center justify-center">
-                    {isRunEventGroup ? (
-                      <div className="type-label-mono text-xs uppercase">Run</div>
-                    ) : group.lastStage !== 'system' ? (
-                      <StageChip stage={group.lastStage} />
-                    ) : null}
-                  </div>
-                  <div className="min-w-0">
-                    <div
-                      className="truncate text-xs text-secondary"
-                      title={summaryLog?.message || ''}
-                    >
-                      {groupSummaryMessage(group, coverage, summaryLog)}
-                    </div>
-                  </div>
-                  {!isRunEventGroup ? (
-                    <div className="flex items-center justify-end">
-                      {payload ? (
-                        <Button
-                          type="button"
-                          variant="quiet"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPeekedGroupKey(group.key);
-                            setPeekedRecordIndex(0);
-                          }}
-                        >
-                          Peek
-                        </Button>
-                      ) : (
-                        <span className="type-caption text-xs opacity-25">--</span>
                       )}
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    aria-expanded={expanded}
-                    aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
-                    disabled={group.key === activeGroupKey}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggleGroup(group.key);
-                    }}
-                    className="flex items-center justify-end gap-1.5 pr-2 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-default"
-                  >
-                    <span className="font-mono text-xs text-muted uppercase">
-                      {group.key === activeGroupKey ? (
-                        <span className="flex items-center gap-1.5 font-semibold text-accent">
-                          <span className="relative flex size-1.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"></span>
-                            <span className="relative inline-flex size-1.5 rounded-full bg-accent"></span>
-                          </span>
-                          Active
-                        </span>
-                      ) : expanded ? (
-                        'Less'
-                      ) : (
-                        'More'
-                      )}
-                    </span>
-                    {group.key !== activeGroupKey && (
-                      <ChevronDown
-                        className={cn(
-                          'text-muted size-3.5 transition-transform duration-200',
-                          expanded && 'rotate-180',
-                        )}
-                      />
-                    )}
-                  </button>
-                </div>
+                    </button>
+                  </div>
 
-                {expanded ? (
-                  <div className="bg-[color-mix(in_srgb,var(--bg-alt)_60%,transparent)]">
-                    <div className="overflow-hidden">
-                      {(() => {
-                        const expandedRows = buildExpandedRows(
-                          group,
-                          coverage,
-                          confidence,
-                          durationMs,
-                        );
-                        return expandedRows.length ? (
-                          expandedRows.map((row, expandedIndex) => {
-                            const IconComponent = getLogIcon(row.level, row.message);
-                            const iconStyle = getLogIconStyle(row.level, row.message);
-                            return (
-                              <div
-                                key={row.key}
-                                className={cn(
-                                  'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-xs',
-                                  expandedIndex % 2 === 0
-                                    ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
-                                    : 'bg-transparent',
-                                )}
-                              >
-                                <span className="font-mono text-xs font-normal text-muted tabular-nums">
-                                  {row.createdAt ? formatTimeHms(row.createdAt) : '--'}
-                                </span>
-                                <div className="flex justify-center">
-                                  <IconComponent className={cn('size-3.5', iconStyle.iconCls)} />
+                  {expanded ? (
+                    <div className="bg-[color-mix(in_srgb,var(--bg-alt)_60%,transparent)]">
+                      <div className="overflow-hidden">
+                        {(() => {
+                          const expandedRows = buildExpandedRows(
+                            group,
+                            coverage,
+                            confidence,
+                            durationMs,
+                          );
+                          return expandedRows.length ? (
+                            expandedRows.map((row, expandedIndex) => {
+                              const IconComponent = getLogIcon(row.level, row.message);
+                              const iconStyle = getLogIconStyle(row.level, row.message);
+                              return (
+                                <div
+                                  key={row.key}
+                                  className={cn(
+                                    'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-xs',
+                                    expandedIndex % 2 === 0
+                                      ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
+                                      : 'bg-transparent',
+                                  )}
+                                >
+                                  <span className="font-mono text-xs font-normal text-muted tabular-nums">
+                                    {row.createdAt ? formatTimeHms(row.createdAt) : '--'}
+                                  </span>
+                                  <div className="flex justify-center">
+                                    <IconComponent className={cn('size-3.5', iconStyle.iconCls)} />
+                                  </div>
+                                  <div className="flex">
+                                    <StageChip stage={row.stage} showIcon={false} />
+                                  </div>
+                                  <span className="min-w-0 text-xs font-medium break-words text-secondary">
+                                    {!row.createdAt
+                                      ? row.message
+                                      : renderLogContent(row.message, row.stage === 'system')}
+                                  </span>
+                                  <span className="flex items-center gap-2">
+                                    {row.payloadAction ? (
+                                      <Button
+                                        type="button"
+                                        variant="quiet"
+                                        size="sm"
+                                        onClick={() => {
+                                          setPeekedGroupKey(group.key);
+                                          setPeekedRecordIndex(0);
+                                        }}
+                                      >
+                                        Peek payload
+                                      </Button>
+                                    ) : null}
+                                  </span>
                                 </div>
-                                <div className="flex">
-                                  <StageChip stage={row.stage} showIcon={false} />
-                                </div>
-                                <span className="min-w-0 text-xs font-medium break-words text-secondary">
-                                  {!row.createdAt
-                                    ? row.message
-                                    : renderLogContent(row.message, row.stage === 'system')}
-                                </span>
-                                <span className="flex items-center gap-2">
-                                  {row.payloadAction ? (
-                                    <Button
-                                      type="button"
-                                      variant="quiet"
-                                      size="sm"
-                                      onClick={() => {
-                                        setPeekedGroupKey(group.key);
-                                        setPeekedRecordIndex(0);
-                                      }}
-                                    >
-                                      Peek payload
-                                    </Button>
-                                  ) : null}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="px-3 py-2 text-xs opacity-40">
-                            {TERMINAL_STRINGS.NO_LOGS}
-                          </div>
-                        );
-                      })()}
+                              );
+                            })
+                          ) : (
+                            <div className="px-3 py-2 text-xs opacity-40">
+                              {TERMINAL_STRINGS.NO_LOGS}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </section>
-            );
-          })
+                  ) : null}
+                </section>
+              );
+            })}
+          </>
         ) : (
           <div className="px-6 py-8 text-center text-xs italic opacity-55">
             {live ? 'Waiting for log stream...' : 'No log activity recorded'}

@@ -4,8 +4,11 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import type { HistoryItem } from '../../components/ui/history-drawer';
-import { api } from '../../lib/api';
-import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
+import { productIntelligenceApi } from '../../lib/api/product-intelligence';
+import type {
+  ProductIntelligenceDiscoveryResponse,
+  ProductIntelligenceSourceRecordInput,
+} from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { searchProviderLabel } from './product-intelligence-utils';
@@ -19,12 +22,10 @@ import {
   searchProvider,
 } from './product-intelligence-utils';
 
-type SourceRecord = NonNullable<
-  ReturnType<typeof loadPrefillPayload>['payload']['records']
->[number];
+type SourceRecord = ProductIntelligenceSourceRecordInput;
 
 function historyFromJobs(
-  jobs: Awaited<ReturnType<typeof api.listProductIntelligenceJobs>> | undefined,
+  jobs: Awaited<ReturnType<typeof productIntelligenceApi.listProductIntelligenceJobs>> | undefined,
 ) {
   return (jobs ?? []).map((job) => ({
     id: job.id,
@@ -37,7 +38,7 @@ function historyFromJobs(
 
 function visibleRecords(
   sourceRecords: SourceRecord[],
-  detail: Awaited<ReturnType<typeof api.getProductIntelligenceJob>> | undefined,
+  detail: Awaited<ReturnType<typeof productIntelligenceApi.getProductIntelligenceJob>> | undefined,
 ) {
   if (sourceRecords.length) return sourceRecords;
   return (detail?.source_products ?? []).map((source) => ({
@@ -129,7 +130,7 @@ async function requestDiscovery({
     allowed_domains: parseDomainLines(allowedDomainsText),
     excluded_domains: parseDomainLines(excludedDomainsText),
   };
-  const response = await api.discoverProductIntelligence({
+  const response = await productIntelligenceApi.discoverProductIntelligence({
     source_run_id: sourceRunId,
     source_record_ids: canUseRecordIds ? sourceRecordIds : [],
     source_records: canUseRecordIds ? [] : records,
@@ -187,7 +188,7 @@ export function useProductIntelligence() {
     refetch: refetchJobs,
   } = useQuery({
     queryKey: queryKeys.productIntelligence.jobs(),
-    queryFn: () => api.listProductIntelligenceJobs({ limit: 20 }),
+    queryFn: () => productIntelligenceApi.listProductIntelligenceJobs({ limit: 20 }),
   });
   const sourceRecords = useMemo(() => prefill.records ?? [], [prefill.records]);
   const defaultJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
@@ -198,7 +199,7 @@ export function useProductIntelligence() {
     isFetching: detailFetching,
   } = useQuery({
     queryKey: queryKeys.productIntelligence.detail(resolvedActiveJobId ?? 0),
-    queryFn: () => api.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
+    queryFn: () => productIntelligenceApi.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
     enabled: resolvedActiveJobId !== null,
   });
   const historyItems: HistoryItem[] = useMemo(() => historyFromJobs(jobsData), [jobsData]);

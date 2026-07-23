@@ -1,15 +1,16 @@
 import { RefreshCcw, Trash2 } from 'lucide-react';
 
-import { ConfirmDialog } from '../../ui/dialog';
-import { EmptyPanel, InlineAlert, MutedPanelMessage, PageHeader, TabBar } from '../../ui/patterns';
-import { Button, Dropdown, Input } from '../../ui/primitives';
+import { surfaceLabel } from '@lib/format/domain';
+import { ConfirmDialog } from '@ui/dialog';
+import { EmptyPanel, InlineAlert, MutedPanelMessage, PageHeader, TabBar } from '@ui/patterns';
+import { Button, Dropdown, Input } from '@ui/primitives';
 import type { DomainMemoryWorkspaceController } from './use-domain-memory-workspace';
 import { CookiesTab } from './cookies-tab';
 import { DomainSidebar } from './domain-sidebar';
 import { KnowledgeGraphTab } from './knowledge-graph-tab';
 import { LearningTab } from './learning-tab';
 import { ProfilesTab } from './profiles-tab';
-import { getProfileCount, surfaceLabel } from './utils';
+import { getProfileCount } from './utils';
 
 type DomainMemoryContentProps = { controller: DomainMemoryWorkspaceController };
 

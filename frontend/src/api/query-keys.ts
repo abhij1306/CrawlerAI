@@ -44,10 +44,13 @@ export const queryKeys = {
     domains: () => ['domain-memory', 'domains'] as const,
     workspace: (domain: string) => ['domain-memory', 'workspace', domain] as const,
     extraction: (domain: string) => ['domain-memory', 'extraction', domain] as const,
+    cookieMemory: () => ['domain-memory', 'cookie-memory'] as const,
+    fieldFeedback: (limit: number) => ['domain-memory', 'field-feedback', limit] as const,
   },
   knowledgeGraph: {
     all: ['knowledge-graph'] as const,
     domain: (domain: string) => ['knowledge-graph', 'domain', domain] as const,
+    sites: () => ['knowledge-graph', 'sites'] as const,
   },
   diagnostics: {
     all: ['diagnostics'] as const,

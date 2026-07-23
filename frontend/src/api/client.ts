@@ -111,12 +111,14 @@ async function requestResponse(path: string, options: InternalRequestOptions) {
       const response = await fetchResponse(path, options, requestId);
       if (response.ok) return { response, requestId };
       const body = await readErrorBody(response);
-      throw new ApiError(
-        body || response.statusText || 'Request failed',
-        response.status,
-        body,
-        response.headers.get('x-request-id') ?? requestId,
-      );
+      const resolvedRequestId = response.headers.get('x-request-id') ?? requestId;
+      // Never surface raw 5xx bodies (stack traces, config details) in the UI; the raw
+      // body stays on ApiError.body for debugging. 4xx detail is load-bearing UX copy.
+      const message =
+        response.status >= 500
+          ? `Something went wrong on the server (request ${resolvedRequestId}).`
+          : body || response.statusText || 'Request failed';
+      throw new ApiError(message, response.status, body, resolvedRequestId);
     } catch (error) {
       lastError = error;
       if (

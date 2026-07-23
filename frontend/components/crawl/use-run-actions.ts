@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { api } from '../../lib/api';
+import { crawlsApi } from '../../lib/api/crawls';
 
 type RefetchableQuery = {
   refetch: () => Promise<unknown>;
@@ -19,7 +19,7 @@ export function useRunActions({ runId, refreshQueries }: Readonly<UseRunActionsO
     setError('');
     const filename = `run-${runId}.${kind}`;
     try {
-      const href = kind === 'csv' ? api.exportCsv(runId) : api.exportJson(runId);
+      const href = kind === 'csv' ? crawlsApi.exportCsv(runId) : crawlsApi.exportJson(runId);
       const anchor = document.createElement('a');
       anchor.href = href;
       anchor.download = filename;
@@ -38,7 +38,7 @@ export function useRunActions({ runId, refreshQueries }: Readonly<UseRunActionsO
     setKillPending(true);
     setError('');
     try {
-      await api.killCrawl(runId);
+      await crawlsApi.killCrawl(runId);
       await Promise.all(refreshQueries.map((query) => query.refetch()));
     } catch (killError) {
       setError(killError instanceof Error ? killError.message : 'Unable to kill crawl.');

@@ -112,14 +112,6 @@ export function applyDiagnosticsPreset(
   };
 }
 
-export function parseOptionalClampedNumber(value: string, min: number, max: number) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return clampNumber(trimmed, min, max, min);
-}
-
 export function isSingleUrlMode(crawlTab: CrawlTab, mode: CategoryMode | PdpMode) {
   return (
     (crawlTab === 'category' && mode === 'single') || (crawlTab === 'pdp' && mode === 'single')
@@ -140,22 +132,6 @@ export function normalizeHttpLookupDomain(rawUrl: string) {
   } catch {
     return '';
   }
-}
-
-export function surfaceLabel(surface: string) {
-  if (surface === 'ecommerce_listing') {
-    return 'Commerce Listing';
-  }
-  if (surface === 'ecommerce_detail') {
-    return 'Commerce Detail';
-  }
-  if (surface === 'job_listing') {
-    return 'Job Listing';
-  }
-  if (surface === 'job_detail') {
-    return 'Job Detail';
-  }
-  return surface;
 }
 
 export function stripDomainMemoryFieldRows(rows: FieldRow[]) {

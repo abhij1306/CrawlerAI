@@ -1,5 +1,5 @@
-import type { DomainRunProfile } from '../../../lib/api/types';
-import { Toggle } from '../../ui/primitives';
+import type { DomainRunProfile } from '@lib/api/types';
+import { Toggle } from '@ui/primitives';
 import type { SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
 

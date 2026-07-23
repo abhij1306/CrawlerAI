@@ -1,12 +1,8 @@
 import { useReducer } from 'react';
 
-import type { DataEnrichmentSourceRecordInput } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
-
-export type PrefillPayload = {
-  source_run_id?: number | null;
-  records?: DataEnrichmentSourceRecordInput[];
-};
+import type { DataEnrichmentPrefillPayload } from '../../lib/crawl/prefill';
+import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
 
 export type DataEnrichmentState = {
   llmEnabled: boolean;
@@ -25,7 +21,7 @@ export type DataEnrichmentAction =
   | { type: 'historyJobSelected'; jobId: number }
   | { type: 'initialJobResolved'; jobId: number };
 
-export const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
+const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
   llmEnabled: false,
   activeJobId: null,
   error: '',
@@ -33,7 +29,7 @@ export const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
   selectedProductId: null,
 };
 
-export function dataEnrichmentReducer(
+function dataEnrichmentReducer(
   state: DataEnrichmentState,
   action: DataEnrichmentAction,
 ): DataEnrichmentState {
@@ -57,21 +53,15 @@ export function dataEnrichmentReducer(
   }
 }
 
-export function loadPrefill(): PrefillPayload {
-  if (typeof window === 'undefined') return {};
-  const stored = window.sessionStorage.getItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL);
-  if (!stored) return {};
-  try {
-    const parsed = JSON.parse(stored) as PrefillPayload;
-    return {
+export function loadPrefill(): DataEnrichmentPrefillPayload {
+  return loadStoredPrefill<DataEnrichmentPrefillPayload>(
+    STORAGE_KEYS.DATA_ENRICHMENT_PREFILL,
+    () => ({ source_run_id: null, records: [] }),
+    (parsed) => ({
       source_run_id: typeof parsed.source_run_id === 'number' ? parsed.source_run_id : null,
-      records: Array.isArray(parsed.records) ? parsed.records : [],
-    };
-  } catch {
-    return {};
-  } finally {
-    window.sessionStorage.removeItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL);
-  }
+      records: parsePrefillRecords(parsed.records),
+    }),
+  ).payload;
 }
 
 export function useDataEnrichmentState() {

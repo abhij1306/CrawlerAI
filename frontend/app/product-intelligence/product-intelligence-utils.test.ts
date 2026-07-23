@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 
 import type { ProductIntelligenceJobDetail } from '../../lib/api/types';
-import { candidateConfidence, detailToDiscovery } from './product-intelligence-utils';
+import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import {
+  candidateConfidence,
+  detailToDiscovery,
+  loadPrefillPayload,
+} from './product-intelligence-utils';
+
+afterEach(() => {
+  window.sessionStorage.clear();
+});
 
 describe('product intelligence utils', () => {
   it('hydrates confidence from matches when candidate payload has no intelligence', () => {
@@ -95,5 +104,45 @@ describe('product intelligence utils', () => {
 
     expect(candidateConfidence(firstCandidate)).toBe(0.72);
     expect(intelligence.score_reasons).toEqual({ brand_match: true });
+  });
+});
+
+describe('loadPrefillPayload', () => {
+  it('keeps the error path for corrupt JSON and clears the stored key', () => {
+    window.sessionStorage.setItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL, '{not valid json');
+
+    const result = loadPrefillPayload();
+
+    expect(result.error).toBe('Unable to read Product Intelligence prefill.');
+    expect(result.payload).toEqual({ source_run_id: null, source_domain: '', records: [] });
+    expect(window.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL)).toBeNull();
+  });
+
+  it('drops malformed records while keeping valid ones', () => {
+    window.sessionStorage.setItem(
+      STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL,
+      JSON.stringify({
+        source_run_id: 9,
+        source_domain: 'https://shop.example',
+        records: [
+          { id: 1, run_id: 9, source_url: 'https://shop.example/p/1', data: { title: 'Chair' } },
+          { id: 'bad', run_id: 9, source_url: 'https://shop.example/p/2', data: {} },
+          null,
+          { run_id: 9 },
+        ],
+      }),
+    );
+
+    const result = loadPrefillPayload();
+
+    expect(result.error).toBe('');
+    expect(result.payload).toEqual({
+      source_run_id: 9,
+      source_domain: 'https://shop.example',
+      records: [
+        { id: 1, run_id: 9, source_url: 'https://shop.example/p/1', data: { title: 'Chair' } },
+      ],
+    });
+    expect(window.sessionStorage.getItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL)).toBeNull();
   });
 });
