@@ -20,10 +20,8 @@ from app.connectors.llm.config_service import (
 from app.connectors.llm.errors import ERROR_PREFIX
 from app.connectors.llm.provider_client import call_provider_with_retry
 from app.core.config.cascade import (
-    CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL,
     CASCADE_LEARN_ONCE_PROVIDER_MAX_RETRIES,
     CASCADE_LEARN_ONCE_SURFACES,
-    CASCADE_LEARN_ONCE_TIER_ENABLED,
     CASCADE_RECIPE_STALE_FAILURE_THRESHOLD,
 )
 from app.core.domain_utils import normalize_domain
@@ -103,15 +101,11 @@ def should_attempt_learn_once(
 ) -> bool:
     """Gate: auto-learn only on the first crawl of a genuinely new template.
 
-    Requires the LEARN-ONCE tier enabled in config, autolearn enabled, the run's
-    ``llm_enabled`` setting, an empty deterministic floor for this page, a
-    not-yet-learned template, and a surface on the per-surface allow-list.
+    Requires the run's ``llm_enabled`` setting (an explicit per-crawl user
+    control), an empty deterministic floor for this page, a not-yet-learned
+    template, and a surface on the per-surface allow-list.
     """
 
-    if not (
-        CASCADE_LEARN_ONCE_TIER_ENABLED and CASCADE_LEARN_ONCE_AUTOLEARN_ON_FIRST_CRAWL
-    ):
-        return False
     if not (llm_enabled and floors_empty and is_new_template):
         return False
     return surface in CASCADE_LEARN_ONCE_SURFACES

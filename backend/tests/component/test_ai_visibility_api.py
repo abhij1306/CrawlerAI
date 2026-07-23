@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.ai_visibility import service
+from app.ai_visibility import exports, service
 from app.ai_visibility.constants import BEST_AND_LESS_PROJECT, BEST_AND_LESS_PROMPTS
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
@@ -185,13 +187,6 @@ async def test_key_never_in_any_serialized_response(
     assert "GEMINI_API_KEY" not in run_body
     assert "x-goog-api-key" not in run_body
 
-    # Executions list
-    exec_response = await ai_visibility_client.get(
-        f"/api/ai-visibility/runs/{run.id}/executions"
-    )
-    exec_body = exec_response.content.decode()
-    assert "api_key" not in exec_body.lower()
-
     # Individual execution with snapshot
     if executions:
         detail_response = await ai_visibility_client.get(
@@ -343,3 +338,31 @@ async def test_cancel_unknown_run_returns_404(
 ) -> None:
     response = await ai_visibility_client.post("/api/ai-visibility/runs/999999/cancel")
     assert response.status_code == 404
+
+
+async def test_export_csv_neutralizes_spreadsheet_formula_cells() -> None:
+    """Prompt/score text that starts with a spreadsheet formula marker is quoted."""
+    run = SimpleNamespace(id=7)
+    execution = SimpleNamespace(
+        prompt_index=0,
+        repetition=1,
+        prompt_text_snapshot="=HYPERLINK(\"https://evil.example\")",
+        prompt_theme_snapshot="brand",
+        prompt_intent_snapshot=None,
+        randomized_position=0,
+        status="completed",
+        search_used=True,
+        score={"citation_count": 1, "prompt_class": "-branded"},
+        search_events=[{"query": "@inject"}],
+        citations=[{"domain": "example.com"}],
+        latency_ms=12,
+        error_code=None,
+    )
+
+    body = exports.run_to_csv(run, [execution])
+
+    data_line = body.strip().splitlines()[1]
+    for cell in data_line.split(","):
+        assert not cell.startswith(("=", "+", "@", "\t", "\r"))
+    assert "'=HYPERLINK(" in body
+    assert "'-branded" in body

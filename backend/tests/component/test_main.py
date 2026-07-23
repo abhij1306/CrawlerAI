@@ -239,3 +239,198 @@ async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
 
     assert calls[:4] == ["session", "bootstrap", "recover", "report"]
     assert "yield" in calls
+
+
+@pytest.mark.component
+async def test_api_docs_enabled_in_dev_and_test_env() -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        assert (await client.get("/docs")).status_code == 200
+        assert (await client.get("/openapi.json")).status_code == 200
+
+
+@pytest.mark.component
+async def test_api_docs_disabled_in_non_dev_env() -> None:
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import _api_docs_urls
+
+    prod_kwargs = _api_docs_urls("production")
+    assert prod_kwargs == {
+        "docs_url": None,
+        "redoc_url": None,
+        "openapi_url": None,
+    }
+    assert _api_docs_urls("staging")["docs_url"] is None
+    assert _api_docs_urls("development")["docs_url"] == "/docs"
+    assert _api_docs_urls("test")["openapi_url"] == "/openapi.json"
+
+    prod_app = FastAPI(**prod_kwargs)
+    async with AsyncClient(
+        transport=ASGITransport(app=prod_app), base_url="http://testserver"
+    ) as client:
+        assert (await client.get("/docs")).status_code == 404
+        assert (await client.get("/redoc")).status_code == 404
+        assert (await client.get("/openapi.json")).status_code == 404
+
+
+@pytest.mark.component
+async def test_metrics_open_in_dev_env() -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/metrics")
+
+    assert response.status_code == 200
+
+
+def _patched_prod_metrics_env(monkeypatch, token: str) -> None:
+    monkeypatch.setattr("app.main.runtime_app_env", lambda: "production")
+    monkeypatch.setattr("app.main.settings.metrics_auth_token", token)
+
+
+@pytest.mark.component
+async def test_metrics_returns_404_in_prod_when_token_unset(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/metrics")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+async def test_metrics_requires_bearer_token_in_prod(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "scrape-token-123")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        missing = await client.get("/api/metrics")
+        wrong = await client.get(
+            "/api/metrics", headers={"Authorization": "Bearer nope"}
+        )
+        wrong_scheme = await client.get(
+            "/api/metrics", headers={"Authorization": "Basic scrape-token-123"}
+        )
+        # Raw non-ASCII bytes arrive as a latin-1 decoded str; compare_digest
+        # must not TypeError (500) on them.
+        non_ascii = await client.get(
+            "/api/metrics",
+            headers=[(b"authorization", "Bearer café".encode("utf-8"))],
+        )
+        ok = await client.get(
+            "/api/metrics", headers={"Authorization": "Bearer scrape-token-123"}
+        )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert wrong_scheme.status_code == 401
+    assert non_ascii.status_code == 401
+    assert ok.status_code == 200
+
+
+@pytest.mark.component
+async def test_health_stays_open_in_prod_env(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    _patched_prod_metrics_env(monkeypatch, "")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/health")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.component
+async def test_http_rate_limit_429_path_served_from_redis_window(monkeypatch) -> None:
+    # The middleware consumes the Redis sliding window first; the 429 contract
+    # (body + Retry-After) is unchanged when the Redis path serves the deny.
+    import math
+
+    import app.core.redis as app_redis
+
+    class _SlidingWindowFakeRedis:
+        def __init__(self) -> None:
+            self._zsets: dict[str, dict[str, float]] = {}
+            self.now_ms = 1_700_000_000_000
+            self.eval_calls = 0
+
+        async def eval(self, script: str, numkeys: int, *args: object):
+            assert "ZREMRANGEBYSCORE" in script
+            self.eval_calls += 1
+            key = str(args[0])
+            window_ms = int(args[1])
+            max_requests = int(args[2])
+            member = str(args[3])
+            zset = self._zsets.setdefault(key, {})
+            cutoff = self.now_ms - window_ms
+            for existing, score in list(zset.items()):
+                if score <= cutoff:
+                    del zset[existing]
+            count = len(zset)
+            if count >= max_requests:
+                oldest = min(zset.values()) if zset else None
+                retry_after_ms = (
+                    window_ms
+                    if oldest is None
+                    else max(1, math.ceil(oldest + window_ms - self.now_ms))
+                )
+                return [0, retry_after_ms, 0, retry_after_ms]
+            zset[member] = self.now_ms
+            oldest = min(zset.values())
+            reset_ms = max(1, math.ceil(oldest + window_ms - self.now_ms))
+            return [1, 0, max_requests - count - 1, reset_ms]
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.config.runtime_settings import crawler_runtime_settings
+    from app.main import app
+
+    from app.main import rate_limit_buckets_snapshot
+
+    fake = _SlidingWindowFakeRedis()
+    monkeypatch.setattr(app_redis, "_client", fake)
+    monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_max_requests", 1)
+    monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_window_seconds", 60)
+    monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_max_clients", 10)
+    buckets_before = rate_limit_buckets_snapshot()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        first = await client.get("/not-found")
+        second = await client.get("/not-found")
+
+    assert first.status_code == 404
+    assert second.status_code == 429
+    assert second.json() == {"detail": "Rate limit exceeded"}
+    assert int(second.headers["retry-after"]) > 0
+    assert fake.eval_calls >= 2
+    # In-process fallback buckets untouched — Redis served both requests.
+    assert rate_limit_buckets_snapshot() == buckets_before

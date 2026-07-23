@@ -7,8 +7,8 @@ from app.models.crawl_run import CrawlRecord
 from app.persistence import record_export_service
 from app.persistence.record_export_service import (
     build_json_export_response,
-    stream_export_artifacts_json,
     stream_export_csv,
+    stream_export_discoverist,
     stream_export_json,
 )
 from pydantic import ValidationError
@@ -184,18 +184,11 @@ async def test_export_streamers_preserve_order_across_paged_reads(
 
     exported_json = await _collect_chunks(stream_export_json(None, 7))
     exported_csv = await _collect_chunks(stream_export_csv(None, 7))
-    exported_artifacts = await _collect_chunks(stream_export_artifacts_json(None, 7))
 
     json_rows = json.loads(exported_json)
-    artifact_rows = json.loads(exported_artifacts)
 
     assert [row["title"] for row in json_rows] == ["A", "B", "C"]
     assert exported_csv.index("A") < exported_csv.index("B") < exported_csv.index("C")
-    assert [row["source_url"] for row in artifact_rows] == [
-        "https://example.com/a",
-        "https://example.com/b",
-        "https://example.com/c",
-    ]
     assert record_export_service.export_record_from_row(
         rows[0],
         data=dict(rows[0].data),
@@ -266,3 +259,75 @@ def test_clean_export_data_keeps_variant_payloads_but_hides_internal_fields() ->
         "variant_axes": {"color": ["Black"]},
         "selected_variant": {"sku": "W-1", "color": "Black"},
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_export_csv_neutralizes_spreadsheet_formula_cells(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url=run.url,
+            data={
+                "title": "=HYPERLINK(\"https://evil.example\", \"click\")",
+                "price": "19.99",
+                "+stock": "4",
+            },
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    await db_session.commit()
+
+    exported_csv = await _collect_chunks(stream_export_csv(db_session, run.id))
+
+    lines = exported_csv.strip().splitlines()
+    assert lines[0] == "'+stock,price,title"
+    assert "'=HYPERLINK(" in lines[1]
+    assert "19.99" in lines[1]
+    # No cell starts with a bare formula marker.
+    for cell in lines[1].split(","):
+        assert not cell.startswith(("=", "+", "@", "\t", "\r"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_export_discoverist_csv_neutralizes_spreadsheet_formula_cells(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url="https://example.com/products/widget",
+            data={"title": "@SUM(1+1)", "price": "-2+3+cmd"},
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    await db_session.commit()
+
+    exported_csv = await _collect_chunks(stream_export_discoverist(db_session, run.id))
+
+    data_lines = exported_csv.strip().splitlines()[1:]
+    assert data_lines
+    for line in data_lines:
+        for cell in line.split(","):
+            assert not cell.startswith(("=", "+", "@", "\t", "\r"))
+    assert "'@SUM(1+1)" in exported_csv
+    assert "'-2+3+cmd" in exported_csv

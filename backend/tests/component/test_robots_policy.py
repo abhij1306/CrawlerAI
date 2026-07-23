@@ -5,13 +5,17 @@ import asyncio
 import httpx
 import pytest
 
+from app.core import url_safety
 from app.crawl import robots_policy
 
 
 class FakeTextResponse:
-    def __init__(self, status_code: int, text: str = "") -> None:
+    def __init__(
+        self, status_code: int, text: str = "", headers: dict | None = None
+    ) -> None:
         self.status_code = status_code
         self.text = text
+        self.headers = headers or {}
 
 
 class FakeAsyncClient:
@@ -163,3 +167,71 @@ async def test_check_url_crawlability_reuses_inflight_fetch_for_same_host(
 
     assert calls == 1
     assert all(result.allowed for result in results)
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_fetch_robots_snapshot_reuses_shared_client_across_domains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await robots_policy.reset_robots_policy_cache()
+    constructions = 0
+
+    class _SpyClient:
+        def __init__(self) -> None:
+            nonlocal constructions
+            constructions += 1
+
+        async def get(self, url: str):
+            del url
+            return FakeTextResponse(200, "User-agent: *\nDisallow:")
+
+    monkeypatch.setattr(
+        robots_policy.httpx, "AsyncClient", lambda **kwargs: _SpyClient()
+    )
+
+    first = await robots_policy.check_url_crawlability("https://one.example.com/a")
+    second = await robots_policy.check_url_crawlability("https://two.example.com/b")
+
+    assert first.allowed and second.allowed
+    # 2.16: one process-wide client serves both domains.
+    assert constructions == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_fetch_robots_snapshot_validates_each_redirect_hop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await robots_policy.reset_robots_policy_cache()
+    requested: list[str] = []
+
+    class _RedirectClient:
+        async def get(self, url: str):
+            requested.append(url)
+            if url == "https://example.com/robots.txt":
+                return FakeTextResponse(
+                    301, headers={"location": "https://cdn.example.com/robots.txt"}
+                )
+            return FakeTextResponse(200, "User-agent: *\nDisallow:")
+
+    monkeypatch.setattr(
+        robots_policy.httpx, "AsyncClient", lambda **kwargs: _RedirectClient()
+    )
+    validated: list[str] = []
+    real_validate = url_safety.validate_public_target
+
+    async def _spy_validate(url: str) -> None:
+        validated.append(url)
+        await real_validate(url)
+
+    monkeypatch.setattr(url_safety, "validate_public_target", _spy_validate)
+
+    result = await robots_policy.check_url_crawlability("https://example.com/public")
+
+    assert result.allowed is True
+    assert requested == [
+        "https://example.com/robots.txt",
+        "https://cdn.example.com/robots.txt",
+    ]
+    assert validated == requested

@@ -10,6 +10,8 @@ from types import MappingProxyType
 from typing import Any, TypedDict
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.crawl.pipeline.types import PublicRecord
+from app.core.config.diagnose import SOURCE_TRACE_BROWSER_DIAGNOSTIC_KEYS
 from app.core.records.confidence import score_record_confidence
 from app.core.records.field_url_normalization import canonical_public_record_url
 from app.extraction.contracts import VariantDrop
@@ -171,7 +173,7 @@ def _update_stored_record(
 async def persist_extracted_records(
     session: AsyncSession,
     run: CrawlRun,
-    records: list[dict[str, object]],
+    records: list[PublicRecord],
     *,
     acquisition_result,
     url_result_id: int | None = None,
@@ -463,7 +465,7 @@ def _record_provenance_payload(
 
 
 def _candidate_identity_keys(
-    records: list[dict[str, object]],
+    records: list[PublicRecord],
     acquisition_result,
     *,
     surface: str | None = None,
@@ -561,9 +563,15 @@ def _source_trace_for_record(
             "method": str(getattr(acquisition_result, "method", "") or ""),
             "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
             "status_code": getattr(acquisition_result, "status_code", None),
-            "browser_diagnostics": mapping_or_empty(
-                getattr(acquisition_result, "browser_diagnostics", {})
-            ),
+            # 2.13: keep only the downstream-consumed diagnostic keys per
+            # record; the full payload stays in diagnose.json.
+            "browser_diagnostics": {
+                key: value
+                for key, value in mapping_or_empty(
+                    getattr(acquisition_result, "browser_diagnostics", {})
+                ).items()
+                if key in SOURCE_TRACE_BROWSER_DIAGNOSTIC_KEYS
+            },
         },
         "lineage": lineage,
         "field_sources": mapping_or_empty(raw_record.get("_field_sources")),

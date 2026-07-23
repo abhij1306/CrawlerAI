@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
@@ -17,6 +18,8 @@ from app.core.config.extraction_rules import (
     DETAIL_EXPANSION_STATUS_TIME_BUDGET_REACHED,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _elapsed_ms(started_at: float) -> int:
@@ -91,6 +94,11 @@ async def _read_accessibility_snapshot(
     except Exception as exc:
         diagnostics["status"] = "snapshot_failed"
         diagnostics["interaction_failures"] = [f"snapshot_failed:{exc}"]
+        logger.warning(
+            "Accessibility snapshot failed; detail expansion proceeds without it: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return None
     return snapshot if isinstance(snapshot, dict) else None
 
@@ -130,6 +138,10 @@ async def _locator_is_detail_scoped(locator: Any) -> bool:
             }"""
         )
     except Exception:
+        logger.debug(
+            "Detail-scope probe failed; treating candidate as out of scope",
+            exc_info=True,
+        )
         return False
     return bool(result)
 
@@ -142,6 +154,11 @@ async def _locator_is_actionable(locator: Any, *, visibility_timeout_ms: int) ->
         try:
             await wait_for(state="visible", timeout=visibility_timeout_ms)
         except Exception:
+            logger.debug(
+                "Candidate never became visible within %sms; skipping",
+                visibility_timeout_ms,
+                exc_info=True,
+            )
             return False
     elif hasattr(locator, "is_visible") and not await locator.is_visible():
         return False
@@ -249,6 +266,12 @@ async def expand_interactive_elements_via_accessibility(
                 clicked.append(name)
         except Exception as exc:
             failures.append(str(exc))
+            logger.debug(
+                "Accessibility candidate click failed for %r: %s",
+                name,
+                type(exc).__name__,
+                exc_info=True,
+            )
     return _finish_diagnostics(
         diagnostics,
         clicked=clicked,

@@ -3,10 +3,27 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import auth_service
+from app.core.config import settings
+from app.core.dependencies import get_db
+from app.main import app
+
+
+@pytest.fixture
+async def auth_api_client(db_session):
+    async def _override_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_db
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        yield client
+    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -133,3 +150,91 @@ async def test_authenticate_user_rehash_does_not_commit_unrelated_changes(
     assert authenticated is not None
     assert observed_other_user is not None
     assert observed_other_user.is_active is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_register_rejects_short_password(
+    auth_api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "registration_enabled", True)
+
+    response = await auth_api_client.post(
+        "/api/auth/register",
+        json={"email": "new@example.com", "password": "short123"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_register_accepts_policy_compliant_password(
+    auth_api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "registration_enabled", True)
+
+    response = await auth_api_client.post(
+        "/api/auth/register",
+        json={"email": "new@example.com", "password": "LongEnoughPassword1!"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "new@example.com"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_login_still_accepts_legacy_short_password(
+    auth_api_client: AsyncClient, db_session
+) -> None:
+    await auth_service.create_user(db_session, "legacy@example.com", "short123")
+
+    response = await auth_api_client.post(
+        "/api/auth/login",
+        json={"email": "legacy@example.com", "password": "short123"},
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_user_update_rejects_unknown_role(
+    auth_api_client: AsyncClient, test_user
+) -> None:
+    login = await auth_api_client.post(
+        "/api/auth/login",
+        json={"email": test_user.email, "password": "password123"},
+    )
+    assert login.status_code == 200
+
+    response = await auth_api_client.patch(
+        f"/api/users/{test_user.id}",
+        json={"role": "superuser"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_user_update_accepts_known_role(
+    auth_api_client: AsyncClient, db_session, test_user
+) -> None:
+    managed = await auth_service.create_user(
+        db_session, "managed@example.com", "VeryStrongPassword123!"
+    )
+    login = await auth_api_client.post(
+        "/api/auth/login",
+        json={"email": test_user.email, "password": "password123"},
+    )
+    assert login.status_code == 200
+
+    response = await auth_api_client.patch(
+        f"/api/users/{managed.id}",
+        json={"role": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"

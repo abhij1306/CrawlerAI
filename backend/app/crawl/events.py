@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -27,6 +28,12 @@ _URL_PROGRESS_PATTERN = re.compile(r"^Processing URL \d+/\d+: ")
 _REDIS_KEY_PREFIX = "crawl:events"
 _DETACHED_LOG_WRITE_CONCURRENCY = 8
 _detached_log_write_semaphore = asyncio.Semaphore(_DETACHED_LOG_WRITE_CONCURRENCY)
+# In-process fallbacks for the Redis log-cap counters (2.10), used only when
+# the Redis path is not taken. Bounded with oldest-run eviction, mirroring the
+# pacing host-cache pattern.
+_FALLBACK_DB_LOG_COUNTS: OrderedDict[int, int] = OrderedDict()
+_FALLBACK_URL_PROGRESS_COUNTS: OrderedDict[int, int] = OrderedDict()
+_FALLBACK_COUNTER_LOCK = asyncio.Lock()
 
 
 def get_counter_ttl_seconds() -> int:
@@ -38,6 +45,10 @@ def get_detached_log_write_semaphore() -> asyncio.Semaphore:
 
 
 def clear_url_progress_counter(run_id: int) -> None:
+    # Plain pops are atomic under the single-threaded asyncio loop; the lock
+    # only serializes the check-and-bump sequence in the persist hot path.
+    _FALLBACK_DB_LOG_COUNTS.pop(int(run_id), None)
+    _FALLBACK_URL_PROGRESS_COUNTS.pop(int(run_id), None)
     schedule_fail_open(
         lambda redis: redis.delete(
             _url_progress_counter_key(run_id),
@@ -93,8 +104,43 @@ def _db_log_counter_key(run_id: int) -> str:
     return f"{_REDIS_KEY_PREFIX}:db:{int(run_id)}"
 
 
-def _should_persist_log_without_redis(level: str) -> bool:
-    return _LEVEL_ORDER[_normalize_level(level)] >= _LEVEL_ORDER["info"]
+def _bump_fallback_log_counter(
+    counts: OrderedDict[int, int], run_id: int
+) -> int:
+    next_value = counts.get(run_id, 0) + 1
+    counts[run_id] = next_value
+    counts.move_to_end(run_id)
+    max_entries = max(
+        1,
+        int(crawler_runtime_settings.crawl_log_fallback_counter_max_entries),
+    )
+    while len(counts) > max_entries:
+        counts.popitem(last=False)
+    return next_value
+
+
+async def _should_persist_log_fallback(
+    log_level: str, run_id: int, message: str
+) -> bool:
+    """In-process cap/sample enforcement when the Redis counters are unavailable.
+
+    Each prefork worker keeps its own counts, so the per-run DB cap can
+    overshoot by up to ~2x with 2 workers — acceptable for a safety valve.
+    """
+    sample_rate = max(1, int(settings.crawl_log_db_url_progress_sample_rate or 1))
+    async with _FALLBACK_COUNTER_LOCK:
+        if (
+            sample_rate > 1
+            and log_level == "info"
+            and _URL_PROGRESS_PATTERN.match(message)
+        ):
+            counter = _bump_fallback_log_counter(
+                _FALLBACK_URL_PROGRESS_COUNTS, run_id
+            )
+            return counter % sample_rate == 1
+        max_rows = max(1, int(settings.crawl_log_db_max_rows_per_run or 1))
+        db_count = _bump_fallback_log_counter(_FALLBACK_DB_LOG_COUNTS, run_id)
+        return db_count <= max_rows
 
 
 async def _should_persist_log(level: str, run_id: int, message: str) -> bool:
@@ -123,11 +169,14 @@ async def _should_persist_log(level: str, run_id: int, message: str) -> bool:
             await redis.expire(_db_log_counter_key(run_id), get_counter_ttl_seconds())
         return db_count <= max_rows
 
-    return await redis_fail_open(
+    redis_decision = await redis_fail_open(
         _decide,
-        default=_should_persist_log_without_redis(log_level),
+        default=None,
         operation_name=f"should_persist_log:{run_id}",
     )
+    if redis_decision is not None:
+        return redis_decision
+    return await _should_persist_log_fallback(log_level, run_id, message)
 
 
 def _append_log_file_line(
@@ -220,7 +269,8 @@ async def append_log_event(
     if session is not None:
         session.add(row)
         await session.flush()
-        await session.refresh(row)
+        # No refresh: the flush assigns CrawlLog.id and created_at uses a
+        # client-side default, so serialize_log_event is complete post-flush.
         return serialize_log_event(row)
 
     async with get_detached_log_write_semaphore():
@@ -229,7 +279,9 @@ async def append_log_event(
                 new_session.add(row)
                 await new_session.flush()
                 await new_session.commit()
-                await new_session.refresh(row)
+                # No refresh: the flush assigns CrawlLog.id and created_at uses
+                # a client-side default, so serialize_log_event is complete
+                # post-flush (SessionLocal runs with expire_on_commit=False).
                 return serialize_log_event(row)
             except IntegrityError:
                 await new_session.rollback()

@@ -54,7 +54,7 @@ Important route groups:
 
 - `api/crawls.py`: create runs, category discovery, CSV ingestion, logs, websocket updates, pause/resume/kill, commit fields, commit LLM suggestions
 - `api/crawl_domain.py`: domain recipe, domain run-profile, field feedback, and cookie-memory routes under `/api/crawls`
-- `api/records.py`: records list plus JSON/CSV/artifacts/discoverist exports and provenance
+- `api/records.py`: records list plus JSON/CSV/discoverist exports and provenance
 - `api/review.py`: review payload, artifact HTML, save review mapping
 - `api/selectors.py`: selector CRUD, cross-surface listing by domain, suggestion, test, preview HTML
 - `api/knowledge.py`: authenticated graph/site/entity/contract reads, operator source selection, admin rebuild, purge, and per-site delete
@@ -62,6 +62,11 @@ Important route groups:
 - `api/data_enrichment.py`: on-demand ecommerce detail enrichment jobs and enriched product row lookup
 - `api/product_intelligence.py`: product discovery, candidate crawl jobs, match scoring, and review
 - `api/public/*`: API-key authenticated extraction, domain info, capabilities, and envelopes
+
+Routes with no console UI by design (do not delete as "dead"):
+
+- `POST + GET /api/api-keys` (`api/api_keys.py`) — operator API, no console UI by design; the only key-creation surface backing the public `/api/v1` API
+- `GET /api/crawls/{run_id}/export/discoverist` (`api/records.py`) — documented external partner contract, no console caller by design
 
 Domain-recipe routes live under `api/crawl_domain.py`:
 
@@ -155,6 +160,21 @@ Responsibilities:
 - auth/dependencies
 - correlation IDs
 - health and metrics
+
+Security posture notes:
+
+- Outside dev/test (`APP_ENV` other than development/dev/local/test/testing) the
+  interactive API docs are disabled (`docs_url`/`redoc_url`/`openapi_url=None`)
+  and `/api/metrics` requires `Authorization: Bearer <METRICS_AUTH_TOKEN>`
+  (constant-time compare; 404 when the token is unset, 401 otherwise). The
+  `/health` + `/api/health` probes stay open because orchestrators scrape them
+  unauthenticated.
+- Password hashing is argon2id. `passlib` stays in the dependency tree solely
+  to verify legacy pbkdf2_sha256 hashes at login; successful legacy logins are
+  rehashed to argon2 transparently, so passlib must not be used for new hashes.
+- The backend image builds with `uv sync --locked --no-dev --extra prod`: the
+  lockfile is the only dependency source, dev extras never ship, and the prod
+  extra keeps `psycopg2` install-time compilation isolated to the image build.
 
 ### 6.2 Crawl ingestion and orchestration
 
@@ -535,6 +555,19 @@ Primary models:
 - `ReviewPromotion`
 - `DataEnrichmentJob`
 - `EnrichedProduct`
+
+`DomainCookieMemory.storage_state` is encrypted at rest (audit 1.6): rows hold
+an envelope `{"v": 1, "ct": <fernet ciphertext of the normalized storage
+state>}` keyed by `ENCRYPTION_KEY`, written by
+`acquisition/cookie_store.py` and migrated by
+`alembic/versions/20260722_0004_encrypt_domain_cookie_memory.py`. The memory
+stays deliberately shared across users keyed by `(domain[, engine])` — it is
+the cross-run learning substrate (`docs/INVARIANTS.md` §9), so scoping it per
+user would fragment learning; encryption removes the DB-dump exposure instead.
+Readers decrypt envelopes, pass legacy plaintext rows through unchanged, and
+skip (log + re-learn) rows that no longer decrypt. Deploy ordering: run the
+migration after all workers run the new code; old workers simply skip
+encrypted rows and re-learn.
 - `ApiKey`
 - `LLMConfig`
 - `LLMCostLog`

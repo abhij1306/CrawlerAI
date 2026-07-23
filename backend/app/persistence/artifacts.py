@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -57,6 +58,15 @@ class ArtifactRepository:
         if not target.is_relative_to(root):
             raise ValueError("artifact URI escapes the configured artifact root")
         return target
+
+    def remove_run_tree(self, run_id: int) -> None:
+        """Remove runs/{run_id}/ from the artifact root (ignore-errors).
+
+        This repository is the single owner of the on-disk layout
+        (INVARIANTS §12), so the runs/{run_id}/ path is built here.
+        """
+        relative = (Path("runs") / str(max(int(run_id), 0))).as_posix()
+        shutil.rmtree(self.resolve_uri(relative), ignore_errors=True)
 
     def read_bytes(self, uri: str) -> bytes:
         return self.resolve_uri(uri).read_bytes()

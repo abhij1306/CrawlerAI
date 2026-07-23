@@ -1820,87 +1820,18 @@ def test_detail_cascade_invokes_registry_floors_in_order(monkeypatch) -> None:
     assert real_run  # sanity: the real primitive is still importable/unchanged
 
 
-def test_detail_flag_on_dispatches_to_cascade(monkeypatch) -> None:
-    """Flag ON must invoke ``run_detail_cascade`` and NOT the legacy harvest."""
+def test_detail_dispatches_to_cascade(monkeypatch) -> None:
+    """The commerce-detail adapter must harvest via ``run_detail_cascade``."""
     calls: list[str] = []
     real_cascade = adapters.run_detail_cascade
-    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", True)
     monkeypatch.setattr(
         adapters,
         "run_detail_cascade",
         lambda *a, **k: (calls.append("cascade"), real_cascade(*a, **k))[1],
     )
-    monkeypatch.setattr(
-        adapters,
-        "harvest_ecommerce_detail",
-        lambda *a, **k: pytest.fail("legacy harvest must not run when flag is ON"),
-    )
     result = _detail_result()
     assert calls == ["cascade"]
     assert result.records[0]["title"] == "Trail Runner"
-
-
-def test_detail_flag_off_dispatches_to_legacy(monkeypatch) -> None:
-    """Flag OFF must invoke the legacy harvest and NOT the cascade seam."""
-    calls: list[str] = []
-    real_legacy = adapters.harvest_ecommerce_detail
-    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", False)
-    monkeypatch.setattr(
-        adapters,
-        "harvest_ecommerce_detail",
-        lambda *a, **k: (calls.append("legacy"), real_legacy(*a, **k))[1],
-    )
-    monkeypatch.setattr(
-        adapters,
-        "run_detail_cascade",
-        lambda *a, **k: pytest.fail("cascade must not run when flag is OFF"),
-    )
-    result = _detail_result()
-    assert calls == ["legacy"]
-    assert result.records[0]["title"] == "Trail Runner"
-
-
-def _detail_snapshot(result):
-    return {
-        "records": [
-            record.model_dump(mode="json", exclude_none=True)
-            for record in result.records
-        ],
-        "collector_outcomes": [
-            row.model_dump(mode="json") for row in result.collector_outcomes
-        ],
-        "stage_outcomes": [
-            row.model_dump(mode="json") for row in result.stage_outcomes
-        ],
-        "evidence": [row.model_dump(mode="json") for row in result.evidence],
-        "verdict": result.verdict,
-        "data_integrity": result.data_integrity,
-    }
-
-
-@pytest.mark.parametrize(
-    "html,url",
-    [
-        (_DETAIL_HTML, _DETAIL_URL),
-        (_DOM_ONLY_DETAIL_HTML, _DOM_ONLY_URL),
-    ],
-)
-def test_commerce_detail_flag_on_off_are_byte_identical(monkeypatch, html, url) -> None:
-    """Flag ON (cascade) and OFF (legacy) publish byte-identical output.
-
-    Covers both a structured-rich fixture and an adversarial DOM-only fixture
-    (empty structured floor) so parity is proven when each floor carries the
-    record. Compares records, per-collector outcomes, stages, and evidence.
-    """
-    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", True)
-    on_snapshot = _detail_snapshot(_detail_result(html, url))
-
-    monkeypatch.setattr(adapters, "CASCADE_ECOMMERCE_DETAIL_ENABLED", False)
-    off_snapshot = _detail_snapshot(_detail_result(html, url))
-
-    assert json.dumps(on_snapshot, sort_keys=True) == json.dumps(
-        off_snapshot, sort_keys=True
-    )
 
 
 def test_dom_only_detail_cascade_carries_record_without_structured() -> None:

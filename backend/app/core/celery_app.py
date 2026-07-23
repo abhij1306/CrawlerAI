@@ -79,6 +79,13 @@ celery_app.conf.update(
         "visibility_timeout": _broker_visibility_timeout_seconds(),
     },
 )
+celery_app.conf.beat_schedule = {
+    # 2.14: daily retention sweep of runs/{run_id}/ artifact trees (seconds).
+    "maintenance-sweep-run-artifacts-daily": {
+        "task": "maintenance.sweep_run_artifacts",
+        "schedule": 86_400.0,
+    },
+}
 instrument_celery()
 
 

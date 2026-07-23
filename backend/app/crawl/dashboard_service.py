@@ -121,15 +121,6 @@ async def reset_application_data(session: AsyncSession) -> dict:
     }
 
 
-async def reset_crawl_data(session: AsyncSession) -> dict:
-    async with _session_transaction(session):
-        counts = await _reset_crawl_data_db(session)
-    return {
-        **counts,
-        **await _reset_crawl_runtime_state(),
-    }
-
-
 async def reset_domain_memory(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         counts = await _reset_domain_memory_db(session)
@@ -139,11 +130,6 @@ async def reset_domain_memory(session: AsyncSession) -> dict:
         **graph_counts,
         **await _reset_domain_memory_runtime_state(),
     }
-
-
-async def reset_product_intelligence(session: AsyncSession) -> dict:
-    async with _session_transaction(session):
-        return await _reset_product_intelligence_db(session)
 
 
 async def _reset_crawl_data_db(session: AsyncSession) -> dict:

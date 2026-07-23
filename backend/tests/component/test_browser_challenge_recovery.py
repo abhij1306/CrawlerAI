@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
+import time
+from types import SimpleNamespace
+
 import pytest
 
 from app.acquisition.browser_block_detection import classify_blocked_page
 from app.acquisition.browser_fetch_support import suppress_new_context_openers
 from app.acquisition.browser_recovery import (
+    _ChallengeRecoveryContext,
     _is_solvable_interactive_challenge,
     _is_terminal_hard_block,
+    _retry_challenge_navigation,
 )
 
 _CF_FULL = (
@@ -91,3 +97,78 @@ async def test_suppress_new_context_openers_is_best_effort() -> None:
 
     # Must not raise even when the page rejects both calls.
     await suppress_new_context_openers(_BrokenPage())
+
+
+def _retry_context(page: object, response: object, **overrides) -> _ChallengeRecoveryContext:
+    values = {
+        "page": page,
+        "url": "https://shop.test/products/1",
+        "response": response,
+        "status_code": 403,
+        "phase_timings_ms": {},
+        "elapsed_ms": lambda started_at: 0,
+        "classify_blocked_page": None,
+        "get_page_html": None,
+        "looks_like_low_content_shell": None,
+    }
+    values.update(overrides)
+    return _ChallengeRecoveryContext(**values)
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_failed_challenge_retry_navigation_logs_warning(caplog) -> None:
+    """A retry navigation that errors must not silently keep the challenged page."""
+
+    class _FailingGotoPage:
+        async def goto(self, *args, **kwargs):
+            raise RuntimeError("navigation exploded")
+
+    original_response = SimpleNamespace(status=403)
+    context = _retry_context(_FailingGotoPage(), original_response)
+
+    with caplog.at_level(logging.WARNING, logger="app.acquisition.browser_recovery"):
+        result = await _retry_challenge_navigation(
+            context,
+            deadline=time.perf_counter() + 5,
+            navigation_timeout_ms=1000,
+        )
+
+    assert result is original_response
+    assert any(
+        "Challenge retry navigation failed" in record.message
+        and record.levelno == logging.WARNING
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_failed_post_retry_assessment_logs_warning(caplog) -> None:
+    """A post-retry HTML/classification failure must not be silent either."""
+
+    class _Page:
+        async def goto(self, *args, **kwargs):
+            return SimpleNamespace(status=200)
+
+    async def _raising_html(page) -> str:
+        raise RuntimeError("dom read exploded")
+
+    original_response = SimpleNamespace(status=403)
+    context = _retry_context(
+        _Page(), original_response, get_page_html=_raising_html
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.acquisition.browser_recovery"):
+        result = await _retry_challenge_navigation(
+            context,
+            deadline=time.perf_counter() + 5,
+            navigation_timeout_ms=1000,
+        )
+
+    assert result is original_response
+    assert any(
+        "Post-retry challenge assessment failed" in record.message
+        and record.levelno == logging.WARNING
+        for record in caplog.records
+    )

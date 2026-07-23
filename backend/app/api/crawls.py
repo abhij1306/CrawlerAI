@@ -45,7 +45,7 @@ from app.crawl.log_stream import (
 )
 from app.crawl.service import kill_run, pause_run, resume_run
 from app.crawl.state import TERMINAL_STATUSES
-from app.core.config import settings
+from app.core.config import get_frontend_origins, settings
 from app.core.config.runtime_settings import crawler_runtime_settings
 from fastapi import (
     APIRouter,
@@ -96,6 +96,20 @@ def _log_stream_sleep_seconds() -> float:
         return 0.001
 
 
+def _log_stream_max_poll_seconds() -> float:
+    try:
+        return max(
+            0.001,
+            float(crawler_runtime_settings.log_stream_max_poll_ms) / 1000,
+        )
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid log_stream_max_poll_ms=%r; using 5s log stream max poll interval",
+            crawler_runtime_settings.log_stream_max_poll_ms,
+        )
+        return 5.0
+
+
 def _websocket_token(websocket: WebSocket) -> str | None:
     token = websocket.cookies.get("access_token")
     if not token:
@@ -104,6 +118,16 @@ def _websocket_token(websocket: WebSocket) -> str | None:
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
     return token
+
+
+def _websocket_origin_allowed(websocket: WebSocket) -> bool:
+    # Browser clients always send Origin; cross-origin browser connections are
+    # rejected because the cookie-authenticated handshake is otherwise a CSWSH
+    # vector. Absent Origin means a non-browser client — the token still gates.
+    origin = str(websocket.headers.get("origin") or "").strip()
+    if not origin:
+        return True
+    return origin in get_frontend_origins()
 
 
 # WebSocket disconnect compatibility: Some WebSocket implementations raise
@@ -382,6 +406,9 @@ async def crawls_logs(
 async def crawls_logs_ws(
     websocket: WebSocket, run_id: int, after_id: int | None = None
 ) -> None:
+    if not _websocket_origin_allowed(websocket):
+        await _close_websocket_safely(websocket, code=1008, reason="Origin not allowed")
+        return
     user = await resolve_log_stream_user(_websocket_token(websocket))
     if user is None:
         await _close_websocket_safely(websocket, code=1008, reason="Not authenticated")
@@ -395,9 +422,14 @@ async def crawls_logs_ws(
 
     await websocket.accept()
     cursor = after_id
-    poll_interval_seconds = _log_stream_sleep_seconds()
+    base_poll_interval_seconds = _log_stream_sleep_seconds()
+    max_poll_interval_seconds = max(
+        base_poll_interval_seconds, _log_stream_max_poll_seconds()
+    )
+    poll_interval_seconds = base_poll_interval_seconds
     missing_run_snapshots = 0
     log_run_id = int(run_id)
+    last_status_value = run.status_value
     try:
         while True:
             rows, next_run = await load_log_stream_snapshot(
@@ -409,6 +441,7 @@ async def crawls_logs_ws(
                 await websocket.send_json(serialize_log_event(row))
                 cursor = row.id
 
+            status_changed = False
             if next_run is None:
                 missing_run_snapshots += 1
                 logger.warning(
@@ -420,11 +453,25 @@ async def crawls_logs_ws(
                     return
             else:
                 missing_run_snapshots = 0
+                status_changed = (
+                    next_run.status_value != last_status_value
+                    and next_run.status_value not in TERMINAL_STATUSES
+                )
                 run = next_run
+                last_status_value = run.status_value
             if run.status_value in TERMINAL_STATUSES and not rows:
                 await websocket.close(code=1000, reason="Run completed")
                 return
             await asyncio.sleep(poll_interval_seconds)
+            # Adaptive backoff (2.9): activity keeps the base cadence; sustained
+            # empty polls double the interval up to the configured cap so idle
+            # runs stop hammering the database.
+            if rows or status_changed:
+                poll_interval_seconds = base_poll_interval_seconds
+            else:
+                poll_interval_seconds = min(
+                    poll_interval_seconds * 2, max_poll_interval_seconds
+                )
 
     except WebSocketDisconnect:
         return

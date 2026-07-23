@@ -140,8 +140,15 @@ async def _retry_challenge_navigation(
             wait_until="domcontentloaded",
             timeout=min(remaining_budget_ms, int(navigation_timeout_ms)),
         )
-    except Exception:
+    except Exception as exc:
         context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
+        logger.warning(
+            "Challenge retry navigation failed for %s; keeping the original "
+            "challenged response: %s",
+            context.url,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return context.response
     context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
     retry_status = int(
@@ -153,7 +160,14 @@ async def _retry_challenge_navigation(
             html,
             _recovered_html_status_code(retry_status),
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Post-retry challenge assessment failed for %s; keeping the "
+            "original response: %s",
+            context.url,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return context.response
     if not _challenge_has_cleared(
         html,
@@ -252,6 +266,10 @@ def _challenge_has_cleared(
             )
         )
     except Exception:
+        logger.debug(
+            "Low-content-shell probe failed; assuming the page has content",
+            exc_info=True,
+        )
         low_content = False
     if not low_content:
         return True
@@ -391,6 +409,10 @@ async def _challenge_viewport(page: Any) -> tuple[int, int] | None:
             })"""
         )
     except Exception:
+        logger.debug(
+            "Viewport probe failed; challenge mouse activity is skipped",
+            exc_info=True,
+        )
         return None
     if not isinstance(viewport, dict):
         return None
@@ -494,6 +516,10 @@ async def _emit_challenge_activity(page: Any) -> None:
         if callable(wheel) and settings.scroll_px:
             await wheel(0, settings.scroll_px)
     except Exception:
+        logger.debug(
+            "Challenge activity simulation failed; continuing without it",
+            exc_info=True,
+        )
         return
 
 
@@ -511,12 +537,22 @@ async def _find_turnstile_box(page: Any) -> dict[str, float] | None:
         try:
             handle = await query(selector)
         except Exception:
+            logger.debug(
+                "Turnstile selector query failed for %r; trying the next selector",
+                selector,
+                exc_info=True,
+            )
             continue
         if handle is None:
             continue
         try:
             box = await handle.bounding_box()
         except Exception:
+            logger.debug(
+                "Turnstile bounding-box probe failed for %r; treating as not clickable",
+                selector,
+                exc_info=True,
+            )
             box = None
         if (
             isinstance(box, dict)
@@ -647,40 +683,6 @@ async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:
     }
 
 
-async def type_text_like_human(
-    page: Any, selector: str, text: str
-) -> dict[str, object]:
-    target_selector = str(selector or "").strip()
-    target_text = str(text or "")
-    if not target_selector or not target_text:
-        return {"typed_chars": 0}
-    locator_factory = getattr(page, "locator", None)
-    keyboard = getattr(page, "keyboard", None)
-    if not callable(locator_factory) or keyboard is None:
-        return {"typed_chars": 0}
-    typed_chars = 0
-    try:
-        locator = locator_factory(target_selector)
-        click = getattr(locator, "click", None)
-        if callable(click):
-            await click(
-                timeout=int(crawler_runtime_settings.traversal_click_timeout_ms)
-            )
-        for character in target_text:
-            type_fn = getattr(keyboard, "type", None)
-            if not callable(type_fn):
-                break
-            await type_fn(character)
-            typed_chars += 1
-            await page.wait_for_timeout(_typing_delay_ms())
-    except Exception:
-        # Preserve the partial typed_chars count so callers can detect partial
-        # input and recover (e.g., clear the field or fall back to direct nav)
-        # instead of treating the form as untouched.
-        logger.debug("Humanized typing stopped early", exc_info=True)
-    return {"typed_chars": typed_chars}
-
-
 async def _emit_scroll_physics(page: Any) -> int:
     mouse = getattr(page, "mouse", None)
     wheel = getattr(mouse, "wheel", None)
@@ -704,6 +706,11 @@ async def _emit_scroll_physics(page: Any) -> int:
             emitted += 1
             await page.wait_for_timeout(_behavior_pause_ms())
         except Exception:
+            logger.debug(
+                "Scroll-behavior emission stopped after %s step(s)",
+                emitted,
+                exc_info=True,
+            )
             break
     return emitted
 
@@ -716,18 +723,6 @@ def _behavior_pause_ms() -> int:
     if jitter_ms:
         pause_ms += secrets.randbelow(jitter_ms)
     return pause_ms
-
-
-def _typing_delay_ms() -> int:
-    delay_ms = max(
-        0, int(crawler_runtime_settings.browser_behavior_typing_min_delay_ms or 0)
-    )
-    jitter_ms = max(
-        0, int(crawler_runtime_settings.browser_behavior_typing_jitter_ms or 0)
-    )
-    if jitter_ms:
-        delay_ms += secrets.randbelow(jitter_ms)
-    return delay_ms
 
 
 def _clamp_mouse_coordinate(value: int, limit: int, padding: int) -> int:
@@ -775,7 +770,13 @@ async def capture_rendered_listing_fragments(
                 "candidateLimit": max(int(limit), int(limit) * len(selectors)),
             },
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Interactive-element snapshot failed; challenge solving has no "
+            "clickable candidates: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return []
     if not isinstance(snapshot, list):
         return []

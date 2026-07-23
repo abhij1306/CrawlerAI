@@ -16,6 +16,7 @@ from app.core.config.domain_profiles import (
     TRAVERSAL_MODE_VALUES,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.shared.text_coerce import clean_str as _clean_str
 
 _FETCH_MODE_VALUES = {
     "auto",
@@ -61,11 +62,6 @@ def _empty_acquisition_contract() -> dict[str, object]:
             "stale": False,
         },
     }
-
-
-def _clean_str(value: object) -> str | None:
-    text = str(value or "").strip()
-    return text or None
 
 
 def _coerce_choice(

@@ -82,7 +82,8 @@ async def validate_public_target(url: str) -> ValidatedTarget:
     )
 
 
-async def validate_proxy_endpoint(proxy_url: str) -> ValidatedTarget:
+def _parse_proxy_endpoint(proxy_url: str) -> ParseResult:
+    """Structural proxy validation: allowed scheme + hostname present."""
     parsed = urlparse(str(proxy_url or "").strip())
     scheme = str(parsed.scheme or "").lower()
     if scheme not in ALLOWED_PROXY_SCHEMES:
@@ -92,14 +93,37 @@ async def validate_proxy_endpoint(proxy_url: str) -> ValidatedTarget:
     hostname = str(parsed.hostname or "").strip().lower()
     if not hostname:
         raise ValueError("Proxy URL must include a hostname")
+    return parsed
+
+
+async def validate_proxy_endpoint(proxy_url: str) -> ValidatedTarget:
+    parsed = _parse_proxy_endpoint(proxy_url)
     return await _validate_endpoint_host(
-        hostname=hostname,
-        scheme=scheme,
+        hostname=str(parsed.hostname or "").strip().lower(),
+        scheme=str(parsed.scheme or "").lower(),
         port=_target_port(parsed),
         label="Proxy",
         unresolved_detail="Proxy host could not be resolved to a valid IP address",
         wrap_resolution_error=False,
     )
+
+
+async def ensure_valid_proxy_endpoints(proxy_urls: Iterable[str]) -> None:
+    """Validate run proxy endpoints at creation.
+
+    Structural errors (scheme, hostname) always reject. The DNS/public-IP
+    host guard only runs while proxy_endpoint_validation_enabled is on;
+    operators routing through internal proxies can opt out of that half.
+    """
+    validate_hosts = bool(crawler_runtime_settings.proxy_endpoint_validation_enabled)
+    for raw_url in proxy_urls:
+        candidate = str(raw_url or "").strip()
+        if not candidate:
+            continue
+        if validate_hosts:
+            await validate_proxy_endpoint(candidate)
+        else:
+            _parse_proxy_endpoint(candidate)
 
 
 def validate_public_url_host(url: str) -> None:

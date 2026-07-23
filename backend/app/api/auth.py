@@ -11,9 +11,10 @@ from app.core.rate_limit import (
     client_identifier_from_request,
     consume_sliding_window_limit,
 )
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_current_user_optional, get_db
 from app.models.user import User
-from app.schemas.user import AuthResponse, UserCreate, UserResponse
+from app.schemas.user import AuthResponse, UserCreate, UserRegister, UserResponse
+from app.core.user_service import revoke_user_sessions
 from app.core.config.auth_security import (
     AUTH_RATE_LIMIT_MAX_BUCKETS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
@@ -79,7 +80,7 @@ async def _enforce_auth_rate_limit(
 
 @router.post("/register", response_model=UserResponse)
 async def register(
-    payload: UserCreate,
+    payload: UserRegister,
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse | Response:
@@ -147,3 +148,27 @@ async def login(
 @router.get("/me")
 async def me(user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
     return UserResponse.model_validate(user, from_attributes=True)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+) -> Response:
+    limited = await _enforce_auth_rate_limit(request, "logout")
+    if limited is not None:
+        return limited
+    if user is not None:
+        await revoke_user_sessions(session, user.id)
+        await session.commit()
+    logger.info(
+        "auth.logout",
+        extra={
+            "user_id": str(user.id) if user is not None else "",
+            "client_id_hash": _auth_log_hash(_auth_client_id_from_request(request)),
+        },
+    )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie("access_token", path="/")
+    return response

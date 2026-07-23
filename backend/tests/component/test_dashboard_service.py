@@ -34,10 +34,11 @@ from app.acquisition.host_protection_memory import (
 )
 from app.crawl.crud import create_crawl_run
 from app.crawl.dashboard_service import (
+    _reset_crawl_data_db,
+    _reset_crawl_runtime_state,
+    _reset_product_intelligence_db,
     reset_application_data,
-    reset_crawl_data,
     reset_domain_memory,
-    reset_product_intelligence,
     session_transaction,
 )
 from sqlalchemy import select
@@ -64,9 +65,7 @@ async def test_dashboard_reset_compatibility_routes(
     async def _fake_reset(_session: AsyncSession) -> dict[str, int]:
         return {"ok": 1}
 
-    monkeypatch.setattr("app.api.dashboard.reset_crawl_data", _fake_reset)
     monkeypatch.setattr("app.api.dashboard.reset_domain_memory", _fake_reset)
-    monkeypatch.setattr("app.api.dashboard.reset_product_intelligence", _fake_reset)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_admin] = _override_admin
     try:
@@ -74,14 +73,9 @@ async def test_dashboard_reset_compatibility_routes(
             transport=ASGITransport(app=app),
             base_url="http://testserver",
         ) as client:
-            for path in (
-                "/api/dashboard/reset-crawl-data",
-                "/api/dashboard/reset-domain-memory",
-                "/api/dashboard/reset-product-intelligence",
-            ):
-                response = await client.post(path)
-                assert response.status_code == 200
-                assert response.json() == {"ok": 1}
+            response = await client.post("/api/dashboard/reset-domain-memory")
+            assert response.status_code == 200
+            assert response.json() == {"ok": 1}
     finally:
         app.dependency_overrides.clear()
 
@@ -261,7 +255,10 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     )
     await db_session.commit()
 
-    result = await reset_crawl_data(db_session)
+    result = {
+        **await _reset_crawl_data_db(db_session),
+        **await _reset_crawl_runtime_state(),
+    }
 
     assert result["crawl_runs_deleted"] == 1
     assert result["crawl_url_results_deleted"] == 1
@@ -504,7 +501,7 @@ async def test_reset_product_intelligence_preserves_crawl_and_domain_memory(
     )
     await db_session.commit()
 
-    result = await reset_product_intelligence(db_session)
+    result = await _reset_product_intelligence_db(db_session)
 
     assert result["product_intelligence_jobs_deleted"] == 1
     for model in (

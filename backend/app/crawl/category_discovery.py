@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from app.core.config.sitemap import (
@@ -12,6 +13,8 @@ from app.core.config.sitemap import (
 )
 from app.crawl.sitemap_resolver import resolve_category_urls_with_site_links
 from app.crawl.utils import normalize_target_url
+
+logger = logging.getLogger(__name__)
 
 
 async def discover_category_urls(
@@ -106,6 +109,12 @@ async def _resolve_one(
             "diagnostics": {},
         }
     except Exception as exc:
+        logger.warning(
+            "Category discovery failed for one input; returning an empty "
+            "failed result: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return {
             "urls": [],
             "source": "failed",

@@ -1464,12 +1464,33 @@ async def list_domain_contracts(
 async def find_contract_location(
     session: AsyncSession, contract_id: str
 ) -> KnowledgeContractLocation | None:
-    for template in list(
-        (await session.execute(select(ExtractionTemplate))).scalars().all()
-    ):
-        for contract in await list_template_contracts(session, template):
-            if str(contract.get("id")) == contract_id:
-                return KnowledgeContractLocation(template=template, contract=contract)
+    # 2.15: ONE JSONB-containment query replaces the full template scan plus
+    # the per-template contract recipe queries.
+    row = (
+        await session.execute(
+            select(ExtractionRecipe, ExtractionTemplate)
+            .join(
+                ExtractionTemplate,
+                ExtractionRecipe.template_id == ExtractionTemplate.id,
+            )
+            .where(
+                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
+                ExtractionRecipe.payload["contracts"].contains(
+                    [{"id": str(contract_id)}]
+                ),
+            )
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None
+    recipe, template = row
+    for contract in recipe.payload.get("contracts", []):
+        if str(contract.get("id")) == str(contract_id):
+            return KnowledgeContractLocation(
+                template=template, contract=dict(contract)
+            )
     return None
 
 

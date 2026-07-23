@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import time
 from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 from urllib.parse import urlparse
+
+from cryptography.fernet import InvalidToken
 
 from app.core.database import SessionLocal
 from app.core.config import settings
@@ -19,16 +22,23 @@ from app.core.config.cookie_settings import (
     DOMAIN_STORAGE_SCOPE_SEPARATOR,
     INCLUDE_ORIGIN_STATE_IN_STORAGE,
     STORAGE_STATE_BROWSER_ENGINE_KEY,
+    STORAGE_STATE_ENVELOPE_CIPHERTEXT_KEY,
+    STORAGE_STATE_ENVELOPE_VERSION,
+    STORAGE_STATE_ENVELOPE_VERSION_KEY,
     STORAGE_STATE_META_KEY,
     STORAGE_STATE_REPLACE_ATTEMPTS,
     STORAGE_STATE_REPLACE_RETRY_SECONDS,
     SUPPORTED_STORAGE_STATE_ENGINES,
 )
+from app.core.security import decrypt_secret, encrypt_secret
 from app.core.domain_utils import normalize_domain
 from app.core.shared.field_coerce import object_list as _object_list
 from app.core.shared.coerce_primitives import positive_int
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
 
 
 def validate_cookie_policy_config() -> None:
@@ -71,6 +81,54 @@ _CHALLENGE_COOKIE_VALUE_TOKENS = tuple(
 async def clear_cookie_store_cache() -> None:
     async with _RUN_STORAGE_STATE_LOCK:
         _RUN_STORAGE_STATE_CACHE.clear()
+
+
+def _encrypt_storage_state(storage_state: Mapping[str, object]) -> dict[str, object]:
+    """Wrap a normalized storage state in the at-rest encryption envelope."""
+    return {
+        STORAGE_STATE_ENVELOPE_VERSION_KEY: STORAGE_STATE_ENVELOPE_VERSION,
+        STORAGE_STATE_ENVELOPE_CIPHERTEXT_KEY: encrypt_secret(
+            json.dumps(storage_state, separators=(",", ":"))
+        ),
+    }
+
+
+def _decrypt_storage_state(
+    storage_state: Mapping[str, object] | object,
+    *,
+    domain: str = "",
+) -> dict[str, object] | None:
+    """Return the plaintext storage state for a persisted row value.
+
+    Envelope rows decrypt; legacy plaintext rows pass through unchanged.
+    An undecryptable envelope (wrong key, corrupted payload) logs and returns
+    None so acquisition simply re-learns the domain instead of crashing.
+    """
+    if not isinstance(storage_state, Mapping):
+        return None
+    if STORAGE_STATE_ENVELOPE_CIPHERTEXT_KEY not in storage_state:
+        return dict(storage_state)
+    if storage_state.get(STORAGE_STATE_ENVELOPE_VERSION_KEY) != (
+        STORAGE_STATE_ENVELOPE_VERSION
+    ):
+        logger.warning(
+            "Skipping domain cookie memory row with unknown envelope version",
+            extra={"domain": domain},
+        )
+        return None
+    try:
+        decoded = json.loads(
+            decrypt_secret(str(storage_state[STORAGE_STATE_ENVELOPE_CIPHERTEXT_KEY]))
+        )
+    except (InvalidToken, ValueError, TypeError):
+        logger.warning(
+            "Skipping undecryptable domain cookie memory row",
+            extra={"domain": domain},
+        )
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    return decoded
 
 
 async def load_storage_state_for_run(
@@ -139,8 +197,8 @@ async def load_storage_state_for_domain(
     )
     rows = list(result.scalars().all())
     for row in rows:
-        raw_state = row.storage_state
-        if not isinstance(raw_state, Mapping):
+        raw_state = _decrypt_storage_state(row.storage_state, domain=row.domain)
+        if raw_state is None:
             continue
         if not _storage_state_matches_browser_engine(
             raw_state,
@@ -265,15 +323,16 @@ async def _upsert_domain_storage_state(
     row = result.scalars().first()
     if row is not None and str(row.state_fingerprint or "") == fingerprint:
         return False
+    encrypted_state = _encrypt_storage_state(normalized_state)
     if row is None:
         row = DomainCookieMemory(
             domain=storage_key,
-            storage_state=normalized_state,
+            storage_state=encrypted_state,
             state_fingerprint=fingerprint,
         )
         session.add(row)
     else:
-        row.storage_state = normalized_state
+        row.storage_state = encrypted_state
         row.state_fingerprint = fingerprint
     return True
 
@@ -304,20 +363,17 @@ async def list_domain_cookie_memory(
     rows = list((await session.execute(statement)).scalars().all())
     payload: list[dict[str, object]] = []
     for row in rows:
+        storage_state = _decrypt_storage_state(row.storage_state, domain=row.domain)
         payload.append(
             {
                 "id": row.id,
                 "domain": _domain_from_storage_key(row.domain),
                 "browser_engine": _storage_row_browser_engine(row),
                 "cookie_count": _storage_state_entry_count(
-                    row.storage_state.get("cookies")
-                    if isinstance(row.storage_state, Mapping)
-                    else None
+                    (storage_state or {}).get("cookies")
                 ),
                 "origin_count": _storage_state_entry_count(
-                    row.storage_state.get("origins")
-                    if isinstance(row.storage_state, Mapping)
-                    else None
+                    (storage_state or {}).get("origins")
                 ),
                 "updated_at": row.updated_at,
             }

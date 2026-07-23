@@ -78,6 +78,13 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     url_batch_concurrency: int = 8
+    # Worker-pool URL scheduling (2.11): `url_batch_concurrency` long-lived
+    # workers pull (idx, url) items from a shared iterator and push results
+    # onto a bounded queue (capacity = concurrency * size factor) instead of
+    # materializing one task per pending URL; the parent ticks control
+    # checkpoints at least every tick interval while URLs are in flight.
+    parallel_result_queue_size_factor: int = 2
+    parallel_control_tick_seconds: float = 1.0
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0
@@ -139,8 +146,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_behavior_pause_min_ms: int = 80
     browser_behavior_pause_jitter_ms: int = 220
     browser_behavior_realism_timeout_seconds: float = 3.0
-    browser_behavior_typing_min_delay_ms: int = 35
-    browser_behavior_typing_jitter_ms: int = 95
     surface_readiness_max_wait_ms: int | None = 6000
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
@@ -169,6 +174,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_capture_queue_join_timeout_ms: int = 2000
     browser_artifact_capture_timeout_ms: int = 4000
     crawl_event_counter_ttl_seconds: int = 86400
+    # Bound for the in-process fallback log-cap counters (2.10); oldest runs are
+    # evicted first, mirroring the pacing host-cache pattern.
+    crawl_log_fallback_counter_max_entries: int = 1024
     browser_first_nav_pause_ms: int = 0
     platform_detection_html_search_limit: int = 500000
     browser_real_chrome_enabled: bool = True
@@ -201,6 +209,10 @@ class CrawlerRuntimeSettings(BaseSettings):
         "real_chrome",
         "patchright",
     )
+    # Validate run proxy endpoints (scheme/host + DNS/public-IP SSRF guard) at
+    # creation; operators routing through internal proxies can opt out (structural
+    # validation still applies).
+    proxy_endpoint_validation_enabled: bool = True
     proxy_rotation_sticky_tokens: tuple[str, ...] = ("sticky", "session", "affinity")
     proxy_rotation_rotating_tokens: tuple[str, ...] = ("rotating", "rotate", "random")
     proxy_sticky_username_markers: tuple[str, ...] = ("-session-", "session-")
@@ -211,6 +223,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_context_permissions: tuple[str, ...] = ("geolocation",)
     browser_readiness_visible_text_min: int = 120
     cooperative_sleep_poll_ms: int = 250
+    # Upper bound for the adaptive log-stream websocket poll backoff (2.9):
+    # empty polls double the interval from cooperative_sleep_poll_ms up to this.
+    log_stream_max_poll_ms: int = 5000
     traversal_locator_visible_timeout_ms: int = 250
     traversal_scroll_into_view_timeout_ms: int = 2000
     traversal_cookie_consent_visible_timeout_ms: int = 200
@@ -340,8 +355,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_behavior_scroll_max_px",
             "browser_behavior_pause_min_ms",
             "browser_behavior_pause_jitter_ms",
-            "browser_behavior_typing_min_delay_ms",
-            "browser_behavior_typing_jitter_ms",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
         if self.browser_behavior_scroll_max_px < self.browser_behavior_scroll_min_px:

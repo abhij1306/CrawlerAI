@@ -25,6 +25,10 @@ from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_ERROR,
 )
+from app.workers.base import (
+    load_run_with_normalized_status as _load_run_with_normalized_status,
+)
+from app.workers.base import set_task_id as _set_task_id
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,13 +40,6 @@ _shutdown_after_kill_in_progress = False
 def _get_task_id(run: CrawlRun) -> str | None:
     task_id = str(run.get_summary(CELERY_TASK_ID_KEY) or "").strip()
     return task_id or None
-
-
-def _set_task_id(run: CrawlRun, task_id: str | None) -> None:
-    if task_id:
-        run.update_summary(**{CELERY_TASK_ID_KEY: task_id})
-    else:
-        run.remove_summary_keys(CELERY_TASK_ID_KEY)
 
 
 def _as_utc_datetime(value: datetime | None) -> datetime | None:
@@ -144,15 +141,6 @@ async def _recover_stale_local_run(
     await log_event(session, run.id, log_level, error_message)
     await session.commit()
     return True
-
-
-async def _load_run_with_normalized_status(
-    retry_session: AsyncSession, run_id: int
-) -> tuple[CrawlRun, CrawlStatus]:
-    retry_run = await retry_session.get(CrawlRun, run_id)
-    if retry_run is None:
-        raise ValueError("Run not found")
-    return retry_run, retry_run.status_value
 
 
 async def _run_control_update(

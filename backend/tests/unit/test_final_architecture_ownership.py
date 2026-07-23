@@ -26,25 +26,38 @@ OVERSIZED_MODULE_DEBT = {
     # Celery job runner (2.7); intelligence/service.py entered with the
     # concurrent candidate polling; extraction_memory grew with the
     # knowledge.py query-layer move (4.6).
-    "acquisition/browser_readiness.py": 702,
-    "acquisition/browser_recovery.py": 723,
+    # Audit-debt Stream B commit 5 (2026-07-22): browser_recovery.py left the
+    # ledger (723 -> 681 after the type_text_like_human smoke-symbol deletion,
+    # 3.14).
+    # Stream B commit 10 (same day): browser_recovery.py re-entered (681 ->
+    # 728) and browser_capture.py entered (699 -> 704) with the silent-except
+    # diagnostics (4.8); browser_readiness +13, collectors/dom +7 — all raised
+    # to measured.
+    "acquisition/browser_capture.py": 704,
+    "acquisition/browser_readiness.py": 715,
+    "acquisition/browser_recovery.py": 728,
     "acquisition/browser_result_builder.py": 744,
     "core/config/extraction_rules/_detail.py": 1026,
     "enrichment/service.py": 907,
-    "extraction/collectors/dom.py": 1062,
+    "extraction/collectors/dom.py": 1069,
     "extraction/collectors/js_state.py": 914,
-    "extraction/collectors/jsonld.py": 783,
+    # Stream B commit 14 (same day): jsonld.py re-keyed (783 -> 871) and
+    # result_building.py re-keyed (738 -> 824) with the >150-line function
+    # decompositions (4.15) — raised to measured.
+    "extraction/collectors/jsonld.py": 871,
     "extraction/contracts.py": 856,
     "extraction/engine.py": 1059,
     "extraction/entities.py": 850,
     "extraction/pipeline.py": 781,
-    "extraction/result_building.py": 738,
+    "extraction/result_building.py": 824,
     "extraction/validation.py": 743,
     "intelligence/service.py": 763,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
-    "persistence/extraction_memory.py": 1375,
+    # Audit-debt chunk K (2026-07-22): grew with the single-query
+    # find_contract_location join (2.15).
+    "persistence/extraction_memory.py": 1396,
 }
 # SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
 # into _listing_discovery_signals/_listing_readiness_verdict and left the
@@ -52,6 +65,11 @@ OVERSIZED_MODULE_DEBT = {
 # tracked for the next cleanup slice: infer_brand_from_product_url 69 -> 86,
 # infer_brand_from_page_identity 38 -> 39, field_evidence_states 41 -> 46,
 # projection_field_states 70 -> 78.
+# Stream B commit 14 (2026-07-22): the four >150-line functions (4.15) were
+# decomposed into stage helpers and left the ledger —
+# projection_field_states 78 -> 3, commerce_detail_projection 43 -> <=18,
+# _acquire_browser_retry_result (never ledgered) -> <=10, jsonld _variant
+# 30 -> <=15, resolve 31 -> 8.
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
     ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
@@ -87,7 +105,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
     ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
     ("extraction/collectors/_helpers.py", "_subject_id"): 23,
-    ("extraction/collectors/jsonld.py", "_variant"): 30,
     ("extraction/collectors/js_state.py", "network_row"): 41,
     ("extraction/collectors/js_state.py", "_looks_like_variant"): 23,
     ("extraction/engine.py", "_assess"): 27,
@@ -96,7 +113,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/pipeline.py", "_flag_brand_conflicts"): 30,
     ("extraction/pipeline.py", "normalize_evidence"): 40,
     ("extraction/pipeline.py", "_title_flags"): 29,
-    ("extraction/publication.py", "commerce_detail_projection"): 43,
     ("extraction/publication.py", "serialize_commerce_detail_projection"): 26,
     ("enrichment/service.py", "run_job"): 25,
     ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
@@ -112,11 +128,9 @@ COMPLEX_FUNCTION_DEBT = {
         "_offer_atomic_price_currency_preferences",
     ): 22,
     ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
-    ("extraction/resolution/resolver.py", "resolve"): 31,
     ("extraction/resolution/variant_rollup.py", "_reconcile_variant_prices"): 25,
     ("extraction/resolution/variant_rollup.py", "_inherit_variant_offer_facts"): 22,
     ("extraction/result_building.py", "field_evidence_states"): 46,
-    ("extraction/result_building.py", "projection_field_states"): 78,
     ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
@@ -189,22 +203,118 @@ PACKAGE_LOC_BUDGETS = {
     # Review-fix reconciliation (same day): review-driven hardening (route-
     # blocking guard order, settings.urls cap, pending-orphan window,
     # verdict_counts health) nudged crawl/enrichment/intelligence further.
-    # Budgets are only raised, never lowered.
-    "acquisition": 17_104,
-    "crawl": 9_268,
-    "core": 20_761,
+    # Audit-debt Stream A chunk B (2026-07-22): core +7 for the public
+    # is_non_dev_environment gate + metrics_auth_token setting (1.13).
+    # Chunk C (same day): acquisition +48 for the storage-state encryption
+    # envelope in cookie_store.py; core +9 for the envelope constants (1.6).
+    # Chunk D (same day): core +23 for ensure_valid_proxy_endpoints +
+    # proxy_endpoint_validation_enabled; crawl +1 for the call site (1.10).
+    # Logout slice (same day): core +23 for revoke_user_sessions +
+    # get_current_user_optional shared resolver (5.3 backend).
+    # Chunk E (same day): core +138 for redis_execute + the Redis
+    # sliding-window rate-limit consumer (1.9); acquisition +84 for the
+    # Redis host-pacing claim script (2.8).
+    # Chunk F (same day): crawl +49 for the fallback log-cap counters in
+    # crawl/events.py (2.10); core +6 for the new runtime tunables (2.9/2.10).
+    # Chunk G (same day): crawl +9 for the worker-pool URL scheduling in
+    # batch_runtime.py (2.11); core +7 for its runtime tunables.
+    # Chunk H (same day): core +71 for the public API-key principal cache
+    # (2.12) in public_auth.py + its config constants.
+    # Chunk I (same day): crawl +7 for the source_trace browser_diagnostics
+    # allowlist (2.13); core +8 for its diagnose config constant.
+    # Chunk J (same day): crawl +14 for delete_run artifact cleanup (2.14);
+    # core +10 for the retention setting + beat schedule.
+    # Chunk K (same day): crawl +19 for the shared robots client (2.16).
+    # Audit-debt Stream B commit 3 (same day): evaluation ratcheted DOWN
+    # (2,009 -> 1,563) with the test-only baseline/llm_repair deletion (3.7);
+    # core -16 for the unread GROUNDED_REPAIR_* constants.
+    # Stream B commit 4 (same day): acquisition -1 (never-read
+    # _max_payload_bytes attribute) and core -3 (dead alias + unread Settings
+    # field) ratcheted down to measured (3.13).
+    # Stream B commit 5 (same day): acquisition -42 (type_text_like_human +
+    # typing-delay helper/settings), crawl -16 (orphaned dashboard reset
+    # wrappers + selector_rule_count), core -32 (selector summary service fn)
+    # ratcheted down to measured (3.14).
+    # Stream B commit 6 (same day): acquisition -8 and crawl -29 (hoisted
+    # helper copies deleted, 3.9/3.12), intelligence -4 (dead _query_tokens),
+    # core +6 (clean_str/locale-segment single owners) — shrunk packages
+    # ratcheted down to measured, core raised to measured.
+    # Stream B commit 9 (same day): core -53 (nine CASCADE_* enable flags
+    # deleted, 3.8), extraction -57 (legacy flag-OFF harvest branches +
+    # unreferenced collect_job_detail), crawl -6 (learn-once gate flatten) —
+    # ratcheted down to measured.
+    # Stream B commit 10 (same day): acquisition +159, core +45, crawl +15,
+    # extraction +15, evaluation +8, intelligence +5 for the silent-except
+    # diagnostics (4.8) — raised to measured.
+    # Stream B commit 12 (same day): crawl +132 for the PublicRecord/
+    # URLMetrics TypedDict seam in pipeline/types.py (4.13) — raised to
+    # measured.
+    # Stream B commit 14 (same day): extraction +318, crawl +60 for the
+    # >150-line function decompositions (4.15) — raised to measured.
+    # Mypy fix pass (same day): core +23, acquisition +23 for the typed
+    # redis eval wrappers (str args + Awaitable casts) — raised to measured.
+    # Budgets are only raised, never lowered — except ratcheting down to the
+    # measured value when a deletion commit drops a package total.
+    "acquisition": 17_366,
+    "crawl": 9_523,
+    "core": 21_033,
     "enrichment": 2_254,
     "connectors": 2_444,
-    "intelligence": 3_461,
-    "extraction": 16_753,
-    "evaluation": 2_009,
+    "intelligence": 3_462,
+    "extraction": 17_029,
+    "evaluation": 1_571,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
 # the resolution split, browser-pool collaborators, SSRF hardening, Celery
 # job runners, and the review-driven hardening fixes (net of the dead-code
 # purge). Re-keyed to 87,212 after the CI mypy/CodeQL fixes added the typed
 # staged-update payload and CursorResult casts. Measured on working tree.
-TOTAL_APP_LOC_BUDGET = 87_212
+# Audit-debt Stream A chunk A (2026-07-22): +51 for the csv_safety module,
+# CSV formula-injection call sites, WS Origin check, and the register/login
+# schema split (core package landed exactly at its 20,761 budget).
+# Chunk B (same day): +40 for the non-dev docs/metrics gating in main.py.
+# Chunk C (same day): +57 for the cookie-state encryption-at-rest helpers.
+# Chunk D (same day): +24 for proxy endpoint validation at run creation.
+# Logout slice (same day): +46 for POST /api/auth/logout + shared auth resolvers.
+# Chunk E (same day): +279 for Redis-backed rate limits + host pacing (1.9/2.8).
+# Chunk F (same day): +87 for log-stream backoff + log caps without Redis (2.9/2.10).
+# Chunk G (same day): +16 for worker-pool URL scheduling (2.11).
+# Chunk H (same day): +71 for the public API-key principal cache (2.12).
+# Chunk I (same day): +15 for the slim per-record source_trace (2.13).
+# Chunk J (same day): +82 for artifact cleanup on delete + the retention
+# sweeper task (2.14).
+# Chunk K (same day): +40 for the single-query contract lookup (2.15) + the
+# shared robots client (2.16).
+# Audit-debt Stream B commit 3 (same day): -428 for the test-only evaluation
+# baseline/llm_repair modules + unread GROUNDED_REPAIR_* constants (3.7).
+# Stream B commit 4 (same day): -7 for the residual dead constant/alias/
+# settings purge (3.13).
+# Stream B commit 5 (same day): -349 for the orphaned test-only routes,
+# route-orphaned export builders/streamers, dashboard reset wrappers, and the
+# smoke-script typing symbol (3.14).
+# Stream B commit 6 (same day): -40 net for the triplicated/copy-pasted helper
+# hoists to single owners (3.9 worker/browser helpers, 3.12 seven dupes).
+# Stream B commit 7 (same day): -1 net for the shared ai_visibility
+# _provider_http._execute_post skeleton (3.10; ~120 adapter LOC deduped
+# against the new neutral module, which is not in a budgeted package).
+# Stream B commit 8 (same day): +12 for the shared job-lifecycle schema bases
+# (3.11; the new schemas/job_lifecycle module's docstring + ORM-divergence
+# note outweigh the deduped PI/DE field re-declarations).
+# Stream B commit 9 (same day): -116 for the CASCADE_* flag removal + dead
+# legacy harvest branches (3.8).
+# Stream B commit 10 (same day): +247 for the silent-except diagnostics (4.8).
+# Stream B commit 12 (same day): +132 for the typed pipeline boundary
+# (PublicRecord/URLMetrics TypedDicts + seam adoption, 4.13).
+# Stream B commit 14 (same day): +378 for the >150-line function
+# decompositions (4.15) — raised to measured.
+# Simplify pass (same day): -1 for consolidating the ai_visibility adapter
+# imports onto the neutral _provider_http owner (anthropic/openrouter dropped
+# their gemini re-export hop) — ratcheted down to measured; no budgeted
+# package moved.
+# Mypy fix pass (same day): +53 for the typed redis eval wrappers, the
+# Sequence-typed BaseJobCreate.source_records, and the metrics bearer
+# non-ASCII guard — raised to measured.
+TOTAL_APP_LOC_BUDGET = 87_900
 
 
 def test_production_package_loc_budgets() -> None:

@@ -612,6 +612,44 @@ async def test_active_record_write_persists_provenance_to_db() -> None:
     assert row.raw_html_path is None
 
 
+@pytest.mark.asyncio
+async def test_source_trace_slims_browser_diagnostics_to_consumed_keys() -> None:
+    """2.13: source_trace keeps browser_reason/detail_expansion only."""
+    session = SimpleNamespace(
+        scalars=AsyncMock(return_value=[]),
+        add=Mock(),
+        flush=AsyncMock(),
+    )
+    run = SimpleNamespace(id=1, surface="ecommerce_detail", requested_fields=[])
+    acquisition = SimpleNamespace(
+        final_url="https://example.test/products/widget",
+        method="browser",
+        status_code=200,
+        browser_diagnostics={
+            "browser_reason": "http-escalation",
+            "detail_expansion": {"expanded_elements": ["Specs"]},
+            "browser_attempted": True,
+            "browser_outcome": "success",
+            "failure_reason": "challenge_shell",
+        },
+    )
+    raw_record = {"url": acquisition.final_url, "title": "Widget"}
+
+    batch = await record_persistence.persist_extracted_records(
+        session,
+        run,
+        [raw_record],
+        acquisition_result=acquisition,
+        url_result_id=9,
+    )
+
+    diagnostics = batch.records[0].source_trace["acquisition"]["browser_diagnostics"]
+    assert diagnostics == {
+        "browser_reason": "http-escalation",
+        "detail_expansion": {"expanded_elements": ["Specs"]},
+    }
+
+
 def test_persisted_record_batch_separates_writes_from_authoritative_count() -> None:
     records = (SimpleNamespace(id=1), SimpleNamespace(id=2))
 

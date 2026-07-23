@@ -78,6 +78,10 @@ def patchright_browser_available() -> bool:
     try:
         _patchright_async_playwright_factory()
     except Exception:
+        logger.debug(
+            "Patchright availability probe failed; reporting unavailable",
+            exc_info=True,
+        )
         return False
     return True
 

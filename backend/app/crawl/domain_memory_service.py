@@ -159,14 +159,6 @@ def selector_rules_from_payload(value: object) -> list[dict[str, object]]:
     return fallback_rules
 
 
-def selector_rule_count(value: object) -> int:
-    return sum(
-        1
-        for row in selector_rules_from_payload(value)
-        if str(row.get("css_selector") or "").strip()
-    )
-
-
 async def list_selector_memories(session: AsyncSession) -> list[SelectorMemory]:
     rows = (
         await session.execute(

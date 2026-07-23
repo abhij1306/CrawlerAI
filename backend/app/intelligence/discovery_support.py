@@ -169,6 +169,11 @@ def _page_url(page: object) -> str:
         try:
             value = value()
         except Exception:
+            logger.debug(
+                "Page-url read failed on a discovery page object; using empty "
+                "value",
+                exc_info=True,
+            )
             value = ""
     return str(value or "").strip()
 
@@ -555,12 +560,6 @@ def _looks_like_manufacturer_identifier(value: object) -> bool:
         and any(char.isalpha() for char in compact)
         and any(char.isdigit() for char in compact)
     )
-
-
-def _query_tokens(value: object) -> list[str]:
-    return [
-        token for token in re.split(r"[^a-z0-9]+", str(value or "").casefold()) if token
-    ]
 
 
 def _candidate_rank_text(candidate: DiscoveredCandidate) -> str:

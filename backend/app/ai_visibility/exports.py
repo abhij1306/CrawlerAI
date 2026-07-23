@@ -11,6 +11,7 @@ import io
 import json
 from typing import Any
 
+from app.core.shared.csv_safety import sanitize_csv_row
 from app.models.ai_visibility import AiVisibilityExecution, AiVisibilityRun
 
 _CSV_COLUMNS = [
@@ -60,40 +61,44 @@ def run_to_csv(run: AiVisibilityRun, executions: list[AiVisibilityExecution]) ->
             c.get("domain") for c in (e.citations or []) if c.get("domain")
         ]
         writer.writerow(
-            {
-                "run_id": run.id,
-                "prompt_index": e.prompt_index,
-                "prompt_text": e.prompt_text_snapshot,
-                "theme": e.prompt_theme_snapshot,
-                "intent": e.prompt_intent_snapshot,
-                "repetition": e.repetition,
-                "randomized_position": e.randomized_position,
-                "status": e.status,
-                "search_used": e.search_used,
-                "search_query_count": score.get("search_query_count", 0),
-                "search_queries": _join(queries),
-                "prompt_class": score.get("prompt_class", ""),
-                "prompt_contains_brand": score.get("prompt_contains_brand", False),
-                "prompt_contains_competitor": score.get(
-                    "prompt_contains_competitor", False
-                ),
-                "brand_mentioned": score.get("brand_mentioned", False),
-                "brand_injected_in_search": score.get(
-                    "brand_injected_in_search", False
-                ),
-                "owned_domain_cited": score.get("owned_domain_cited", False),
-                "owned_citation_count": score.get("owned_citation_count", 0),
-                "unintended_domain_cited": score.get("unintended_domain_cited", False),
-                "citation_count": score.get("citation_count", 0),
-                "citation_domains": _join(citation_domains),
-                "competitors_mentioned": _join(score.get("competitors_mentioned")),
-                "competitor_domains_cited": _join(
-                    score.get("competitor_domains_cited")
-                ),
-                "fanout_features": _join(score.get("fanout_features")),
-                "latency_ms": e.latency_ms,
-                "error_code": e.error_code,
-            }
+            sanitize_csv_row(
+                {
+                    "run_id": run.id,
+                    "prompt_index": e.prompt_index,
+                    "prompt_text": e.prompt_text_snapshot,
+                    "theme": e.prompt_theme_snapshot,
+                    "intent": e.prompt_intent_snapshot,
+                    "repetition": e.repetition,
+                    "randomized_position": e.randomized_position,
+                    "status": e.status,
+                    "search_used": e.search_used,
+                    "search_query_count": score.get("search_query_count", 0),
+                    "search_queries": _join(queries),
+                    "prompt_class": score.get("prompt_class", ""),
+                    "prompt_contains_brand": score.get("prompt_contains_brand", False),
+                    "prompt_contains_competitor": score.get(
+                        "prompt_contains_competitor", False
+                    ),
+                    "brand_mentioned": score.get("brand_mentioned", False),
+                    "brand_injected_in_search": score.get(
+                        "brand_injected_in_search", False
+                    ),
+                    "owned_domain_cited": score.get("owned_domain_cited", False),
+                    "owned_citation_count": score.get("owned_citation_count", 0),
+                    "unintended_domain_cited": score.get(
+                        "unintended_domain_cited", False
+                    ),
+                    "citation_count": score.get("citation_count", 0),
+                    "citation_domains": _join(citation_domains),
+                    "competitors_mentioned": _join(score.get("competitors_mentioned")),
+                    "competitor_domains_cited": _join(
+                        score.get("competitor_domains_cited")
+                    ),
+                    "fanout_features": _join(score.get("fanout_features")),
+                    "latency_ms": e.latency_ms,
+                    "error_code": e.error_code,
+                }
+            )
         )
     return buffer.getvalue()
 

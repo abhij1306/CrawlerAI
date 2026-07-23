@@ -5,13 +5,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
-class SelectorDomainSummaryResponse(BaseModel):
-    domain: str
-    surface: str
-    selector_count: int
-    updated_at: datetime | None = None
-
-
 class SelectorRecordResponse(BaseModel):
     id: int
     domain: str

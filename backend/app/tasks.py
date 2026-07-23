@@ -7,10 +7,14 @@ import signal
 from collections.abc import Callable, Coroutine
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from types import FrameType
 from typing import Iterator
 
+from sqlalchemy import select
+
 from app.core.celery_app import celery_app, worker_process_init, worker_process_shutdown
+from app.core.config import settings
 from app.core.database import SessionLocal, dispose_engine
 from app.core.telemetry import install_asyncio_exception_filter
 from app.acquisition.browser_runtime import (
@@ -19,6 +23,8 @@ from app.acquisition.browser_runtime import (
 )
 from app.crawl.batch_runtime import process_run
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.models.crawl_run import TERMINAL_STATUS_VALUES, CrawlRun
+from app.persistence.artifacts import ArtifactRepository
 
 logger = logging.getLogger(__name__)
 _SignalHandler = Callable[[int, FrameType | None], object]
@@ -182,3 +188,53 @@ def data_enrichment_run_job_task(self, job_id: int) -> None:
         f"data-enrichment-job-{job_id}",
         lambda: run_data_enrichment_job(job_id, task_id=self.request.id),
     )
+
+
+async def _sweep_run_artifacts() -> None:
+    """2.14 retention sweep of runs/{run_id}/ artifact trees.
+
+    Deletes trees whose crawl_runs row is missing, or whose run is terminal
+    with updated_at older than the retention window. Non-terminal runs are
+    never touched. run_artifacts_retention_days=0 disables the sweep.
+    """
+    retention_days = int(settings.run_artifacts_retention_days or 0)
+    if retention_days <= 0:
+        return
+    repository = ArtifactRepository(root_dir=settings.artifacts_dir)
+    runs_root = repository.root_dir / "runs"
+    if not runs_root.is_dir():
+        return
+    candidate_ids = sorted(
+        int(child.name)
+        for child in runs_root.iterdir()
+        if child.is_dir() and child.name.isdigit()
+    )
+    if not candidate_ids:
+        return
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(CrawlRun.id, CrawlRun.status, CrawlRun.updated_at).where(
+                    CrawlRun.id.in_(candidate_ids)
+                )
+            )
+        ).all()
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    runs_by_id = {int(row[0]): row for row in rows}
+    for run_id in candidate_ids:
+        row = runs_by_id.get(run_id)
+        if row is not None:
+            if str(row[1] or "").strip().lower() not in TERMINAL_STATUS_VALUES:
+                continue
+            updated_at = row[2]
+            if updated_at is not None and updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=UTC)
+            if updated_at is None or updated_at >= cutoff:
+                continue
+        await asyncio.to_thread(repository.remove_run_tree, run_id)
+        logger.info("Swept artifact tree for run=%s", run_id)
+
+
+@celery_app.task(name="maintenance.sweep_run_artifacts")
+def sweep_run_artifacts_task() -> None:
+    _run_coro_in_worker_loop("sweep-run-artifacts", _sweep_run_artifacts)

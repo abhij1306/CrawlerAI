@@ -4,8 +4,7 @@ Pins the deterministic, selector-free listing cascade for the job-listing
 surface: it routes through the SAME ``run_listing_cascade`` as commerce, admits
 records via the DOM floor with no model call, rejects hub/category tiles,
 accepts off-host ATS apply links, and reads the rendered artifact set (not only
-top-level ``html``) so JS-rendered boards are covered. Also pins the adapter's
-flag ON vs OFF behaviour.
+top-level ``html``) so JS-rendered boards are covered.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from app.core.config.extraction_recipes import (
 )
 from app.acquisition.listing_cards import count_cards_from_html
 from app.acquisition.browser_readiness import probe_browser_readiness
-from app.extraction import adapters
 from app.extraction.adapters import _harvest_job_listing
 from app.extraction.cascade import LISTING_FLOOR_ORDER, run_listing_cascade
 from app.extraction.replay import fixture_request_from_inputs
@@ -291,11 +289,10 @@ def _harvest(html: str, *, page_url: str = PAGE):
     return _harvest_job_listing(request)
 
 
-def test_flag_on_routes_job_listing_through_the_cascade(monkeypatch) -> None:
-    monkeypatch.setattr(adapters, "CASCADE_JOB_LISTING_ENABLED", True)
+def test_job_listing_routes_through_the_cascade() -> None:
     harvest = _harvest(_SAME_HOST_BOARD_HTML)
     collectors = {row.collector_id for row in harvest.evidence}
-    # The cascade DOM floor is the collector on the flag-ON path.
+    # The cascade DOM floor is the collector on this path.
     assert collectors == {"listing_dom_floor"}
     titles = {row.value for row in harvest.evidence if row.fact_type == "job.title"}
     assert titles == {"Backend Engineer", "Frontend Engineer", "Data Scientist"}
@@ -306,13 +303,3 @@ def test_flag_on_routes_job_listing_through_the_cascade(monkeypatch) -> None:
         "listing_network_floor",
         "listing_dom_floor",
     }
-
-
-def test_flag_off_falls_back_to_legacy_collect_job_listing(monkeypatch) -> None:
-    monkeypatch.setattr(adapters, "CASCADE_JOB_LISTING_ENABLED", False)
-    harvest = _harvest(_SAME_HOST_BOARD_HTML)
-    # The legacy path never reports the cascade floor collectors.
-    collectors = {row.collector_id for row in harvest.evidence}
-    assert "listing_dom_floor" not in collectors
-    assert "listing_structured_floor" not in collectors
-    assert "listing_network_floor" not in collectors

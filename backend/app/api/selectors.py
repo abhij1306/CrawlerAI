@@ -9,7 +9,6 @@ import httpx
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.selectors import (
-    SelectorDomainSummaryResponse,
     SelectorRecordResponse,
     SelectorSuggestRequest,
     SelectorSuggestResponse,
@@ -20,7 +19,6 @@ from app.core.records.selectors_runtime import (
     SANDBOXED_HTML_PREVIEW_HEADERS,
     build_preview_html,
     fetch_selector_document,
-    list_selector_domain_summaries,
     list_selector_records,
     suggest_selectors,
     test_selector,
@@ -31,7 +29,7 @@ from app.acquisition.browser_capture import (
     PlaywrightTimeoutError,
     is_recoverable_playwright_error,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,29 +59,6 @@ def _raise_selector_runtime_error(
     if is_recoverable_playwright_error(exc):
         _raise_selector_fetch_error(exc, message=message, detail=detail)
     raise exc
-
-
-@router.get("/summary")
-async def selectors_summary(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
-    domain: str = "",
-    surface: str = "",
-    limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> list[SelectorDomainSummaryResponse]:
-    normalized_domain = str(domain or "").strip().lower()
-    normalized_surface = str(surface or "").strip().lower()
-    return [
-        SelectorDomainSummaryResponse.model_validate(row)
-        for row in await list_selector_domain_summaries(
-            session,
-            domain=normalized_domain,
-            surface=normalized_surface,
-            limit=limit,
-            offset=offset,
-        )
-    ]
 
 
 @router.get("")

@@ -34,9 +34,9 @@ that controls runtime behavior lives in `app/core/config/`. Nowhere else.
 If it exists, extend it. If a similar version exists, consolidate — do not create a parallel copy.
 
 **VIOLATION signatures:**
-- Two functions in different files do the same normalization (e.g., price cleaning in both `detail_extractor.py` and `listing_extractor.py`)
+- Two functions in different files do the same normalization (e.g., price cleaning in both `extraction/collectors/dom.py` and `extraction/resolution/offers.py`)
 - A field alias defined in both `config/field_mappings.py` and a bucket-local dict
-- A new adapter that reimplements logic already in `field_value_core.py`
+- A new adapter that reimplements logic already in `core/shared/field_coerce_dispatch.py`
 - A plan doc that proposes the same fix as a closed plan that was never verified
 
 **Fix:** Grep first. Consolidate to the canonical owner. Delete the duplicate.
@@ -79,9 +79,9 @@ Run 1 artifact sampling on 2026-06-28 established these source/collector boundar
 - Variants: ColourPop Going Coconuts (`url_result_id=2388`) exposes one Shopify `Default Title` row. Sibling-product swatches are separate products, not variants of the selected product. Omitting public variants is expected.
 - Variants: Bombas ankle socks (`url_result_id=2389`) exposes four color controls and three size controls in DOM, but no captured product-scoped variant matrix connecting combinations to SKU, offer, or availability. The extractor reports `EXPECTED_VARIANT_AXIS_MISSING` with zero materialized variants. This remains an upstream collector gap. Do not synthesize the color/size cross-product from DOM axes alone; recover the product-state or network variant matrix with same-product evidence.
 
-**Visible detail prices are extraction-owned. Owner: `detail_extractor.py` + `config/extraction_rules.py`.**
+**Visible detail prices are extraction-owned. Owners: `extraction/pipeline.py` detail collectors (harvest) and `extraction/resolution/` (offer/price acceptance), with selector policy in `core/config/extraction_rules/`.**
 
-When structured data lacks price but the rendered detail DOM exposes a product display-price block, `extract/detail_price_extractor.py` may fill `price` and `original_price` from configured detail price selectors. This is still upstream extraction. Do not add price repair in `publish/` or `pipeline/`.
+When structured data lacks price but the rendered detail DOM exposes a product display-price block, the detail DOM collectors (`extraction/collectors/dom.py`, wired by `extraction/pipeline.py`) may capture `price` and `original_price` evidence from configured detail price selectors. This is still upstream extraction. Do not add price repair in `publish/` or `crawl/pipeline/`.
 
 **Definitions:**
 - **Requested fields**: Fields explicitly listed in run settings via `requested_fields`
@@ -108,7 +108,7 @@ Network and embedded JSON admission is same-product evidence only. Ad/feed/analy
 
 Retailer/site identity and product manufacturer identity are separate facts. When a title suffix is corroborated as host identity and a distinct title/path prefix supplies the product brand, host-derived brand evidence must be rejected during Resolve rather than repaired after publication.
 
-Public-field identity validators are single-owner rules at the public boundary (`field_value_core.py` / `FieldCoercion`):
+Public-field identity validators are single-owner rules at the public boundary (`core/shared/field_coerce_dispatch.py` `coerce_field_value`, backed by `core/shared/field_coerce_text.py`):
 
 - **`barcode`**: digits-only, allowed lengths `8`, `12`, `13`, `14`; otherwise absent and may be rerouted to `sku`.
 - **`gender`**: must be one of `Men`, `Women`, `Unisex`, `Kids`, `Boys`, `Girls` or absent.
@@ -135,11 +135,11 @@ Ecommerce detail must not call missing-field value generation. LLM may later cho
 - Persisting or exporting legacy variant keys such as `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, nested `option_values`, or variant `title`
 - Letting non-numeric barcodes, region-suffixed brands, or structural identity tokens survive the public record boundary
 - Fixing missing variants by adding hidden browser-side extraction that bypasses normal field provenance
-- Calling `backfill_detail_price_from_html` only at the end of the full tier sequence but not after early exit paths
-- Fixing missing visible PDP prices in persistence/export instead of `detail_extractor.py`
+- Capturing visible detail prices only at the end of the full harvest sequence but not after early-exit paths
+- Fixing missing visible PDP prices in persistence/export instead of the extraction collectors/resolution
 - Calling ecommerce-detail `extract_missing_fields()` or accepting an LLM-generated field value
 - Letting LLM replace a populated adapter / structured / network / JS / DOM value without an explicit conflict-review workflow
-- Maintaining parallel candidate source/evidence arrays beside `CandidateSet`
+- Maintaining parallel candidate source/evidence arrays beside the `Evidence` ledger (`extraction/contracts.py`)
 - Mutating public detail fields after `_evidence_graph` is serialized
 - Recording a repair only in record-level `_transforms` without a matching graph transform
 - Silently rewriting a contradictory currency or dropping the contradicting evidence instead of emitting a finding
@@ -157,7 +157,7 @@ Ecommerce detail must not call missing-field value generation. LLM may later cho
 "What existing code can I delete or simplify?" Adding more code to compensate for broken existing code is a violation.
 
 **VIOLATION signatures:**
-- A new normalization pass added in `publish/` to fix values that `detail_extractor.py` already should have cleaned
+- A new normalization pass added in `publish/` to fix values that extraction harvest/resolution (`extraction/pipeline.py`, `extraction/resolution/`) already should have cleaned
 - A new fallback branch added in `pipeline/core.py` to handle a case that should be rejected upstream
 - A helper function added that duplicates logic in a file that was "too complex to refactor right now"
 - A plan that adds 3 new files without deleting any
@@ -196,7 +196,7 @@ Empty extraction may retry browser for retryable HTTP statuses, blocked/shell ev
 
 Diagnostics controls are user controls. If `diagnostics_profile.capture_screenshot` is `False`, browser acquisition must not capture any screenshots, regardless of outcome.
 
-Browser-driver disconnects are URL-local failures. If a shared browser dies during `new_context`, page bootstrap, or content serialization, the runtime may recycle that browser once, but `_batch_runtime.py` must keep the failure scoped to the current URL and continue the batch.
+Browser-driver disconnects are URL-local failures. If a shared browser dies during `new_context`, page bootstrap, or content serialization, the runtime may recycle that browser once, but `crawl/batch_runtime.py` must keep the failure scoped to the current URL and continue the batch.
 
 Every batch URL owns its own database session and transaction, including serial/local execution. A failed flush or `PendingRollbackError` for one URL must never poison the run-orchestration session or stop later URLs. When `CELERY_DISPATCH_ENABLED=false`, batch URL concurrency is `1`; local mode does not silently retain the Celery parallel execution policy.
 
@@ -258,7 +258,7 @@ Detail extraction must also reject collection/category URLs that expose product-
 **VIOLATION signatures:**
 - A listing run returns 1 record containing the page title, OG description, or brand name
 - `verdict.py` returns `success` for a listing run that extracted zero product rows
-- `crawl_engine.py` routes a listing URL through `detail_extractor.py`
+- The extraction engine routes a listing URL through the detail harvest pipeline (`extraction/pipeline.py`)
 - An `ecommerce_detail` run on `/c/...`, `/category/...`, or `/collections/...` persists a fake detail record from a product tile
 - Detail expansion clicks header/nav/footer chrome and navigates a PDP request onto a marketing or utility page
 
@@ -303,7 +303,7 @@ Detail extraction must also reject collection/category URLs that expose product-
 - **Handoff timeout is capped at `browser_http_handoff_timeout_seconds` (default 3s), not the full HTTP timeout.**
   Handoff is speculative — it tries to skip the browser entirely using stored cookies. If the WAF hangs or slow-rejects, the full `http_timeout_seconds` (10s) would burn before the browser even starts launching. On WAF-heavy sites this caused 20–26s total acquisition delay (handoff timeout + cold browser launch). The dedicated short timeout ensures handoff either succeeds fast or fails fast, keeping browser-first paths responsive.
 - Host protection memory is short-TTL block/backoff memory only. It may bias browser-first safety, but it must not become the durable owner of engine preference or handoff eligibility.
-- After the configured acquisition-contract stale threshold (defined in `app/core/config/domain_memory.py` as `CONTRACT_STALE_FAILURE_COUNT`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices.
+- After the configured acquisition-contract stale threshold (`acquisition_contract_stale_failure_threshold` in `app/core/config/runtime_settings.py`, enforced by `app/crawl/profile/acquisition_contract.py` `note_acquisition_contract_failure` / `acquisition_contract_is_stale`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices. (Extraction-recipe staleness is a separate threshold: `CASCADE_RECIPE_STALE_FAILURE_THRESHOLD` in `app/core/config/cascade.py`.)
 
 **Why this is here:**
 Static cleanup advice to persist/reuse more browser state caused a real regression on 2026-04-23. The crawler started replaying PerimeterX challenge state (`_px*`, `pxcts`, PX localStorage) across runs, which poisoned acquisition on multiple sites. Any future "simplification" of cookie memory must preserve this guard and its regression tests.
@@ -362,7 +362,7 @@ The run-complete callback remains a generic observability extension point. It mu
 **Rule:** Generic crawler paths stay generic. Pipeline boundaries use typed objects. CPU-bound parsing does not block async hot paths. New architecture must improve reusable coverage across multiple domains or surfaces, not just rescue one site, unless the user explicitly asks for a site-specific path.
 
 **VIOLATION signatures:**
-- `if "shopify" in url` or `if "greenhouse" in host` appears in `crawl_fetch_runtime.py`, `crawl_engine.py`, `_batch_runtime.py`, or any non-adapter file
+- `if "shopify" in url` or `if "greenhouse" in host` appears in `crawl/pipeline/`, `crawl/batch_runtime.py`, `acquisition/`, or any non-adapter file
 - A new shared layer, pipeline branch, or runtime abstraction is added for a bug proven on only one domain, with no evidence it improves broader extractor coverage
 - A generic service module starts owning logic that belongs in an adapter or existing platform-specific mapper just to fix one site's markup
 - A function returns a tuple of 4+ items instead of a typed object

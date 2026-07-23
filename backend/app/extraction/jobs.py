@@ -100,20 +100,6 @@ def wrong_surface_findings_for_job_listing(
     )
 
 
-def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
-    _, doc = html_doc(bundle, reader)
-    structured = _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
-    dom = _collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url)
-    structured_subjects = {row.subject_id for row in structured}
-    if len(structured_subjects) == 1:
-        subject_id = next(iter(structured_subjects))
-        dom = [
-            row.model_copy(update={"subject_id": subject_id, "group_id": subject_id})
-            for row in dom
-        ]
-    return [*structured, *dom]
-
-
 class _JobStructuredCollector:
     """Structured JSON-LD JobPosting floor as a cascade-shaped collector.
 

@@ -11,50 +11,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Any
 
 import httpx
 
+from app.ai_visibility._provider_http import (
+    AiVisibilityProviderError,
+    _execute_post,
+    classify_provider_status,
+)
 from app.ai_visibility.contracts import AnswerEngineRequest, AnswerEngineResponse
 from app.ai_visibility.gemini_parser import parse_interaction
 from app.core.config.ai_visibility import (
     AI_VISIBILITY_ERROR_AUTH,
-    AI_VISIBILITY_ERROR_CLIENT,
-    AI_VISIBILITY_ERROR_CONNECTION,
-    AI_VISIBILITY_ERROR_RATE_LIMIT,
-    AI_VISIBILITY_ERROR_SERVER,
-    AI_VISIBILITY_ERROR_TIMEOUT,
-    AI_VISIBILITY_ERROR_UNKNOWN,
     AI_VISIBILITY_PROVIDER_GEMINI,
     AI_VISIBILITY_RETRYABLE_ERRORS,
     ai_visibility_settings,
 )
+
+# Re-exported: the neutral owner is ``_provider_http`` (audit 3.10), but the
+# runner, the other adapters, and tests import these from here.
+__all__ = ["AiVisibilityProviderError", "classify_provider_status"]
 
 logger = logging.getLogger(__name__)
 
 _client: httpx.AsyncClient | None = None
 _client_timeout: float | None = None
 _client_lock = asyncio.Lock()
-
-
-class AiVisibilityProviderError(RuntimeError):
-    """Raised when a provider call fails. Carries a retry classification."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        error_code: str,
-        retryable: bool,
-        retry_after_seconds: float | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.error_code = error_code
-        self.retryable = retryable
-        # Provider-advised wait (from a Retry-After header), when present. The
-        # runner prefers this over blind exponential backoff.
-        self.retry_after_seconds = retry_after_seconds
 
 
 def _parse_retry_after(value: str | None) -> float | None:
@@ -71,16 +54,6 @@ def _parse_retry_after(value: str | None) -> float | None:
     except (TypeError, ValueError):
         return None
     return seconds if seconds >= 0 else None
-
-
-def classify_provider_status(status_code: int) -> tuple[str, bool]:
-    if status_code == 429:
-        return AI_VISIBILITY_ERROR_RATE_LIMIT, True
-    if status_code in (500, 502, 503, 504):
-        return AI_VISIBILITY_ERROR_SERVER, True
-    if status_code in (401, 403):
-        return AI_VISIBILITY_ERROR_AUTH, False
-    return AI_VISIBILITY_ERROR_CLIENT, False
 
 
 def safe_quota_detail(payload: dict[str, Any]) -> str:
@@ -128,6 +101,24 @@ def _build_payload(request: AnswerEngineRequest) -> dict[str, Any]:
     }
 
 
+def _error_status_diagnostics(
+    response: httpx.Response, error_code: str
+) -> tuple[str, float | None]:
+    """Gemini retry-after/quota diagnostics for the shared POST skeleton."""
+    retry_after = _parse_retry_after(response.headers.get("retry-after"))
+    # Never log the response body verbatim (could echo the request),
+    # only the status and a short reason token.
+    logger.warning(
+        "ai_visibility gemini call failed",
+        extra={"status": response.status_code, "error_code": error_code},
+    )
+    try:
+        safe_detail = safe_quota_detail(response.json())
+    except ValueError:
+        safe_detail = ""
+    return (f" ({safe_detail})" if safe_detail else ""), retry_after
+
+
 class GeminiAnswerEngineAdapter:
     provider_id = AI_VISIBILITY_PROVIDER_GEMINI
 
@@ -143,58 +134,18 @@ class GeminiAnswerEngineAdapter:
 
     async def execute(self, request: AnswerEngineRequest) -> AnswerEngineResponse:
         client = await _shared_client(request.timeout_seconds)
-        payload = _build_payload(request)
-        headers = {
-            "x-goog-api-key": self._api_key,
-            "Content-Type": "application/json",
-        }
-        started = time.monotonic()
-        try:
-            response = await client.post(self._url, json=payload, headers=headers)
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout) as exc:
-            raise AiVisibilityProviderError(
-                f"Gemini request timed out: {exc}",
-                error_code=AI_VISIBILITY_ERROR_TIMEOUT,
-                retryable=True,
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise AiVisibilityProviderError(
-                f"Gemini connection error: {exc}",
-                error_code=AI_VISIBILITY_ERROR_CONNECTION,
-                retryable=True,
-            ) from exc
-
-        latency_ms = int((time.monotonic() - started) * 1000)
-        if response.status_code >= 400:
-            error_code, retryable = classify_provider_status(response.status_code)
-            retry_after = _parse_retry_after(response.headers.get("retry-after"))
-            # Never log the response body verbatim (could echo the request),
-            # only the status and a short reason token.
-            logger.warning(
-                "ai_visibility gemini call failed",
-                extra={"status": response.status_code, "error_code": error_code},
-            )
-            try:
-                safe_detail = safe_quota_detail(response.json())
-            except ValueError:
-                safe_detail = ""
-            suffix = f" ({safe_detail})" if safe_detail else ""
-            raise AiVisibilityProviderError(
-                f"Gemini returned HTTP {response.status_code}{suffix}",
-                error_code=error_code,
-                retryable=retryable,
-                retry_after_seconds=retry_after,
-            )
-
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise AiVisibilityProviderError(
-                f"Gemini returned non-JSON response: {exc}",
-                error_code=AI_VISIBILITY_ERROR_UNKNOWN,
-                retryable=False,
-            ) from exc
-
+        data, latency_ms = await _execute_post(
+            provider_label="Gemini",
+            url=self._url,
+            payload=_build_payload(request),
+            headers={
+                "x-goog-api-key": self._api_key,
+                "Content-Type": "application/json",
+            },
+            timeout_seconds=request.timeout_seconds,
+            client=client,
+            on_error_status=_error_status_diagnostics,
+        )
         return parse_interaction(
             data,
             provider=self.provider_id,

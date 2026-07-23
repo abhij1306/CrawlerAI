@@ -56,7 +56,7 @@ from .runtime_helpers import (
     log_pipeline_event as _log_pipeline_event,
     set_stage,
 )
-from .types import URLProcessingConfig, URLProcessingResult
+from .types import PublicRecord, URLMetrics, URLProcessingConfig, URLProcessingResult
 from .url_processing_context import (
     ExtractedURLStage as _ExtractedURLStage,
     FetchedURLStage as _FetchedURLStage,
@@ -199,19 +199,22 @@ async def _run_robots_gate(
             return URLProcessingResult(
                 records=[],
                 verdict=VERDICT_BLOCKED,
-                url_metrics=finalize_url_metrics(
-                    {
-                        "blocked": True,
-                        "final_url": context.url,
-                        "method": "",
-                        "requested_fields": list(context.requested_fields),
-                        "robots": {
-                            "allowed": False,
-                            "outcome": robots_result.outcome,
-                            "robots_url": robots_result.robots_url,
+                url_metrics=cast(
+                    URLMetrics,
+                    finalize_url_metrics(
+                        {
+                            "blocked": True,
+                            "final_url": context.url,
+                            "method": "",
+                            "requested_fields": list(context.requested_fields),
+                            "robots": {
+                                "allowed": False,
+                                "outcome": robots_result.outcome,
+                                "robots_url": robots_result.robots_url,
+                            },
                         },
-                    },
-                    record_count=0,
+                        record_count=0,
+                    ),
                 ),
             )
         if robots_result.outcome == ROBOTS_MISSING:
@@ -228,15 +231,6 @@ async def _run_robots_gate(
             )
         return None
     return None
-
-
-def _pipeline_acquisition_event_logger(
-    context: _URLProcessingContext,
-):
-    async def _log(level: str, message: str) -> None:
-        await _log_pipeline_event(context, level, message)
-
-    return _log
 
 
 async def _run_acquisition_stage(
@@ -330,7 +324,9 @@ def _build_prefetch_only_result(
     return URLProcessingResult(
         records=[],
         verdict=verdict,
-        url_metrics=finalize_url_metrics(fetched.url_metrics, record_count=0),
+        url_metrics=cast(
+            URLMetrics, finalize_url_metrics(fetched.url_metrics, record_count=0)
+        ),
     )
 
 
@@ -368,7 +364,12 @@ async def _run_extraction_stage_observed(
     )
     _record_detail_expansion_extraction_outcome(
         acquisition_result,
-        [_public_record_payload(record, context.surface) for record in result.records],
+        _records_as_dicts(
+            [
+                _public_record_payload(record, context.surface)
+                for record in result.records
+            ]
+        ),
         requested_fields=list(context.requested_fields),
     )
     result = await retry_extraction_request_with_browser(
@@ -384,8 +385,18 @@ async def _run_extraction_stage_observed(
     return _ExtractedURLStage(fetched=fetched, result=result)
 
 
-def _public_record_payload(record, _surface: str) -> dict[str, object]:
-    return record.model_dump(mode="json", exclude_none=True)
+def _public_record_payload(record, _surface: str) -> PublicRecord:
+    return cast(PublicRecord, record.model_dump(mode="json", exclude_none=True))
+
+
+def _records_as_dicts(records: list[PublicRecord]) -> list[dict[str, object]]:
+    """Typing bridge to read-only consumers that predate the typed seam.
+
+    ``PublicRecord`` is a TypedDict — the same dict at runtime — so this is a
+    cast, not a copy. Consumers that only read records keep their historical
+    ``list[dict[str, object]]`` signatures.
+    """
+    return cast(list[dict[str, object]], records)
 
 
 # skipcq: PY-R1000
@@ -431,7 +442,7 @@ async def _run_persistence_stage(
     verdict = cast(UrlVerdict, extraction_result.verdict)
     if not _suppress_empty_downstream_record_logs(
         acquisition_result,
-        extracted_records,
+        _records_as_dicts(extracted_records),
     ):
         await _log_pipeline_event(
             context,
@@ -460,16 +471,19 @@ async def _run_persistence_stage(
     await update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,
-        records=extracted_records,
+        records=_records_as_dicts(extracted_records),
         persisted_count=persisted_count,
         verdict=verdict,
     )
     return URLProcessingResult(
         records=extracted_records,
         verdict=verdict,
-        url_metrics=finalize_url_metrics(
-            mapping_or_empty(extracted.fetched.url_metrics),
-            record_count=persisted_count,
+        url_metrics=cast(
+            URLMetrics,
+            finalize_url_metrics(
+                mapping_or_empty(extracted.fetched.url_metrics),
+                record_count=persisted_count,
+            ),
         ),
     )
 

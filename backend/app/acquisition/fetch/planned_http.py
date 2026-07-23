@@ -236,6 +236,12 @@ async def _execute_planned_http_attempt(
     except Exception as exc:
         context.last_error = exc
         vendor = vendor_confirmed_block(raw_result)
+        logger.debug(
+            "Browser escalation after HTTP failure errored; returning the error "
+            "outcome to the ladder: %s",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return AttemptResult(
             attempt_id=execution.spec.attempt_id,
             outcome="error",

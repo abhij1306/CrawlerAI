@@ -23,6 +23,7 @@ from app.core.config.field_mappings import UNICODE_ESCAPE_RE
 from app.core.records.html_helpers import html_to_text
 
 __all__ = [
+    "clean_str",
     "clean_text",
     "coerce_literal_text_list",
     "coerce_long_text",
@@ -146,6 +147,12 @@ def strip_html_tags(value: object) -> str:
 
 def text_or_none(value: object) -> str | None:
     text = clean_text(value)
+    return text or None
+
+
+def clean_str(value: object) -> str | None:
+    """Strip surrounding whitespace; empty/coalesced values become ``None``."""
+    text = str(value or "").strip()
     return text or None
 
 

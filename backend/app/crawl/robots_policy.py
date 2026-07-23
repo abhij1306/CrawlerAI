@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from contextlib import suppress
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
@@ -25,6 +26,9 @@ _ROBOTS_CACHE: TTLCache[str, "_RobotsSnapshot"] = TTLCache(
 _ROBOTS_CACHE_LOCK: asyncio.Lock | None = None
 _ROBOTS_INFLIGHT_FETCHES: dict[str, asyncio.Task["_RobotsSnapshot"]] | None = None
 _ROBOTS_FETCH_TASKS: set[asyncio.Task["_RobotsSnapshot"]] | None = None
+# 2.16: process-wide shared fetch client (created lazily); redirects stay
+# manual so every hop target is validated before the request is issued.
+_ROBOTS_CLIENT: httpx.AsyncClient | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +77,21 @@ def _get_tracked_tasks() -> set[asyncio.Task["_RobotsSnapshot"]]:
     return _ROBOTS_FETCH_TASKS
 
 
+def _get_robots_client() -> httpx.AsyncClient:
+    global _ROBOTS_CLIENT
+    if _ROBOTS_CLIENT is None:
+        with _INIT_LOCK:
+            if _ROBOTS_CLIENT is None:
+                _ROBOTS_CLIENT = httpx.AsyncClient(
+                    follow_redirects=False,
+                    timeout=settings.http_timeout_seconds,
+                    headers={
+                        "User-Agent": crawler_runtime_settings.robots_fetch_user_agent
+                    },
+                )
+    return _ROBOTS_CLIENT
+
+
 def _track_fetch_task(
     task: asyncio.Task["_RobotsSnapshot"],
 ) -> asyncio.Task["_RobotsSnapshot"]:
@@ -92,6 +111,13 @@ async def reset_robots_policy_cache() -> None:
             await asyncio.gather(*tasks, return_exceptions=True)
         inflight.clear()
         _ROBOTS_CACHE.clear()
+    # Drop the shared client too (test isolation); it is recreated lazily.
+    global _ROBOTS_CLIENT
+    client, _ROBOTS_CLIENT = _ROBOTS_CLIENT, None
+    aclose = getattr(client, "aclose", None)
+    if aclose is not None:
+        with suppress(Exception):
+            await aclose()
 
 
 async def check_url_crawlability(
@@ -153,16 +179,11 @@ async def _fetch_robots_snapshot(base_url: str) -> _RobotsSnapshot:
     try:
         # Redirects are followed manually with each hop target validated
         # against the SSRF guard before the request is issued.
-        async with httpx.AsyncClient(
-            follow_redirects=False,
-            timeout=settings.http_timeout_seconds,
-            headers={"User-Agent": crawler_runtime_settings.robots_fetch_user_agent},
-        ) as client:
-            response = await get_with_validated_redirects(
-                client,
-                robots_url,
-                max_redirects=MAX_VALIDATED_REDIRECTS,
-            )
+        response = await get_with_validated_redirects(
+            _get_robots_client(),
+            robots_url,
+            max_redirects=MAX_VALIDATED_REDIRECTS,
+        )
     except httpx.RequestError as exc:
         return _error_snapshot(robots_url, str(exc))
     except ValueError as exc:

@@ -14,6 +14,9 @@ from app.core.config.sitemap import (
     SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_EXTENSIONS,
     SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
 )
+from app.core.shared.url_utils import (
+    looks_like_locale_segment as _looks_like_locale_segment,
+)
 from app.crawl.utils import text_has_token
 
 
@@ -271,15 +274,6 @@ def _path_depth(path: str) -> int:
         if part and not _looks_like_locale_segment(part)
     ]
     return len(parts)
-
-
-def _looks_like_locale_segment(value: str) -> bool:
-    cleaned = str(value or "").strip().lower()
-    if len(cleaned) == 2 and cleaned.isalpha():
-        return True
-    if len(cleaned) == 5 and cleaned[2] == "-":
-        return cleaned[:2].isalpha() and cleaned[3:].isalpha()
-    return False
 
 
 def _strip_fragment(value: str) -> str:

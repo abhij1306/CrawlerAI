@@ -26,39 +26,65 @@ def get_db(
     return session
 
 
-async def get_current_user(
-    access_token: str | None = Cookie(default=None),
-    authorization: str | None = Header(default=None),
-    session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
-) -> User:
+def _access_token_from_headers(
+    access_token: str | None, authorization: str | None
+) -> str | None:
     token = access_token
     if not token and authorization:
         scheme, _, credentials = authorization.partition(" ")
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+    return token
+
+
+async def _resolve_token_user(
+    session: AsyncSession, token: str
+) -> tuple[User | None, str]:
+    """Resolve a user from an access token; (None, 401 detail) on failure."""
     try:
         payload = decode_access_token(token)
         user_id = int(payload["sub"])
         token_version = int(payload.get("ver", 0))
-    except (TokenDecodeError, KeyError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        ) from exc
+    except (TokenDecodeError, KeyError, ValueError):
+        return None, "Invalid token"
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user"
-        )
+        return None, "Inactive user"
     user_token_version = user.token_version if user.token_version is not None else 0
     if user_token_version != token_version:
+        return None, "Session expired"
+    return user, ""
+
+
+async def get_current_user(
+    access_token: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
+) -> User:
+    token = _access_token_from_headers(access_token, authorization)
+    if not token:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
+    user, detail = await _resolve_token_user(session, token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=detail
+        )
+    return user
+
+
+async def get_current_user_optional(
+    access_token: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
+) -> User | None:
+    """Same resolution as get_current_user but anonymous-friendly (no 401)."""
+    token = _access_token_from_headers(access_token, authorization)
+    if not token:
+        return None
+    user, _detail = await _resolve_token_user(session, token)
     return user
 
 

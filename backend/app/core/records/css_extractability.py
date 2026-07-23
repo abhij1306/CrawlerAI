@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.records.field_policy import (
     exact_requested_field_key,
@@ -7,6 +9,8 @@ from app.core.records.field_policy import (
     normalize_requested_field,
 )
 from app.core.shared.field_coerce import clean_text, surface_fields
+
+logger = logging.getLogger(__name__)
 
 
 def requested_content_extractability(
@@ -104,6 +108,11 @@ def _safe_select(doc: HtmlDocument, selector: str) -> tuple[HtmlNode, ...]:
     try:
         return doc.css(selector)
     except Exception:
+        logger.debug(
+            "Extractability probe failed for selector %r; treating as no match",
+            selector,
+            exc_info=True,
+        )
         return ()
 
 

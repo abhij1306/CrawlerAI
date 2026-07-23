@@ -26,17 +26,28 @@ publish_receives_evidence_or_entity_graph = false
 # Audit-fix reconciliation (2026-07-22): raised to measured actual after the
 # resolution god-package split added 7 modules (2,044-LOC __init__ is now a
 # 175-LOC facade) and documents.py grew with the to_thread offload work.
-physical_loc_budget = 16753
+# Audit-debt Stream B commits 9-10 (2026-07-22): adapters.py (564 -> 519)
+# and jobs.py (559 -> 547) ratcheted down after the CASCADE_* flag removal
+# (3.8); collectors/dom.py (1062 -> 1069) and model_runtime.py (440 -> 448)
+# raised to measured for the silent-except diagnostics (4.8); total
+# ratcheted down to measured.
+# Audit-debt Stream B commit 14 (2026-07-22): the >150-line function
+# decompositions (4.15) grew jsonld.py (783 -> 871), result_building.py
+# (738 -> 824), publication.py (617 -> 687), and resolution/resolver.py
+# (204 -> 278) — raised to measured; module complexity budgets ratcheted
+# down to measured (jsonld 30 -> 20, result_building 78 -> 46,
+# publication 43 -> 26, resolver 31 -> 8); total raised to measured.
+physical_loc_budget = 17029
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
 "__init__.py" = 19
-"adapters.py" = 564
+"adapters.py" = 519
 "cascade.py" = 212
 "collectors/_helpers.py" = 233
-"collectors/dom.py" = 1062
+"collectors/dom.py" = 1069
 "collectors/js_state.py" = 914
-"collectors/jsonld.py" = 783
+"collectors/jsonld.py" = 871
 "collectors/metadata.py" = 188
 "collectors/url.py" = 100
 "contracts.py" = 856
@@ -44,15 +55,15 @@ default_module_cyclomatic_complexity_budget = 20
 "engine.py" = 1059
 "entities.py" = 850
 "field_states.py" = 37
-"jobs.py" = 559
+"jobs.py" = 547
 "json_walk.py" = 65
 "listing.py" = 301
 "listing_records.py" = 488
 "listing_tier0.py" = 546
-"model_runtime.py" = 440
+"model_runtime.py" = 448
 "network_listing.py" = 230
 "pipeline.py" = 781
-"publication.py" = 617
+"publication.py" = 687
 "replay.py" = 321
 "representation/__init__.py" = 23
 "representation/flat_map.py" = 246
@@ -61,13 +72,13 @@ default_module_cyclomatic_complexity_budget = 20
 "resolution/derived.py" = 314
 "resolution/lineage.py" = 116
 "resolution/offers.py" = 211
-"resolution/resolver.py" = 204
+"resolution/resolver.py" = 278
 "resolution/variant_rollup.py" = 515
 "resolution/variants.py" = 385
 "resolution/assets.py" = 252
 "resolution/price_units.py" = 161
 "resolution/ranking.py" = 134
-"result_building.py" = 738
+"result_building.py" = 824
 "sentinel.py" = 251
 "surfaces.py" = 270
 "targeting.py" = 203
@@ -76,17 +87,17 @@ default_module_cyclomatic_complexity_budget = 20
 [ratchets.module_cyclomatic_complexity_budgets]
 "collectors/_helpers.py" = 23
 "collectors/js_state.py" = 41
-"collectors/jsonld.py" = 30
+"collectors/jsonld.py" = 20
 "engine.py" = 27
 "entities.py" = 24
 "pipeline.py" = 40
-"publication.py" = 43
+"publication.py" = 26
 "replay.py" = 29
 "resolution/decisions.py" = 22
 "resolution/derived.py" = 25
 "resolution/offers.py" = 22
 "resolution/price_units.py" = 37
-"resolution/resolver.py" = 31
+"resolution/resolver.py" = 8
 "resolution/variant_rollup.py" = 25
-"result_building.py" = 78
+"result_building.py" = 46
 "validation.py" = 33

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -67,7 +68,7 @@ class BatchRunProgressState:
         idx: int,
         records_count: int,
         verdict: str,
-        url_metrics: dict[str, object],
+        url_metrics: Mapping[str, object],
     ) -> None:
         self.persisted_record_count += max(0, as_int(records_count))
         self.completed_count += 1
@@ -193,7 +194,7 @@ def _bump_counter(current: object, bucket: str, key: object) -> dict[str, int]:
 
 def _merge_bool_totals(
     current: dict[str, object],
-    url_metrics: dict[str, object],
+    url_metrics: Mapping[str, object],
 ) -> dict[str, int]:
     return {
         total_key: as_int(current.get(total_key, 0))
@@ -204,7 +205,7 @@ def _merge_bool_totals(
 
 def _merge_int_totals(
     current: dict[str, object],
-    url_metrics: dict[str, object],
+    url_metrics: Mapping[str, object],
 ) -> dict[str, int]:
     return {
         total_key: as_int(current.get(total_key, 0))
@@ -215,7 +216,7 @@ def _merge_int_totals(
 
 def _merge_run_acquisition_metrics(
     existing: object,
-    url_metrics: dict[str, object],
+    url_metrics: Mapping[str, object],
 ) -> dict[str, object]:
     current = mapping_or_empty(existing)
     summary = {
@@ -268,7 +269,7 @@ def _quality_level_from_score(score: float) -> str:
 
 def _merge_run_quality_summary(
     existing: object,
-    url_metrics: dict[str, object],
+    url_metrics: Mapping[str, object],
 ) -> dict[str, object]:
     current = mapping_or_empty(existing)
     url_quality: dict[str, object] = (

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal, TypedDict
 
 from app.core.config import field_mappings
@@ -16,6 +17,8 @@ from app.extraction.contracts import (
     CommerceDetailRecord,
     CommerceListingProjection,
     CommerceListingRecord,
+    Decision,
+    DerivedFact,
     Evidence,
     JobDetailProjection,
     JobDetailRecord,
@@ -79,12 +82,37 @@ _JOB_LISTING_FIELDS = {
 _PATH = re.compile(r"^(record|variant|asset)(?:\[([^]]+)])?\.(.+)$")
 
 
-def commerce_detail_projection(
-    resolution: ResolutionResult,
-    evidence: Sequence[Evidence],
-) -> tuple[CommerceDetailProjection, tuple[SelectedFact, ...]]:
-    """Authorize scalar ecommerce-detail publication from resolved truth."""
+@dataclass(frozen=True, slots=True)
+class _CommerceDetailPolicy:
+    """Precomputed resolution lookups and price-policy flags for publication."""
 
+    evidence_by_id: dict[str, Evidence]
+    derived_by_key: dict[tuple[str, str], DerivedFact]
+    target_ids: frozenset[str]
+    selected_facts: tuple[SelectedFact, ...]
+    selected_by_decision: dict[str, SelectedFact]
+    selected_by_entity_fact: dict[tuple[str, str], SelectedFact]
+    variant_skus: set[str]
+    has_primary_price: bool
+    has_child_price: bool
+    has_primary_currency: bool
+
+    def disposition(
+        self, *, fact_type: str, value: object
+    ) -> tuple[Literal["publish", "suppress", "review"], str | None]:
+        return _publication_disposition(
+            fact_type=fact_type,
+            value=value,
+            variant_skus=self.variant_skus,
+            has_primary_price=self.has_primary_price,
+            has_child_price=self.has_child_price,
+            has_primary_currency=self.has_primary_currency,
+        )
+
+
+def _commerce_detail_policy(
+    resolution: ResolutionResult, evidence: Sequence[Evidence]
+) -> _CommerceDetailPolicy:
     evidence_by_id = {row.evidence_id: row for row in evidence}
     derived_by_key = {
         (row.entity_id, row.fact_type): row for row in resolution.derived_facts
@@ -116,7 +144,6 @@ def commerce_detail_projection(
         (resolution.primary_offer_entity_id, fact_type) in resolved_keys
         for fact_type in _PRICE_FACTS
     )
-
     has_child_price = any(
         fact_type in _PRICE_FACTS and entity_id != resolution.primary_offer_entity_id
         for entity_id, fact_type in resolved_keys
@@ -128,79 +155,110 @@ def commerce_detail_projection(
         resolution.primary_offer_entity_id,
         field_mappings.OFFER_CURRENCY_FACT_TYPE,
     ) in resolved_keys
+    return _CommerceDetailPolicy(
+        evidence_by_id=evidence_by_id,
+        derived_by_key=derived_by_key,
+        target_ids=frozenset(target_ids),
+        selected_facts=selected_facts,
+        selected_by_decision=selected_by_decision,
+        selected_by_entity_fact=selected_by_entity_fact,
+        variant_skus=variant_skus,
+        has_primary_price=has_primary_price,
+        has_child_price=has_child_price,
+        has_primary_currency=has_primary_currency,
+    )
 
+
+def _decision_publication_entry(
+    decision: Decision,
+    *,
+    field: str,
+    accepted: Evidence,
+    policy: _CommerceDetailPolicy,
+) -> PublicationEntry | None:
+    """One record-scoped entry from a resolved decision (derived wins over
+    selected unless both carry the same value)."""
+    disposition, reason = policy.disposition(
+        fact_type=decision.fact_type, value=accepted.value
+    )
+    derived = policy.derived_by_key.get((decision.entity_id, decision.fact_type))
+    if derived is not None:
+        selected = policy.selected_by_decision.get(decision.decision_id)
+        if selected is not None and selected.value == derived.value:
+            derived = None
+    if derived is not None:
+        return PublicationEntry(
+            path=f"record.{field}",
+            entity_id=decision.entity_id,
+            value=derived.value,
+            disposition=disposition,
+            reason_code=reason,
+            derived_fact_id=derived.derived_fact_id,
+            rule_id=derived.rule_id,
+            evidence_ids=derived.input_evidence_ids,
+            collector_ids=_collector_ids(
+                derived.input_evidence_ids, policy.evidence_by_id
+            ),
+        )
+    selected = policy.selected_by_decision.get(decision.decision_id)
+    if selected is None:
+        return None
+    return PublicationEntry(
+        path=f"record.{field}",
+        entity_id=decision.entity_id,
+        value=selected.value,
+        disposition=disposition,
+        reason_code=reason,
+        selected_fact_id=selected.selected_fact_id,
+        rule_id=selected.rule_id,
+        evidence_ids=selected.evidence_ids,
+        collector_ids=_collector_ids(selected.evidence_ids, policy.evidence_by_id),
+    )
+
+
+def _scalar_decision_entries(
+    resolution: ResolutionResult, policy: _CommerceDetailPolicy
+) -> list[PublicationEntry]:
+    """Record-scoped entries from resolved decisions on the target entities."""
     entries: list[PublicationEntry] = []
     for decision in resolution.decisions:
         field = PUBLIC_FACT_TO_FIELD.get(decision.fact_type)
         if (
             field is None
-            or decision.entity_id not in target_ids
+            or decision.entity_id not in policy.target_ids
             or decision.status != "resolved"
             or not decision.accepted_evidence_ids
         ):
             continue
-        accepted = evidence_by_id.get(decision.accepted_evidence_ids[0])
+        accepted = policy.evidence_by_id.get(decision.accepted_evidence_ids[0])
         if accepted is None:
             continue
-        disposition, reason = _publication_disposition(
-            fact_type=decision.fact_type,
-            value=accepted.value,
-            variant_skus=variant_skus,
-            has_primary_price=has_primary_price,
-            has_child_price=has_child_price,
-            has_primary_currency=has_primary_currency,
+        entry = _decision_publication_entry(
+            decision, field=field, accepted=accepted, policy=policy
         )
-        derived = derived_by_key.get((decision.entity_id, decision.fact_type))
-        if derived is not None:
-            selected = selected_by_decision.get(decision.decision_id)
-            if selected is not None and selected.value == derived.value:
-                derived = None
-        if derived is not None:
-            entries.append(
-                PublicationEntry(
-                    path=f"record.{field}",
-                    entity_id=decision.entity_id,
-                    value=derived.value,
-                    disposition=disposition,
-                    reason_code=reason,
-                    derived_fact_id=derived.derived_fact_id,
-                    rule_id=derived.rule_id,
-                    evidence_ids=derived.input_evidence_ids,
-                    collector_ids=_collector_ids(
-                        derived.input_evidence_ids, evidence_by_id
-                    ),
-                )
-            )
-            continue
-        selected = selected_by_decision.get(decision.decision_id)
-        if selected is not None:
-            entries.append(
-                PublicationEntry(
-                    path=f"record.{field}",
-                    entity_id=decision.entity_id,
-                    value=selected.value,
-                    disposition=disposition,
-                    reason_code=reason,
-                    selected_fact_id=selected.selected_fact_id,
-                    rule_id=selected.rule_id,
-                    evidence_ids=selected.evidence_ids,
-                    collector_ids=_collector_ids(selected.evidence_ids, evidence_by_id),
-                )
-            )
+        if entry is not None:
+            entries.append(entry)
+    return entries
 
-    authorized_paths = {row.path for row in entries}
+
+def _derived_backfill_entries(
+    resolution: ResolutionResult,
+    policy: _CommerceDetailPolicy,
+    authorized_paths: set[str],
+) -> list[PublicationEntry]:
+    """Derived-fact entries for paths no resolved decision already claimed."""
+    entries: list[PublicationEntry] = []
     for derived in resolution.derived_facts:
         field = PUBLIC_FACT_TO_FIELD.get(derived.fact_type)
         path = f"record.{field}" if field else ""
-        if not field or path in authorized_paths or derived.entity_id not in target_ids:
+        if (
+            not field
+            or path in authorized_paths
+            or derived.entity_id not in policy.target_ids
+        ):
             continue
-        disposition, reason = _publication_disposition(
-            fact_type=derived.fact_type,
-            value=derived.value,
-            variant_skus=variant_skus,
-            has_primary_price=has_primary_price,
-            has_child_price=has_child_price,
-            has_primary_currency=has_primary_currency,
+        disposition, reason = policy.disposition(
+            fact_type=derived.fact_type, value=derived.value
         )
         entries.append(
             PublicationEntry(
@@ -213,12 +271,19 @@ def commerce_detail_projection(
                 rule_id=derived.rule_id,
                 evidence_ids=derived.input_evidence_ids,
                 collector_ids=_collector_ids(
-                    derived.input_evidence_ids, evidence_by_id
+                    derived.input_evidence_ids, policy.evidence_by_id
                 ),
             )
         )
         authorized_paths.add(path)
+    return entries
 
+
+def _variant_publication_entries(
+    resolution: ResolutionResult, evidence_by_id: dict[str, Evidence]
+) -> list[PublicationEntry]:
+    """Variant-scoped commercial facts from eligible variant decisions."""
+    entries: list[PublicationEntry] = []
     for variant in resolution.variant_decisions:
         if variant.status != "eligible":
             continue
@@ -240,9 +305,23 @@ def commerce_detail_projection(
                     **source,
                 )
             )
+    return entries
 
+
+def commerce_detail_projection(
+    resolution: ResolutionResult,
+    evidence: Sequence[Evidence],
+) -> tuple[CommerceDetailProjection, tuple[SelectedFact, ...]]:
+    """Authorize scalar ecommerce-detail publication from resolved truth."""
+
+    policy = _commerce_detail_policy(resolution, evidence)
+    entries = _scalar_decision_entries(resolution, policy)
+    entries.extend(
+        _derived_backfill_entries(resolution, policy, {row.path for row in entries})
+    )
+    entries.extend(_variant_publication_entries(resolution, policy.evidence_by_id))
     asset_entries, emitted_asset_ids, primary_asset_entity_id = _asset_entries(
-        resolution, selected_by_entity_fact, evidence_by_id
+        resolution, policy.selected_by_entity_fact, policy.evidence_by_id
     )
     entries.extend(asset_entries)
     return (
@@ -257,7 +336,7 @@ def commerce_detail_projection(
             asset_entity_ids=tuple(emitted_asset_ids),
             primary_asset_entity_id=primary_asset_entity_id,
         ),
-        selected_facts,
+        policy.selected_facts,
     )
 
 
