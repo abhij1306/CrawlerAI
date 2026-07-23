@@ -251,11 +251,13 @@ PACKAGE_LOC_BUDGETS = {
     # measured.
     # Stream B commit 14 (same day): extraction +318, crawl +60 for the
     # >150-line function decompositions (4.15) — raised to measured.
+    # Mypy fix pass (same day): core +23, acquisition +23 for the typed
+    # redis eval wrappers (str args + Awaitable casts) — raised to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_343,
+    "acquisition": 17_366,
     "crawl": 9_523,
-    "core": 21_010,
+    "core": 21_033,
     "enrichment": 2_254,
     "connectors": 2_444,
     "intelligence": 3_462,
@@ -309,7 +311,10 @@ PACKAGE_LOC_BUDGETS = {
 # imports onto the neutral _provider_http owner (anthropic/openrouter dropped
 # their gemini re-export hop) — ratcheted down to measured; no budgeted
 # package moved.
-TOTAL_APP_LOC_BUDGET = 87_847
+# Mypy fix pass (same day): +53 for the typed redis eval wrappers, the
+# Sequence-typed BaseJobCreate.source_records, and the metrics bearer
+# non-ASCII guard — raised to measured.
+TOTAL_APP_LOC_BUDGET = 87_900
 
 
 def test_production_package_loc_budgets() -> None:

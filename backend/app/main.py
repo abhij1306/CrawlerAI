@@ -635,8 +635,10 @@ async def metrics(request: Request) -> Response:
         scheme, _, credentials = (request.headers.get("authorization") or "").partition(
             " "
         )
+        # Encode to bytes: compare_digest raises TypeError on non-ASCII str,
+        # which would surface as a 500 instead of a clean 401.
         if scheme.lower() != "bearer" or not hmac.compare_digest(
-            credentials.strip(), expected
+            credentials.strip().encode("utf-8"), expected.encode("utf-8")
         ):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     payload, content_type = await render_prometheus_metrics()

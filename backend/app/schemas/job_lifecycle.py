@@ -14,6 +14,7 @@ user_id was already a validation error pre-hoist and stays one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,9 +44,14 @@ class BaseSourceRecordInput(BaseModel):
 
 
 class BaseJobCreate(BaseModel):
-    """Shared create shape; subclasses narrow the record/options types."""
+    """Shared create shape; subclasses narrow the record/options types.
+
+    ``source_records`` is Sequence-typed at the base (covariant, unlike list)
+    so subclasses can narrow the element type; pydantic still validates input
+    into a list, so serialization is identical.
+    """
 
     source_run_id: int | None = None
     source_record_ids: list[int] = Field(default_factory=list)
-    source_records: list[BaseSourceRecordInput] = Field(default_factory=list)
+    source_records: Sequence[BaseSourceRecordInput] = Field(default_factory=list)
     options: BaseModel = Field(default_factory=BaseModel)

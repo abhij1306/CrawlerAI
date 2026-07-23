@@ -333,6 +333,12 @@ async def test_metrics_requires_bearer_token_in_prod(monkeypatch) -> None:
         wrong_scheme = await client.get(
             "/api/metrics", headers={"Authorization": "Basic scrape-token-123"}
         )
+        # Raw non-ASCII bytes arrive as a latin-1 decoded str; compare_digest
+        # must not TypeError (500) on them.
+        non_ascii = await client.get(
+            "/api/metrics",
+            headers=[(b"authorization", "Bearer café".encode("utf-8"))],
+        )
         ok = await client.get(
             "/api/metrics", headers={"Authorization": "Bearer scrape-token-123"}
         )
@@ -340,6 +346,7 @@ async def test_metrics_requires_bearer_token_in_prod(monkeypatch) -> None:
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert wrong_scheme.status_code == 401
+    assert non_ascii.status_code == 401
     assert ok.status_code == 200
 
 

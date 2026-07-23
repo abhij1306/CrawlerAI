@@ -4,9 +4,12 @@ import asyncio
 import logging
 import uuid
 from collections import OrderedDict, deque
+from collections.abc import Awaitable
 from math import ceil
 from time import monotonic
+from typing import cast
 
+from redis.asyncio import Redis
 from starlette.requests import Request
 
 from app.core.redis import RedisUnavailableError, redis_execute
@@ -90,19 +93,41 @@ async def consume_redis_sliding_window(
     window_ms = max(1, int(float(window_seconds) * 1000))
     try:
         raw = await redis_execute(
-            lambda redis: redis.eval(
-                _REDIS_SLIDING_WINDOW_SCRIPT,
-                1,
+            lambda redis: _eval_sliding_window_script(
+                redis,
                 key,
-                window_ms,
-                int(max_requests),
-                uuid.uuid4().hex,
+                window_ms=window_ms,
+                max_requests=max_requests,
             ),
             operation_name=f"rate_limit:consume:{key[:64]}",
         )
     except RedisUnavailableError:
         return None
     return _parse_sliding_window_result(raw)
+
+
+async def _eval_sliding_window_script(
+    redis: Redis,
+    key: str,
+    *,
+    window_ms: int,
+    max_requests: int,
+) -> object:
+    # redis-py stubs share the sync/async signatures: eval() is typed as
+    # returning str | Awaitable[str] with str-only script args. The asyncio
+    # client always returns an awaitable, and ints encode identically to
+    # their str form on the wire.
+    return await cast(
+        Awaitable[object],
+        redis.eval(
+            _REDIS_SLIDING_WINDOW_SCRIPT,
+            1,
+            key,
+            str(window_ms),
+            str(int(max_requests)),
+            uuid.uuid4().hex,
+        ),
+    )
 
 
 def _parse_sliding_window_result(raw: object) -> tuple[bool, int, int, int] | None:

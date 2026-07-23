@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable
+from typing import cast
+
+from redis.asyncio import Redis
 
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import normalize_host
@@ -54,12 +58,11 @@ async def _claim_host_slot_redis(
     """
     try:
         raw = await redis_execute(
-            lambda redis: redis.eval(
-                _REDIS_CLAIM_HOST_SLOT_SCRIPT,
-                1,
-                _host_slot_redis_key(host),
-                int(interval_ms),
-                max(1, int(ttl_seconds)) * 1000,
+            lambda redis: _eval_claim_host_slot_script(
+                redis,
+                host,
+                interval_ms=interval_ms,
+                ttl_seconds=ttl_seconds,
             ),
             operation_name=f"pacing:claim:{host[:64]}",
         )
@@ -75,6 +78,29 @@ async def _claim_host_slot_redis(
     except (TypeError, ValueError):
         return None
     return max(0.0, wait_ms / 1000.0)
+
+
+async def _eval_claim_host_slot_script(
+    redis: Redis,
+    host: str,
+    *,
+    interval_ms: int,
+    ttl_seconds: int,
+) -> object:
+    # redis-py stubs share the sync/async signatures: eval() is typed as
+    # returning str | Awaitable[str] with str-only script args. The asyncio
+    # client always returns an awaitable, and ints encode identically to
+    # their str form on the wire.
+    return await cast(
+        Awaitable[object],
+        redis.eval(
+            _REDIS_CLAIM_HOST_SLOT_SCRIPT,
+            1,
+            _host_slot_redis_key(host),
+            str(int(interval_ms)),
+            str(max(1, int(ttl_seconds)) * 1000),
+        ),
+    )
 
 
 async def wait_for_host_slot(_url: str, *, ttl_seconds: int | None = None) -> None:
