@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** DONE
 **Touches buckets:** extraction contracts, collectors, entity graph, engine, detail pipeline, result building, extraction configuration
 
 ## Goal
@@ -20,7 +20,7 @@ This plan owns Q-LOC-15, Q-LOC-17, Q-LOC-23 through Q-LOC-25, Q-LOC-29, Q-LOC-30
 - [x] Public extraction contracts, evidence/source trace, entity relationships, deterministic ordering, retry shape, and record projections are behavior-equivalent.
 - [x] Existing focused extraction tests remain semantically intact; characterization tests are added only for unprotected risky seams.
 - [x] Net production LOC decreases or each added line has clear ownership leverage; complexity is removed, not shifted into tiny helpers.
-- [ ] Focused backend pytest, Ruff, mypy, architecture tests, and `$ship-main` CI pass.
+- [x] Focused backend pytest, Ruff, mypy, architecture tests, and `$ship-main` CI pass.
 
 ## Do Not Touch
 
@@ -96,7 +96,7 @@ This plan owns Q-LOC-15, Q-LOC-17, Q-LOC-23 through Q-LOC-25, Q-LOC-29, Q-LOC-30
 
 ### Slice 7: `$ship-main`
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Create/use a feature branch, run only focused static/build checks locally, commit and push, open a non-draft PR with exact checks, wait for all required CI, fix failures on the same branch, merge only when green and mergeable, then synchronize local `main` with `--ff-only` and prune safely.
@@ -134,3 +134,4 @@ This plan owns Q-LOC-15, Q-LOC-17, Q-LOC-23 through Q-LOC-25, Q-LOC-29, Q-LOC-30
 - Dependency reconciliation: backend lock advanced 52 packages, including `cryptography` 50.0.0 and current build tooling; frontend direct/transitive packages and Vite+/Vitest overrides advanced to the latest policy-admissible compatible releases. Redis remains 6.4 because Celery 5.6 constrains it below 6.5. Ruff's historical default rule surface is now explicit so Ruff 0.16 does not silently turn a dependency update into an unrelated 731-finding policy expansion.
 - Dependency verify: backend lock/sync, Ruff, mypy (381 modules), and PyPI vulnerability audit pass; frontend supply-chain install, peer check, high-severity audit, Vite+ check (220 files), and production build pass. Vite+ 0.2.9's root-local formatter pattern requirement removed redundant parent-directory ignores.
 - First post-update CI run: dependency audits and Playwright smoke passed. Full backend CI exposed stale global LOC/oversized/complexity ledgers plus a fresh-run public API touch bug. The ledgers now match the live 88,837-line app inventory and remove all 21 cleared extraction complexity debts. Public API cold-cache touch now uses an explicit never-touched sentinel instead of assuming system monotonic uptime exceeds the 300-second throttle.
+- Slice 7 verify: PR #48 passed all 13 CI checks, including both backend full-suite runs, Playwright smoke, CodeQL, Gitleaks, CodeRabbit, Gitar, and Vercel. Superseded dependency PRs #45, #46, and #47 were closed with explanatory comments. Final merge and local-main synchronization are recorded in the ship handoff.
