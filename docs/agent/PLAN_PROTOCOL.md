@@ -24,7 +24,7 @@ When assigned a non-trivial task:
 
 **Created:** YYYY-MM-DD
 **Agent:** [Codex | Opus | Gemini | Claude]
-**Status:** IN PROGRESS | BLOCKED | DONE
+**Status:** QUEUED | IN PROGRESS | BLOCKED | DONE
 **Touches buckets:** [list ownership buckets this plan modifies]
 
 ## Goal
@@ -69,11 +69,19 @@ Running notes as execution proceeds: blockers, decisions made, things discovered
 
 ## Executing a Plan
 
+- A queued plan becomes `IN PROGRESS` only when `ACTIVE.md` names it as Current.
 - Work one slice at a time. Do not skip ahead.
 - After each slice: run the slice's verify step.
 - Mark the slice `DONE` before moving to the next.
 - If a slice is blocked: mark it `BLOCKED`, write the blocker in Notes, surface it to the user.
 - Do not add scope that was not in the plan. If new work is needed, add a new slice and note it.
+
+## Simplification and Metric Guardrails
+
+- LOC is a diagnostic goal, not a hard design constraint. Prefer coherent ownership and readable behavior over crossing a numeric threshold.
+- Do not game LOC/complexity through whitespace or documentation removal, statement packing, minification, generated indirection, excluded-path moves, arbitrary file shards, or weakened tests/scanners.
+- Do not hide branching in reflection, configuration blobs, wrappers, or tiny helpers. Complexity must be removed, not relocated.
+- A simplification slice must reduce cognitive load through deletion, direct ownership, flatter control flow, less duplication, or clearer tests. Record metric movement as evidence only.
 
 ---
 
