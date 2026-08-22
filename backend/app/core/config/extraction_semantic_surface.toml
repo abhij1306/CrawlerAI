@@ -37,67 +37,56 @@ publish_receives_evidence_or_entity_graph = false
 # (204 -> 278) — raised to measured; module complexity budgets ratcheted
 # down to measured (jsonld 30 -> 20, result_building 78 -> 46,
 # publication 43 -> 26, resolver 31 -> 8); total raised to measured.
-physical_loc_budget = 17029
-default_module_cyclomatic_complexity_budget = 20
+# Extraction runtime simplification (2026-08-22): decomposed every remaining
+# callable above CC 15 into named domain steps. Total LOC reconciled to the
+# measured readable implementation; the default CC ceiling is now 15 and only
+# the stricter resolver ceiling remains as a module override.
+physical_loc_budget = 17909
+default_module_cyclomatic_complexity_budget = 15
 
 [ratchets.module_physical_loc_budgets]
 "__init__.py" = 19
-"adapters.py" = 519
+"adapters.py" = 517
 "cascade.py" = 212
-"collectors/_helpers.py" = 233
-"collectors/dom.py" = 1069
-"collectors/js_state.py" = 914
-"collectors/jsonld.py" = 871
+"collectors/_helpers.py" = 260
+"collectors/dom.py" = 1115
+"collectors/js_state.py" = 996
+"collectors/jsonld.py" = 919
 "collectors/metadata.py" = 188
 "collectors/url.py" = 100
-"contracts.py" = 856
+"contracts.py" = 787
 "documents.py" = 308
-"engine.py" = 1059
-"entities.py" = 850
+"engine.py" = 1067
+"entities.py" = 927
 "field_states.py" = 37
-"jobs.py" = 547
+"jobs.py" = 536
 "json_walk.py" = 65
-"listing.py" = 301
-"listing_records.py" = 488
-"listing_tier0.py" = 546
+"listing.py" = 287
+"listing_records.py" = 536
+"listing_tier0.py" = 552
 "model_runtime.py" = 448
 "network_listing.py" = 230
-"pipeline.py" = 781
-"publication.py" = 687
-"replay.py" = 321
+"pipeline.py" = 893
+"publication.py" = 726
+"replay.py" = 319
 "representation/__init__.py" = 23
 "representation/flat_map.py" = 246
 "resolution/__init__.py" = 175
-"resolution/decisions.py" = 279
-"resolution/derived.py" = 314
+"resolution/decisions.py" = 312
+"resolution/derived.py" = 420
 "resolution/lineage.py" = 116
-"resolution/offers.py" = 211
+"resolution/offers.py" = 212
 "resolution/resolver.py" = 278
-"resolution/variant_rollup.py" = 515
-"resolution/variants.py" = 385
-"resolution/assets.py" = 252
-"resolution/price_units.py" = 161
+"resolution/variant_rollup.py" = 611
+"resolution/variants.py" = 447
+"resolution/assets.py" = 296
+"resolution/price_units.py" = 212
 "resolution/ranking.py" = 134
-"result_building.py" = 824
+"result_building.py" = 863
 "sentinel.py" = 251
 "surfaces.py" = 270
-"targeting.py" = 203
-"validation.py" = 743
+"targeting.py" = 222
+"validation.py" = 777
 
 [ratchets.module_cyclomatic_complexity_budgets]
-"collectors/_helpers.py" = 23
-"collectors/js_state.py" = 41
-"collectors/jsonld.py" = 20
-"engine.py" = 27
-"entities.py" = 24
-"pipeline.py" = 40
-"publication.py" = 26
-"replay.py" = 29
-"resolution/decisions.py" = 22
-"resolution/derived.py" = 25
-"resolution/offers.py" = 22
-"resolution/price_units.py" = 37
 "resolution/resolver.py" = 8
-"resolution/variant_rollup.py" = 25
-"result_building.py" = 46
-"validation.py" = 33

@@ -467,22 +467,12 @@ def _value_for_kind(
     obj: dict[str, Any], kind: str, *, list_url: str | None, page_url: str
 ) -> tuple[str, str]:
     if kind == "name_or_title":
-        for key in ("name", "title"):
-            if value := text_value(obj.get(key)):
-                return value, key
+        return _named_value(obj)
     elif kind == "url":
         raw_url, suffix = _record_url(obj, list_url)
         return (urljoin(page_url, raw_url.strip()), suffix) if raw_url else ("", "")
     elif kind == "offer_price":
-        for index, offer in enumerate(_offers(obj)):
-            for key in ("price", "lowPrice"):
-                if value := text_value(offer.get(key)):
-                    suffix = (
-                        "offers"
-                        if isinstance(obj.get("offers"), dict)
-                        else f"offers/{index}"
-                    )
-                    return value, f"{suffix}/{key}"
+        return _offer_price_value(obj)
     elif kind == "image":
         value, suffix = _first_image(obj)
         return (urljoin(page_url, value), suffix) if value else ("", "")
@@ -492,6 +482,26 @@ def _value_for_kind(
     elif kind == "location":
         value = _location(obj.get("jobLocation"))
         return (value, "jobLocation") if value else ("", "")
+    return "", ""
+
+
+def _named_value(obj: dict[str, Any]) -> tuple[str, str]:
+    for key in ("name", "title"):
+        if value := text_value(obj.get(key)):
+            return value, key
+    return "", ""
+
+
+def _offer_price_value(obj: dict[str, Any]) -> tuple[str, str]:
+    for index, offer in enumerate(_offers(obj)):
+        for key in ("price", "lowPrice"):
+            if value := text_value(offer.get(key)):
+                suffix = (
+                    "offers"
+                    if isinstance(obj.get("offers"), dict)
+                    else f"offers/{index}"
+                )
+                return value, f"{suffix}/{key}"
     return "", ""
 
 

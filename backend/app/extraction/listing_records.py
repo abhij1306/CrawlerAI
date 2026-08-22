@@ -383,23 +383,19 @@ def _best_grid_children(
     (image or price in the child subtree) rejects a nav container whose children
     are bare links even when it has many of them.
     """
-    scored: list[tuple[int, int, list[_Container]]] = []
-    for grid in grids.values():
-        rich = [c for c in grid.children() if record_signal(c.node)]
-        if allow_text_card_fallback and len(rich) < _MIN_REPEATED_RECORDS:
-            text_cards = [
-                child
-                for child in grid.children()
-                if len(re.findall(r"\w+", child.node.content_text())) >= 3
-            ]
-            if _homogeneity_score(text_cards) >= _MIN_REPEATED_RECORDS:
-                rich = text_cards
-        if len(rich) < _MIN_REPEATED_RECORDS:
-            continue
-        if not _consistent_record_host(rich, page_url=page_url):
-            continue
-        homogeneity = _homogeneity_score(rich)
-        scored.append((len(rich), homogeneity, rich))
+    scored = [
+        score
+        for grid in grids.values()
+        if (
+            score := _score_grid(
+                grid,
+                page_url=page_url,
+                record_signal=record_signal,
+                allow_text_card_fallback=allow_text_card_fallback,
+            )
+        )
+        is not None
+    ]
 
     if not scored and allow_singleton:
         # A structured-corroborated singleton must still anchor to a consistent
@@ -427,6 +423,30 @@ def _best_grid_children(
     # Prefer most record-children; break ties toward the more homogeneous grid.
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return scored[0][2]
+
+
+def _score_grid(
+    grid: _GridParent,
+    *,
+    page_url: str,
+    record_signal: RecordSignal,
+    allow_text_card_fallback: bool,
+) -> tuple[int, int, list[_Container]] | None:
+    children = grid.children()
+    rich = [child for child in children if record_signal(child.node)]
+    if allow_text_card_fallback and len(rich) < _MIN_REPEATED_RECORDS:
+        text_cards = [
+            child
+            for child in children
+            if len(re.findall(r"\w+", child.node.content_text())) >= 3
+        ]
+        if _homogeneity_score(text_cards) >= _MIN_REPEATED_RECORDS:
+            rich = text_cards
+    if len(rich) < _MIN_REPEATED_RECORDS or not _consistent_record_host(
+        rich, page_url=page_url
+    ):
+        return None
+    return len(rich), _homogeneity_score(rich), rich
 
 
 def _consistent_record_host(children: list[_Container], *, page_url: str) -> bool:
@@ -496,41 +516,14 @@ def _anchorless_records(
     """
     if not record_key_attributes:
         return ()
-    grids: dict[int, list[_Container]] = defaultdict(list)
-    seen_keys: set[str] = set()
-    order = 0
-    for node in doc.css("*"):
-        key = _record_local_key(node, record_key_attributes)
-        if not key or key in seen_keys or _is_visually_hidden(node):
-            continue
-        parent = node.parent()
-        if parent is None or parent.tag() in {"html", "head", "body"}:
-            continue
-        if any(
-            ancestor.tag() in {"header", "footer", "nav"}
-            for ancestor in node.ancestors()
-        ):
-            continue
-        # A record must expose a recoverable, non-structural detail URL. A tile
-        # with only a generic id and no navigation affordance is not a posting.
-        url = _recover_record_url(node, page_url=page_url)
-        if not url or listing_url_is_structural(url):
-            continue
-        seen_keys.add(key)
-        grids[parent.identity()].append(
-            _Container(node=node, url=url, identity=_link_identity(url), order=order)
-        )
-        order += 1
-
-    best: list[_Container] = []
-    for members in grids.values():
-        rich = [item for item in members if _has_min_text_tokens(item.node)]
-        if len(rich) < _MIN_REPEATED_RECORDS:
-            continue
-        if _homogeneity_score(rich) < _MIN_REPEATED_RECORDS:
-            continue
-        if len(rich) > len(best):
-            best = rich
+    grids = _anchorless_grids(
+        doc, page_url=page_url, record_key_attributes=record_key_attributes
+    )
+    best = max(
+        (_rich_anchorless_members(members) for members in grids.values()),
+        key=len,
+        default=[],
+    )
     if not best:
         return ()
     best.sort(key=lambda item: item.order)
@@ -540,6 +533,68 @@ def _anchorless_records(
         )
         for index, item in enumerate(best)
     )
+
+
+def _anchorless_grids(
+    doc: HtmlDocument,
+    *,
+    page_url: str,
+    record_key_attributes: tuple[str, ...],
+) -> dict[int, list[_Container]]:
+    grids: dict[int, list[_Container]] = defaultdict(list)
+    seen_keys: set[str] = set()
+    for node in doc.css("*"):
+        candidate = _anchorless_candidate(
+            node,
+            page_url=page_url,
+            record_key_attributes=record_key_attributes,
+            seen_keys=seen_keys,
+        )
+        if candidate is None:
+            continue
+        key, parent, url = candidate
+        seen_keys.add(key)
+        grids[parent.identity()].append(
+            _Container(
+                node=node,
+                url=url,
+                identity=_link_identity(url),
+                order=sum(map(len, grids.values())),
+            )
+        )
+    return grids
+
+
+def _anchorless_candidate(
+    node: HtmlNode,
+    *,
+    page_url: str,
+    record_key_attributes: tuple[str, ...],
+    seen_keys: set[str],
+):
+    key = _record_local_key(node, record_key_attributes)
+    if not key or key in seen_keys or _is_visually_hidden(node):
+        return None
+    parent = node.parent()
+    if parent is None or parent.tag() in {"html", "head", "body"}:
+        return None
+    if any(
+        ancestor.tag() in {"header", "footer", "nav"} for ancestor in node.ancestors()
+    ):
+        return None
+    url = _recover_record_url(node, page_url=page_url)
+    if not url or listing_url_is_structural(url):
+        return None
+    return key, parent, url
+
+
+def _rich_anchorless_members(members: list[_Container]) -> list[_Container]:
+    rich = [item for item in members if _has_min_text_tokens(item.node)]
+    if len(rich) < _MIN_REPEATED_RECORDS:
+        return []
+    if _homogeneity_score(rich) < _MIN_REPEATED_RECORDS:
+        return []
+    return rich
 
 
 def _homogeneity_score(children: list[_Container]) -> int:

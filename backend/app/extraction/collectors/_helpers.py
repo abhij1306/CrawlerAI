@@ -130,7 +130,10 @@ def _brand_role(
         role = str(metadata.get("brand_role") or "").strip().casefold()
         if role in BRAND_ROLES:
             return role  # type: ignore[return-value]
-    locator = str(locator_value or "").casefold()
+    return _locator_brand_role(str(locator_value or "").casefold())
+
+
+def _locator_brand_role(locator: str) -> BrandRole:
     if any(token in locator for token in ("manufacturer", "manufacturername")):
         return "manufacturer"
     if "designer" in locator or "designed" in locator:
@@ -213,19 +216,49 @@ def _subject_id(
         or bundle.final_url
         or bundle.requested_url
     )
-    if hint is not None and hint.entity_type == "variant":
+    if hint is not None:
+        hinted_subject = _hinted_subject_id(
+            bundle, hint, group_id=group_id, product_key=product_key, value=value
+        )
+        if hinted_subject is not None:
+            return hinted_subject
+    return _fact_subject_id(
+        bundle, fact_type, group_id=group_id, product_key=product_key, value=value
+    )
+
+
+def _hinted_subject_id(
+    bundle: CaptureBundle,
+    hint: EntityHint,
+    *,
+    group_id: object,
+    product_key: object,
+    value: Any,
+) -> str | None:
+    if hint.entity_type == "variant":
         return stable_id(
             "subject",
             bundle.bundle_id,
             "variant",
             group_id or hint.variant_id or product_key,
         )
-    if hint is not None and hint.entity_type == "offer":
+    if hint.entity_type == "offer":
         return stable_id("subject", bundle.bundle_id, "offer", group_id or product_key)
-    if hint is not None and hint.entity_type == "asset":
+    if hint.entity_type == "asset":
         return stable_id("subject", bundle.bundle_id, "asset", group_id or value)
-    if hint is not None and hint.entity_type == "job":
+    if hint.entity_type == "job":
         return stable_id("subject", bundle.bundle_id, "job", product_key)
+    return None
+
+
+def _fact_subject_id(
+    bundle: CaptureBundle,
+    fact_type: str,
+    *,
+    group_id: object,
+    product_key: object,
+    value: Any,
+) -> str:
     if fact_type.startswith("variant."):
         return stable_id(
             "subject", bundle.bundle_id, "variant", group_id or product_key

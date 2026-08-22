@@ -81,56 +81,10 @@ class DomCollector:
 
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         _, doc = html_doc(bundle, artifacts)
-        out: list[Evidence] = []
         product_subject = stable_id(
             "subject", bundle.bundle_id, "product", bundle.final_url
         )
-        selectors = [
-            ("h1", "product.title"),
-            ("head title", "product.title"),
-            ("[data-price]", "offer.price"),
-            ("[data-currency]", "offer.currency"),
-            ("[data-sku]", "product.sku"),
-        ]
-        for selector, fact in selectors:
-            for tag in doc.css(selector):
-                if _is_commercial_variant_control(tag):
-                    continue
-                attr = (
-                    "data-price"
-                    if "price" in selector
-                    else "data-currency"
-                    if "currency" in selector
-                    else "data-sku"
-                    if "sku" in selector
-                    else None
-                )
-                value = str(tag.attribute(attr) if attr else tag.text()).strip()
-                if not value:
-                    continue
-                group = "offer:dom:product" if fact.startswith("offer.") else None
-                hint = EntityHint(
-                    entity_type="offer" if fact.startswith("offer.") else "product"
-                )
-                subject_id = group if fact.startswith("offer.") else product_subject
-                out.append(
-                    evidence(
-                        bundle,
-                        "dom",
-                        "dom",
-                        fact,
-                        value,
-                        SourceLocator(kind="css_selector", value=selector),
-                        group_id=group,
-                        hint=hint,
-                        confidence=0.6,
-                        subject_id=subject_id,
-                        parent_subject_id=product_subject
-                        if fact.startswith("offer.")
-                        else None,
-                        parent_scope="product" if fact.startswith("offer.") else None,
-                    )
-                )
+        out = _base_dom_evidence(bundle, doc, product_subject)
         out.extend(_product_brand_evidence(bundle, doc, product_subject))
         product_roots = _product_root_nodes(doc)
         out.extend(
@@ -159,6 +113,67 @@ class DomCollector:
         out.extend(_commercial_variant_controls(bundle, doc, product_subject))
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
+
+
+def _base_dom_evidence(
+    bundle: CaptureBundle, doc, product_subject: str
+) -> list[Evidence]:
+    selectors = (
+        ("h1", "product.title"),
+        ("head title", "product.title"),
+        ("[data-price]", "offer.price"),
+        ("[data-currency]", "offer.currency"),
+        ("[data-sku]", "product.sku"),
+    )
+    rows: list[Evidence] = []
+    for selector, fact in selectors:
+        for tag in doc.css(selector):
+            row = _base_dom_row(bundle, tag, selector, fact, product_subject)
+            if row is not None:
+                rows.append(row)
+    return rows
+
+
+def _base_dom_row(
+    bundle: CaptureBundle,
+    tag: HtmlNode,
+    selector: str,
+    fact: str,
+    product_subject: str,
+) -> Evidence | None:
+    if _is_commercial_variant_control(tag):
+        return None
+    attr = next(
+        (
+            attribute
+            for token, attribute in (
+                ("price", "data-price"),
+                ("currency", "data-currency"),
+                ("sku", "data-sku"),
+            )
+            if token in selector
+        ),
+        None,
+    )
+    value = str(tag.attribute(attr) if attr else tag.text()).strip()
+    if not value:
+        return None
+    is_offer = fact.startswith("offer.")
+    group = "offer:dom:product" if is_offer else None
+    return evidence(
+        bundle,
+        "dom",
+        "dom",
+        fact,
+        value,
+        SourceLocator(kind="css_selector", value=selector),
+        group_id=group,
+        hint=EntityHint(entity_type="offer" if is_offer else "product"),
+        confidence=0.6,
+        subject_id=group if is_offer else product_subject,
+        parent_subject_id=product_subject if is_offer else None,
+        parent_scope="product" if is_offer else None,
+    )
 
 
 def _product_brand_evidence(
@@ -456,6 +471,18 @@ def _node_context_excluded(node: HtmlNode) -> bool:
 
 
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
+    candidates = _product_image_candidates(doc)
+    scoped = _scoped_product_image_nodes(candidates)
+    if scoped:
+        return tuple((node, 0.58) for node in scoped)
+    # Fail closed on galleries: a single admissible main image is a trustworthy
+    # fallback, but several un-scoped candidates are usually another gallery.
+    if len(candidates) == 1:
+        return tuple((node, 0.5) for node, _ in candidates)
+    return ()
+
+
+def _product_image_candidates(doc) -> list[tuple[HtmlNode, str]]:
     candidates: list[tuple[HtmlNode, str]] = []
     seen: set[int] = set()
     for node in doc.css(
@@ -474,21 +501,18 @@ def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
             token in context for token in DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS
         ):
             candidates.append((node, context))
-    scoped = [
+    return candidates
+
+
+def _scoped_product_image_nodes(
+    candidates: list[tuple[HtmlNode, str]],
+) -> list[HtmlNode]:
+    return [
         node
         for node, context in candidates
         if node.attribute("data-product-image") is not None
         or any(token in context for token in DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS)
     ]
-    if scoped:
-        return tuple((node, 0.58) for node in scoped)
-    # Fail closed on galleries: a single admissible main image is a trustworthy
-    # fallback, but several un-scoped candidates are almost always a gallery or
-    # recommendation grid, so admitting them all leaks non-product imagery
-    # (AUD-03). Defer those to structured/positively-scoped evidence instead.
-    if len(candidates) == 1:
-        return tuple((node, 0.5) for node, _ in candidates)
-    return ()
 
 
 def _image_node_url(node: HtmlNode) -> str:
@@ -1082,14 +1106,10 @@ def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
     )
     rows: list[Evidence] = []
     for row in rules:
-        if not isinstance(row, dict) or not bool(row.get("is_active", True)):
+        binding = _css_rule_binding(row)
+        if binding is None:
             continue
-        selector = str(row.get("css_selector") or "").strip()
-        fact_type = field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
-            normalize_field_key(str(row.get("field_name") or ""))
-        )
-        if not selector or not fact_type:
-            continue
+        selector, fact_type = binding
         try:
             nodes = doc.css(selector)
         except Exception:
@@ -1100,45 +1120,85 @@ def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
             )
             continue
         for node in nodes[:3]:
-            if node.is_hidden():
-                continue
-            value = _css_node_value(node, fact_type)
-            if value in (None, "", [], {}):
-                continue
-            hint = EntityHint(entity_type="product")
-            subject_id = product_subject_id
-            parent_subject_id, group_id = None, "product"
-            if fact_type.startswith("offer."):
-                hint = EntityHint(entity_type="offer", url=bundle.final_url)
-                subject_id = stable_id(
-                    "subject", bundle.bundle_id, "offer", bundle.final_url
-                )
-                parent_subject_id = product_subject_id
-                group_id = "offer"
-            elif fact_type.startswith("asset."):
-                hint = EntityHint(entity_type="asset", url=bundle.final_url)
-                subject_id = stable_id("subject", bundle.bundle_id, "asset", value)
-                parent_subject_id = product_subject_id
-                group_id = "asset"
-            rows.append(
-                evidence(
-                    bundle,
-                    "css_field_rules",
-                    "css_recipe",
-                    fact_type,
-                    value,
-                    SourceLocator(
-                        kind="css_selector", value=selector, preview=str(value)[:120]
-                    ),
-                    hint=hint,
-                    group_id=group_id,
-                    confidence=0.86,
-                    directness="direct",
-                    subject_id=subject_id,
-                    parent_subject_id=parent_subject_id,
-                )
+            evidence_row = _css_rule_node_evidence(
+                bundle,
+                node,
+                selector=selector,
+                fact_type=fact_type,
+                product_subject_id=product_subject_id,
             )
+            if evidence_row is not None:
+                rows.append(evidence_row)
     return tuple(rows)
+
+
+def _css_rule_binding(row: object) -> tuple[str, str] | None:
+    if not isinstance(row, dict) or not bool(row.get("is_active", True)):
+        return None
+    selector = str(row.get("css_selector") or "").strip()
+    fact_type = field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
+        normalize_field_key(str(row.get("field_name") or ""))
+    )
+    return (selector, fact_type) if selector and fact_type else None
+
+
+def _css_rule_node_evidence(
+    bundle,
+    node: HtmlNode,
+    *,
+    selector: str,
+    fact_type: str,
+    product_subject_id: str,
+) -> Evidence | None:
+    if node.is_hidden():
+        return None
+    value = _css_node_value(node, fact_type)
+    if value in (None, "", [], {}):
+        return None
+    hint, subject_id, parent_subject_id, group_id = _css_subject_binding(
+        bundle,
+        fact_type=fact_type,
+        value=value,
+        product_subject_id=product_subject_id,
+    )
+    return evidence(
+        bundle,
+        "css_field_rules",
+        "css_recipe",
+        fact_type,
+        value,
+        SourceLocator(kind="css_selector", value=selector, preview=str(value)[:120]),
+        hint=hint,
+        group_id=group_id,
+        confidence=0.86,
+        directness="direct",
+        subject_id=subject_id,
+        parent_subject_id=parent_subject_id,
+    )
+
+
+def _css_subject_binding(
+    bundle,
+    *,
+    fact_type: str,
+    value: object,
+    product_subject_id: str,
+) -> tuple[EntityHint, str, str | None, str]:
+    if fact_type.startswith("offer."):
+        return (
+            EntityHint(entity_type="offer", url=bundle.final_url),
+            stable_id("subject", bundle.bundle_id, "offer", bundle.final_url),
+            product_subject_id,
+            "offer",
+        )
+    if fact_type.startswith("asset."):
+        return (
+            EntityHint(entity_type="asset", url=bundle.final_url),
+            stable_id("subject", bundle.bundle_id, "asset", value),
+            product_subject_id,
+            "asset",
+        )
+    return EntityHint(entity_type="product"), product_subject_id, None, "product"
 
 
 def _css_node_value(node, fact_type: str) -> str | None:

@@ -74,19 +74,8 @@ def _url_mismatched_product_subjects(
     evidence: tuple[Evidence, ...],
 ) -> frozenset[str]:
     title_flags_by_subject: dict[str, set[str]] = {}
-    target_url_identities = {
-        identity
-        for row in evidence
-        if row.collector_id == "url" and row.fact_type == "product.url"
-        if (identity := detail_url_resource_identity(str(row.value)))
-    }
-    url_confirmed_subjects = {
-        row.subject_id
-        for row in evidence
-        if row.subject_id
-        and row.fact_type == "product.url"
-        and detail_url_resource_identity(str(row.value)) in target_url_identities
-    }
+    target_url_identities = _target_url_identities(evidence)
+    url_confirmed_subjects = _url_confirmed_subjects(evidence, target_url_identities)
     for row in evidence:
         if (
             row.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE
@@ -101,6 +90,27 @@ def _url_mismatched_product_subjects(
         and "title_url_match" not in flags
         and subject_id not in url_confirmed_subjects
     )
+
+
+def _target_url_identities(evidence: tuple[Evidence, ...]) -> set[str]:
+    return {
+        identity
+        for row in evidence
+        if row.collector_id == "url" and row.fact_type == "product.url"
+        if (identity := detail_url_resource_identity(str(row.value)))
+    }
+
+
+def _url_confirmed_subjects(
+    evidence: tuple[Evidence, ...], target_url_identities: set[str]
+) -> set[str]:
+    return {
+        row.subject_id
+        for row in evidence
+        if row.subject_id
+        and row.fact_type == "product.url"
+        and detail_url_resource_identity(str(row.value)) in target_url_identities
+    }
 
 
 def _resolve_asset(
@@ -174,56 +184,21 @@ def _resolve_scalar(
         for ev in candidates
         if ev.evidence_id not in blocking and _invalidity_reason(ev) is None
     ]
-    finding_ids = tuple(
-        f.finding_id for f in findings if set(f.evidence_ids) & set(ids)
-    )
+    finding_ids = _finding_ids_for_evidence(findings, ids)
     if not admissible:
-        return Decision(
-            decision_id=stable_id("decision", entity_id, fact_type, ids),
-            entity_id=entity_id,
-            fact_type=fact_type,
-            accepted_evidence_ids=(),
-            # Preserve the concrete rejection reason for diagnostics.
-            rejected=tuple(
-                RejectedEvidence(
-                    evidence_id=ev.evidence_id,
-                    reason="blocked_by_finding"
-                    if ev.evidence_id in blocking
-                    else (_invalidity_reason(ev) or "invalid_value"),
-                )
-                for ev in candidates
-            ),
+        return _unresolved_scalar_decision(
+            entity_id,
+            fact_type,
+            ids,
+            candidates,
+            blocking=blocking,
             finding_ids=finding_ids,
-            rule_id="SCALAR_LEXICOGRAPHIC",
-            status="unresolved",
         )
     preferred = set(preferred_evidence_ids)
     winner = next(
         (row for row in admissible if row.evidence_id in preferred), admissible[0]
     )
-    rule_id = (
-        "CONTRACT_PREFERRED_SOURCE"
-        if winner.evidence_id in preferred
-        else "SCALAR_LEXICOGRAPHIC"
-    )
-    if fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        rule_id = (
-            "TITLE_URL_REVIEW_ONLY"
-            if "url_derived_title" in winner.flags
-            else "TITLE_SEMANTIC_RANKING"
-        )
-
-    def _rejected_reason(ev: Evidence) -> str:
-        if ev.evidence_id in blocking:
-            return "blocked_by_finding"
-        reason = _invalidity_reason(ev)
-        if reason is not None:
-            return reason
-        return (
-            "stable_tiebreak"
-            if rank(ev)[:-1] == rank(winner)[:-1]
-            else "lower_confidence"
-        )
+    rule_id = _scalar_rule_id(fact_type, winner, preferred=preferred)
 
     return Decision(
         decision_id=stable_id("decision", entity_id, fact_type, winner.evidence_id),
@@ -233,7 +208,7 @@ def _resolve_scalar(
         rejected=tuple(
             RejectedEvidence(
                 evidence_id=ev.evidence_id,
-                reason=_rejected_reason(ev),
+                reason=_scalar_rejection_reason(ev, winner, blocking=blocking),
             )
             for ev in candidates
             if ev.evidence_id != winner.evidence_id
@@ -241,6 +216,75 @@ def _resolve_scalar(
         finding_ids=finding_ids,
         rule_id=rule_id,
         status="resolved",
+    )
+
+
+def _finding_ids_for_evidence(
+    findings: tuple[Finding, ...], ids: tuple[str, ...]
+) -> tuple[str, ...]:
+    evidence_ids = set(ids)
+    return tuple(
+        finding.finding_id
+        for finding in findings
+        if set(finding.evidence_ids) & evidence_ids
+    )
+
+
+def _unresolved_scalar_decision(
+    entity_id: str,
+    fact_type: str,
+    ids: tuple[str, ...],
+    candidates: list[Evidence],
+    *,
+    blocking: set[str],
+    finding_ids: tuple[str, ...],
+) -> Decision:
+    return Decision(
+        decision_id=stable_id("decision", entity_id, fact_type, ids),
+        entity_id=entity_id,
+        fact_type=fact_type,
+        accepted_evidence_ids=(),
+        rejected=tuple(
+            RejectedEvidence(
+                evidence_id=ev.evidence_id,
+                reason="blocked_by_finding"
+                if ev.evidence_id in blocking
+                else (_invalidity_reason(ev) or "invalid_value"),
+            )
+            for ev in candidates
+        ),
+        finding_ids=finding_ids,
+        rule_id="SCALAR_LEXICOGRAPHIC",
+        status="unresolved",
+    )
+
+
+def _scalar_rule_id(fact_type: str, winner: Evidence, *, preferred: set[str]) -> str:
+    if fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
+        return (
+            "TITLE_URL_REVIEW_ONLY"
+            if "url_derived_title" in winner.flags
+            else "TITLE_SEMANTIC_RANKING"
+        )
+    return (
+        "CONTRACT_PREFERRED_SOURCE"
+        if winner.evidence_id in preferred
+        else "SCALAR_LEXICOGRAPHIC"
+    )
+
+
+def _scalar_rejection_reason(
+    evidence: Evidence, winner: Evidence, *, blocking: set[str]
+) -> str:
+    if evidence.evidence_id in blocking:
+        return "blocked_by_finding"
+    reason = _invalidity_reason(evidence)
+    if reason is not None:
+        return reason
+    return (
+        "stable_tiebreak"
+        if rank(evidence)[:-1] == rank(winner)[:-1]
+        else "lower_confidence"
     )
 
 

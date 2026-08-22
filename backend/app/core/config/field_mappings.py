@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from app.core.config.extraction_price_rules import (
     DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
@@ -31,6 +31,23 @@ BARCODE_FIELD = "barcode"
 SKU_FIELD = "sku"
 PRODUCT_ID_FIELD = "product_id"
 ROUTE_BARCODE_TO_SKU = True
+
+OFFER_SCOPED_FIELDS = frozenset(
+    {
+        PRICE_FIELD,
+        CURRENCY_FIELD,
+        "original_price",
+        AVAILABILITY_FIELD,
+        STOCK_QUANTITY_FIELD,
+    }
+)
+ASSET_SCOPED_FIELDS = frozenset({IMAGE_URL_FIELD, ADDITIONAL_IMAGES_FIELD})
+VARIANT_SCOPED_FIELDS = frozenset(
+    {VARIANTS_FIELD, "variant_count", COLOR_FIELD, SIZE_FIELD}
+)
+JOB_SCOPED_FIELDS = frozenset(
+    {"company", "location", APPLY_URL_FIELD, "job_id", "job_type"}
+)
 
 ASSET_IMAGE_URL_FACT_TYPE = "asset.image_url"
 OFFER_AVAILABILITY_FACT_TYPE = "offer.availability"
@@ -274,6 +291,48 @@ NORMALIZER_INTEGER_FIELDS = frozenset(
         "word_count",
     }
 )
+
+
+def field_entity_scope(
+    field: str,
+) -> Literal["product", "variant", "offer", "asset", "job", "record"]:
+    if field in OFFER_SCOPED_FIELDS:
+        return "offer"
+    if field in ASSET_SCOPED_FIELDS:
+        return "asset"
+    if field in VARIANT_SCOPED_FIELDS:
+        return "variant"
+    if field in JOB_SCOPED_FIELDS:
+        return "job"
+    return "product"
+
+
+def field_value_type(
+    field: str,
+) -> Literal[
+    "string",
+    "string_list",
+    "number",
+    "money",
+    "date",
+    "boolean",
+    "enum",
+    "key_value",
+    "structured_object",
+]:
+    if field in NORMALIZER_DECIMAL_FIELDS:
+        return "money" if "price" in field else "number"
+    if field in NORMALIZER_INTEGER_FIELDS:
+        return "number"
+    if field in NORMALIZER_BOOLEAN_FIELDS:
+        return "boolean"
+    if field in {ADDITIONAL_IMAGES_FIELD, "features", "tags"}:
+        return "string_list"
+    if field in {VARIANTS_FIELD, "tables"}:
+        return "structured_object"
+    return "string"
+
+
 NORMALIZER_LIST_TEXT_FIELDS = frozenset({"additional_images", "features", "tags"})
 DOM_HIGH_VALUE_FIELDS = {
     "ecommerce_detail": frozenset(

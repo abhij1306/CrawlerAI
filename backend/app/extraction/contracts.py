@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validat
 
 from app.core.config import field_mappings
 from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
-from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
+from app.core.config.variant_policy import ECOMMERCE_FACT_TYPES
 from app.core.extraction_memory.recipe_contracts import RecipeExecutionResult
 from app.extraction.surfaces import Surface
 
@@ -34,46 +34,6 @@ BrandRole = Literal[
     "unknown",
 ]
 BRAND_ROLES = frozenset(get_args(BrandRole))
-
-PRODUCT_FACTS = frozenset(
-    f"product.{field}"
-    for field in (
-        "url",
-        "title",
-        "brand",
-        "description",
-        "category",
-        "product_type",
-        "sku",
-        "mpn",
-        "gtin",
-        "materials",
-        "color",
-        "size",
-    )
-)
-VARIANT_FACTS = frozenset(
-    {
-        *(f"variant.{field}" for field in ("id", "sku", "gtin", "url", "selected")),
-        *(f"variant.option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS),
-    }
-)
-OFFER_FACTS = frozenset(
-    f"offer.{field}"
-    for field in (
-        "price",
-        "price_min",
-        "price_max",
-        "currency",
-        "original_price",
-        "availability",
-        "stock_quantity",
-        "seller",
-    )
-)
-ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
-OPTION_FACTS = frozenset(f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS)
-FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
 
 class FrozenModel(BaseModel):
@@ -612,8 +572,8 @@ def field_contracts_for_surface(surface: Surface) -> tuple[FieldContract, ...]:
         contracts.append(
             FieldContract(
                 field=field,
-                entity_scope=_field_entity_scope(field),
-                value_type=_field_value_type(field),
+                entity_scope=field_mappings.field_entity_scope(field),
+                value_type=field_mappings.field_value_type(field),
                 cardinality="many"
                 if field in {"additional_images", "variants", "tables"}
                 else "one",
@@ -624,40 +584,6 @@ def field_contracts_for_surface(surface: Surface) -> tuple[FieldContract, ...]:
             )
         )
     return tuple(contracts)
-
-
-def _field_entity_scope(
-    field: str,
-) -> Literal["product", "variant", "offer", "asset", "job", "record"]:
-    if field in {
-        "price",
-        "currency",
-        "original_price",
-        "availability",
-        "stock_quantity",
-    }:
-        return "offer"
-    if field in {"image_url", "additional_images"}:
-        return "asset"
-    if field in {"variants", "variant_count", "color", "size"}:
-        return "variant"
-    if field in {"company", "location", "apply_url", "job_id", "job_type"}:
-        return "job"
-    return "product"
-
-
-def _field_value_type(field: str) -> FieldValueType:
-    if field in field_mappings.NORMALIZER_DECIMAL_FIELDS:
-        return "money" if "price" in field else "number"
-    if field in field_mappings.NORMALIZER_INTEGER_FIELDS:
-        return "number"
-    if field in field_mappings.NORMALIZER_BOOLEAN_FIELDS:
-        return "boolean"
-    if field in {"additional_images", "features", "tags"}:
-        return "string_list"
-    if field in {"variants", "tables"}:
-        return "structured_object"
-    return "string"
 
 
 class FieldEvidenceState(FrozenModel):
@@ -764,7 +690,7 @@ class ModelEvidenceCandidate(FrozenModel):
 
     @model_validator(mode="after")
     def validate_fact_type(self) -> ModelEvidenceCandidate:
-        if self.fact_type not in FACT_TYPES:
+        if self.fact_type not in ECOMMERCE_FACT_TYPES:
             raise ValueError(f"Unsupported model evidence fact type: {self.fact_type}")
         return self
 

@@ -80,6 +80,25 @@ def _resolve_variants(
         if row.status == "resolved"
     }
     derived = {(row.entity_id, row.fact_type): row for row in derived_rows}
+    offer_by_variant = _preferred_offer_by_variant(entities)
+    asset_by_variant = _preferred_asset_by_variant(entities, evidence_by_id)
+    product_url = _resolved_product_url(decision_rows, evidence_by_id)
+    candidates, rejected = _variant_candidates(
+        entities,
+        offer_by_variant,
+        asset_by_variant,
+        decisions,
+        derived,
+        evidence_by_id,
+        product_url=product_url,
+    )
+    eligible, optionless_rejected = _eligible_variant_decisions(
+        candidates, evidence_by_id
+    )
+    return tuple((*eligible, *rejected, *optionless_rejected))
+
+
+def _preferred_offer_by_variant(entities: EntitySet) -> dict[str, OfferEntity]:
     offer_by_variant: dict[str, OfferEntity] = {}
     for offer in entities.offers:
         if not offer.variant_entity_id:
@@ -87,6 +106,12 @@ def _resolve_variants(
         current = offer_by_variant.get(offer.variant_entity_id)
         if current is None or _offer_rank(offer) > _offer_rank(current):
             offer_by_variant[offer.variant_entity_id] = offer
+    return offer_by_variant
+
+
+def _preferred_asset_by_variant(
+    entities: EntitySet, evidence_by_id: dict[str, Evidence]
+) -> dict[str, AssetEntity]:
     asset_by_variant: dict[str, AssetEntity] = {}
     for asset in entities.assets:
         if not asset.variant_entity_id:
@@ -102,7 +127,22 @@ def _resolve_variants(
             current_asset, current_accepted
         ):
             asset_by_variant[asset.variant_entity_id] = asset
-    product_url = _resolved_product_url(decision_rows, evidence_by_id)
+    return asset_by_variant
+
+
+def _variant_candidates(
+    entities: EntitySet,
+    offer_by_variant: dict[str, OfferEntity],
+    asset_by_variant: dict[str, AssetEntity],
+    decisions: dict[tuple[str, str], Decision],
+    derived: dict[tuple[str, str], DerivedFact],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    product_url: str,
+) -> tuple[
+    list[tuple[VariantEntity, dict[str, object], dict[str, object]]],
+    list[VariantDecision],
+]:
     candidates: list[tuple[VariantEntity, dict[str, object], dict[str, object]]] = []
     rejected: list[VariantDecision] = []
     for variant in entities.variants:
@@ -121,7 +161,15 @@ def _resolve_variants(
             )
         else:
             candidates.append((variant, values, lineage))
+    return candidates, rejected
+
+
+def _eligible_variant_decisions(
+    candidates: list[tuple[VariantEntity, dict[str, object], dict[str, object]]],
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[list[VariantDecision], list[VariantDecision]]:
     eligible: list[VariantDecision] = []
+    rejected: list[VariantDecision] = []
     for variant, values, lineage in candidates:
         if (
             len(candidates) > 1
@@ -148,7 +196,7 @@ def _resolve_variants(
                 lineage=lineage,
             )
         )
-    return tuple((*eligible, *rejected))
+    return eligible, rejected
 
 
 def _resolved_variant_row(
@@ -221,40 +269,66 @@ def _put_variant_offer(
         "offer.availability": "availability",
         "offer.stock_quantity": "stock_quantity",
     }.items():
-        decision = decisions.get((offer.entity_id, fact)) if offer else None
-        decision = decision or decisions.get((variant.entity_id, fact))
-        derived_fact = None
-        if offer:
-            derived_fact = derived.get((offer.entity_id, fact))
-        derived_fact = derived_fact or derived.get((variant.entity_id, fact))
-        if (
-            not decision or not decision.accepted_evidence_ids
-        ) and derived_fact is None:
-            continue
-        evidence = (
-            evidence_by_id.get(decision.accepted_evidence_ids[0])
-            if decision and decision.accepted_evidence_ids
-            else None
+        _put_variant_offer_value(
+            values,
+            lineage,
+            variant,
+            offer,
+            decisions,
+            derived,
+            evidence_by_id,
+            fact=fact,
+            field=field,
         )
-        if derived_fact is None and evidence is None:
-            continue
-        if derived_fact is not None:
-            values[field] = derived_fact.value
-            lineage[field] = _derived_lineage(derived_fact)
-        elif evidence is not None and decision is not None:
-            values[field] = evidence.value
-            lineage[field] = _decision_lineage(decision)
-    if values.get("price") not in (None, "", [], {}, ()) and values.get("currency") in (
+    _drop_unpaired_variant_price(values, lineage)
+
+
+def _put_variant_offer_value(
+    values: dict[str, object],
+    lineage: dict[str, object],
+    variant: VariantEntity,
+    offer: OfferEntity | None,
+    decisions: dict[tuple[str, str], Decision],
+    derived: dict[tuple[str, str], DerivedFact],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    fact: str,
+    field: str,
+) -> None:
+    decision = decisions.get((offer.entity_id, fact)) if offer else None
+    decision = decision or decisions.get((variant.entity_id, fact))
+    derived_fact = derived.get((offer.entity_id, fact)) if offer else None
+    derived_fact = derived_fact or derived.get((variant.entity_id, fact))
+    if (not decision or not decision.accepted_evidence_ids) and derived_fact is None:
+        return
+    evidence = (
+        evidence_by_id.get(decision.accepted_evidence_ids[0])
+        if decision and decision.accepted_evidence_ids
+        else None
+    )
+    if derived_fact is not None:
+        values[field] = derived_fact.value
+        lineage[field] = _derived_lineage(derived_fact)
+    elif evidence is not None and decision is not None:
+        values[field] = evidence.value
+        lineage[field] = _decision_lineage(decision)
+
+
+def _drop_unpaired_variant_price(
+    values: dict[str, object], lineage: dict[str, object]
+) -> None:
+    if values.get("price") in (None, "", [], {}, ()) or values.get("currency") not in (
         None,
         "",
         [],
         {},
         (),
     ):
-        values.pop("price", None)
-        values.pop("original_price", None)
-        lineage.pop("price", None)
-        lineage.pop("original_price", None)
+        return
+    values.pop("price", None)
+    values.pop("original_price", None)
+    lineage.pop("price", None)
+    lineage.pop("original_price", None)
 
 
 def _variant_rejection_reason(

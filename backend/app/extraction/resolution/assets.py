@@ -80,13 +80,43 @@ def resolve_product_assets(
     variants: tuple[VariantEntity, ...] = (),
     variant_decisions: tuple[VariantDecision, ...] = (),
 ) -> tuple[AssetDecision, ...]:
+    evaluated = _evaluated_parent_assets(
+        assets,
+        evidence_by_id,
+        conflicting_urls=conflicting_urls,
+        low_resolution_urls=low_resolution_urls,
+    )
+    valid = [row for row in evaluated if not row[3]]
+    valid.sort(key=lambda item: item[0])
+    decisions = _accepted_asset_decisions(valid)
+    rejected = _rejected_asset_decisions(evaluated, valid_count=len(valid))
+    if decisions:
+        return tuple((*decisions, *rejected))
+    fallback = _variant_parent_fallback(
+        assets,
+        variants,
+        variant_decisions,
+        evidence_by_id,
+        conflicting_urls=conflicting_urls,
+        low_resolution_urls=low_resolution_urls,
+    )
+    return tuple((*fallback, *rejected))
+
+
+def _evaluated_parent_assets(
+    assets: tuple[AssetEntity, ...],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    conflicting_urls: frozenset[str],
+    low_resolution_urls: frozenset[str],
+) -> list[tuple[tuple, AssetEntity, Evidence, tuple[str, ...]]]:
     ranked = [
         (asset_rank(asset, accepted), asset, accepted)
         for asset in assets
         if asset.variant_entity_id is None
         if (accepted := accepted_asset_evidence(asset, evidence_by_id)) is not None
     ]
-    evaluated = [
+    return [
         (
             rank_value,
             asset,
@@ -100,8 +130,11 @@ def resolve_product_assets(
         )
         for rank_value, asset, accepted in ranked
     ]
-    valid = [row for row in evaluated if not row[3]]
-    valid.sort(key=lambda item: item[0])
+
+
+def _accepted_asset_decisions(
+    valid: list[tuple[tuple, AssetEntity, Evidence, tuple[str, ...]]],
+) -> list[AssetDecision]:
     decisions: list[AssetDecision] = []
     seen_identity: set[str] = set()
     seen_delivery: set[str] = set()
@@ -127,30 +160,27 @@ def resolve_product_assets(
                 else "PRODUCT_ASSET_ADDITIONAL",
             )
         )
-    rejected = [
+    return decisions
+
+
+def _rejected_asset_decisions(
+    evaluated: list[tuple[tuple, AssetEntity, Evidence, tuple[str, ...]]],
+    *,
+    valid_count: int,
+) -> list[AssetDecision]:
+    return [
         AssetDecision(
             asset_entity_id=asset.entity_id,
             url=_delivery_url(accepted),
             accepted_evidence_ids=(),
             role="rejected",
-            rank=len(valid) + index,
+            rank=valid_count + index,
             rule_id="PRODUCT_ASSET_REJECT",
             rejection_reasons=reasons,
         )
         for index, (_rank_value, asset, accepted, reasons) in enumerate(evaluated)
         if reasons
     ]
-    if decisions:
-        return tuple((*decisions, *rejected))
-    fallback = _variant_parent_fallback(
-        assets,
-        variants,
-        variant_decisions,
-        evidence_by_id,
-        conflicting_urls=conflicting_urls,
-        low_resolution_urls=low_resolution_urls,
-    )
-    return tuple((*fallback, *rejected))
 
 
 def _variant_parent_fallback(
@@ -170,28 +200,15 @@ def _variant_parent_fallback(
         for row in variants
         if row.selected and row.entity_id in eligible_ids
     }
-    candidates = [
-        (asset_rank(asset, accepted), asset, accepted)
-        for asset in assets
-        if asset.variant_entity_id in eligible_ids
-        if (accepted := accepted_asset_evidence(asset, evidence_by_id)) is not None
-        if not _rejection_reasons(
-            _delivery_url(accepted),
-            evidence=accepted,
-            conflicting_urls=conflicting_urls,
-            low_resolution_urls=low_resolution_urls,
-        )
-    ]
-    owners = {
-        asset.variant_entity_id
-        for _rank, asset, _accepted in candidates
-        if asset.variant_entity_id is not None
-    }
-    if len(selected_ids) == 1:
-        allowed_ids = selected_ids
-    elif len(owners) == 1:
-        allowed_ids = owners
-    else:
+    candidates = _eligible_variant_assets(
+        assets,
+        evidence_by_id,
+        eligible_ids=eligible_ids,
+        conflicting_urls=conflicting_urls,
+        low_resolution_urls=low_resolution_urls,
+    )
+    allowed_ids = _fallback_owner_ids(candidates, selected_ids=selected_ids)
+    if not allowed_ids:
         return ()
     candidates = [row for row in candidates if row[1].variant_entity_id in allowed_ids]
     if not candidates:
@@ -207,6 +224,43 @@ def _variant_parent_fallback(
             rule_id="VARIANT_ASSET_PARENT_FALLBACK",
         ),
     )
+
+
+def _eligible_variant_assets(
+    assets: tuple[AssetEntity, ...],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    eligible_ids: set[str],
+    conflicting_urls: frozenset[str],
+    low_resolution_urls: frozenset[str],
+) -> list[tuple[tuple, AssetEntity, Evidence]]:
+    return [
+        (asset_rank(asset, accepted), asset, accepted)
+        for asset in assets
+        if asset.variant_entity_id in eligible_ids
+        if (accepted := accepted_asset_evidence(asset, evidence_by_id)) is not None
+        if not _rejection_reasons(
+            _delivery_url(accepted),
+            evidence=accepted,
+            conflicting_urls=conflicting_urls,
+            low_resolution_urls=low_resolution_urls,
+        )
+    ]
+
+
+def _fallback_owner_ids(
+    candidates: list[tuple[tuple, AssetEntity, Evidence]],
+    *,
+    selected_ids: set[str],
+) -> set[str]:
+    owners = {
+        asset.variant_entity_id
+        for _rank, asset, _accepted in candidates
+        if asset.variant_entity_id is not None
+    }
+    if len(selected_ids) == 1:
+        return selected_ids
+    return owners if len(owners) == 1 else set()
 
 
 def _rejection_reasons(

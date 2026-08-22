@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -18,6 +19,7 @@ from app.extraction.collectors.metadata import (
 )
 from app.extraction.collectors.url import UrlCollector
 from app.core.config import field_mappings
+from app.core.config.variant_policy import ECOMMERCE_FACT_TYPES
 from app.core.config.extraction_price_rules import (
     DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD,
 )
@@ -70,7 +72,6 @@ from app.extraction.contracts import (
     CaptureBundle,
     CollectorOutcome,
     Evidence,
-    FACT_TYPES,
     HarvestResult,
 )
 from app.extraction.surfaces import Surface
@@ -89,26 +90,13 @@ from app.core.shared.field_coerce_text import (
 from app.core.shared.text_coerce import coerce_long_text, coerce_text
 
 
-def collect_ecommerce_detail(
-    bundle: CaptureBundle,
-    reader: ArtifactReader,
-    *,
-    requested_fields: tuple[str, ...] = (),
-) -> tuple[Evidence, ...]:
-    return harvest_ecommerce_detail(
-        bundle,
-        reader,
-        requested_fields=requested_fields,
-    ).evidence
-
-
 def run_detail_collectors(
     collectors: tuple[Any, ...],
     bundle: CaptureBundle,
     reader: ArtifactReader,
     *,
     requested_fields: tuple[str, ...] = (),
-    allowed_facts: frozenset[str] = FACT_TYPES,
+    allowed_facts: frozenset[str] = ECOMMERCE_FACT_TYPES,
 ) -> tuple[tuple[Evidence, ...], tuple[CollectorOutcome, ...], int]:
     """Run one detail collector group, returning (rows, outcomes, admitted).
 
@@ -120,9 +108,9 @@ def run_detail_collectors(
     ordering of floors is owned by the cascade, not here.
 
     ``allowed_facts`` is the surface's admitted fact-type universe. It defaults
-    to commerce ``FACT_TYPES`` so the commerce callers stay byte-identical; the
+    to commerce ``ECOMMERCE_FACT_TYPES`` so commerce callers stay byte-identical; the
     detail cascade passes the surface's own fact set (unioned with
-    ``FACT_TYPES``) so non-commerce surfaces such as job_detail admit their own
+    ``ECOMMERCE_FACT_TYPES``) so non-commerce surfaces such as job_detail admit their own
     ``job.*`` facts instead of silently dropping them.
     """
     rows: list[Evidence] = []
@@ -276,23 +264,11 @@ def normalize_ecommerce_detail(
 
 
 def _flag_ambiguous_dom_prices(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
-    structured_subjects = {
-        row.subject_id
-        for row in evidence
-        if row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
-        and row.collector_id in {"adapter", "jsonld", "js_state", "network"}
-        and row.subject_id
-    }
+    structured_subjects = _structured_price_subjects(evidence)
     dom_prices_by_subject: dict[str, set[str]] = {}
     for row in evidence:
-        if (
-            row.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE
-            or row.collector_id != "dom"
-            or not row.subject_id
-            or row.subject_id in structured_subjects
-        ):
-            continue
-        dom_prices_by_subject.setdefault(row.subject_id, set()).add(str(row.value))
+        if _is_unstructured_dom_price(row, structured_subjects):
+            dom_prices_by_subject.setdefault(row.subject_id, set()).add(str(row.value))
     ambiguous_subjects = {
         subject_id
         for subject_id, values in dom_prices_by_subject.items()
@@ -301,44 +277,124 @@ def _flag_ambiguous_dom_prices(evidence: tuple[Evidence, ...]) -> tuple[Evidence
     if not ambiguous_subjects:
         return evidence
     return tuple(
-        row.model_copy(
-            update={"flags": tuple(sorted(set(row.flags) | {"ambiguous_page_price"}))}
-        )
-        if row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
-        and row.collector_id == "dom"
-        and row.subject_id in ambiguous_subjects
-        else row
+        _flag_ambiguous_dom_price(row) if row.subject_id in ambiguous_subjects else row
         for row in evidence
+    )
+
+
+def _structured_price_subjects(evidence: tuple[Evidence, ...]) -> set[str]:
+    return {
+        row.subject_id
+        for row in evidence
+        if row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
+        and row.collector_id in {"adapter", "jsonld", "js_state", "network"}
+        and row.subject_id
+    }
+
+
+def _is_unstructured_dom_price(row: Evidence, structured_subjects: set[str]) -> bool:
+    return bool(
+        row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
+        and row.collector_id == "dom"
+        and row.subject_id
+        and row.subject_id not in structured_subjects
+    )
+
+
+def _flag_ambiguous_dom_price(row: Evidence) -> Evidence:
+    if (
+        row.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE
+        or row.collector_id != "dom"
+    ):
+        return row
+    return row.model_copy(
+        update={"flags": tuple(sorted(set(row.flags) | {"ambiguous_page_price"}))}
     )
 
 
 def _flag_brand_conflicts(
     evidence: tuple[Evidence, ...], *, page_brand: Evidence | None
 ) -> tuple[Evidence, ...]:
-    public_brand_rows = tuple(
-        row
+    context = _brand_conflict_context(evidence, page_brand=page_brand)
+    return tuple(
+        row.model_copy(update={"flags": tuple(sorted({*row.flags, flag}))})
+        if (flag := _brand_conflict_flag(row, context))
+        else row
         for row in evidence
-        if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
-        and _brand_role_can_publish(row)
     )
-    brands = {
-        str(row.value).strip().casefold()
-        for row in public_brand_rows
-        if str(row.value).strip()
-    }
-    structured_brands = {
-        str(row.value).strip().casefold()
-        for row in public_brand_rows
-        if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
-        and str(row.value).strip()
-    }
+
+
+@dataclass(frozen=True, slots=True)
+class _BrandConflictContext:
+    evidence: tuple[Evidence, ...]
+    brands: set[str]
+    structured_brands: set[str]
+    product_url_brands: tuple[str, ...]
+    subject_titles: set[tuple[str, str]]
+    color_values: set[str]
+    conflicting_color_axis: bool
+    page_value: str
+    support_values: tuple[str, ...]
+    page_support: int
+
+
+def _brand_conflict_context(
+    evidence: tuple[Evidence, ...], *, page_brand: Evidence | None
+) -> _BrandConflictContext:
+    public_brand_rows = _public_brand_rows(evidence)
+    brands = _brand_values(public_brand_rows)
+    structured_brands = _brand_values(
+        tuple(
+            row
+            for row in public_brand_rows
+            if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
+        )
+    )
     product_url_brands = tuple(
         str(row.value).strip().casefold()
         for row in public_brand_rows
         if row.metadata.get("derived_by") == "brand_from_product_url"
         and str(row.value).strip()
     )
-    subject_titles = {
+    subject_titles = _brand_subject_titles(evidence)
+    color_values, conflicting_color_axis = _brand_color_context(evidence, brands)
+    page_value = str(page_brand.value).casefold() if page_brand else ""
+    support_values = tuple(
+        re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", str(row.value).casefold())
+        for row in evidence
+        if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
+    )
+    page_compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", page_value)
+    page_support = sum(page_compact in candidate for candidate in support_values)
+    return _BrandConflictContext(
+        evidence=evidence,
+        brands=brands,
+        structured_brands=structured_brands,
+        product_url_brands=product_url_brands,
+        subject_titles=subject_titles,
+        color_values=color_values,
+        conflicting_color_axis=conflicting_color_axis,
+        page_value=page_value,
+        support_values=support_values,
+        page_support=page_support,
+    )
+
+
+def _public_brand_rows(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
+    return tuple(
+        row
+        for row in evidence
+        if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+        and _brand_role_can_publish(row)
+    )
+
+
+def _brand_values(rows: tuple[Evidence, ...]) -> set[str]:
+    return {str(row.value).strip().casefold() for row in rows if str(row.value).strip()}
+
+
+def _brand_subject_titles(evidence: tuple[Evidence, ...]) -> set[tuple[str, str]]:
+    return {
         (
             row.subject_id,
             " ".join(
@@ -350,6 +406,11 @@ def _flag_brand_conflicts(
         and row.subject_id
         and not (set(row.flags) & DETAIL_TITLE_REJECTION_FLAGS)
     }
+
+
+def _brand_color_context(
+    evidence: tuple[Evidence, ...], brands: set[str]
+) -> tuple[set[str], bool]:
     color_rows = tuple(
         row for row in evidence if row.fact_type == "variant.option.color"
     )
@@ -363,94 +424,101 @@ def _flag_brand_conflicts(
         and len(color_values) == 1
         and bool(color_values & brands)
     )
-    page_value = str(page_brand.value).casefold() if page_brand else ""
-    support_values = tuple(
-        re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", str(row.value).casefold())
-        for row in evidence
-        if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
-    )
-    page_compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", page_value)
-    page_support = sum(page_compact in candidate for candidate in support_values)
+    return color_values, conflicting_color_axis
 
-    def conflict_flag(row: Evidence) -> str | None:
-        value = str(row.value).strip().casefold()
-        if row.fact_type == "variant.option.color":
-            return (
-                VARIANT_COLOR_BRAND_CONFLICT_FLAG
-                if conflicting_color_axis and value in brands
-                else None
-            )
-        if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE:
-            return None
-        if not _brand_role_can_publish(row):
-            return "non_manufacturer_brand_role"
-        normalized = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value))
-        compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value)
-        host_identity_conflict = bool(
-            product_url_brands
-            and row.metadata.get("derived_by")
-            in {"brand_from_title_host", "page_identity"}
-            and any(
-                compact
-                == re.sub(
-                    DETAIL_NON_LOWER_ALNUM_PATTERN,
-                    "",
-                    title.rsplit(" - ", 1)[-1].casefold(),
-                )
-                and any(
-                    re.sub(
-                        DETAIL_NON_LOWER_ALNUM_PATTERN, "", title.casefold()
-                    ).startswith(re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", candidate))
-                    for candidate in product_url_brands
-                )
-                for item in evidence
-                if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
-                and " - " in (title := str(item.value).strip())
-            )
+
+def _brand_conflict_flag(row: Evidence, context: _BrandConflictContext) -> str | None:
+    value = str(row.value).strip().casefold()
+    if row.fact_type == "variant.option.color":
+        return (
+            VARIANT_COLOR_BRAND_CONFLICT_FLAG
+            if context.conflicting_color_axis and value in context.brands
+            else None
         )
-        if host_identity_conflict:
-            return "brand_identity_conflict"
-        partial_page_brand = bool(
-            page_value
-            and value != page_value
-            and (
-                "brand_boilerplate" in row.flags
-                or normalized in page_value
-                or page_value in normalized
-                or (
-                    row.directness == "inferred"
-                    and row.collector_id != "dom"
-                    and page_support >= 2
-                    and page_support
-                    > sum(
-                        re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value) in candidate
-                        for candidate in support_values
-                    )
-                )
-            )
-        )
-        if normalized and (
-            (row.subject_id, normalized) in subject_titles or partial_page_brand
-        ):
-            return "product_name_as_brand"
-        if structured_brands and value not in structured_brands:
-            title_suffix = any(
-                (title := str(item.value).strip().casefold()) == value
-                or title.endswith(f" {value}")
-                or title.endswith(f"- {value}")
-                for item in evidence
-                if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
-            )
-            if value in color_values or title_suffix:
-                return VARIANT_COLOR_BRAND_CONFLICT_FLAG
+    if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE:
         return None
+    if not _brand_role_can_publish(row):
+        return "non_manufacturer_brand_role"
+    normalized = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value))
+    compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value)
+    if _host_identity_brand_conflict(row, compact=compact, context=context):
+        return "brand_identity_conflict"
+    if normalized and (
+        (row.subject_id, normalized) in context.subject_titles
+        or _partial_page_brand(row, value=value, normalized=normalized, context=context)
+    ):
+        return "product_name_as_brand"
+    if _brand_matches_variant_or_title(value, context=context):
+        return VARIANT_COLOR_BRAND_CONFLICT_FLAG
+    return None
 
-    return tuple(
-        row.model_copy(update={"flags": tuple(sorted({*row.flags, flag}))})
-        if (flag := conflict_flag(row))
-        else row
-        for row in evidence
+
+def _host_identity_brand_conflict(
+    row: Evidence, *, compact: str, context: _BrandConflictContext
+) -> bool:
+    if not context.product_url_brands or row.metadata.get("derived_by") not in {
+        "brand_from_title_host",
+        "page_identity",
+    }:
+        return False
+    return any(
+        compact
+        == re.sub(
+            DETAIL_NON_LOWER_ALNUM_PATTERN,
+            "",
+            title.rsplit(" - ", 1)[-1].casefold(),
+        )
+        and any(
+            re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", title.casefold()).startswith(
+                re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", candidate)
+            )
+            for candidate in context.product_url_brands
+        )
+        for item in context.evidence
+        if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
+        and " - " in (title := str(item.value).strip())
     )
+
+
+def _partial_page_brand(
+    row: Evidence,
+    *,
+    value: str,
+    normalized: str,
+    context: _BrandConflictContext,
+) -> bool:
+    if not context.page_value or value == context.page_value:
+        return False
+    support = sum(
+        re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value) in candidate
+        for candidate in context.support_values
+    )
+    return bool(
+        "brand_boilerplate" in row.flags
+        or normalized in context.page_value
+        or context.page_value in normalized
+        or (
+            row.directness == "inferred"
+            and row.collector_id != "dom"
+            and context.page_support >= 2
+            and context.page_support > support
+        )
+    )
+
+
+def _brand_matches_variant_or_title(
+    value: str, *, context: _BrandConflictContext
+) -> bool:
+    if not context.structured_brands or value in context.structured_brands:
+        return False
+    title_suffix = any(
+        (title := str(item.value).strip().casefold()) == value
+        or title.endswith(f" {value}")
+        or title.endswith(f"- {value}")
+        for item in context.evidence
+        if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
+    )
+    return value in context.color_values or title_suffix
 
 
 def _page_brand(evidence: tuple[Evidence, ...]) -> Evidence | None:
@@ -497,20 +565,28 @@ def assess_ecommerce_detail_quality(
         return "review"
     if _title_is_review_only(resolution):
         return "review"
+    if _detail_record_is_complete(
+        record, resolution, requested_fields=requested_fields
+    ):
+        return "success"
+    return "partial" if record.get("title") or record.get("price") else "review"
+
+
+def _detail_record_is_complete(
+    record: dict[str, object], resolution, *, requested_fields: tuple[str, ...]
+) -> bool:
     requested_fields_present = all(
         record.get("image_url" if field == "image" else field)
         not in (None, "", [], {}, ())
         for field in requested_fields
     )
-    if (
+    return bool(
         record.get("url")
         and record.get("title")
         and _has_complete_public_offer(record)
         and requested_fields_present
         and not resolution.unresolved_fact_types
-    ):
-        return "success"
-    return "partial" if record.get("title") or record.get("price") else "review"
+    )
 
 
 def _only_slug_identity(record: dict[str, object]) -> bool:
@@ -566,8 +642,17 @@ def _title_is_review_only(resolution) -> bool:
 def normalize_evidence(
     evidence: Evidence, *, page_url: str, locale_hint: str | None = None
 ) -> Evidence:
-    value = evidence.value
     flags = set(evidence.flags)
+    value = _normalize_text_representation(evidence, evidence.value)
+    value = _normalize_location_and_offer(
+        evidence, value, flags, page_url=page_url, locale_hint=locale_hint
+    )
+    value = _normalize_typed_semantics(evidence, value, flags)
+    value = _normalize_title_value(evidence, value, flags, page_url=page_url)
+    return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
+
+
+def _normalize_text_representation(evidence: Evidence, value: object) -> object:
     if isinstance(value, str):
         value = re.sub(r"\s+", " ", value).strip()
     if evidence.fact_type in {
@@ -585,6 +670,17 @@ def normalize_evidence(
         value, str
     ):
         value = re.sub(r"\s+\d+(?:\.\d+)?[wx]\s*$", "", value, flags=re.IGNORECASE)
+    return value
+
+
+def _normalize_location_and_offer(
+    evidence: Evidence,
+    value: object,
+    flags: set[str],
+    *,
+    page_url: str,
+    locale_hint: str | None,
+) -> object:
     if evidence.fact_type in {
         field_mappings.PRODUCT_URL_FACT_TYPE,
         "variant.url",
@@ -611,6 +707,12 @@ def normalize_evidence(
         value = _money(value, flags, locale_hint=locale_hint)
     if evidence.fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
         value = _normalize_availability_value(value, flags)
+    return value
+
+
+def _normalize_typed_semantics(
+    evidence: Evidence, value: object, flags: set[str]
+) -> object:
     if (
         evidence.fact_type in field_mappings.ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES
         and type(value) is int
@@ -638,6 +740,12 @@ def normalize_evidence(
             flags.add("invalid_gtin")
     if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
         flags.add("placeholder_text")
+    return value
+
+
+def _normalize_title_value(
+    evidence: Evidence, value: object, flags: set[str], *, page_url: str
+) -> object:
     if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(
         value, str
     ):
@@ -648,7 +756,7 @@ def normalize_evidence(
         ):
             flags.add("generic_title")
         flags.update(_title_flags(evidence, value=value, page_url=page_url))
-    return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
+    return value
 
 
 def _normalize_availability_value(value: Any, flags: set[str]) -> Any:
@@ -715,6 +823,11 @@ def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> 
         flags.add("description_missing_separator")
     if re.search(r",\s*[a-z]{2,5}$", tail, re.IGNORECASE):
         flags.add("description_truncated_fragment")
+    flags.update(_description_pattern_flags(value))
+
+
+def _description_pattern_flags(value: str) -> set[str]:
+    flags: set[str] = set()
     if any(
         re.search(pattern, value, re.IGNORECASE)
         for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
@@ -725,6 +838,7 @@ def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> 
         for pattern in DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS
     ):
         flags.add("description_promotional_copy")
+    return flags
 
 
 def _normalize_brand_hierarchy(value: str) -> str:
@@ -749,24 +863,49 @@ def _normalize_brand_hierarchy(value: str) -> str:
 
 
 def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
-    flags: set[str] = set()
     key = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value.casefold()))
     url_title_key = " ".join(
         re.findall(
             DETAIL_LOWER_ALNUM_TOKEN_PATTERN, detail_title_from_url(page_url).casefold()
         )
     )
-    if evidence.collector_id == "url":
-        flags.add("url_derived_title")
+    url_contains_title_code = detail_title_is_url_corroborated_style_code(
+        value, page_url
+    )
+    words = re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value.casefold())
+    flags = _title_shape_flags(
+        evidence,
+        value=value,
+        key=key,
+        url_title_key=url_title_key,
+        url_contains_title_code=url_contains_title_code,
+    )
+    flags.update(_title_generic_flags(value, key=key, words=words, evidence=evidence))
+    flags.update(
+        _title_identity_flags(
+            value,
+            page_url=page_url,
+            url_contains_title_code=url_contains_title_code,
+        )
+    )
+    return flags
+
+
+def _title_shape_flags(
+    evidence: Evidence,
+    *,
+    value: str,
+    key: str,
+    url_title_key: str,
+    url_contains_title_code: bool,
+) -> set[str]:
+    flags = {"url_derived_title"} if evidence.collector_id == "url" else set()
     if re.search(
         DETAIL_TITLE_PATH_EXTENSION_PATTERN, str(evidence.raw_value), re.IGNORECASE
     ) or re.fullmatch(
         DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("filename_title")
-    url_contains_title_code = detail_title_is_url_corroborated_style_code(
-        value, page_url
-    )
     if (
         re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
         or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
@@ -785,13 +924,19 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         flags.add("filename_title")
     if key in DETAIL_SHELL_TITLE_KEYS:
         flags.add(DETAIL_SHELL_TITLE_FLAG)
+    return flags
+
+
+def _title_generic_flags(
+    value: str, *, key: str, words: list[str], evidence: Evidence
+) -> set[str]:
+    flags: set[str] = set()
     if (
         key in DETAIL_TITLE_REJECT_VALUES
         or key in DETAIL_TITLE_GENERIC_CATEGORY_VALUES
         or value.casefold().endswith(DETAIL_TITLE_REJECT_SUFFIXES)
     ):
         flags.add("generic_title")
-    words = re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value.casefold())
     if (
         0 < len(words) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
         and set(words) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
@@ -808,6 +953,13 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         >= DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS
     ):
         flags.add("generic_title")
+    return flags
+
+
+def _title_identity_flags(
+    value: str, *, page_url: str, url_contains_title_code: bool
+) -> set[str]:
+    flags: set[str] = set()
     url_tokens = set(semantic_detail_identity_tokens(page_url))
     title_tokens = set(semantic_identity_tokens(value))
     overlap = len(url_tokens & title_tokens)

@@ -175,7 +175,7 @@ Canonical config owner:
 | `extraction/entities.py` | Product/variant/offer/asset entity models and `EntitySet` construction from evidence, including primary product-root selection |
 | `extraction/targeting.py` | Commerce/subject target selection and scoped entity-graph derivation for a requested URL |
 | `extraction/documents.py` | Selectolax-backed HTML/JSON document parsing: `HtmlNode`, `HtmlDocument`, `HtmlAnalysis`, `JsonDocument`, and the `DocumentStore` |
-| `extraction/pipeline.py` | Ecommerce detail collection/harvest orchestration plus ambiguous-DOM-price and brand-conflict flagging |
+| `extraction/pipeline.py` | Ecommerce detail collection/harvest orchestration, ordered normalization, and ambiguous-DOM-price/brand-conflict flagging |
 | `extraction/listing.py` | Ecommerce listing evidence collection, listing-card evidence, product-link resolution, and listing resolution |
 | `extraction/jobs.py` | Job collection, wrong-surface checks, JSON-LD/DOM job evidence, and deterministic job detail/listing resolution |
 | `extraction/collectors/dom.py` | DOM evidence collector: product-root/brand node detection and CSS-recipe evidence |
@@ -183,25 +183,25 @@ Canonical config owner:
 | `extraction/collectors/jsonld.py` | JSON-LD evidence collector: product/offer/variant payload detection and standalone-variant handling |
 | `extraction/collectors/metadata.py` | Microdata, Open Graph, and network payload evidence collectors |
 | `extraction/collectors/url.py` | URL evidence collector: query-selected variant and detail-URL signals |
-| `extraction/collectors/_helpers.py` | Shared collector helpers: evidence construction, HTML doc access, and brand-role validation |
-| `extraction/resolution/` | Resolver package: product/variant consensus, inherited offers, evidence ranking (`ranking.py`), price-unit derivation (`price_units.py`), and product-asset resolution (`assets.py`) |
-| `extraction/validation.py` | Missing-evidence, incomplete-offer, shell-title, description, and variant/currency-contradiction findings |
+| `extraction/collectors/_helpers.py` | Shared collector helpers: evidence construction, HTML doc access, subject identity, and brand-role validation |
+| `extraction/resolution/` | Resolver package: product/variant consensus, derived facts, inherited offers, variant rollups, evidence ranking (`ranking.py`), price-unit derivation (`price_units.py`), and product-asset resolution (`assets.py`) |
+| `extraction/validation.py` | Missing-evidence, incomplete-offer, shell-title, description, child-join, and variant/currency/availability-contradiction findings |
 | `extraction/result_building.py` | Decision/selected-fact accounting, evidence dispositions, per-field and projection field states, and data-integrity status |
 | `extraction/publication.py` | Resolver-authorized publication projections, atomic-field/collection authorization, and deterministic serializers |
 | `extraction/field_states.py` | Field evidence-state naming and derivation from evidence dispositions |
 | `extraction/json_walk.py` | JSON pointer/traversal primitives (`JsonNode`, `walk_json`) shared by structured collectors and resolution |
-| `extraction/replay.py` | Fixture/bundle construction from stored acquisition/memory artifacts and the `MemoryArtifactReader` used for replay harnesses |
+| `extraction/replay.py` | Ordered fixture/bundle artifact replay from stored acquisition/memory inputs and the `MemoryArtifactReader` used by replay harnesses |
 | `app/core/config/locale_format_rules.py` | Locale/market normalization policy: money separators, generic URL currency inference, currency symbols, and GTIN check digits |
-| `app/core/config/extraction_rules/` | Availability enum/token policy and generic extraction rule tables |
+| `app/core/config/extraction_rules/` | Availability enum/token policy and generic extraction rule tables; `_detail_sections.py` owns description/long-text and DOM detail-section policy |
 
 Canonical config owners:
 
 | File | Purpose |
 |---|---|
-| `core/config/field_mappings.py` | canonical schemas, field aliases, and primitive field-name constants |
+| `core/config/field_mappings.py` | canonical schemas, field aliases, field scope/value classification, and primitive field-name constants |
 | `core/config/js_state_field_specs.py` | JS-state product and variant field mapping specs |
 | `core/config/public_record_policy.py` | Public persisted/exported record exclusions, URL safety, and identity value policy |
-| `core/config/variant_policy.py` | Public variant axes, flat variant transport fields, and variant axis aliases |
+| `core/config/variant_policy.py` | Ecommerce fact families, public variant axes, flat variant transport fields, and variant axis aliases |
 | `core/config/extraction_rules/` | extraction/runtime selector tokens split by common, image, detail, variant, listing/structured, and job concerns |
 | `core/config/extraction_price_rules.py` | Detail price selectors, JSON-LD price fields, currency decimal places, and price repair thresholds |
 | `core/config/evaluation.py` | evaluation vocabulary, compact-representation bounds, partition gates, and benchmark metric names |

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from app.acquisition.acquirer import PageEvidence
 from app.core.config.extraction_recipes import (
@@ -64,100 +64,12 @@ def fixture_bundle_from_inputs(
             media_type="text/html",
         )
     ]
-    js_state = (artifacts or {}).get("js_state_objects")
-    if isinstance(js_state, dict):
-        payloads["js_state"] = js_state
-        refs.append(
-            ArtifactRef(
-                artifact_id="js_state",
-                artifact_type="js_state",
-                content_sha256=content_sha256(
-                    json.dumps(js_state, sort_keys=True, default=str)
-                ),
-                storage_uri="memory://js_state",
-                media_type="application/json",
-            )
-        )
-    for index, payload in enumerate(network_payloads or []):
-        artifact_id = f"network_{index}"
-        body = payload.get("body") if isinstance(payload, dict) else payload
-        payloads[artifact_id] = body
-        refs.append(
-            ArtifactRef(
-                artifact_id=artifact_id,
-                artifact_type="network_json",
-                content_sha256=content_sha256(
-                    json.dumps(body, sort_keys=True, default=str)
-                ),
-                storage_uri=f"memory://{artifact_id}",
-                media_type="application/json",
-            )
-        )
-    adapter_value = (artifacts or {}).get("adapter_artifacts")
-    adapter_artifacts = list(adapter_value) if isinstance(adapter_value, list) else []
-    if adapter_artifacts:
-        payloads["adapter_artifacts"] = adapter_artifacts
-    for index, artifact in enumerate(adapter_artifacts):
-        if not isinstance(artifact, dict):
-            continue
-        artifact_id = f"adapter_{index}"
-        body = artifact.get("body", artifact)
-        payloads[artifact_id] = body
-        refs.append(
-            ArtifactRef(
-                artifact_id=artifact_id,
-                artifact_type="network_json",
-                content_sha256=content_sha256(
-                    json.dumps(body, sort_keys=True, default=str)
-                ),
-                storage_uri=f"memory://{artifact_id}",
-                media_type="application/json",
-            )
-        )
-    css_value = (artifacts or {}).get("css_field_rules")
-    css_rows = css_value if isinstance(css_value, list) else []
-    css_rules = [dict(row) for row in css_rows if isinstance(row, dict)]
-    if css_rules:
-        payloads["css_field_rules"] = css_rules
-        refs.append(
-            ArtifactRef(
-                artifact_id="css_field_rules",
-                artifact_type="css_recipe",
-                content_sha256=content_sha256(
-                    json.dumps(css_rules, sort_keys=True, default=str)
-                ),
-                storage_uri="memory://css_field_rules",
-                media_type="application/json",
-            )
-        )
-    listing_artifacts = artifacts or {}
-    fragments = listing_artifacts.get(ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID)
-    fragment_values = (
-        [str(value).strip() for value in fragments if str(value or "").strip()]
-        if isinstance(fragments, list)
-        else []
-    )
-    visual_html = str(
-        listing_artifacts.get(ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID) or ""
-    ).strip()
-    for artifact_id, artifact_html in (
-        (
-            ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
-            f"<main>{''.join(fragment_values)}</main>" if fragment_values else "",
-        ),
-        (ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID, visual_html),
-    ):
-        if artifact_html:
-            payloads[artifact_id] = artifact_html
-            refs.append(
-                ArtifactRef(
-                    artifact_id=artifact_id,
-                    artifact_type="rendered_html",
-                    content_sha256=content_sha256(artifact_html),
-                    storage_uri=f"memory://{artifact_id}",
-                    media_type="text/html",
-                )
-            )
+    artifact_values = artifacts or {}
+    _append_js_state_artifact(payloads, refs, artifact_values)
+    _append_network_artifacts(payloads, refs, network_payloads or [])
+    _append_adapter_artifacts(payloads, refs, artifact_values)
+    _append_css_rules_artifact(payloads, refs, artifact_values)
+    _append_listing_artifacts(payloads, refs, artifact_values)
     bundle = CaptureBundle(
         schema_version="capture.v1",
         bundle_id=stable_id("bundle", requested_url or page_url, page_url, html[:80]),
@@ -173,6 +85,106 @@ def fixture_bundle_from_inputs(
     return bundle, MemoryArtifactReader(
         payloads,
         html_documents={"html": html_document} if html_document is not None else None,
+    )
+
+
+def _append_js_state_artifact(
+    payloads: dict[str, Any], refs: list[ArtifactRef], artifacts: dict[str, object]
+) -> None:
+    js_state = artifacts.get("js_state_objects")
+    if isinstance(js_state, dict):
+        payloads["js_state"] = js_state
+        refs.append(_json_artifact_ref("js_state", "js_state", js_state))
+
+
+def _append_network_artifacts(
+    payloads: dict[str, Any],
+    refs: list[ArtifactRef],
+    network_payloads: list[dict[str, object]],
+) -> None:
+    for index, payload in enumerate(network_payloads):
+        artifact_id = f"network_{index}"
+        body = payload.get("body") if isinstance(payload, dict) else payload
+        payloads[artifact_id] = body
+        refs.append(_json_artifact_ref(artifact_id, "network_json", body))
+
+
+def _append_adapter_artifacts(
+    payloads: dict[str, Any], refs: list[ArtifactRef], artifacts: dict[str, object]
+) -> None:
+    adapter_value = artifacts.get("adapter_artifacts")
+    adapter_artifacts = list(adapter_value) if isinstance(adapter_value, list) else []
+    if adapter_artifacts:
+        payloads["adapter_artifacts"] = adapter_artifacts
+    for index, artifact in enumerate(adapter_artifacts):
+        if not isinstance(artifact, dict):
+            continue
+        artifact_id = f"adapter_{index}"
+        body = artifact.get("body", artifact)
+        payloads[artifact_id] = body
+        refs.append(_json_artifact_ref(artifact_id, "network_json", body))
+
+
+def _append_css_rules_artifact(
+    payloads: dict[str, Any], refs: list[ArtifactRef], artifacts: dict[str, object]
+) -> None:
+    css_value = artifacts.get("css_field_rules")
+    css_rows = css_value if isinstance(css_value, list) else []
+    css_rules = [dict(row) for row in css_rows if isinstance(row, dict)]
+    if css_rules:
+        payloads["css_field_rules"] = css_rules
+        refs.append(_json_artifact_ref("css_field_rules", "css_recipe", css_rules))
+
+
+def _append_listing_artifacts(
+    payloads: dict[str, Any], refs: list[ArtifactRef], artifacts: dict[str, object]
+) -> None:
+    fragments = artifacts.get(ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID)
+    fragment_values = (
+        [str(value).strip() for value in fragments if str(value or "").strip()]
+        if isinstance(fragments, list)
+        else []
+    )
+    visual_html = str(
+        artifacts.get(ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID) or ""
+    ).strip()
+    for artifact_id, artifact_html in (
+        (
+            ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+            f"<main>{''.join(fragment_values)}</main>" if fragment_values else "",
+        ),
+        (ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID, visual_html),
+    ):
+        if artifact_html:
+            payloads[artifact_id] = artifact_html
+            refs.append(
+                _memory_artifact_ref(
+                    artifact_id, "rendered_html", artifact_html, "text/html"
+                )
+            )
+
+
+def _json_artifact_ref(
+    artifact_id: str,
+    artifact_type: Literal["js_state", "network_json", "css_recipe"],
+    body: object,
+) -> ArtifactRef:
+    content = json.dumps(body, sort_keys=True, default=str)
+    return _memory_artifact_ref(artifact_id, artifact_type, content, "application/json")
+
+
+def _memory_artifact_ref(
+    artifact_id: str,
+    artifact_type: Literal["rendered_html", "js_state", "network_json", "css_recipe"],
+    content: str,
+    media_type: str,
+) -> ArtifactRef:
+    return ArtifactRef(
+        artifact_id=artifact_id,
+        artifact_type=artifact_type,
+        content_sha256=content_sha256(content),
+        storage_uri=f"memory://{artifact_id}",
+        media_type=media_type,
     )
 
 

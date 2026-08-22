@@ -203,47 +203,21 @@ def _product(
         "product",
         product_subject_identity or product_identity or bundle.final_url,
     )
-    out = [
-        evidence(
-            bundle,
-            artifact_id,
-            "jsonld",
-            fact,
-            text_value(obj.get(key)),
-            SourceLocator(kind="json_pointer", value=f"{path}/{key}"),
-            hint=hint,
-            directness="embedded",
-            confidence=0.9,
-            subject_id=product_subject,
-            subject_scope="product",
-            source_subject_ids=source_subject_ids,
-            metadata={
-                "jsonld_node_id": explicit_node_id,
-                "jsonld_node_path": path if not explicit_node_id else "",
-            },
+    out = _product_fact_evidence(
+        bundle,
+        artifact_id,
+        obj,
+        path,
+        hint=hint,
+        product_subject=product_subject,
+        source_subject_ids=source_subject_ids,
+        explicit_node_id=explicit_node_id,
+    )
+    out.extend(
+        _product_image_evidence(
+            bundle, artifact_id, obj, path, product_subject=product_subject
         )
-        for key, fact in ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES.items()
-        if text_value(obj.get(key))
-    ]
-    raw_image = obj.get("image")
-    images = raw_image if isinstance(raw_image, list) else [raw_image]
-    for idx, url in enumerate(text_value(item) for item in images if text_value(item)):
-        out.append(
-            evidence(
-                bundle,
-                artifact_id,
-                "jsonld",
-                "asset.image_url",
-                url,
-                SourceLocator(kind="json_pointer", value=f"{path}/image/{idx}"),
-                hint=EntityHint(entity_type="asset"),
-                directness="embedded",
-                confidence=0.85,
-                parent_subject_id=product_subject,
-                parent_scope="product",
-                relation_type="product_asset",
-            )
-        )
+    )
     out.extend(
         _offers(
             bundle,
@@ -268,6 +242,72 @@ def _product(
         )
     )
     return out
+
+
+def _product_fact_evidence(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    obj: dict[str, Any],
+    path: str,
+    *,
+    hint: EntityHint,
+    product_subject: str,
+    source_subject_ids: tuple[str, ...],
+    explicit_node_id: str,
+) -> list[Evidence]:
+    return [
+        evidence(
+            bundle,
+            artifact_id,
+            "jsonld",
+            fact,
+            text_value(obj.get(key)),
+            SourceLocator(kind="json_pointer", value=f"{path}/{key}"),
+            hint=hint,
+            directness="embedded",
+            confidence=0.9,
+            subject_id=product_subject,
+            subject_scope="product",
+            source_subject_ids=source_subject_ids,
+            metadata={
+                "jsonld_node_id": explicit_node_id,
+                "jsonld_node_path": path if not explicit_node_id else "",
+            },
+        )
+        for key, fact in ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES.items()
+        if text_value(obj.get(key))
+    ]
+
+
+def _product_image_evidence(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    obj: dict[str, Any],
+    path: str,
+    *,
+    product_subject: str,
+) -> list[Evidence]:
+    raw_image = obj.get("image")
+    images = raw_image if isinstance(raw_image, list) else [raw_image]
+    return [
+        evidence(
+            bundle,
+            artifact_id,
+            "jsonld",
+            "asset.image_url",
+            url,
+            SourceLocator(kind="json_pointer", value=f"{path}/image/{idx}"),
+            hint=EntityHint(entity_type="asset"),
+            directness="embedded",
+            confidence=0.85,
+            parent_subject_id=product_subject,
+            parent_scope="product",
+            relation_type="product_asset",
+        )
+        for idx, url in enumerate(
+            text_value(item) for item in images if text_value(item)
+        )
+    ]
 
 
 def _offers(
@@ -812,17 +852,33 @@ def _declared_variant_axes(value: Any) -> tuple[str, ...]:
 def _jsonld_variant_options(
     row: dict[str, Any], declared_axes: tuple[str, ...]
 ) -> list[tuple[str, str, str]]:
-    options: list[tuple[str, str, str]] = []
     declared = set(declared_axes)
-    for key, raw_value in row.items():
-        if not declared or str(key).startswith("@"):
-            continue
-        axis = canonical_variant_axis(key)
-        value = text_value(raw_value)
-        if axis and value and axis in declared:
-            options.append((key, axis, value))
+    options = _declared_property_options(row, declared)
+    options.extend(_additional_property_options(row, declared))
+    return options
+
+
+def _declared_property_options(
+    row: dict[str, Any], declared: set[str]
+) -> list[tuple[str, str, str]]:
+    if not declared:
+        return []
+    return [
+        (key, axis, value)
+        for key, raw_value in row.items()
+        if not str(key).startswith("@")
+        if (axis := canonical_variant_axis(key)) is not None
+        if (value := text_value(raw_value))
+        if axis in declared
+    ]
+
+
+def _additional_property_options(
+    row: dict[str, Any], declared: set[str]
+) -> list[tuple[str, str, str]]:
     properties = row.get("additionalProperty")
     property_rows = properties if isinstance(properties, list) else [properties]
+    options: list[tuple[str, str, str]] = []
     for index, item in enumerate(property_rows):
         if not isinstance(item, dict):
             continue
