@@ -167,11 +167,6 @@ export default defineConfig({
   },
   fmt: {
     ignorePatterns: [
-      '../backend/**',
-      '../docs/**',
-      '../agent_debug/**',
-      '../.github/**',
-      '../.serena/**',
       '*.md',
       '*.toml',
       '*.yml',
@@ -181,7 +176,6 @@ export default defineConfig({
       'node_modules/**',
       'playwright-report/**',
       'test-results/**',
-      '../TEST_SITES.md',
     ],
     semi: true,
     singleQuote: true,
