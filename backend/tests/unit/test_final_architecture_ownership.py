@@ -16,6 +16,10 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 # intelligence/matching, schemas/crawl) dropped below the 700-line threshold
 # and left the ledger; most survivors shrank.
 OVERSIZED_MODULE_DEBT = {
+    # Extraction runtime simplification (2026-08-22): _detail.py left the
+    # ledger; field_mappings.py and publication.py entered after rules and
+    # projection steps moved to their canonical owners. Extraction entries
+    # are reconciled to the readable CC<=15 implementation authorized in #48.
     # Closeout hardening (readiness terminal states, escalation diagnostics,
     # coderabbit findings 1-7): browser_readiness re-entered the ledger at the
     # threshold edge; extraction collectors shrank with the srcset helper
@@ -37,27 +41,29 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_readiness.py": 715,
     "acquisition/browser_recovery.py": 728,
     "acquisition/browser_result_builder.py": 744,
-    "core/config/extraction_rules/_detail.py": 1026,
-    "enrichment/service.py": 907,
-    "extraction/collectors/dom.py": 1069,
-    "extraction/collectors/js_state.py": 914,
+    "core/config/field_mappings.py": 704,
+    "crawl/batch_runtime.py": 709,
+    "enrichment/service.py": 905,
+    "extraction/collectors/dom.py": 1115,
+    "extraction/collectors/js_state.py": 996,
     # Stream B commit 14 (same day): jsonld.py re-keyed (783 -> 871) and
     # result_building.py re-keyed (738 -> 824) with the >150-line function
     # decompositions (4.15) — raised to measured.
-    "extraction/collectors/jsonld.py": 871,
-    "extraction/contracts.py": 856,
-    "extraction/engine.py": 1059,
-    "extraction/entities.py": 850,
-    "extraction/pipeline.py": 781,
-    "extraction/result_building.py": 824,
-    "extraction/validation.py": 743,
-    "intelligence/service.py": 763,
+    "extraction/collectors/jsonld.py": 919,
+    "extraction/contracts.py": 787,
+    "extraction/engine.py": 1067,
+    "extraction/entities.py": 927,
+    "extraction/pipeline.py": 893,
+    "extraction/publication.py": 726,
+    "extraction/result_building.py": 863,
+    "extraction/validation.py": 777,
+    "intelligence/service.py": 761,
     # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
     # + drift counter live here (no TOML manifest counterpart; this dict is the
     # sole ledger for this persistence module).
     # Audit-debt chunk K (2026-07-22): grew with the single-query
     # find_contract_location join (2.15).
-    "persistence/extraction_memory.py": 1396,
+    "persistence/extraction_memory.py": 1394,
 }
 # SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
 # into _listing_discovery_signals/_listing_readiness_verdict and left the
@@ -71,7 +77,9 @@ OVERSIZED_MODULE_DEBT = {
 # _acquire_browser_retry_result (never ledgered) -> <=10, jsonld _variant
 # 30 -> <=15, resolve 31 -> 8.
 COMPLEX_FUNCTION_DEBT = {
-    ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
+    # Extraction runtime simplification (2026-08-22): all 21 extraction
+    # entries left the ledger after the package-wide CC<=15 decomposition.
+    ("acquisition/browser_block_detection.py", "_block_policy_matches"): 30,
     ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
     ("acquisition/browser_detail.py", "_candidate_is_admitted"): 56,
     ("acquisition/browser_identity.py", "build_playwright_context_spec"): 22,
@@ -104,35 +112,11 @@ COMPLEX_FUNCTION_DEBT = {
     ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
     ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
-    ("extraction/collectors/_helpers.py", "_subject_id"): 23,
-    ("extraction/collectors/js_state.py", "network_row"): 41,
-    ("extraction/collectors/js_state.py", "_looks_like_variant"): 23,
-    ("extraction/engine.py", "_assess"): 27,
-    ("extraction/entities.py", "_variant_groups"): 21,
-    ("extraction/entities.py", "_variant_identity_keys"): 24,
-    ("extraction/pipeline.py", "_flag_brand_conflicts"): 30,
-    ("extraction/pipeline.py", "normalize_evidence"): 40,
-    ("extraction/pipeline.py", "_title_flags"): 29,
-    ("extraction/publication.py", "serialize_commerce_detail_projection"): 26,
     ("enrichment/service.py", "run_job"): 25,
-    ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
     # Audit-fix reconciliation (2026-07-22): the seven resolution entries moved
     # from the retired god-package __init__ to the split modules, values
     # unchanged; enrichment run_job + intelligence _poll_candidates_and_score
     # entered with the Celery job migration (2.7).
-    ("extraction/resolution/decisions.py", "_resolve_scalar"): 22,
-    ("extraction/resolution/derived.py", "_semantic_derived_facts"): 25,
-    ("extraction/resolution/derived.py", "_brand_from_title"): 22,
-    (
-        "extraction/resolution/offers.py",
-        "_offer_atomic_price_currency_preferences",
-    ): 22,
-    ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
-    ("extraction/resolution/variant_rollup.py", "_reconcile_variant_prices"): 25,
-    ("extraction/resolution/variant_rollup.py", "_inherit_variant_offer_facts"): 22,
-    ("extraction/result_building.py", "field_evidence_states"): 46,
-    ("extraction/validation.py", "_validate_child_join_failures"): 33,
-    ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
     ("intelligence/service.py", "_poll_candidates_and_score"): 25,
     ("intelligence/matching.py", "_apply_identity_floor"): 21,
@@ -187,6 +171,9 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 
 PACKAGE_LOC_BUDGETS = {
+    # Extraction runtime simplification (2026-08-22): extraction/core totals
+    # reconciled after moving fact/scope rule ownership into core config;
+    # remaining packages are ratcheted to the same live inventory.
     # Closeout hardening reconciliation: acquisition/crawl/core/intelligence
     # grew slightly with readiness terminal states, the bounded persist
     # lock-wait, and the discovery dependency-injection seams; extraction
@@ -255,13 +242,13 @@ PACKAGE_LOC_BUDGETS = {
     # redis eval wrappers (str args + Awaitable casts) — raised to measured.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_366,
-    "crawl": 9_523,
-    "core": 21_033,
-    "enrichment": 2_254,
-    "connectors": 2_444,
-    "intelligence": 3_462,
-    "extraction": 17_029,
+    "acquisition": 17_363,
+    "crawl": 9_533,
+    "core": 21_096,
+    "enrichment": 2_252,
+    "connectors": 2_427,
+    "intelligence": 3_459,
+    "extraction": 17_909,
     "evaluation": 1_571,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
@@ -314,7 +301,8 @@ PACKAGE_LOC_BUDGETS = {
 # Mypy fix pass (same day): +53 for the typed redis eval wrappers, the
 # Sequence-typed BaseJobCreate.source_records, and the metrics bearer
 # non-ASCII guard — raised to measured.
-TOTAL_APP_LOC_BUDGET = 87_900
+# Extraction runtime simplification reconciliation (2026-08-22).
+TOTAL_APP_LOC_BUDGET = 88_837
 
 
 def test_production_package_loc_budgets() -> None:
