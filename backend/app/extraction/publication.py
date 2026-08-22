@@ -140,16 +140,8 @@ def _commerce_detail_policy(
         for row in resolution.decisions
         if row.status == "resolved"
     } | set(derived_by_key)
-    has_primary_price = any(
-        (resolution.primary_offer_entity_id, fact_type) in resolved_keys
-        for fact_type in _PRICE_FACTS
-    )
-    has_child_price = any(
-        fact_type in _PRICE_FACTS and entity_id != resolution.primary_offer_entity_id
-        for entity_id, fact_type in resolved_keys
-    ) or any(
-        row.status == "eligible" and row.values.get("price") not in _EMPTY
-        for row in resolution.variant_decisions
+    has_primary_price, has_child_price = _commerce_price_state(
+        resolution, resolved_keys
     )
     has_primary_currency = (
         resolution.primary_offer_entity_id,
@@ -167,6 +159,23 @@ def _commerce_detail_policy(
         has_child_price=has_child_price,
         has_primary_currency=has_primary_currency,
     )
+
+
+def _commerce_price_state(
+    resolution: ResolutionResult, resolved_keys: set[tuple[str, str]]
+) -> tuple[bool, bool]:
+    primary_offer_id = resolution.primary_offer_entity_id or ""
+    has_primary_price = any(
+        (primary_offer_id, fact_type) in resolved_keys for fact_type in _PRICE_FACTS
+    )
+    has_child_price = any(
+        fact_type in _PRICE_FACTS and entity_id != primary_offer_id
+        for entity_id, fact_type in resolved_keys
+    ) or any(
+        row.status == "eligible" and row.values.get("price") not in _EMPTY
+        for row in resolution.variant_decisions
+    )
+    return has_primary_price, has_child_price
 
 
 def _decision_publication_entry(
@@ -577,6 +586,31 @@ def serialize_commerce_detail_projection(
 ) -> CommerceDetailRecord:
     """Serialize only values authorized by a commerce-detail projection."""
 
+    (
+        record,
+        lineages,
+        variants,
+        variant_lineages,
+        assets,
+        asset_lineages,
+        field_sources,
+    ) = _commerce_projection_buckets(projection)
+
+    if not record.get("url") and fallback_url:
+        record["url"] = fallback_url
+        lineages["url"] = {"reason_code": "unauthorized_capture_url_fallback"}
+
+    _append_projected_variants(record, lineages, projection, variants, variant_lineages)
+    _append_projected_assets(record, lineages, projection, assets, asset_lineages)
+
+    if lineages:
+        record["_lineage"] = lineages
+    if field_sources:
+        record["_field_sources"] = field_sources
+    return typed_detail_record(record)
+
+
+def _commerce_projection_buckets(projection: CommerceDetailProjection):
     record: dict[str, object] = {}
     lineages: dict[str, object] = {}
     variants: dict[str, dict[str, object]] = defaultdict(dict)
@@ -584,7 +618,6 @@ def serialize_commerce_detail_projection(
     assets: dict[str, dict[str, object]] = defaultdict(dict)
     asset_lineages: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
     field_sources: dict[str, list[str]] = {}
-
     for entry in projection.entries:
         if entry.disposition != "publish":
             continue
@@ -605,11 +638,24 @@ def serialize_commerce_detail_projection(
         elif scope == "asset" and entity_id:
             assets[entity_id][field] = value
             asset_lineages[entity_id][field] = source
+    return (
+        record,
+        lineages,
+        variants,
+        variant_lineages,
+        assets,
+        asset_lineages,
+        field_sources,
+    )
 
-    if not record.get("url") and fallback_url:
-        record["url"] = fallback_url
-        lineages["url"] = {"reason_code": "unauthorized_capture_url_fallback"}
 
+def _append_projected_variants(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    projection: CommerceDetailProjection,
+    variants: dict[str, dict[str, object]],
+    variant_lineages: dict[str, dict[str, dict[str, object]]],
+) -> None:
     variant_rows: list[dict[str, object]] = []
     variant_sources: list[dict[str, object]] = []
     for entity_id in projection.variant_entity_ids:
@@ -626,6 +672,14 @@ def serialize_commerce_detail_projection(
         record["variants"] = variant_rows
         lineages["variants"] = variant_sources
 
+
+def _append_projected_assets(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    projection: CommerceDetailProjection,
+    assets: dict[str, dict[str, object]],
+    asset_lineages: dict[str, dict[str, dict[str, object]]],
+) -> None:
     primary_id = projection.primary_asset_entity_id
     if primary_id and assets.get(primary_id, {}).get("url"):
         record["image_url"] = assets[primary_id]["url"]
@@ -643,18 +697,9 @@ def serialize_commerce_detail_projection(
             assets[entity_id]["url"] for entity_id in additional_ids
         )
         lineages["additional_images"] = [
-            {
-                "asset_entity_id": entity_id,
-                **asset_lineages[entity_id].get("url", {}),
-            }
+            {"asset_entity_id": entity_id, **asset_lineages[entity_id].get("url", {})}
             for entity_id in additional_ids
         ]
-
-    if lineages:
-        record["_lineage"] = lineages
-    if field_sources:
-        record["_field_sources"] = field_sources
-    return typed_detail_record(record)
 
 
 def serialize_commerce_listing_projection(

@@ -348,15 +348,15 @@ Primary files (flat `app/extraction/` package):
 - `extraction/entities.py` — product/variant/offer/asset entities and `EntitySet`
 - `extraction/targeting.py` — commerce/subject target selection and scoped graphs
 - `extraction/documents.py` — HTML/JSON document parsing and the `DocumentStore`
-- `extraction/pipeline.py` — ecommerce detail collection/harvest and price/brand conflict flagging
+- `extraction/pipeline.py` — ecommerce detail collection/harvest, ordered normalization, and price/brand conflict flagging
 - `extraction/listing.py` — ecommerce listing collection and resolution
 - `extraction/jobs.py` — job collection, wrong-surface checks, and job detail/listing resolution
-- `extraction/collectors/*` — DOM, JS-state, JSON-LD, metadata (microdata/OG/network), and URL evidence collectors
-- `extraction/resolution/` — product/variant consensus, ranking, price-unit derivation, and asset resolution
-- `extraction/validation.py` — missing-evidence, incomplete-offer, and contradiction findings
+- `extraction/collectors/*` — DOM, JS-state, JSON-LD, metadata (microdata/OG/network), and URL evidence collectors with shared evidence/subject helpers
+- `extraction/resolution/` — product/variant consensus, derived facts, inherited offers, variant rollups, ranking, price-unit derivation, and asset resolution
+- `extraction/validation.py` — missing-evidence, incomplete-offer, child-join, and contradiction findings
 - `extraction/result_building.py` — decision accounting, evidence dispositions, and field states
 - `extraction/publication.py` — resolver-authorized publication projections and serializers
-- `extraction/field_states.py`, `extraction/json_walk.py`, `extraction/model_runtime.py`, `extraction/sentinel.py`, `extraction/replay.py` — field-state derivation, JSON traversal primitives, evaluation-gated model fallback, Sentinel challenger comparison, and replay/fixture construction
+- `extraction/field_states.py`, `extraction/json_walk.py`, `extraction/model_runtime.py`, `extraction/sentinel.py`, `extraction/replay.py` — field-state derivation, JSON traversal primitives, evaluation-gated model fallback, Sentinel challenger comparison, and ordered artifact replay/fixture construction
 
 Responsibilities:
 
@@ -385,7 +385,7 @@ Important implemented features:
 - source capability diagnostics distinguish terminal shells from successful PDP observations; HTTP error bodies, challenge/low-content browser shells, and URL-title-only placeholders mark affected product fields as source-unavailable and prevent title/url-only public success rows
 - detail extraction now has a DOM variant fallback for `ecommerce_detail` pages when structured data and JS state leave variant axes empty
 - listing candidate quality lives in `extraction/listing.py` with shared evidence ranking in `extraction/resolution/ranking.py`; listing extraction delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to those owners
-- extraction config is split by concept: `field_mappings.py` owns schemas/aliases/field-name primitives, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns variant axes and flat transport fields, `extraction_price_rules.py` owns price selectors/JSON-LD price fields/currency-price thresholds, and `public_record_policy.py` owns public persisted/exported record policy
+- extraction config is split by concept: `field_mappings.py` owns schemas/aliases plus field scope/value classification, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns ecommerce fact families plus variant axes/flat transport fields, `extraction_rules/_detail_sections.py` owns description/long-text and DOM detail-section policy, `extraction_price_rules.py` owns price selectors/JSON-LD price fields/currency-price thresholds, and `public_record_policy.py` owns public persisted/exported record policy
 - variant record normalization is owned by `extraction/resolution/`; `extraction/pipeline.py` harvests variant evidence and delegates final variant axis/value cleanup to the resolver
 - DOM variant recovery now recognizes radio/checkbox-based size and color groups, associates labels via `for`/parent label structure, and carries stock-derived availability (`0 Left`, `17 Left`, etc.) into `variants` and `selected_variant`
 - JS-state ecommerce-detail mapping now scores candidate product payloads so richer nested PDP nodes beat shallow landing/navigation shells, and generic direct-axis variant keys such as `condition`, `grade`, `storage`, and `memory` are normalized without adapter-specific branches

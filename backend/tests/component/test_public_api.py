@@ -648,7 +648,9 @@ async def test_authenticate_public_api_key_rejects_legacy_unkeyed_hash(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_authenticate_public_api_key_fails_when_touch_commit_fails() -> None:
+async def test_authenticate_public_api_key_fails_when_touch_commit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Session:
         def __init__(self) -> None:
             self.api_key = ApiKey(
@@ -681,6 +683,7 @@ async def test_authenticate_public_api_key_fails_when_touch_commit_fails() -> No
         async def rollback(self):
             self.rolled_back = True
 
+    monkeypatch.setattr(public_auth, "_monotonic", lambda: 1.0)
     session = _Session()
     with pytest.raises(HTTPException) as exc_info:
         await authenticate_public_api_key(session, "Bearer secret", touch=True)
@@ -724,6 +727,7 @@ async def test_public_api_principal_cache_skips_touch_update_within_ttl(
     raw_key = "crawlerai_cached_principal_key"
     _seed_public_api_key(db_session, test_user.id, raw_key)
     await db_session.commit()
+    monkeypatch.setattr(public_auth, "_monotonic", lambda: 1.0)
     commit_counts = _count_commits(db_session, monkeypatch)
 
     first = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")

@@ -522,19 +522,6 @@ def _first_node_text(node: HtmlNode, selectors: tuple[str, ...]) -> str | None:
     return None
 
 
-def _first_node_attr(
-    node: HtmlNode, selectors: tuple[str, ...], attr: str
-) -> str | None:
-    for selector in selectors:
-        child = node.css_first(selector)
-        if child is None or child.is_hidden():
-            continue
-        value = str(child.attribute(attr) or "").strip()
-        if value:
-            return value
-    return None
-
-
 def _first_url(
     doc: HtmlDocument, selectors: tuple[str, ...], *, page_url: str
 ) -> str | None:

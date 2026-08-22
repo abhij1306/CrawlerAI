@@ -64,48 +64,50 @@ def _derived(
                 resolved_values=resolved_values,
             )
         )
-        if (
-            decision.fact_type
-            not in {
-                field_mappings.OFFER_PRICE_FACT_TYPE,
-                field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-            }
-            or not decision.accepted_evidence_ids
-        ):
-            continue
-        ev = by_id[decision.accepted_evidence_ids[0]]
-        try:
-            value = f"{float(str(ev.value).replace(',', '')):.2f}"
-        except (TypeError, ValueError):
-            continue
-        rule_id = (
-            decision.rule_id
-            if decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
-            else "NORMALIZE_MONEY_PRECISION"
-        )
-        out.append(
-            DerivedFact(
-                derived_fact_id=stable_id(
-                    "derived", rule_id, decision.entity_id, decision.fact_type, value
-                ),
-                entity_id=decision.entity_id,
-                fact_type=decision.fact_type,
-                value=value,
-                input_evidence_ids=decision.accepted_evidence_ids,
-                input_selected_fact_ids=tuple(
-                    filter(
-                        None,
-                        (
-                            direct_selected_ids.get(
-                                (decision.fact_type, decision.accepted_evidence_ids)
-                            ),
-                        ),
-                    )
-                ),
-                rule_id=rule_id,
-            )
-        )
+        money_fact = _money_precision_fact(decision, by_id, direct_selected_ids)
+        if money_fact is not None:
+            out.append(money_fact)
     return tuple(out)
+
+
+def _money_precision_fact(
+    decision: Decision,
+    evidence_by_id: dict[str, Evidence],
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
+) -> DerivedFact | None:
+    if (
+        decision.fact_type
+        not in {
+            field_mappings.OFFER_PRICE_FACT_TYPE,
+            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+        }
+        or not decision.accepted_evidence_ids
+    ):
+        return None
+    evidence = evidence_by_id[decision.accepted_evidence_ids[0]]
+    try:
+        value = f"{float(str(evidence.value).replace(',', '')):.2f}"
+    except (TypeError, ValueError):
+        return None
+    rule_id = (
+        decision.rule_id
+        if decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        else "NORMALIZE_MONEY_PRECISION"
+    )
+    selected_id = direct_selected_ids.get(
+        (decision.fact_type, decision.accepted_evidence_ids)
+    )
+    return DerivedFact(
+        derived_fact_id=stable_id(
+            "derived", rule_id, decision.entity_id, decision.fact_type, value
+        ),
+        entity_id=decision.entity_id,
+        fact_type=decision.fact_type,
+        value=value,
+        input_evidence_ids=decision.accepted_evidence_ids,
+        input_selected_fact_ids=(selected_id,) if selected_id else (),
+        rule_id=rule_id,
+    )
 
 
 def _semantic_derived_facts(
@@ -123,93 +125,168 @@ def _semantic_derived_facts(
     if evidence is None:
         return ()
     if decision.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        existing_brand = resolved_values.get(
-            (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
-        )
-        brand_candidates = tuple(
-            row
-            for row in by_id.values()
-            if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
-            and row.subject_id == evidence.subject_id
-        )
-        existing_brands = (
-            (existing_brand,)
-            if existing_brand
-            else tuple(row.value for row in brand_candidates)
-        )
-        brand = _brand_from_title(
-            evidence.value,
+        return _title_brand_fact(
+            decision,
+            evidence,
+            by_id,
             page_url=page_url,
-            evidence_values=tuple(
-                row.value
-                for row in by_id.values()
-                if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
-            ),
-            existing_brands=existing_brands,
-            allow_page_identity_replacement=(
-                not existing_brand
-                and any(_invalidity_reason(row) is not None for row in brand_candidates)
-            ),
+            direct_selected_ids=direct_selected_ids,
+            resolved_values=resolved_values,
         )
-        if brand:
-            return (
-                _derived_fact(
-                    decision,
-                    fact_type=field_mappings.PRODUCT_BRAND_FACT_TYPE,
-                    value=brand[0],
-                    rule_id=brand[1],
-                    direct_selected_ids=direct_selected_ids,
-                ),
-            )
-    if (
-        decision.fact_type == field_mappings.PRODUCT_URL_FACT_TYPE
-        and (decision.entity_id, field_mappings.PRODUCT_SKU_FACT_TYPE)
-        not in resolved_fact_keys
-    ):
-        sku = detail_style_code_from_url(str(evidence.value or page_url))
-        if sku:
-            return (
-                _derived_fact(
-                    decision,
-                    fact_type=field_mappings.PRODUCT_SKU_FACT_TYPE,
-                    value=sku,
-                    rule_id="sku_from_url_style_code",
-                    direct_selected_ids=direct_selected_ids,
-                ),
-            )
-    if (
-        decision.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
-        and (decision.entity_id, field_mappings.OFFER_CURRENCY_FACT_TYPE)
-        not in resolved_fact_keys
-    ):
-        currency = _currency_for_price(evidence, page_url=page_url)
-        if currency:
-            return (
-                _derived_fact(
-                    decision,
-                    fact_type=field_mappings.OFFER_CURRENCY_FACT_TYPE,
-                    value=currency[0],
-                    rule_id=currency[1],
-                    direct_selected_ids=direct_selected_ids,
-                ),
-            )
-    if (
-        decision.fact_type == "offer.stock_quantity"
-        and (decision.entity_id, field_mappings.OFFER_AVAILABILITY_FACT_TYPE)
-        not in resolved_fact_keys
-    ):
-        availability = _availability_from_stock_quantity(evidence)
-        if availability:
-            return (
-                _derived_fact(
-                    decision,
-                    fact_type=field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
-                    value=availability,
-                    rule_id="availability_from_stock_quantity",
-                    direct_selected_ids=direct_selected_ids,
-                ),
-            )
+    if decision.fact_type == field_mappings.PRODUCT_URL_FACT_TYPE:
+        return _url_sku_fact(
+            decision,
+            evidence,
+            page_url=page_url,
+            direct_selected_ids=direct_selected_ids,
+            resolved_fact_keys=resolved_fact_keys,
+        )
+    if decision.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE:
+        return _price_currency_fact(
+            decision,
+            evidence,
+            page_url=page_url,
+            direct_selected_ids=direct_selected_ids,
+            resolved_fact_keys=resolved_fact_keys,
+        )
+    if decision.fact_type == "offer.stock_quantity":
+        return _stock_availability_fact(
+            decision,
+            evidence,
+            direct_selected_ids=direct_selected_ids,
+            resolved_fact_keys=resolved_fact_keys,
+        )
     return ()
+
+
+def _title_brand_fact(
+    decision: Decision,
+    evidence: Evidence,
+    evidence_by_id: dict[str, Evidence],
+    *,
+    page_url: str,
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
+    resolved_values: dict[tuple[str, str], object],
+) -> tuple[DerivedFact, ...]:
+    existing_brand = resolved_values.get(
+        (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
+    )
+    brand_candidates = tuple(
+        row
+        for row in evidence_by_id.values()
+        if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+        and row.subject_id == evidence.subject_id
+    )
+    existing_brands = (
+        (existing_brand,)
+        if existing_brand
+        else tuple(row.value for row in brand_candidates)
+    )
+    brand = _brand_from_title(
+        evidence.value,
+        page_url=page_url,
+        evidence_values=tuple(
+            row.value
+            for row in evidence_by_id.values()
+            if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
+        ),
+        existing_brands=existing_brands,
+        allow_page_identity_replacement=(
+            not existing_brand
+            and any(_invalidity_reason(row) is not None for row in brand_candidates)
+        ),
+    )
+    if not brand:
+        return ()
+    return (
+        _derived_fact(
+            decision,
+            fact_type=field_mappings.PRODUCT_BRAND_FACT_TYPE,
+            value=brand[0],
+            rule_id=brand[1],
+            direct_selected_ids=direct_selected_ids,
+        ),
+    )
+
+
+def _url_sku_fact(
+    decision: Decision,
+    evidence: Evidence,
+    *,
+    page_url: str,
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
+    resolved_fact_keys: set[tuple[str, str]],
+) -> tuple[DerivedFact, ...]:
+    if (
+        decision.entity_id,
+        field_mappings.PRODUCT_SKU_FACT_TYPE,
+    ) in resolved_fact_keys:
+        return ()
+    sku = detail_style_code_from_url(str(evidence.value or page_url))
+    if not sku:
+        return ()
+    return (
+        _derived_fact(
+            decision,
+            fact_type=field_mappings.PRODUCT_SKU_FACT_TYPE,
+            value=sku,
+            rule_id="sku_from_url_style_code",
+            direct_selected_ids=direct_selected_ids,
+        ),
+    )
+
+
+def _price_currency_fact(
+    decision: Decision,
+    evidence: Evidence,
+    *,
+    page_url: str,
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
+    resolved_fact_keys: set[tuple[str, str]],
+) -> tuple[DerivedFact, ...]:
+    if (
+        decision.entity_id,
+        field_mappings.OFFER_CURRENCY_FACT_TYPE,
+    ) in resolved_fact_keys:
+        return ()
+    currency = _currency_for_price(evidence, page_url=page_url)
+    if not currency:
+        return ()
+    return (
+        _derived_fact(
+            decision,
+            fact_type=field_mappings.OFFER_CURRENCY_FACT_TYPE,
+            value=currency[0],
+            rule_id=currency[1],
+            direct_selected_ids=direct_selected_ids,
+        ),
+    )
+
+
+def _stock_availability_fact(
+    decision: Decision,
+    evidence: Evidence,
+    *,
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
+    resolved_fact_keys: set[tuple[str, str]],
+) -> tuple[DerivedFact, ...]:
+    if (
+        decision.entity_id,
+        field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+    ) in resolved_fact_keys:
+        return ()
+    availability = _availability_from_stock_quantity(evidence)
+    if not availability:
+        return ()
+    return (
+        _derived_fact(
+            decision,
+            fact_type=field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+            value=availability,
+            rule_id="availability_from_stock_quantity",
+            direct_selected_ids=direct_selected_ids,
+        ),
+    )
 
 
 def _derived_fact(
@@ -281,31 +358,76 @@ def _brand_from_title(
         for value in evidence_values
         for text in (str(value or "").strip(),)
     )
-    page_identity = infer_brand_from_page_identity(
+    page_identity = _page_identity_brand(
+        title,
         url=page_url,
+        evidence_values=evidence_values,
+        existing_brands=existing_brands,
+        allow_replacement=allow_page_identity_replacement,
+    )
+    if existing_brands:
+        return _replacement_brand(
+            existing_brands[0],
+            page_identity,
+            allow_replacement=allow_page_identity_replacement,
+        )
+    return _new_title_brand(
+        title,
+        page_url=page_url,
+        has_independent_product_signal=has_independent_product_signal,
+    )
+
+
+def _page_identity_brand(
+    title: object,
+    *,
+    url: str,
+    evidence_values: tuple[object, ...],
+    existing_brands: tuple[object, ...],
+    allow_replacement: bool,
+) -> str | None:
+    page_identity = infer_brand_from_page_identity(
+        url=url,
         title=title,
         evidence_values=evidence_values,
         existing_brands=existing_brands,
     )
-    if page_identity is None and allow_page_identity_replacement:
-        page_identity = infer_brand_from_page_identity(
-            url=page_url,
+    if page_identity is None and allow_replacement:
+        return infer_brand_from_page_identity(
+            url=url,
             title=title,
             evidence_values=evidence_values,
             existing_brands=(),
         )
-    if existing_brands and page_identity:
-        existing = str(existing_brands[0] or "").strip()
-        page_text = str(page_identity or "").strip()
-        existing_folded = existing.casefold()
-        page_folded = page_text.casefold()
-        expands_existing = page_folded.startswith(f"{existing_folded} ")
-        trims_product_suffix = existing_folded.startswith(f"{page_folded} ")
-        if expands_existing or trims_product_suffix or allow_page_identity_replacement:
-            return page_identity, "page_identity"
+    return page_identity
+
+
+def _replacement_brand(
+    existing_brand: object,
+    page_identity: str | None,
+    *,
+    allow_replacement: bool,
+) -> tuple[str, str] | None:
+    if not page_identity:
         return None
-    if existing_brands:
-        return None
+    existing = str(existing_brand or "").strip().casefold()
+    candidate = page_identity.strip()
+    candidate_folded = candidate.casefold()
+    if (
+        candidate_folded.startswith(f"{existing} ")
+        or existing.startswith(f"{candidate_folded} ")
+        or allow_replacement
+    ):
+        return candidate, "page_identity"
+    return None
+
+
+def _new_title_brand(
+    title: object,
+    *,
+    page_url: str,
+    has_independent_product_signal: bool,
+) -> tuple[str, str] | None:
     marker_brand = infer_brand_from_title_marker(title)
     if (
         marker_brand

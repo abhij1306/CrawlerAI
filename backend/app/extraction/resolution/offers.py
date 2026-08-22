@@ -92,23 +92,11 @@ def _offer_atomic_price_currency_preferences(
     blocking = {
         eid for finding in findings if finding.blocking for eid in finding.evidence_ids
     }
-    prices = tuple(
-        row
-        for row in (
-            evidence_by_id[eid]
-            for eid in offer.fact_evidence.get(price_fact, ())
-            if eid in evidence_by_id
-        )
-        if row.evidence_id not in blocking and _invalidity_reason(row) is None
+    prices = _admissible_offer_evidence(
+        offer.fact_evidence.get(price_fact, ()), evidence_by_id, blocking=blocking
     )
-    currencies = tuple(
-        row
-        for row in (
-            evidence_by_id[eid]
-            for eid in offer.fact_evidence.get(currency_fact, ())
-            if eid in evidence_by_id
-        )
-        if row.evidence_id not in blocking and _invalidity_reason(row) is None
+    currencies = _admissible_offer_evidence(
+        offer.fact_evidence.get(currency_fact, ()), evidence_by_id, blocking=blocking
     )
     if not prices or not currencies:
         return {}
@@ -125,6 +113,21 @@ def _offer_atomic_price_currency_preferences(
         price_fact: (price.evidence_id,),
         currency_fact: (currency.evidence_id,),
     }
+
+
+def _admissible_offer_evidence(
+    evidence_ids: tuple[str, ...],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    blocking: set[str],
+) -> tuple[Evidence, ...]:
+    return tuple(
+        row
+        for evidence_id in evidence_ids
+        if evidence_id in evidence_by_id
+        for row in (evidence_by_id[evidence_id],)
+        if row.evidence_id not in blocking and _invalidity_reason(row) is None
+    )
 
 
 def _offer_evidence_compatible(price: Evidence, currency: Evidence) -> bool:

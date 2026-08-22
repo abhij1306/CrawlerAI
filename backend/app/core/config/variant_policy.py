@@ -22,6 +22,40 @@ from app.core.config.field_mappings import (
     WEIGHT_FIELD,
 )
 
+ECOMMERCE_PRODUCT_FACT_TYPES = frozenset(
+    f"product.{field}"
+    for field in (
+        "url",
+        "title",
+        "brand",
+        "description",
+        "category",
+        "product_type",
+        "sku",
+        "mpn",
+        "gtin",
+        "materials",
+        "color",
+        "size",
+    )
+)
+ECOMMERCE_OFFER_FACT_TYPES = frozenset(
+    f"offer.{field}"
+    for field in (
+        "price",
+        "price_min",
+        "price_max",
+        "currency",
+        "original_price",
+        "availability",
+        "stock_quantity",
+        "seller",
+    )
+)
+ECOMMERCE_ASSET_FACT_TYPES = frozenset(
+    {"asset.image_url", "asset.role", "asset.variant_association"}
+)
+
 
 def _normalized_variant_axis_alias_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower().replace("&", " ")).strip(
@@ -149,6 +183,22 @@ PUBLIC_VARIANT_AXIS_FIELDS: tuple[str, ...] = (
     "seat_count",
     "usage_limit",
     "tier",
+)
+ECOMMERCE_VARIANT_FACT_TYPES = frozenset(
+    {
+        *(f"variant.{field}" for field in ("id", "sku", "gtin", "url", "selected")),
+        *(f"variant.option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS),
+    }
+)
+ECOMMERCE_OPTION_FACT_TYPES = frozenset(
+    f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS
+)
+ECOMMERCE_FACT_TYPES = (
+    ECOMMERCE_PRODUCT_FACT_TYPES
+    | ECOMMERCE_VARIANT_FACT_TYPES
+    | ECOMMERCE_OFFER_FACT_TYPES
+    | ECOMMERCE_ASSET_FACT_TYPES
+    | ECOMMERCE_OPTION_FACT_TYPES
 )
 DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO = 0.01
 GEOGRAPHIC_STATE_VARIANT_MIN_MATCHES = 3

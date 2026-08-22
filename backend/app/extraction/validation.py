@@ -226,37 +226,7 @@ def _validate_descriptions(
         for eid in product.attribute_evidence.get("product.description", ())
         if eid in by_id
     )
-    findings: list[Finding] = []
-    boundary_ids = tuple(
-        row.evidence_id
-        for row in descriptions
-        if "description_hard_boundary" in row.flags
-    )
-    if boundary_ids:
-        findings.append(
-            _finding(
-                "DESCRIPTION_HARD_BOUNDARY",
-                (product.entity_id,),
-                boundary_ids,
-                "Description length matches a known extractor/source excerpt boundary.",
-                False,
-            )
-        )
-    incomplete_ids = tuple(
-        row.evidence_id
-        for row in descriptions
-        if "description_incomplete_ending" in row.flags
-    )
-    if incomplete_ids:
-        findings.append(
-            _finding(
-                "DESCRIPTION_INCOMPLETE_ENDING",
-                (product.entity_id,),
-                incomplete_ids,
-                "Description ends with an incomplete connector or preposition.",
-                False,
-            )
-        )
+    findings = list(_description_flag_findings(product.entity_id, descriptions))
     has_clean_description = any(
         "description_promotional_copy" not in row.flags for row in descriptions
     )
@@ -277,6 +247,30 @@ def _validate_descriptions(
                 False,
             )
         )
+    return tuple(findings)
+
+
+def _description_flag_findings(
+    product_id: str, descriptions: tuple[Evidence, ...]
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for flag, rule, message in (
+        (
+            "description_hard_boundary",
+            "DESCRIPTION_HARD_BOUNDARY",
+            "Description length matches a known extractor/source excerpt boundary.",
+        ),
+        (
+            "description_incomplete_ending",
+            "DESCRIPTION_INCOMPLETE_ENDING",
+            "Description ends with an incomplete connector or preposition.",
+        ),
+    ):
+        evidence_ids = tuple(
+            row.evidence_id for row in descriptions if flag in row.flags
+        )
+        if evidence_ids:
+            findings.append(_finding(rule, (product_id,), evidence_ids, message, False))
     return tuple(findings)
 
 
@@ -310,7 +304,6 @@ def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:
 
 
 def _validate_expected_variant_axes(entities: EntitySet) -> tuple[Finding, ...]:
-    findings: list[Finding] = []
     variants_by_product = {
         product.entity_id: tuple(
             variant
@@ -319,42 +312,50 @@ def _validate_expected_variant_axes(entities: EntitySet) -> tuple[Finding, ...]:
         )
         for product in entities.products
     }
-    for catalog in entities.option_catalogs:
-        variants = variants_by_product.get(catalog.product_entity_id, ())
-        for axis in catalog.axes:
-            expected_values = tuple(
-                value.value for value in axis.values if str(value.value).strip()
+    return tuple(
+        finding
+        for catalog in entities.option_catalogs
+        for axis in catalog.axes
+        if (
+            finding := _expected_variant_axis_finding(
+                catalog.product_entity_id,
+                variants_by_product.get(catalog.product_entity_id, ()),
+                axis,
             )
-            if len(set(expected_values)) < 2:
-                continue
-            missing = tuple(
-                variant.entity_id
-                for variant in variants
-                if not str(variant.option_values.get(axis.axis) or "").strip()
-            )
-            if variants and not missing:
-                continue
-            evidence_ids = tuple(
-                evidence_id
-                for value in axis.values
-                for evidence_id in value.evidence_ids
-            )
-            findings.append(
-                _finding(
-                    "EXPECTED_VARIANT_AXIS_MISSING",
-                    missing or (catalog.product_entity_id,),
-                    evidence_ids,
-                    f"Explicit variant axis {axis.axis!r} is not complete in public variants.",
-                    False,
-                    metadata={
-                        "axis": axis.axis,
-                        "expected_values": expected_values,
-                        "variant_count": len(variants),
-                        "missing_variant_count": len(missing) if variants else 0,
-                    },
-                )
-            )
-    return tuple(findings)
+        )
+        is not None
+    )
+
+
+def _expected_variant_axis_finding(product_id, variants, axis) -> Finding | None:
+    expected_values = tuple(
+        value.value for value in axis.values if str(value.value).strip()
+    )
+    if len(set(expected_values)) < 2:
+        return None
+    missing = tuple(
+        variant.entity_id
+        for variant in variants
+        if not str(variant.option_values.get(axis.axis) or "").strip()
+    )
+    if variants and not missing:
+        return None
+    evidence_ids = tuple(
+        evidence_id for value in axis.values for evidence_id in value.evidence_ids
+    )
+    return _finding(
+        "EXPECTED_VARIANT_AXIS_MISSING",
+        missing or (product_id,),
+        evidence_ids,
+        f"Explicit variant axis {axis.axis!r} is not complete in public variants.",
+        False,
+        metadata={
+            "axis": axis.axis,
+            "expected_values": expected_values,
+            "variant_count": len(variants),
+            "missing_variant_count": len(missing) if variants else 0,
+        },
+    )
 
 
 def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
@@ -424,7 +425,6 @@ def _validate_offers(
     evidence: tuple[Evidence, ...], entities: EntitySet
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
-    out: list[Finding] = []
     # Parent offers combine at publication scope; only unresolved gaps are primary.
     parent_has_price = any(
         offer.variant_entity_id is None and bool(offer.fact_evidence.get("offer.price"))
@@ -435,50 +435,18 @@ def _validate_offers(
         and bool(offer.fact_evidence.get("offer.currency"))
         for offer in entities.offers
     )
-    price_without_currency: dict[bool, list[tuple[str, tuple[str, ...]]]] = {
-        True: [],
-        False: [],
-    }
-    currency_without_price: dict[bool, list[tuple[str, tuple[str, ...]]]] = {
-        True: [],
-        False: [],
-    }
+    price_without_currency = _offer_completeness_buckets()
+    currency_without_price = _offer_completeness_buckets()
+    out: list[Finding] = []
     for offer in entities.offers:
-        is_product_level = offer.variant_entity_id is None
-        has_price = bool(offer.fact_evidence.get("offer.price"))
-        has_currency = bool(offer.fact_evidence.get("offer.currency"))
-        if has_price and not has_currency:
-            is_primary = is_product_level and not parent_has_currency
-            price_without_currency[is_primary].append(
-                (offer.entity_id, offer.fact_evidence.get("offer.price", ()))
-            )
-        if has_currency and not has_price:
-            is_primary = is_product_level and not parent_has_price
-            currency_without_price[is_primary].append(
-                (offer.entity_id, offer.fact_evidence.get("offer.currency", ()))
-            )
-        current = _decimal(offer.fact_evidence.get("offer.price", ()), by_id)
-        original = _decimal(offer.fact_evidence.get("offer.original_price", ()), by_id)
-        if current is not None and current <= 0:
-            out.append(
-                _finding(
-                    "NON_POSITIVE_PRICE",
-                    (offer.entity_id,),
-                    offer.fact_evidence.get("offer.price", ()),
-                    "Offer price must be positive.",
-                    False,
-                )
-            )
-        if current is not None and original is not None and original < current:
-            out.append(
-                _finding(
-                    "INVALID_ORIGINAL_PRICE",
-                    (offer.entity_id,),
-                    offer.fact_evidence.get("offer.original_price", ()),
-                    "Original price below current price.",
-                    True,
-                )
-            )
+        _classify_offer_completeness(
+            offer,
+            parent_has_price=parent_has_price,
+            parent_has_currency=parent_has_currency,
+            price_without_currency=price_without_currency,
+            currency_without_price=currency_without_price,
+        )
+        out.extend(_offer_value_findings(offer, by_id))
     for rule, buckets, message in (
         (
             "PRICE_WITHOUT_CURRENCY",
@@ -502,6 +470,60 @@ def _validate_offers(
             )
         )
     return tuple(out)
+
+
+def _offer_completeness_buckets() -> dict[bool, list[tuple[str, tuple[str, ...]]]]:
+    return {True: [], False: []}
+
+
+def _classify_offer_completeness(
+    offer,
+    *,
+    parent_has_price: bool,
+    parent_has_currency: bool,
+    price_without_currency,
+    currency_without_price,
+) -> None:
+    is_product_level = offer.variant_entity_id is None
+    price_ids = offer.fact_evidence.get("offer.price", ())
+    currency_ids = offer.fact_evidence.get("offer.currency", ())
+    if price_ids and not currency_ids:
+        price_without_currency[is_product_level and not parent_has_currency].append(
+            (offer.entity_id, price_ids)
+        )
+    if currency_ids and not price_ids:
+        currency_without_price[is_product_level and not parent_has_price].append(
+            (offer.entity_id, currency_ids)
+        )
+
+
+def _offer_value_findings(offer, by_id: dict[str, Evidence]) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    price_ids = offer.fact_evidence.get("offer.price", ())
+    original_ids = offer.fact_evidence.get("offer.original_price", ())
+    current = _decimal(price_ids, by_id)
+    original = _decimal(original_ids, by_id)
+    if current is not None and current <= 0:
+        findings.append(
+            _finding(
+                "NON_POSITIVE_PRICE",
+                (offer.entity_id,),
+                price_ids,
+                "Offer price must be positive.",
+                False,
+            )
+        )
+    if current is not None and original is not None and original < current:
+        findings.append(
+            _finding(
+                "INVALID_ORIGINAL_PRICE",
+                (offer.entity_id,),
+                original_ids,
+                "Original price below current price.",
+                True,
+            )
+        )
+    return tuple(findings)
 
 
 def _grouped_offer_completeness_findings(
@@ -583,6 +605,46 @@ def _validate_child_join_failures(
     *,
     skip_group_ids: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[Finding, ...]:
+    linked_group_ids, variant_subjects, variants_by_sku = _child_join_indexes(entities)
+    groups = _offer_evidence_groups(evidence)
+
+    findings: list[Finding] = []
+    for group_id, rows in sorted(groups.items()):
+        if group_id in linked_group_ids or group_id in skip_group_ids:
+            continue
+        if not any(row.relation_type == "variant_offer" for row in rows):
+            continue
+        candidate_parent_ids = _candidate_parent_ids(
+            rows, variant_subjects, variants_by_sku
+        )
+        findings.append(
+            _finding(
+                CHILD_JOIN_FAILED_RULE_ID,
+                candidate_parent_ids,
+                tuple(sorted(row.evidence_id for row in rows)),
+                "Captured child evidence could not be attached to one parent entity.",
+                False,
+                metadata={
+                    "group_id": group_id,
+                    "candidate_parent_ids": candidate_parent_ids,
+                    "missing_relation_keys": _missing_relation_keys(rows),
+                    "conflicting_relation_keys": _conflicting_relation_keys(
+                        rows, candidate_parent_ids
+                    ),
+                    "source_paths": tuple(
+                        dict.fromkeys(
+                            f"{row.artifact_id}:{row.locator.value}" for row in rows
+                        )
+                    ),
+                    "budget_removed_required_key": False,
+                    "child_fact_types": tuple(sorted({row.fact_type for row in rows})),
+                },
+            )
+        )
+    return tuple(findings)
+
+
+def _child_join_indexes(entities: EntitySet):
     linked_group_ids = {
         offer.group_id
         for offer in entities.offers
@@ -598,79 +660,63 @@ def _validate_child_join_failures(
         for variant in entities.variants
         if variant.identity_key.startswith("sku:")
     }
+    return linked_group_ids, variant_subjects, variants_by_sku
+
+
+def _offer_evidence_groups(evidence: tuple[Evidence, ...]) -> dict[str, list[Evidence]]:
     groups: dict[str, list[Evidence]] = {}
     for row in evidence:
         if row.fact_type.startswith("offer."):
             groups.setdefault(
                 row.group_id or f"ungrouped:{row.evidence_id}", []
             ).append(row)
+    return groups
 
-    findings: list[Finding] = []
-    for group_id, rows in sorted(groups.items()):
-        if group_id in linked_group_ids or group_id in skip_group_ids:
-            continue
-        if not any(row.relation_type == "variant_offer" for row in rows):
-            continue
-        relations = {row.relation_type for row in rows if row.relation_type}
-        candidate_parent_ids = tuple(
-            sorted(
-                {
-                    candidate_id
-                    for row in rows
-                    for candidate_id in (
-                        variant_subjects.get(row.parent_subject_id or ""),
-                        variants_by_sku.get(
-                            str(row.entity_hint.sku)
-                            if row.entity_hint and row.entity_hint.sku
-                            else ""
-                        ),
-                    )
-                    if candidate_id
-                }
-            )
-        )
-        missing_keys = tuple(
-            key
-            for key, present in (
-                ("parent_subject_id", any(row.parent_subject_id for row in rows)),
-                (
-                    "entity_hint.sku",
-                    any(row.entity_hint and row.entity_hint.sku for row in rows),
-                ),
-            )
-            if not present
-        )
-        conflicting_keys = tuple(
-            key
-            for key, conflicted in (
-                ("relation_type", len(relations) > 1),
-                ("candidate_parent_id", len(candidate_parent_ids) > 1),
-            )
-            if conflicted
-        )
-        findings.append(
-            _finding(
-                CHILD_JOIN_FAILED_RULE_ID,
-                candidate_parent_ids,
-                tuple(sorted(row.evidence_id for row in rows)),
-                "Captured child evidence could not be attached to one parent entity.",
-                False,
-                metadata={
-                    "group_id": group_id,
-                    "candidate_parent_ids": candidate_parent_ids,
-                    "missing_relation_keys": missing_keys,
-                    "conflicting_relation_keys": conflicting_keys,
-                    "source_paths": tuple(
-                        dict.fromkeys(
-                            f"{row.artifact_id}:{row.locator.value}" for row in rows
-                        )
+
+def _candidate_parent_ids(rows, variant_subjects, variants_by_sku) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                candidate_id
+                for row in rows
+                for candidate_id in (
+                    variant_subjects.get(row.parent_subject_id or ""),
+                    variants_by_sku.get(
+                        str(row.entity_hint.sku)
+                        if row.entity_hint and row.entity_hint.sku
+                        else ""
                     ),
-                    "budget_removed_required_key": False,
-                    "child_fact_types": tuple(sorted({row.fact_type for row in rows})),
-                },
-            )
+                )
+                if candidate_id
+            }
         )
-    return tuple(findings)
+    )
+
+
+def _missing_relation_keys(rows) -> tuple[str, ...]:
+    return tuple(
+        key
+        for key, present in (
+            ("parent_subject_id", any(row.parent_subject_id for row in rows)),
+            (
+                "entity_hint.sku",
+                any(row.entity_hint and row.entity_hint.sku for row in rows),
+            ),
+        )
+        if not present
+    )
+
+
+def _conflicting_relation_keys(rows, candidate_parent_ids) -> tuple[str, ...]:
+    relations = {row.relation_type for row in rows if row.relation_type}
+    return tuple(
+        key
+        for key, conflicted in (
+            ("relation_type", len(relations) > 1),
+            ("candidate_parent_id", len(candidate_parent_ids) > 1),
+        )
+        if conflicted
+    )
 
 
 def _validate_availability_consistency(
@@ -678,26 +724,13 @@ def _validate_availability_consistency(
     entities: EntitySet,
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
-    parent_offers = [
-        offer for offer in entities.offers if offer.variant_entity_id is None
-    ]
-    variant_offers = [
-        offer for offer in entities.offers if offer.variant_entity_id is not None
-    ]
-    if (
-        not entities.variants
-        or not parent_offers
-        or len(variant_offers) < len(entities.variants)
-    ):
+    parent_offers, variant_offers = _offers_by_scope(entities)
+    if not _has_complete_availability_matrix(entities, parent_offers, variant_offers):
         return ()
-    child_ids = [
-        offer.fact_evidence.get("offer.availability", ()) for offer in variant_offers
-    ]
-    if any(not ids for ids in child_ids):
+    child_state = _child_availability_state(variant_offers, by_id)
+    if child_state is None:
         return ()
-    child_values = [str(by_id[ids[0]].value) for ids in child_ids if ids[0] in by_id]
-    if len(child_values) != len(variant_offers):
-        return ()
+    child_ids, child_values = child_state
     aggregate = "in_stock" if "in_stock" in child_values else "out_of_stock"
     parent_ids = parent_offers[0].fact_evidence.get("offer.availability", ())
     if not parent_ids or parent_ids[0] not in by_id:
@@ -723,6 +756,33 @@ def _validate_availability_consistency(
             False,
         ),
     )
+
+
+def _offers_by_scope(entities: EntitySet):
+    return (
+        [offer for offer in entities.offers if offer.variant_entity_id is None],
+        [offer for offer in entities.offers if offer.variant_entity_id is not None],
+    )
+
+
+def _has_complete_availability_matrix(entities, parent_offers, variant_offers) -> bool:
+    return bool(
+        entities.variants
+        and parent_offers
+        and len(variant_offers) >= len(entities.variants)
+    )
+
+
+def _child_availability_state(variant_offers, by_id):
+    child_ids = [
+        offer.fact_evidence.get("offer.availability", ()) for offer in variant_offers
+    ]
+    if any(not ids for ids in child_ids):
+        return None
+    child_values = [str(by_id[ids[0]].value) for ids in child_ids if ids[0] in by_id]
+    if len(child_values) != len(variant_offers):
+        return None
+    return child_ids, child_values
 
 
 def _validate_output(entities: EntitySet) -> tuple[Finding, ...]:

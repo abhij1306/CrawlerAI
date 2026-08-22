@@ -108,7 +108,7 @@ async def authenticate_public_api_key(
     # The touch stamp carries across cache refreshes: last_used_at is written
     # at most once per throttle window per key, while the shorter entry TTL
     # still bounds revocation staleness.
-    last_touch_at = entry.last_touch_at if entry is not None else 0.0
+    last_touch_at = entry.last_touch_at if entry is not None else float("-inf")
     if entry is not None and entry.expires_at > now:
         if touch and now - entry.last_touch_at >= PUBLIC_API_LAST_USED_TOUCH_SECONDS:
             # Stamp before the attempt so a sick database is retried at most

@@ -289,24 +289,6 @@ def _first_image(card: HtmlNode) -> str | None:
     return None
 
 
-def _node_has_image(node: HtmlNode) -> bool:
-    return any(
-        node.css_first(selector) is not None
-        for selector in ECOMMERCE_LISTING_IMAGE_SELECTORS
-    )
-
-
-def _link_has_title_signal(link: HtmlNode) -> bool:
-    return bool(
-        _first_admissible_attribute(link)
-        or _first_admissible_text(link, ECOMMERCE_LISTING_TITLE_SELECTORS)
-        or _admissible_listing_title(
-            _clean_text(link.text(separator=" ", strip=True)),
-            link,
-        )
-    )
-
-
 def _first_price(card: HtmlNode, *, allow_text_scan: bool = False) -> str | None:
     for selector in ECOMMERCE_LISTING_PRICE_SELECTORS:
         node = card.css_first(selector)

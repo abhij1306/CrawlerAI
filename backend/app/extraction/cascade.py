@@ -21,13 +21,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final
 
+from app.core.config.variant_policy import ECOMMERCE_FACT_TYPES
 from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
     CollectorOutcome,
     Evidence,
     ExtractionRequest,
-    FACT_TYPES,
     HarvestResult,
 )
 from app.extraction.listing_tier0 import (
@@ -200,10 +200,10 @@ def run_detail_cascade(
         )
     bundle: CaptureBundle = request.capture
     requested_fields = request.requested_fields
-    # Union the surface's admitted fact set with the shared commerce FACT_TYPES
-    # so commerce stays byte-identical (FACT_TYPES carries variant.option facts
+    # Union the surface's admitted fact set with shared commerce fact types
+    # so commerce stays byte-identical (the set carries variant.option facts
     # absent from COMMERCE_FACTS) while job_detail also admits its job.* facts.
-    allowed_facts = FACT_TYPES | spec.allowed_facts
+    allowed_facts = ECOMMERCE_FACT_TYPES | spec.allowed_facts
     rows: list[Evidence] = []
     outcomes: list[CollectorOutcome] = []
     admitted = 0

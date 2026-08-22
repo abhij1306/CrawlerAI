@@ -8,7 +8,7 @@ from app.core.config.extraction_price_rules import (
 from app.core.shared.field_coerce_price import repair_price_unit
 from app.core.shared.ids import stable_id
 from app.extraction.contracts import Decision, DerivedFact, Evidence
-from app.extraction.entities import EntitySet
+from app.extraction.entities import EntitySet, OfferEntity
 
 
 def _price_unit_repairs(
@@ -21,18 +21,51 @@ def _price_unit_repairs(
         for ids in offer.fact_evidence.values()
         for evidence_id in ids
     }
-    currency_rows_by_offer = {
+    currency_rows_by_offer = _currency_rows_by_offer(entities, by_id)
+    product_currency_rows = _currency_rows_by_product(entities, currency_rows_by_offer)
+    price_rows = _price_rows(evidence)
+    currency_by_evidence = _price_currencies(
+        price_rows,
+        offer_by_evidence,
+        currency_rows_by_offer,
+        product_currency_rows,
+    )
+    peer_values = _peer_price_values(price_rows, currency_by_evidence)
+    repairs: dict[str, tuple[object, str, tuple[str, ...]]] = {}
+    for row in price_rows:
+        repaired = _corroborated_price_repair(
+            row,
+            price_rows,
+            offer_by_evidence,
+            currency_by_evidence,
+            peer_values,
+        )
+        if repaired is not None:
+            repairs[row.evidence_id] = repaired
+    return repairs
+
+
+def _currency_rows_by_offer(
+    entities: EntitySet, evidence_by_id: dict[str, Evidence]
+) -> dict[str, tuple[Evidence, ...]]:
+    return {
         offer.entity_id: tuple(
-            by_id[evidence_id]
+            evidence_by_id[evidence_id]
             for evidence_id in offer.fact_evidence.get(
                 field_mappings.OFFER_CURRENCY_FACT_TYPE, ()
             )
-            if evidence_id in by_id
-            and "invalid_currency" not in by_id[evidence_id].flags
+            if evidence_id in evidence_by_id
+            and "invalid_currency" not in evidence_by_id[evidence_id].flags
         )
         for offer in entities.offers
     }
-    product_currency_rows = {
+
+
+def _currency_rows_by_product(
+    entities: EntitySet,
+    currency_rows_by_offer: dict[str, tuple[Evidence, ...]],
+) -> dict[str, tuple[Evidence, ...]]:
+    return {
         product.entity_id: tuple(
             row
             for offer in entities.offers
@@ -41,7 +74,10 @@ def _price_unit_repairs(
         )
         for product in entities.products
     }
-    price_rows = tuple(
+
+
+def _price_rows(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
+    return tuple(
         row
         for row in evidence
         if row.fact_type
@@ -50,6 +86,14 @@ def _price_unit_repairs(
             field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
         }
     )
+
+
+def _price_currencies(
+    price_rows: tuple[Evidence, ...],
+    offer_by_evidence: dict[str, OfferEntity],
+    currency_rows_by_offer: dict[str, tuple[Evidence, ...]],
+    product_currency_rows: dict[str, tuple[Evidence, ...]],
+) -> dict[str, str]:
     currency_by_evidence: dict[str, str] = {}
     for row in price_rows:
         offer = offer_by_evidence.get(row.evidence_id)
@@ -62,6 +106,12 @@ def _price_unit_repairs(
         )
         if currency:
             currency_by_evidence[row.evidence_id] = currency
+    return currency_by_evidence
+
+
+def _peer_price_values(
+    price_rows: tuple[Evidence, ...], currency_by_evidence: dict[str, str]
+) -> dict[str, object]:
     peer_values: dict[str, object] = {}
     for row in price_rows:
         repaired = repair_price_unit(
@@ -70,50 +120,65 @@ def _price_unit_repairs(
             currency=currency_by_evidence.get(row.evidence_id, ""),
         )
         peer_values[row.evidence_id] = repaired[0] if repaired else row.value
-    repairs: dict[str, tuple[object, str, tuple[str, ...]]] = {}
-    for row in price_rows:
-        offer = offer_by_evidence.get(row.evidence_id)
-        currency = currency_by_evidence.get(row.evidence_id)
-        if offer is None or currency is None:
-            continue
-        peers = tuple(
-            other
-            for other in price_rows
-            if other.evidence_id != row.evidence_id
-            and other.fact_type == row.fact_type
-            and (
-                (
-                    (other_offer := offer_by_evidence.get(other.evidence_id))
-                    is not None
-                    and other_offer.product_entity_id == offer.product_entity_id
-                    and (
-                        other.collector_id != row.collector_id
-                        or other_offer.entity_id == offer.entity_id
-                    )
-                )
-                or (
-                    offer_by_evidence.get(other.evidence_id) is None
-                    and other.collector_id in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
-                    and "invalid_decimal" not in other.flags
+    return peer_values
+
+
+def _corroborated_price_repair(
+    row: Evidence,
+    price_rows: tuple[Evidence, ...],
+    offer_by_evidence: dict[str, OfferEntity],
+    currency_by_evidence: dict[str, str],
+    peer_values: dict[str, object],
+) -> tuple[object, str, tuple[str, ...]] | None:
+    offer = offer_by_evidence.get(row.evidence_id)
+    currency = currency_by_evidence.get(row.evidence_id)
+    if offer is None or currency is None:
+        return None
+    peers = _corroborating_price_rows(
+        row,
+        price_rows,
+        offer,
+        offer_by_evidence,
+    )
+    repaired = repair_price_unit(
+        row.value,
+        source_key=row.locator.value,
+        currency=currency,
+        corroborating_values=tuple(peer_values[other.evidence_id] for other in peers),
+    )
+    if repaired is None:
+        return None
+    value, rule_id = repaired
+    return value, rule_id, tuple(other.evidence_id for other in peers)
+
+
+def _corroborating_price_rows(
+    row: Evidence,
+    price_rows: tuple[Evidence, ...],
+    offer: OfferEntity,
+    offer_by_evidence: dict[str, OfferEntity],
+) -> tuple[Evidence, ...]:
+    return tuple(
+        other
+        for other in price_rows
+        if other.evidence_id != row.evidence_id
+        and other.fact_type == row.fact_type
+        and (
+            (
+                (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
+                and other_offer.product_entity_id == offer.product_entity_id
+                and (
+                    other.collector_id != row.collector_id
+                    or other_offer.entity_id == offer.entity_id
                 )
             )
-        )
-        repaired = repair_price_unit(
-            row.value,
-            source_key=row.locator.value,
-            currency=currency,
-            corroborating_values=tuple(
-                peer_values[other.evidence_id] for other in peers
-            ),
-        )
-        if repaired is not None:
-            value, rule_id = repaired
-            repairs[row.evidence_id] = (
-                value,
-                rule_id,
-                tuple(other.evidence_id for other in peers),
+            or (
+                offer_by_evidence.get(other.evidence_id) is None
+                and other.collector_id in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
+                and "invalid_decimal" not in other.flags
             )
-    return repairs
+        )
+    )
 
 
 def _price_unit_derived_facts(

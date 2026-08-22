@@ -373,20 +373,37 @@ def network_row(
     *,
     collector_id: str = "js_state",
 ) -> list[Evidence]:
-    out: list[Evidence] = []
     if _path_tokens(path) & ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS:
-        return out
+        return []
     if _path_product_identity_conflicts(bundle.final_url, path):
-        return out
+        return []
     if _has_only_opaque_numeric_options(obj):
-        return out
+        return []
     if _looks_like_variant(obj, path=path):
         if _variant_url_conflicts(bundle.final_url, obj) or _variant_title_conflicts(
             bundle.final_url, obj
         ):
-            return out
+            return []
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
-    direct_keys = tuple(
+    direct_keys = _network_direct_keys(obj)
+    path_rows = configured_value_path_rows(obj)
+    if not direct_keys and not path_rows:
+        return []
+    if _product_url_conflicts(bundle.final_url, obj):
+        return []
+    return _network_product_evidence(
+        bundle,
+        artifact_id,
+        path,
+        obj,
+        direct_keys=direct_keys,
+        path_rows=path_rows,
+        collector_id=collector_id,
+    )
+
+
+def _network_direct_keys(obj: dict) -> tuple[str, ...]:
+    return tuple(
         key
         for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES
         if key in obj
@@ -395,17 +412,60 @@ def network_row(
             and key in ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS
         )
     )
-    path_rows = configured_value_path_rows(obj)
-    if not direct_keys and not path_rows:
-        return out
-    if _product_url_conflicts(bundle.final_url, obj):
-        return out
+
+
+def _network_product_evidence(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    *,
+    direct_keys: tuple[str, ...],
+    path_rows: list[tuple[str, str, object, str]],
+    collector_id: str,
+) -> list[Evidence]:
     product_context = _has_product_context(path, obj)
     offer_context = _has_offer_context(path, obj, product_context=product_context)
     if not product_context and not offer_context:
-        return out
+        return []
     group = f"offer:{artifact_id}:{path}" if offer_context else None
-    product_subject = evidence(
+    product_subject = _network_product_subject(bundle)
+    product_source_subject_ids = _structured_source_subject_ids(bundle, obj)
+    source_rows: list[tuple[str, str, object, str]] = [
+        (key, fact, value, suffix)
+        for key in direct_keys
+        for fact in (ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES[key],)
+        for index, value in enumerate(source_values(key, obj.get(key)))
+        for suffix in (f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else "",)
+    ]
+    source_rows.extend(path_rows)
+    return [
+        _network_evidence(
+            bundle,
+            artifact_id,
+            path,
+            obj,
+            key=key,
+            fact=fact,
+            value=value,
+            suffix=suffix,
+            group=group,
+            product_subject=product_subject,
+            product_source_subject_ids=product_source_subject_ids,
+            collector_id=collector_id,
+        )
+        for key, fact, value, suffix in source_rows
+        if _network_value_is_admissible(
+            fact,
+            value,
+            product_context=product_context,
+            offer_context=offer_context,
+        )
+    ]
+
+
+def _network_product_subject(bundle: CaptureBundle) -> str:
+    return evidence(
         bundle,
         "url",
         "url",
@@ -416,66 +476,75 @@ def network_row(
         directness="inferred",
         confidence=0.0,
     ).subject_id
-    product_source_subject_ids = _structured_source_subject_ids(bundle, obj)
-    source_rows = [
-        (key, fact, value, suffix)
-        for key in direct_keys
-        for fact in (ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES[key],)
-        for index, value in enumerate(source_values(key, obj.get(key)))
-        for suffix in (f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else "",)
-    ]
-    source_rows.extend(path_rows)
-    for key, fact, value, suffix in source_rows:
-        if fact.startswith("product.") and not product_context:
-            continue
-        if fact.startswith("offer.") and not offer_context:
-            continue
-        if value in (None, "", [], {}):
-            continue
-        entity_type: Literal["offer", "asset", "product"] = (
-            "offer"
-            if fact.startswith("offer.")
-            else "asset"
-            if fact.startswith("asset.")
-            else "product"
-        )
-        product_identity = next(
-            (
-                str(obj.get(identity_key) or "").strip()
-                for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
-                if str(obj.get(identity_key) or "").strip()
-            ),
-            None,
-        )
-        hint = EntityHint(
-            entity_type=entity_type,
-            product_id=product_identity if entity_type == "product" else None,
-            sku=str(obj.get("sku") or "").strip() or None,
-        )
-        out.append(
-            evidence(
-                bundle,
-                artifact_id,
-                collector_id,
-                fact,
-                value,
-                SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
-                group_id=group if fact.startswith("offer.") else None,
-                hint=hint,
-                directness="embedded",
-                confidence=0.8,
-                parent_subject_id=product_subject
-                if fact.startswith(("offer.", "asset."))
-                else None,
-                parent_scope="product"
-                if fact.startswith(("offer.", "asset."))
-                else None,
-                source_subject_ids=product_source_subject_ids
-                if fact.startswith("product.")
-                else (),
-            )
-        )
-    return out
+
+
+def _network_value_is_admissible(
+    fact: str,
+    value: object,
+    *,
+    product_context: bool,
+    offer_context: bool,
+) -> bool:
+    if fact.startswith("product.") and not product_context:
+        return False
+    if fact.startswith("offer.") and not offer_context:
+        return False
+    return value not in (None, "", [], {})
+
+
+def _network_evidence(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    *,
+    key: str,
+    fact: str,
+    value: object,
+    suffix: str,
+    group: str | None,
+    product_subject: str,
+    product_source_subject_ids: tuple[str, ...],
+    collector_id: str,
+) -> Evidence:
+    entity_type: Literal["offer", "asset", "product"] = (
+        "offer"
+        if fact.startswith("offer.")
+        else "asset"
+        if fact.startswith("asset.")
+        else "product"
+    )
+    product_identity = next(
+        (
+            str(obj.get(identity_key) or "").strip()
+            for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
+            if str(obj.get(identity_key) or "").strip()
+        ),
+        None,
+    )
+    hint = EntityHint(
+        entity_type=entity_type,
+        product_id=product_identity if entity_type == "product" else None,
+        sku=str(obj.get("sku") or "").strip() or None,
+    )
+    is_child = fact.startswith(("offer.", "asset."))
+    return evidence(
+        bundle,
+        artifact_id,
+        collector_id,
+        fact,
+        value,
+        SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
+        group_id=group if fact.startswith("offer.") else None,
+        hint=hint,
+        directness="embedded",
+        confidence=0.8,
+        parent_subject_id=product_subject if is_child else None,
+        parent_scope="product" if is_child else None,
+        source_subject_ids=product_source_subject_ids
+        if fact.startswith("product.")
+        else (),
+    )
 
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
@@ -618,7 +687,27 @@ def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
         _scalar_value(obj.get(key)) not in (None, "", [], {})
         for key in ("variantId", "variant_id", "skuId", "sku_id")
     )
-    commercial = any(
+    commercial = _has_variant_commercial_signal(obj)
+    type_name = str(obj.get("type") or obj.get("__typename") or "").lower()
+    if _is_non_variant_type(type_name):
+        return False
+    typed = "variant" in type_name
+    variant_path = bool(
+        _path_tokens(path) & variant_policy.VARIANT_STRUCTURED_PATH_TOKENS
+    )
+    return _variant_signals_are_sufficient(
+        identity=identity,
+        option_count=option_count,
+        typed=typed,
+        variant_path=variant_path,
+        variant_specific_identity=variant_specific_identity,
+        commercial=commercial,
+        has_sku=sku not in (None, "", [], {}),
+    )
+
+
+def _has_variant_commercial_signal(obj: dict) -> bool:
+    return any(
         _scalar_value(_first(obj, *keys)) not in (None, "", [], {})
         for keys in (
             variant_policy.VARIANT_OFFER_PRICE_KEYS,
@@ -627,15 +716,24 @@ def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
             variant_policy.VARIANT_OFFER_STOCK_KEYS,
         )
     )
-    type_name = str(obj.get("type") or obj.get("__typename") or "").lower()
-    if any(
+
+
+def _is_non_variant_type(type_name: str) -> bool:
+    return any(
         token in type_name for token in VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS
-    ):
-        return False
-    typed = "variant" in type_name
-    variant_path = bool(
-        _path_tokens(path) & variant_policy.VARIANT_STRUCTURED_PATH_TOKENS
     )
+
+
+def _variant_signals_are_sufficient(
+    *,
+    identity: bool,
+    option_count: int,
+    typed: bool,
+    variant_path: bool,
+    variant_specific_identity: bool,
+    commercial: bool,
+    has_sku: bool,
+) -> bool:
     return (
         identity
         and (
@@ -646,12 +744,12 @@ def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
                     or variant_path
                     or variant_specific_identity
                     or commercial
-                    or sku not in (None, "", [], {})
+                    or has_sku
                 )
             )
             or variant_specific_identity
             or (commercial and (typed or variant_path))
-            or (variant_path and sku not in (None, "", [], {}))
+            or (variant_path and has_sku)
         )
         or (typed and option_count >= 2)
     )

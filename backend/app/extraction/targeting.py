@@ -140,25 +140,29 @@ def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
     selected = target.selected_root_entity_id
     if not selected:
         return graph_state
+    return _scoped_entity_set(graph_state, selected)
+
+
+def _scoped_entity_set(graph: EntitySet, selected: str) -> EntitySet:
     return EntitySet(
         products=tuple(
-            product for product in graph_state.products if product.entity_id == selected
+            product for product in graph.products if product.entity_id == selected
         ),
         variants=tuple(
             variant
-            for variant in graph_state.variants
+            for variant in graph.variants
             if variant.product_entity_id == selected
         ),
         offers=tuple(
-            offer for offer in graph_state.offers if offer.product_entity_id == selected
+            offer for offer in graph.offers if offer.product_entity_id == selected
         ),
         assets=tuple(
-            asset for asset in graph_state.assets if asset.product_entity_id == selected
+            asset for asset in graph.assets if asset.product_entity_id == selected
         ),
-        product_option_metadata=graph_state.product_option_metadata,
+        product_option_metadata=graph.product_option_metadata,
         option_catalogs=tuple(
             catalog
-            for catalog in graph_state.option_catalogs
+            for catalog in graph.option_catalogs
             if catalog.product_entity_id == selected
         ),
     )
@@ -182,36 +186,55 @@ def _select_product_by_url(
     complete_offer_products = _products_with_complete_offers(graph)
     scored: list[tuple[tuple[int, int, int, int, int, int, int], str]] = []
     for product in graph.products:
-        urls = {
-            str(by_id[evidence_id].value)
-            for evidence_id in product.attribute_evidence.get("product.url", ())
-            if evidence_id in by_id
-        }
-        product_ids = {
-            str(hint.product_id)
-            for evidence_ids in product.attribute_evidence.values()
-            for evidence_id in evidence_ids
-            if evidence_id in by_id
-            and (hint := by_id[evidence_id].entity_hint) is not None
-            and hint.product_id
-        }
-        resource_ids = {
-            resource_id
-            for url in urls
-            if (resource_id := detail_url_resource_identity(url))
-        }
-        rank = (
-            int(bool(resource_ids & wanted_resource_ids)),
-            int(bool(urls & wanted)),
-            int(bool(product_ids & wanted_product_ids)),
-            int(product.entity_id in complete_offer_products),
-            int(bool(product.offer_ids)),
-            int(bool(product.attribute_evidence.get("product.title"))),
-            len(product.attribute_evidence),
+        rank = _product_url_rank(
+            product,
+            by_id,
+            wanted=wanted,
+            wanted_product_ids=wanted_product_ids,
+            wanted_resource_ids=wanted_resource_ids,
+            complete_offer_products=complete_offer_products,
         )
         if any(rank):
             scored.append((rank, product.entity_id))
     return max(scored, key=lambda item: (item[0], item[1]))[1] if scored else None
+
+
+def _product_url_rank(
+    product: Any,
+    evidence_by_id: dict[str, Evidence],
+    *,
+    wanted: set[str],
+    wanted_product_ids: set[str],
+    wanted_resource_ids: set[str],
+    complete_offer_products: set[str],
+) -> tuple[int, int, int, int, int, int, int]:
+    urls = {
+        str(evidence_by_id[evidence_id].value)
+        for evidence_id in product.attribute_evidence.get("product.url", ())
+        if evidence_id in evidence_by_id
+    }
+    product_ids = {
+        str(hint.product_id)
+        for evidence_ids in product.attribute_evidence.values()
+        for evidence_id in evidence_ids
+        if evidence_id in evidence_by_id
+        and (hint := evidence_by_id[evidence_id].entity_hint) is not None
+        and hint.product_id
+    }
+    resource_ids = {
+        resource_id
+        for url in urls
+        if (resource_id := detail_url_resource_identity(url))
+    }
+    return (
+        int(bool(resource_ids & wanted_resource_ids)),
+        int(bool(urls & wanted)),
+        int(bool(product_ids & wanted_product_ids)),
+        int(product.entity_id in complete_offer_products),
+        int(bool(product.offer_ids)),
+        int(bool(product.attribute_evidence.get("product.title"))),
+        len(product.attribute_evidence),
+    )
 
 
 def _products_with_complete_offers(graph: EntitySet) -> set[str]:

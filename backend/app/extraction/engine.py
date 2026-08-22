@@ -669,19 +669,9 @@ def _assess(
         return "invalid"
     wrong_surface = any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings)
     if request.surface == Surface.ECOMMERCE_DETAIL:
-        record = records[0] if records else None
-        detail_outcome = _normalized_detail_outcome(request, records, findings)
-        thin_not_found = (
-            request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
-            and _is_thin_detail_record(record)
-        )
-        if (
-            detail_outcome
-            in {DETAIL_CAPTURE_NOT_FOUND_OUTCOME, DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME}
-            or thin_not_found
-        ):
+        if _detail_source_is_terminal(request, records, findings):
             return "error"
-    if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
+    if _has_blocking_findings(findings):
         return "error" if request.surface == Surface.JOB_DETAIL else "invalid"
     if wrong_surface:
         return "wrong_surface"
@@ -690,26 +680,54 @@ def _assess(
     if not records:
         return "empty"
     if request.surface == Surface.ECOMMERCE_DETAIL:
-        record = records[0]
-        missing_requested = {
-            "image_url" if field == "image" else field
-            for field in request.requested_fields
-            if record.get("image_url" if field == "image" else field)
-            in (None, "", [], {}, ())
-        }
-        if missing_requested or any(
-            row.rule_id
-            in {
-                "EXPECTED_VARIANT_AXIS_MISSING",
-                "MISSING_CONTRACT_FIELD",
-                "VARIANT_AVAILABILITY_MISSING",
-            }
-            for row in findings
-        ):
-            return "partial"
-        if target.status != "resolved":
-            return "review"
+        return _detail_record_verdict(request, target, records[0], findings)
     return "success"
+
+
+def _has_blocking_findings(findings: tuple[Finding, ...]) -> bool:
+    return any(
+        row.blocking and row.rule_id != "WRONG_SURFACE_CONTENT" for row in findings
+    )
+
+
+def _detail_source_is_terminal(
+    request: ExtractionRequest,
+    records: tuple[PublicRecord, ...],
+    findings: tuple[Finding, ...],
+) -> bool:
+    record = records[0] if records else None
+    detail_outcome = _normalized_detail_outcome(request, records, findings)
+    thin_not_found = (
+        request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
+        and _is_thin_detail_record(record)
+    )
+    return bool(
+        detail_outcome
+        in {DETAIL_CAPTURE_NOT_FOUND_OUTCOME, DETAIL_CAPTURE_SEMANTIC_SHELL_OUTCOME}
+        or thin_not_found
+    )
+
+
+def _detail_record_verdict(
+    request: ExtractionRequest,
+    target: TargetSelection,
+    record: PublicRecord,
+    findings: tuple[Finding, ...],
+) -> Verdict:
+    missing_requested = {
+        "image_url" if field == "image" else field
+        for field in request.requested_fields
+        if record.get("image_url" if field == "image" else field)
+        in (None, "", [], {}, ())
+    }
+    incomplete_rules = {
+        "EXPECTED_VARIANT_AXIS_MISSING",
+        "MISSING_CONTRACT_FIELD",
+        "VARIANT_AVAILABILITY_MISSING",
+    }
+    if missing_requested or any(row.rule_id in incomplete_rules for row in findings):
+        return "partial"
+    return "success" if target.status == "resolved" else "review"
 
 
 def _blocked_result(
@@ -831,10 +849,7 @@ def _failure_classifications(
                 evidence,
             ),
         )
-    if (
-        request.capture.acquisition_outcome in {"blocked", "error"}
-        or request.capture.blocked
-    ):
+    if _input_bundle_failed(request):
         return (
             _failure(
                 "insufficient_input_bundle",
@@ -904,6 +919,13 @@ def _failure_classifications(
         _failure(
             "discovery", "No publishable records were discovered.", findings, evidence
         ),
+    )
+
+
+def _input_bundle_failed(request: ExtractionRequest) -> bool:
+    return bool(
+        request.capture.acquisition_outcome in {"blocked", "error"}
+        or request.capture.blocked
     )
 
 
@@ -1066,18 +1088,9 @@ def _diagnostic_summary(
     model_fallback: ModelFallbackResult | None = None,
     sentinel_observations=(),
 ) -> DiagnosticSummary:
-    # Prefer contract gaps; some surfaces only expose raw field-state gaps.
-    completeness = next(
-        (row for row in findings if row.rule_id == "RECORD_COMPLETENESS"), None
-    )
-    if completeness is not None:
-        missing = tuple(completeness.metadata.get("missing_fields") or ())
-    else:
-        missing = tuple(
-            row.field
-            for row in field_states
-            if row.state in {"not_present_in_captured_sources", "source_unavailable"}
-        )
+    missing = _missing_diagnostic_fields(findings, field_states)
+    artifact = model_fallback.artifact if model_fallback is not None else None
+    sentinel = sentinel_observations[0] if sentinel_observations else None
     return DiagnosticSummary(
         decision_path=tuple(row.stage for row in stage_outcomes),
         extractor_tier="blocked" if verdict == "blocked" else extractor_tier,
@@ -1087,25 +1100,30 @@ def _diagnostic_summary(
         evidence_count=len(evidence),
         review_required=review_required,
         model_invoked=model_fallback.invoked if model_fallback is not None else False,
-        model_artifact_id=(
-            model_fallback.artifact.artifact_id
-            if model_fallback is not None and model_fallback.artifact is not None
-            else None
-        ),
-        model_artifact_version=(
-            model_fallback.artifact.artifact_version
-            if model_fallback is not None and model_fallback.artifact is not None
-            else None
-        ),
+        model_artifact_id=artifact.artifact_id if artifact is not None else None,
+        model_artifact_version=artifact.artifact_version
+        if artifact is not None
+        else None,
         model_outcome=(
             model_fallback.outcome if model_fallback is not None else "not_considered"
         ),
-        sentinel_state=sentinel_observations[0].state
-        if sentinel_observations
-        else None,
-        sentinel_diagnostic=sentinel_observations[0].diagnostic
-        if sentinel_observations
-        else None,
+        sentinel_state=sentinel.state if sentinel is not None else None,
+        sentinel_diagnostic=sentinel.diagnostic if sentinel is not None else None,
+    )
+
+
+def _missing_diagnostic_fields(
+    findings: tuple[Finding, ...], field_states
+) -> tuple[str, ...]:
+    completeness = next(
+        (row for row in findings if row.rule_id == "RECORD_COMPLETENESS"), None
+    )
+    if completeness is not None:
+        return tuple(completeness.metadata.get("missing_fields") or ())
+    return tuple(
+        row.field
+        for row in field_states
+        if row.state in {"not_present_in_captured_sources", "source_unavailable"}
     )
 
 

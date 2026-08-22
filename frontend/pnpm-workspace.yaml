@@ -2,16 +2,14 @@ packages:
   - .
 
 overrides:
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.5
-  vitest: 4.1.9
+  "@vitest/browser": 4.1.11
+  "@vitest/browser-preview": 4.1.11
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.9
+  vitest: 4.1.11
 
 trustPolicy: no-downgrade
 trustPolicyIgnoreAfter: 525600 # ignore trust downgrades for packages older than 1 year (pre-provenance packages like semver@6)
 trustLockfile: false
-minimumReleaseAgeExclude:
-  - lucide-react@1.25.0
-  - react-hook-form@7.82.0
-
 # msw is no longer a direct dependency (6.7 dead-code sweep) but stays in the
 # dev graph as @vitest/mocker's optional peer, pinned by lockfile resolution.
 # Explicitly disallow its build scripts so installs neither run nor flag them.

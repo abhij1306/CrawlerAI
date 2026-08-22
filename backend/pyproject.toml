@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68,<83", "wheel>=0.42,<1"]
+requires = ["setuptools>=84,<85", "wheel>=0.42,<1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -14,7 +14,7 @@ dependencies = [
   "cachetools>=5.5.2,<8",
   "celery[redis]>=5.4.0,<6",
   "curl-cffi>=0.14.0,<1",
-  "cryptography>=48.0.1,<50",
+  "cryptography>=50.0.0,<51",
   "defusedxml>=0.7.1,<1",
   "fastapi>=0.116.0,<1",
   "starlette>=1.3.1,<2",
@@ -60,6 +60,11 @@ prod = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.ruff.lint]
+# Freeze Ruff's historical default surface. Ruff 0.16 expanded implicit rules;
+# broader lint-policy changes belong in an explicit quality-gate plan.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pylint.main]
 ignore-paths = [

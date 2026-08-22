@@ -184,31 +184,44 @@ def _product_selection_rows(
 def _primary_product_root_score(
     rows: list[Evidence], *, target_identity: str, target_title_tokens: set[str]
 ) -> int:
-    score = 0
-    for row in rows:
-        if row.entity_hint is not None and row.entity_hint.selected is True:
-            score += 100
-        if row.fact_type == "product.url":
-            identity = detail_url_resource_identity(str(row.value))
-            if target_identity and identity == target_identity:
-                score += 80
-            elif identity:
-                score -= 20
-        if row.fact_type == "product.title" and target_title_tokens:
-            title_tokens = set(semantic_identity_tokens(str(row.value)))
-            if title_tokens == target_title_tokens:
-                score += 40
-            elif target_title_tokens and target_title_tokens <= title_tokens:
-                score += 15
-            elif title_tokens & target_title_tokens:
-                score += 5
-        if row.fact_type in {"variant.gtin", "variant.sku"}:
-            score += 130
-        if row.collector_id == "url" and row.fact_type == "product.url":
-            score += 10
-        if row.subject_scope == "product":
-            score += 1
-    return score
+    return sum(
+        _product_root_row_score(
+            row,
+            target_identity=target_identity,
+            target_title_tokens=target_title_tokens,
+        )
+        for row in rows
+    )
+
+
+def _product_root_row_score(
+    row: Evidence, *, target_identity: str, target_title_tokens: set[str]
+) -> int:
+    score = (
+        100 if row.entity_hint is not None and row.entity_hint.selected is True else 0
+    )
+    if row.fact_type == "product.url":
+        identity = detail_url_resource_identity(str(row.value))
+        score += (
+            80
+            if target_identity and identity == target_identity
+            else -20
+            if identity
+            else 0
+        )
+    if row.fact_type == "product.title" and target_title_tokens:
+        title_tokens = set(semantic_identity_tokens(str(row.value)))
+        if title_tokens == target_title_tokens:
+            score += 40
+        elif target_title_tokens <= title_tokens:
+            score += 15
+        elif title_tokens & target_title_tokens:
+            score += 5
+    if row.fact_type in {"variant.gtin", "variant.sku"}:
+        score += 130
+    if row.collector_id == "url" and row.fact_type == "product.url":
+        score += 10
+    return score + int(row.subject_scope == "product")
 
 
 def _product_child_ids(children, product_id: str) -> tuple[str, ...]:
@@ -220,18 +233,10 @@ def _product_child_ids(children, product_id: str) -> tuple[str, ...]:
 
 
 def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
-    by_subject: dict[str, list[Evidence]] = defaultdict(list)
-    for ev in evidence:
-        if not ev.fact_type.startswith("product."):
-            continue
-        by_subject[ev.subject_id].append(ev)
+    by_subject = _product_rows_by_subject(evidence)
     groups: list[list[Evidence]] = []
     group_identities: list[set[tuple[str, str]]] = []
-    child_rows_by_parent_subject: dict[str, list[Evidence]] = defaultdict(list)
-    for ev in evidence:
-        if ev.fact_type == "variant.url" and ev.relation_type == "product_variant":
-            for subject_id in _parent_subject_aliases(ev):
-                child_rows_by_parent_subject[subject_id].append(ev)
+    child_rows_by_parent_subject = _child_variant_urls_by_parent(evidence)
     for subject, rows in sorted(by_subject.items()):
         identities = _product_identities(rows + child_rows_by_parent_subject[subject])
         matched = _matching_product_group_index(group_identities, identities)
@@ -244,34 +249,60 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
     _merge_url_only_groups(groups, group_identities)
     _merge_exact_title_groups(groups, group_identities)
     _merge_single_structured_url_shell(groups, group_identities)
-    products: list[ProductEntity] = []
-    for identities, rows in sorted(
-        zip(group_identities, groups), key=lambda item: tuple(sorted(item[0]))
-    ):
-        attributes: dict[str, list[str]] = {}
-        identity_rows = [
-            ev
-            for ev in rows
-            if ev.fact_type
-            in {"product.gtin", "product.mpn", "product.sku", "product.url"}
-        ]
-        for ev in rows:
-            attributes.setdefault(ev.fact_type, []).append(ev.evidence_id)
-        products.append(
-            ProductEntity(
-                entity_id=stable_id("product", sorted(identities)),
-                identity_evidence_ids=tuple(
-                    sorted(ev.evidence_id for ev in identity_rows or rows)
-                ),
-                attribute_evidence={
-                    name: tuple(sorted(set(ids))) for name, ids in attributes.items()
-                },
-                variant_ids=(),
-                offer_ids=(),
-                asset_ids=(),
-            )
+    return tuple(
+        _product_entity(identities, rows)
+        for identities, rows in sorted(
+            zip(group_identities, groups), key=lambda item: tuple(sorted(item[0]))
         )
-    return tuple(products)
+    )
+
+
+def _product_rows_by_subject(
+    evidence: tuple[Evidence, ...],
+) -> dict[str, list[Evidence]]:
+    by_subject: dict[str, list[Evidence]] = defaultdict(list)
+    for row in evidence:
+        if row.fact_type.startswith("product."):
+            by_subject[row.subject_id].append(row)
+    return by_subject
+
+
+def _child_variant_urls_by_parent(
+    evidence: tuple[Evidence, ...],
+) -> dict[str, list[Evidence]]:
+    child_rows: dict[str, list[Evidence]] = defaultdict(list)
+    for row in evidence:
+        if row.fact_type != "variant.url" or row.relation_type != "product_variant":
+            continue
+        for subject_id in _parent_subject_aliases(row):
+            child_rows[subject_id].append(row)
+    return child_rows
+
+
+def _product_entity(
+    identities: set[tuple[str, str]], rows: list[Evidence]
+) -> ProductEntity:
+    attributes: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        attributes[row.fact_type].append(row.evidence_id)
+    identity_rows = [
+        row
+        for row in rows
+        if row.fact_type
+        in {"product.gtin", "product.mpn", "product.sku", "product.url"}
+    ]
+    return ProductEntity(
+        entity_id=stable_id("product", sorted(identities)),
+        identity_evidence_ids=tuple(
+            sorted(row.evidence_id for row in identity_rows or rows)
+        ),
+        attribute_evidence={
+            name: tuple(sorted(set(ids))) for name, ids in attributes.items()
+        },
+        variant_ids=(),
+        offer_ids=(),
+        asset_ids=(),
+    )
 
 
 def _matching_product_group_index(
@@ -401,37 +432,56 @@ def _title_identity_tokens(rows: list[Evidence]) -> set[str]:
 
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
     identities: set[tuple[str, str]] = set()
+    has_product_url = any(
+        row.fact_type == "product.url" and str(row.value).strip() for row in rows
+    )
     for row in rows:
-        product_id = _normalized_identity_value(
-            row.entity_hint.product_id if row.entity_hint else None
-        )
-        if product_id:
-            identities.add(("product.id", product_id))
-        if row.fact_type in {"product.gtin", "product.mpn", "product.sku"}:
-            value = _normalized_identity_value(row.value)
-            if value:
-                identities.add((row.fact_type, value))
-        if row.collector_id == "jsonld":
-            node_id = _normalized_identity_value(row.metadata.get("jsonld_node_id"))
-            node_path = _normalized_identity_value(row.metadata.get("jsonld_node_path"))
-            if node_id:
-                identities.add(("jsonld.node_id", node_id))
-                if resource_identity := detail_url_resource_identity(node_id):
-                    identities.add(("product.url_resource", resource_identity))
-            elif node_path and not any(
-                row.fact_type == "product.url" and str(row.value).strip()
-                for row in rows
-            ):
-                identities.add(("jsonld.node_path", node_path))
-        if row.fact_type in {"product.url", "variant.url"}:
-            resource_identity = detail_url_resource_identity(str(row.value))
-            if resource_identity:
-                identities.add(("product.url_resource", resource_identity))
-        if row.fact_type == "product.url":
-            exact_url = _normalized_identity_value(row.value)
-            if exact_url:
-                identities.add(("product.url", exact_url))
+        identities.update(_row_product_identities(row, has_product_url=has_product_url))
     return identities
+
+
+def _row_product_identities(
+    row: Evidence, *, has_product_url: bool
+) -> set[tuple[str, str]]:
+    identities: set[tuple[str, str]] = set()
+    product_id = _normalized_identity_value(
+        row.entity_hint.product_id if row.entity_hint else None
+    )
+    if product_id:
+        identities.add(("product.id", product_id))
+    if row.fact_type in {"product.gtin", "product.mpn", "product.sku"}:
+        value = _normalized_identity_value(row.value)
+        if value:
+            identities.add((row.fact_type, value))
+    identities.update(_jsonld_product_identities(row, has_product_url=has_product_url))
+    if row.fact_type in {"product.url", "variant.url"}:
+        resource_identity = detail_url_resource_identity(str(row.value))
+        if resource_identity:
+            identities.add(("product.url_resource", resource_identity))
+    if row.fact_type == "product.url":
+        exact_url = _normalized_identity_value(row.value)
+        if exact_url:
+            identities.add(("product.url", exact_url))
+    return identities
+
+
+def _jsonld_product_identities(
+    row: Evidence, *, has_product_url: bool
+) -> set[tuple[str, str]]:
+    if row.collector_id != "jsonld":
+        return set()
+    node_id = _normalized_identity_value(row.metadata.get("jsonld_node_id"))
+    node_path = _normalized_identity_value(row.metadata.get("jsonld_node_path"))
+    if node_id:
+        identities = {("jsonld.node_id", node_id)}
+        if resource_identity := detail_url_resource_identity(node_id):
+            identities.add(("product.url_resource", resource_identity))
+        return identities
+    return (
+        {("jsonld.node_path", node_path)}
+        if node_path and not has_product_url
+        else set()
+    )
 
 
 def _normalized_identity_value(value: object) -> str:
@@ -454,22 +504,37 @@ def _product_identity_sets_compatible(
         right_values = {
             value for identity_kind, value in right if identity_kind == kind
         }
-        if left_values and right_values and left_values.isdisjoint(right_values):
-            if kind == "jsonld.node_path":
-                continue
-            strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
-            if kind in {"product.url", "product.url_resource"} and any(
-                identity in right for identity in left if identity[0] in strong_kinds
-            ):
-                continue
-            if kind == "product.url" and any(
-                identity in right
-                for identity in left
-                if identity[0] == "product.url_resource"
-            ):
-                continue
+        if not _identity_kind_compatible(
+            kind,
+            left,
+            right,
+            left_values=left_values,
+            right_values=right_values,
+        ):
             return False
     return True
+
+
+def _identity_kind_compatible(
+    kind: str,
+    left: set[tuple[str, str]],
+    right: set[tuple[str, str]],
+    *,
+    left_values: set[str],
+    right_values: set[str],
+) -> bool:
+    if not left_values or not right_values or not left_values.isdisjoint(right_values):
+        return True
+    if kind == "jsonld.node_path":
+        return True
+    strong_kinds = {"product.gtin", "product.id", "product.mpn", "product.sku"}
+    if kind in {"product.url", "product.url_resource"} and any(
+        identity in right for identity in left if identity[0] in strong_kinds
+    ):
+        return True
+    return kind == "product.url" and any(
+        identity in right for identity in left if identity[0] == "product.url_resource"
+    )
 
 
 def _product_by_subject(
@@ -570,38 +635,26 @@ def _variant_groups(
     evidence: tuple[Evidence, ...],
     product_by_subject: dict[str, str],
 ) -> list[tuple[str, set[str], list[Evidence], set[str]]]:
-    provisional: dict[str, list[Evidence]] = defaultdict(list)
+    provisional = _provisional_variant_rows(evidence)
     commercially_owned_subjects = {
         ev.parent_subject_id
         for ev in evidence
         if ev.fact_type.startswith("offer.") and ev.parent_subject_id
     }
-    for ev in evidence:
-        if ev.fact_type.startswith("variant."):
-            provisional[ev.subject_id].append(ev)
     groups: list[list[Evidence]] = []
     group_keys: list[set[str]] = []
     subjects: list[set[str]] = []
     product_ids: list[str] = []
     for subject_id, rows in provisional.items():
-        product_id = _owner_product_id(
+        group = _variant_group_input(
+            subject_id,
             rows,
             product_by_subject,
-            allowed_relations=None,
+            commercially_owned_subjects=commercially_owned_subjects,
         )
-        keys = _variant_identity_keys(rows)
-        has_sellable_identity = any(
-            row.fact_type in {"variant.sku", "variant.gtin", "variant.url"}
-            and str(row.value).strip()
-            for row in rows
-        )
-        has_commercial_evidence = subject_id in commercially_owned_subjects
-        if (
-            not product_id
-            or not keys
-            or not (has_sellable_identity or has_commercial_evidence)
-        ):
+        if group is None:
             continue
+        product_id, keys, source_subjects = group
         matched = next(
             (
                 index
@@ -613,34 +666,53 @@ def _variant_groups(
         if matched is None:
             groups.append(list(rows))
             group_keys.append(set(keys))
-            subjects.append(
-                {
-                    subject_id,
-                    *(
-                        _alias
-                        for row in rows
-                        for _alias in _source_subject_aliases(row)
-                    ),
-                }
-            )
+            subjects.append(source_subjects)
             product_ids.append(product_id)
         else:
             groups[matched].extend(rows)
             group_keys[matched].update(keys)
-            subjects[matched].update(
-                {
-                    subject_id,
-                    *(
-                        _alias
-                        for row in rows
-                        for _alias in _source_subject_aliases(row)
-                    ),
-                }
-            )
+            subjects[matched].update(source_subjects)
     return sorted(
         zip(product_ids, group_keys, groups, subjects),
         key=lambda item: (item[0], sorted(item[1])),
     )
+
+
+def _provisional_variant_rows(
+    evidence: tuple[Evidence, ...],
+) -> dict[str, list[Evidence]]:
+    provisional: dict[str, list[Evidence]] = defaultdict(list)
+    for row in evidence:
+        if row.fact_type.startswith("variant."):
+            provisional[row.subject_id].append(row)
+    return provisional
+
+
+def _variant_group_input(
+    subject_id: str,
+    rows: list[Evidence],
+    product_by_subject: dict[str, str],
+    *,
+    commercially_owned_subjects: set[str],
+) -> tuple[str, set[str], set[str]] | None:
+    product_id = _owner_product_id(rows, product_by_subject, allowed_relations=None)
+    keys = _variant_identity_keys(rows)
+    has_sellable_identity = any(
+        row.fact_type in {"variant.sku", "variant.gtin", "variant.url"}
+        and str(row.value).strip()
+        for row in rows
+    )
+    if (
+        not product_id
+        or not keys
+        or not (has_sellable_identity or subject_id in commercially_owned_subjects)
+    ):
+        return None
+    source_subjects = {
+        subject_id,
+        *(alias for row in rows for alias in _source_subject_aliases(row)),
+    }
+    return product_id, keys, source_subjects
 
 
 def _variant_entity(
@@ -681,43 +753,56 @@ def _variant_entity(
 
 
 def _variant_identity_keys(rows: list[Evidence]) -> set[str]:
-    keys: set[str] = set()
-    for prefix, fact_type in (
-        ("id", "variant.id"),
-        ("sku", "variant.sku"),
-        ("gtin", "variant.gtin"),
-        ("url", "variant.url"),
-    ):
-        keys.update(
-            f"{prefix}:{str(ev.value).strip()}"
-            for ev in rows
-            if ev.fact_type == fact_type and str(ev.value).strip()
-        )
-    for prefix, attr in (("id", "variant_id"), ("sku", "sku"), ("url", "url")):
-        keys.update(
-            f"{prefix}:{str(getattr(ev.entity_hint, attr) or '').strip()}"
-            for ev in rows
-            if ev.entity_hint and str(getattr(ev.entity_hint, attr) or "").strip()
-        )
+    keys = _variant_fact_identity_keys(rows) | _variant_hint_identity_keys(rows)
     options = {
         ev.fact_type.removeprefix("variant.option."): str(ev.value).strip()
         for ev in rows
         if ev.fact_type.startswith("variant.option.") and str(ev.value).strip()
     }
-    selected = any(ev.fact_type == "variant.selected" and bool(ev.value) for ev in rows)
-    if selected and options:
-        keys.add(
-            "options:" + "|".join(f"{key}={options[key]}" for key in sorted(options))
-        )
-    if len(options) >= 2:
-        keys.add(
-            "options:" + "|".join(f"{key}={options[key]}" for key in sorted(options))
-        )
-    if len(options) == 1 and _rows_from_structured_variant_object(rows):
+    if _variant_options_identify_row(rows, options):
         keys.add(
             "options:" + "|".join(f"{key}={options[key]}" for key in sorted(options))
         )
     return keys
+
+
+def _variant_fact_identity_keys(rows: list[Evidence]) -> set[str]:
+    return {
+        f"{prefix}:{str(row.value).strip()}"
+        for prefix, fact_type in (
+            ("id", "variant.id"),
+            ("sku", "variant.sku"),
+            ("gtin", "variant.gtin"),
+            ("url", "variant.url"),
+        )
+        for row in rows
+        if row.fact_type == fact_type and str(row.value).strip()
+    }
+
+
+def _variant_hint_identity_keys(rows: list[Evidence]) -> set[str]:
+    return {
+        f"{prefix}:{str(getattr(row.entity_hint, attr) or '').strip()}"
+        for prefix, attr in (("id", "variant_id"), ("sku", "sku"), ("url", "url"))
+        for row in rows
+        if row.entity_hint and str(getattr(row.entity_hint, attr) or "").strip()
+    }
+
+
+def _variant_options_identify_row(
+    rows: list[Evidence], options: dict[str, str]
+) -> bool:
+    selected = any(
+        row.fact_type == "variant.selected" and bool(row.value) for row in rows
+    )
+    return bool(
+        options
+        and (
+            selected
+            or len(options) >= 2
+            or (len(options) == 1 and _rows_from_structured_variant_object(rows))
+        )
+    )
 
 
 def _rows_from_structured_variant_object(rows: list[Evidence]) -> bool:
@@ -742,47 +827,67 @@ def _link_offers(
     product_by_subject: dict[str, str],
     variants: tuple[VariantEntity, ...],
 ) -> tuple[OfferEntity, ...]:
-    groups: dict[str, list[Evidence]] = defaultdict(list)
-    for ev in evidence:
-        if ev.fact_type.startswith("offer."):
-            groups[ev.group_id or f"ungrouped:{ev.evidence_id}"].append(ev)
+    groups = _offer_evidence_groups(evidence)
     offers: list[OfferEntity] = []
     for group_id, rows in sorted(groups.items()):
-        relations = {row.relation_type for row in rows if row.relation_type}
-        if len(relations) > 1:
-            continue
-        relation = next(iter(relations), None)
-        row_variant_ids = {_variant_for([row], variants) for row in rows}
-        if None in row_variant_ids and len(row_variant_ids) > 1:
-            continue
-        variant_id = (
-            _variant_for(rows, variants)
-            if relation in {None, "variant_offer"}
-            else None
+        offer = _offer_entity(
+            bundle,
+            group_id,
+            rows,
+            product_by_subject=product_by_subject,
+            variants=variants,
         )
-        product_id = _product_for_child(rows, product_by_subject, variants, variant_id)
-        if relation == "variant_offer" and variant_id is None:
-            continue
-        if relation == "product_offer" and variant_id is not None:
-            continue
-        if product_id is None:
-            continue
-        attrs: dict[str, list[str]] = defaultdict(list)
-        for ev in rows:
-            attrs[ev.fact_type].append(ev.evidence_id)
-        offers.append(
-            OfferEntity(
-                entity_id=stable_id("offer", product_id, variant_id, group_id),
-                product_entity_id=product_id,
-                variant_entity_id=variant_id,
-                group_id=group_id,
-                request_context_id=bundle.request_context.context_id,
-                fact_evidence={
-                    name: tuple(sorted(set(ids))) for name, ids in attrs.items()
-                },
-            )
-        )
+        if offer is not None:
+            offers.append(offer)
     return tuple(offers)
+
+
+def _offer_evidence_groups(
+    evidence: tuple[Evidence, ...],
+) -> dict[str, list[Evidence]]:
+    groups: dict[str, list[Evidence]] = defaultdict(list)
+    for row in evidence:
+        if row.fact_type.startswith("offer."):
+            groups[row.group_id or f"ungrouped:{row.evidence_id}"].append(row)
+    return groups
+
+
+def _offer_entity(
+    bundle: CaptureBundle,
+    group_id: str,
+    rows: list[Evidence],
+    *,
+    product_by_subject: dict[str, str],
+    variants: tuple[VariantEntity, ...],
+) -> OfferEntity | None:
+    relations = {row.relation_type for row in rows if row.relation_type}
+    if len(relations) > 1:
+        return None
+    relation = next(iter(relations), None)
+    row_variant_ids = {_variant_for([row], variants) for row in rows}
+    if None in row_variant_ids and len(row_variant_ids) > 1:
+        return None
+    variant_id = (
+        _variant_for(rows, variants) if relation in {None, "variant_offer"} else None
+    )
+    product_id = _product_for_child(rows, product_by_subject, variants, variant_id)
+    if relation == "variant_offer" and variant_id is None:
+        return None
+    if relation == "product_offer" and variant_id is not None:
+        return None
+    if product_id is None:
+        return None
+    attrs: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        attrs[row.fact_type].append(row.evidence_id)
+    return OfferEntity(
+        entity_id=stable_id("offer", product_id, variant_id, group_id),
+        product_entity_id=product_id,
+        variant_entity_id=variant_id,
+        group_id=group_id,
+        request_context_id=bundle.request_context.context_id,
+        fact_evidence={name: tuple(sorted(set(ids))) for name, ids in attrs.items()},
+    )
 
 
 def _variant_for(

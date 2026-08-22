@@ -209,26 +209,8 @@ def field_evidence_states(
         "image_url" if field == "image" else field for field in request.requested_fields
     }
     fields = tuple(dict.fromkeys((*public_to_fact, *sorted(requested))))
-    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
-        "source_capabilities"
-    )
-    affected = set(
-        source_capabilities.get("affected_field_families", ())
-        if isinstance(source_capabilities, dict)
-        else ()
-    )
-    detail_outcome = (
-        str(source_capabilities.get("detail_outcome") or "").strip()
-        if isinstance(source_capabilities, dict)
-        else ""
-    ) or normalized_detail_outcome(
-        http_status=request.capture.http_status,
-        blocked=bool(request.capture.blocked),
-        acquisition_outcome=request.capture.acquisition_outcome,
-    )
-    terminal_unavailable = request.surface.value == "ecommerce_detail" and (
-        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
-    )
+    affected = set(_unavailable_field_families(request))
+    terminal_unavailable = _terminal_source_unavailable(request)
     by_fact = {
         fact: tuple(row for row in evidence if row.fact_type == fact)
         for fact in set(public_to_fact.values())
@@ -237,86 +219,118 @@ def field_evidence_states(
         fact: tuple(row for row in decision_rows if row.fact_type == fact)
         for fact in set(public_to_fact.values())
     }
-    states: list[FieldEvidenceState] = []
-    for field in fields:
-        fact = public_to_fact.get(field)
-        rows = by_fact.get(fact, ()) if fact else ()
-        candidate_decisions = decisions_by_fact.get(fact, ()) if fact else ()
-        target_entity_id = (
-            primary_offer_entity_id
-            if fact
-            in {
-                field_mappings.OFFER_PRICE_FACT_TYPE,
-                field_mappings.OFFER_CURRENCY_FACT_TYPE,
-                field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
-            }
-            else primary_product_entity_id
+    return tuple(
+        _legacy_field_evidence_state(
+            field,
+            record=record,
+            public_to_fact=public_to_fact,
+            by_fact=by_fact,
+            decisions_by_fact=decisions_by_fact,
+            affected=affected,
+            terminal_unavailable=terminal_unavailable,
+            primary_product_entity_id=primary_product_entity_id,
+            primary_offer_entity_id=primary_offer_entity_id,
         )
-        relevant_decisions = tuple(
-            row
-            for row in candidate_decisions
-            if target_entity_id is None or row.entity_id == target_entity_id
-        )
-        present = bool(record and record.get(field) not in (None, "", [], {}, ()))
-        resolved_decision = any(
-            row.status == "resolved" and row.accepted_evidence_ids
+        for field in fields
+    )
+
+
+def _legacy_field_evidence_state(
+    field: str,
+    *,
+    record: PublicRecord | None,
+    public_to_fact: dict[str, str],
+    by_fact: dict[str, tuple[Evidence, ...]],
+    decisions_by_fact: dict[str, tuple[Decision, ...]],
+    affected: set[str],
+    terminal_unavailable: bool,
+    primary_product_entity_id: str | None,
+    primary_offer_entity_id: str | None,
+) -> FieldEvidenceState:
+    fact = public_to_fact.get(field)
+    rows = by_fact.get(fact, ()) if fact else ()
+    target_entity_id = (
+        primary_offer_entity_id
+        if fact
+        in {
+            field_mappings.OFFER_PRICE_FACT_TYPE,
+            field_mappings.OFFER_CURRENCY_FACT_TYPE,
+            field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+        }
+        else primary_product_entity_id
+    )
+    relevant_decisions = tuple(
+        row
+        for row in (decisions_by_fact.get(fact, ()) if fact else ())
+        if target_entity_id is None or row.entity_id == target_entity_id
+    )
+    present = bool(record and record.get(field) not in (None, "", [], {}, ()))
+    state, reasons = _legacy_field_state_name(
+        field,
+        present=present,
+        rows=rows,
+        relevant_decisions=relevant_decisions,
+        affected=affected,
+        terminal_unavailable=terminal_unavailable,
+    )
+    return field_state(
+        field=field,
+        state=state,
+        evidence_ids=(row.evidence_id for row in rows),
+        reason_codes=reasons,
+    )
+
+
+def _legacy_field_state_name(
+    field: str,
+    *,
+    present: bool,
+    rows: tuple[Evidence, ...],
+    relevant_decisions: tuple[Decision, ...],
+    affected: set[str],
+    terminal_unavailable: bool,
+) -> tuple[FieldStateName, tuple[str, ...]]:
+    if present:
+        return "captured_and_resolved", ()
+    if (
+        terminal_unavailable
+        or field in affected
+        or (field == "image_url" and "images" in affected)
+    ):
+        return "source_unavailable", ("product_data_source_unavailable",)
+    if any(row.status == "conflicted" for row in relevant_decisions):
+        reasons = {
+            item.reason
             for row in relevant_decisions
+            if row.status == "conflicted"
+            for item in row.rejected
+        }
+        return "captured_conflicting", tuple(sorted(reasons))
+    if any(
+        row.status == "resolved" and row.accepted_evidence_ids
+        for row in relevant_decisions
+    ):
+        return "captured_but_rejected", ("withheld_after_resolution",)
+    if rows:
+        return "captured_but_rejected", _legacy_rejection_reasons(
+            rows, relevant_decisions
         )
-        state: FieldStateName
-        if present:
-            state = "captured_and_resolved"
-            reasons: tuple[str, ...] = ()
-        elif (
-            terminal_unavailable
-            or field in affected
-            or (field == "image_url" and "images" in affected)
-        ):
-            state = "source_unavailable"
-            reasons = ("product_data_source_unavailable",)
-        elif any(row.status == "conflicted" for row in relevant_decisions):
-            state = "captured_conflicting"
-            reasons = tuple(
-                sorted(
-                    {
-                        item.reason
-                        for row in relevant_decisions
-                        if row.status == "conflicted"
-                        for item in row.rejected
-                    }
-                )
-            )
-        elif resolved_decision:
-            # Resolution accepted a value for this field, but publication policy
-            # suppressed it. Authoritative state comes from the decision graph,
-            # so this is a rejection with a reason, never a silent miss.
-            state = "captured_but_rejected"
-            reasons = ("withheld_after_resolution",)
-        elif rows:
-            state = "captured_but_rejected"
-            row_ids = {row.evidence_id for row in rows}
-            # Carry the resolver's rejection reasons (RejectedEvidence.reason)
-            # for these captured rows so diagnose.json explains *why* a captured
-            # sku/availability/price was not published — not just its flags.
-            rejection_reasons = {
-                item.reason
-                for decision in relevant_decisions
-                for item in decision.rejected
-                if item.evidence_id in row_ids and item.reason
-            }
-            flag_reasons = {flag for row in rows for flag in row.flags}
-            reasons = tuple(sorted(rejection_reasons | flag_reasons))
-        else:
-            state = "not_present_in_captured_sources"
-            reasons = ()
-        states.append(
-            field_state(
-                field=field,
-                state=state,
-                evidence_ids=(row.evidence_id for row in rows),
-                reason_codes=reasons,
-            )
-        )
-    return tuple(states)
+    return "not_present_in_captured_sources", ()
+
+
+def _legacy_rejection_reasons(
+    rows: tuple[Evidence, ...], decisions: tuple[Decision, ...]
+) -> tuple[str, ...]:
+    row_ids = {row.evidence_id for row in rows}
+    rejection_reasons = {
+        item.reason
+        for decision in decisions
+        for item in decision.rejected
+        if item.evidence_id in row_ids and item.reason
+    }
+    return tuple(
+        sorted(rejection_reasons | {flag for row in rows for flag in row.flags})
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,24 +490,39 @@ def _unpublished_field_state(
         for row in candidates
         if row.evidence_id in ctx.disposition_by_id
     )
-    state: FieldStateName
+    return (
+        _unpublished_state_name(
+            field,
+            ctx=ctx,
+            candidates=candidates,
+            candidate_dispositions=candidate_dispositions,
+        ),
+        evidence_ids,
+    )
+
+
+def _unpublished_state_name(
+    field: str,
+    *,
+    ctx: _FieldStateContext,
+    candidates: tuple[Evidence, ...],
+    candidate_dispositions: tuple[EvidenceDisposition, ...],
+) -> FieldStateName:
     if field in ctx.unavailable_families or (
         field == "image_url" and "images" in ctx.unavailable_families
     ):
-        state = "source_unavailable"
-    elif any(row.evidence_id in ctx.join_failed_evidence_ids for row in candidates):
-        state = "join_failed"
-    elif any(row.status == "unowned" for row in candidate_dispositions):
-        state = "captured_unowned"
-    elif any(row.status == "conflicted" for row in candidate_dispositions):
-        state = "captured_conflicting"
-    elif candidates:
-        state = "captured_but_rejected"
-    elif field in ctx.requested or field in ctx.contract_required:
-        state = "not_present_in_captured_sources"
-    else:
-        state = "not_requested"
-    return state, evidence_ids
+        return "source_unavailable"
+    if any(row.evidence_id in ctx.join_failed_evidence_ids for row in candidates):
+        return "join_failed"
+    if any(row.status == "unowned" for row in candidate_dispositions):
+        return "captured_unowned"
+    if any(row.status == "conflicted" for row in candidate_dispositions):
+        return "captured_conflicting"
+    if candidates:
+        return "captured_but_rejected"
+    if field in ctx.requested or field in ctx.contract_required:
+        return "not_present_in_captured_sources"
+    return "not_requested"
 
 
 def _published_disposition_state(entries: list) -> FieldStateName | None:
@@ -515,27 +544,19 @@ def _record_field_state(
     variant_entity_ids: tuple[str, ...],
     evidence: tuple[Evidence, ...],
 ) -> FieldEvidenceState:
-    state: FieldStateName
     evidence_ids = tuple(
         dict.fromkeys(
             evidence_id for entry in entries for evidence_id in entry.evidence_ids
         )
     )
-    disposition_state = _published_disposition_state(entries)
-    if ctx.terminal_unavailable and (
-        field in ctx.requested
-        or field in ctx.contract_required
-        or field in ctx.surface_fields
-    ):
-        state = "source_unavailable"
-    elif field == "variants" and variant_entity_ids:
-        state = "captured_published"
-    elif disposition_state is not None:
-        state = disposition_state
-    else:
-        state, evidence_ids = _unpublished_field_state(
-            field, ctx=ctx, evidence=evidence
-        )
+    state, evidence_ids = _record_state_and_evidence_ids(
+        field,
+        ctx=ctx,
+        entries=entries,
+        variant_entity_ids=variant_entity_ids,
+        evidence=evidence,
+        evidence_ids=evidence_ids,
+    )
     disposition_reason_codes = tuple(
         row.reason_code
         for evidence_id in evidence_ids
@@ -555,6 +576,27 @@ def _record_field_state(
             *state_reason_codes,
         ),
     )
+
+
+def _record_state_and_evidence_ids(
+    field: str,
+    *,
+    ctx: _FieldStateContext,
+    entries: list,
+    variant_entity_ids: tuple[str, ...],
+    evidence: tuple[Evidence, ...],
+    evidence_ids: tuple[str, ...],
+) -> tuple[FieldStateName, tuple[str, ...]]:
+    if ctx.terminal_unavailable and field in (
+        ctx.requested | ctx.contract_required | ctx.surface_fields
+    ):
+        return "source_unavailable", evidence_ids
+    if field == "variants" and variant_entity_ids:
+        return "captured_published", evidence_ids
+    disposition_state = _published_disposition_state(entries)
+    if disposition_state is not None:
+        return disposition_state, evidence_ids
+    return _unpublished_field_state(field, ctx=ctx, evidence=evidence)
 
 
 def _variant_field_states(
@@ -659,39 +701,50 @@ def retry_request(
             reason="http_shell",
             required_artifacts=("rendered_html",),
         )
-    ecommerce_detail = request.surface.value == "ecommerce_detail"
-    ecommerce_listing = request.surface.value == "ecommerce_listing"
-    if (
-        ecommerce_listing
-        and verdict == "empty"
-        and not records
-        and not request.capture.browser_attempted
-    ):
+    if _empty_listing_needs_browser(verdict, records, request):
         return RetryRequest(
             required=True,
             reason="empty_extraction",
             required_artifacts=("rendered_html",),
         )
-    explicit_variants = "variants" in request.requested_fields
-    if (
-        ecommerce_detail
-        and not request.capture.browser_attempted
-        and (
-            (
-                _explicit_variant_dom_cues(evidence)
-                and _variant_controls_incomplete(records, evidence)
-            )
-            or (explicit_variants and _variants_missing_or_incomplete(records))
-        )
-    ):
+    if _detail_variants_need_browser(records, request, evidence):
         return RetryRequest(
             required=True,
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
-    if ecommerce_detail:
+    if request.surface.value == "ecommerce_detail":
         return _commerce_dynamic_content_retry(verdict, records, request)
     return None
+
+
+def _empty_listing_needs_browser(
+    verdict: str,
+    records: tuple[PublicRecord, ...],
+    request: ExtractionRequest,
+) -> bool:
+    return bool(
+        request.surface.value == "ecommerce_listing"
+        and verdict == "empty"
+        and not records
+        and not request.capture.browser_attempted
+    )
+
+
+def _detail_variants_need_browser(
+    records: tuple[PublicRecord, ...],
+    request: ExtractionRequest,
+    evidence: tuple[Evidence, ...],
+) -> bool:
+    if request.surface.value != "ecommerce_detail" or request.capture.browser_attempted:
+        return False
+    if _explicit_variant_dom_cues(evidence) and _variant_controls_incomplete(
+        records, evidence
+    ):
+        return True
+    return "variants" in request.requested_fields and _variants_missing_or_incomplete(
+        records
+    )
 
 
 def _commerce_dynamic_content_retry(
