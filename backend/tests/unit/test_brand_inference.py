@@ -14,10 +14,23 @@ def test_direct_product_brand_supports_every_configured_detail_marker(
 ) -> None:
     assert (
         infer_brand_from_product_url(
-            url=f"https://shop.test/nike-air{marker}style-1",
+            url=f"https://shop.test/nike-air/{marker.strip('/')}/style-1",
             title="Nike Air Style 1",
         )
         == "Nike"
+    )
+
+
+@pytest.mark.parametrize("segment", ("productivity", "productpagefoo"))
+def test_direct_product_brand_requires_detail_marker_segment_boundary(
+    segment: str,
+) -> None:
+    assert (
+        infer_brand_from_product_url(
+            url=f"https://shop.test/nike-air/{segment}/style-1",
+            title="Nike Air Style 1",
+        )
+        is None
     )
 
 
