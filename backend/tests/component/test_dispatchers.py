@@ -29,8 +29,9 @@ from app.workers.base import (
     load_run_with_normalized_status,
     set_task_id,
 )
-from app.workers.celery_dispatcher import CeleryRunDispatcher
-from app.workers.local_dispatcher import LocalRunDispatcher
+
+CeleryRunDispatcher = celery_dispatcher_module.CeleryRunDispatcher
+LocalRunDispatcher = local_dispatcher_module.LocalRunDispatcher
 
 pytestmark = pytest.mark.component
 

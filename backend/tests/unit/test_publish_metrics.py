@@ -47,24 +47,27 @@ def test_build_url_metrics_promotes_traversal_diagnostics() -> None:
 
     metrics = build_url_metrics(acquisition_result, requested_fields=["title"])
 
-    assert metrics["traversal_attempted"] is True
-    assert metrics["traversal_succeeded"] is True
-    assert metrics["traversal_fell_back"] is False
-    assert metrics["traversal_fallback_used"] is True
-    assert metrics["traversal_fallback_recovered"] is True
-    assert metrics["traversal_fallback_record_count"] == 58
-    assert metrics["traversal_mode_used"] == "paginate"
-    assert metrics["pages_collected"] == 2
-    assert metrics["pages_scrolled"] == 1
-    assert metrics["network_payload_count"] == 1
-    assert metrics["platform_family"] == "shopify"
-    assert metrics["browser_fetch_method"] == "browser:real_chrome"
-    assert metrics["browser_engine"] == "real_chrome"
-    assert metrics["browser_profile"] == "real_chrome_native"
-    assert metrics["browser_launch_mode"] == "headful"
-    assert metrics["browser_headless"] is False
-    assert metrics["browser_native_context"] is True
-    assert metrics["browser_stealth_enabled"] is False
+    expected = {
+        "traversal_attempted": True,
+        "traversal_succeeded": True,
+        "traversal_fell_back": False,
+        "traversal_fallback_used": True,
+        "traversal_fallback_recovered": True,
+        "traversal_fallback_record_count": 58,
+        "traversal_mode_used": "paginate",
+        "pages_collected": 2,
+        "pages_scrolled": 1,
+        "network_payload_count": 1,
+        "platform_family": "shopify",
+        "browser_fetch_method": "browser:real_chrome",
+        "browser_engine": "real_chrome",
+        "browser_profile": "real_chrome_native",
+        "browser_launch_mode": "headful",
+        "browser_headless": False,
+        "browser_native_context": True,
+        "browser_stealth_enabled": False,
+    }
+    assert {key: metrics[key] for key in expected} == expected
 
 
 @pytest.mark.unit

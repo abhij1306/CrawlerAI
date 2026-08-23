@@ -51,6 +51,75 @@ def _parse_module(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
+def _imported_modules(tree: ast.AST) -> set[str]:
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return modules
+
+
+def _assigned_names(node: ast.Assign | ast.AnnAssign) -> set[str]:
+    names: set[str] = set()
+    targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+    for target in targets:
+        for assigned in ast.walk(target):
+            if isinstance(assigned, ast.Name):
+                names.add(assigned.id)
+            elif isinstance(assigned, ast.Attribute):
+                names.add(assigned.attr)
+            elif isinstance(assigned, ast.Constant) and isinstance(assigned.value, str):
+                names.add(assigned.value)
+    if node.value is not None:
+        for assigned in ast.walk(node.value):
+            if isinstance(assigned, ast.Dict):
+                names.update(
+                    key.value
+                    for key in assigned.keys
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                )
+    return names
+
+
+def _publish_function_names(trees: tuple[ast.Module, ...]) -> set[str]:
+    names = {"_publish"}
+    for tree in trees:
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                node.name in names or node.name.startswith("serialize_")
+            ):
+                names.update(
+                    call.func.id
+                    for call in ast.walk(node)
+                    if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                )
+    return names
+
+
+def _forbidden_publish_parameters(
+    trees: tuple[ast.Module, ...], publish_functions: set[str]
+) -> list[tuple[str, str]]:
+    offenders: list[tuple[str, str]] = []
+    forbidden_arguments = {"evidence", "entity_set", "entity_graph"}
+    forbidden_types = {"Evidence", "EntitySet"}
+    for tree in trees:
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name not in publish_functions:
+                continue
+            for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+                annotation = ast.unparse(arg.annotation) if arg.annotation else ""
+                if arg.arg.lower() in forbidden_arguments or any(
+                    name in annotation for name in forbidden_types
+                ):
+                    offenders.append((node.name, f"{arg.arg}:{annotation}"))
+    return offenders
+
+
 def _absolute_import_from(path: Path, node: ast.ImportFrom) -> str:
     if node.level == 0:
         return node.module or ""
@@ -363,15 +432,7 @@ def test_extraction_does_not_import_extraction_memory_storage() -> None:
     )
     offenders: list[tuple[Path, str]] = []
     for path in _python_files(EXTRACTION_ROOT):
-        tree = _parse_module(path)
-        modules: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules.add(node.module)
-                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
-        for module in modules:
+        for module in _imported_modules(_parse_module(path)):
             if any(
                 module == prefix or module.startswith(prefix + ".")
                 for prefix in forbidden_prefixes
@@ -404,15 +465,7 @@ def test_phase4_evaluation_modules_are_offline_only() -> None:
     for path in _python_files(APP_ROOT):
         if evaluation_root in path.parents:
             continue
-        tree = _parse_module(path)
-        modules: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules.add(node.module)
-                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
-        for module in modules:
+        for module in _imported_modules(_parse_module(path)):
             if any(
                 module == prefix or module.startswith(prefix + ".")
                 for prefix in forbidden_prefixes
@@ -461,34 +514,15 @@ def test_universal_model_config_does_not_live_in_extraction_service_code() -> No
     }
     offenders: list[tuple[Path, int, str]] = []
     for path in service_paths:
-        tree = _parse_module(path)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-                continue
-            assigned_names: set[str] = set()
-            targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
-            for target in targets:
-                for assigned in ast.walk(target):
-                    if isinstance(assigned, ast.Name):
-                        assigned_names.add(assigned.id)
-                    elif isinstance(assigned, ast.Attribute):
-                        assigned_names.add(assigned.attr)
-                    elif isinstance(assigned, ast.Constant) and isinstance(
-                        assigned.value, str
-                    ):
-                        assigned_names.add(assigned.value)
-            if node.value is not None:
-                for assigned in ast.walk(node.value):
-                    if isinstance(assigned, ast.Dict):
-                        assigned_names.update(
-                            key.value
-                            for key in assigned.keys
-                            if isinstance(key, ast.Constant)
-                            and isinstance(key.value, str)
-                        )
+        assignments = (
+            node
+            for node in ast.walk(_parse_module(path))
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+        )
+        for node in assignments:
             offenders.extend(
                 (path, node.lineno, name)
-                for name in sorted(assigned_names & forbidden_assignment_names)
+                for name in sorted(_assigned_names(node) & forbidden_assignment_names)
             )
     assert offenders == []
 
@@ -554,31 +588,9 @@ def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None
         "adapters": _parse_module(EXTRACTION_ROOT / "adapters.py"),
         "publication": _parse_module(EXTRACTION_ROOT / "publication.py"),
     }
-    publish_functions = {"_publish"}
-    for tree in modules.values():
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if node.name in publish_functions or node.name.startswith("serialize_"):
-                publish_functions.update(
-                    call.func.id
-                    for call in ast.walk(node)
-                    if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
-                )
-    offenders: list[tuple[str, str]] = []
-    for tree in modules.values():
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if node.name not in publish_functions:
-                continue
-            for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
-                annotation = ast.unparse(arg.annotation) if arg.annotation else ""
-                parameter = f"{arg.arg}:{annotation}"
-                if arg.arg.lower() in {"evidence", "entity_set", "entity_graph"} or any(
-                    name in annotation for name in {"Evidence", "EntitySet"}
-                ):
-                    offenders.append((node.name, parameter))
+    trees = tuple(modules.values())
+    publish_functions = _publish_function_names(trees)
+    offenders = _forbidden_publish_parameters(trees, publish_functions)
     assert not offenders
 
 

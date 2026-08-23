@@ -49,6 +49,16 @@ DomainFieldFeedback = ExtractionOperatorLabel
 ReviewPromotion = ExtractionOperatorLabel
 
 
+async def _model_row_counts(
+    session: AsyncSession, models: tuple[type, ...]
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for model in models:
+        rows = (await session.execute(select(model))).scalars().all()
+        counts[model.__name__] = len(rows)
+    return counts
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_dashboard_reset_compatibility_routes(
@@ -260,18 +270,24 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
         **await _reset_crawl_runtime_state(),
     }
 
-    assert result["crawl_runs_deleted"] == 1
-    assert result["crawl_url_results_deleted"] == 1
-    assert result["crawl_records_deleted"] == 1
-    assert result["crawl_logs_deleted"] == 1
-    assert result["review_promotions_deleted"] == 1
-    assert result["llm_cost_logs_deleted"] == 1
-    assert list(artifacts_dir.iterdir()) == []
-    assert list(cookies_dir.iterdir()) == []
-
-    for model in (CrawlRecord, CrawlUrlResult, CrawlLog, LLMCostLog):
-        remaining = (await db_session.execute(select(model))).scalars().all()
-        assert remaining == []
+    expected_deletions = {
+        "crawl_runs_deleted": 1,
+        "crawl_url_results_deleted": 1,
+        "crawl_records_deleted": 1,
+        "crawl_logs_deleted": 1,
+        "review_promotions_deleted": 1,
+        "llm_cost_logs_deleted": 1,
+    }
+    assert {key: result[key] for key in expected_deletions} == expected_deletions
+    assert (list(artifacts_dir.iterdir()), list(cookies_dir.iterdir())) == ([], [])
+    assert await _model_row_counts(
+        db_session, (CrawlRecord, CrawlUrlResult, CrawlLog, LLMCostLog)
+    ) == {
+        "CrawlRecord": 0,
+        "CrawlUrlResult": 0,
+        "CrawlLog": 0,
+        "LLMCostLog": 0,
+    }
     promotions = (
         (
             await db_session.execute(
@@ -284,10 +300,15 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
         .all()
     )
     assert promotions == []
-    assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
-    assert (await db_session.execute(select(DomainRunProfile))).scalars().all() != []
-    assert (await db_session.execute(select(DomainCookieMemory))).scalars().all() != []
-    assert (await db_session.execute(select(DomainFieldFeedback))).scalars().all() != []
+    assert await _model_row_counts(
+        db_session,
+        (DomainMemory, DomainRunProfile, DomainCookieMemory, DomainFieldFeedback),
+    ) == {
+        "ExtractionTemplate": 1,
+        "DomainRunProfile": 1,
+        "DomainCookieMemory": 1,
+        "ExtractionOperatorLabel": 1,
+    }
 
     db_session.expunge_all()
 
@@ -306,20 +327,33 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
 
     memory_reset = await reset_domain_memory(db_session)
 
-    assert memory_reset["domain_memory_deleted"] == 1
-    assert memory_reset["domain_run_profiles_deleted"] == 1
-    assert memory_reset["domain_cookie_memory_deleted"] == 1
-    assert memory_reset["domain_field_feedback_deleted"] == 1
-    assert memory_reset["host_protection_memory_deleted"] == 1
-    assert memory_reset["cookies_removed"] == 1
-    for model in (
-        DomainMemory,
-        DomainRunProfile,
-        DomainCookieMemory,
-        DomainFieldFeedback,
-        HostProtectionMemory,
-    ):
-        assert (await db_session.execute(select(model))).scalars().all() == []
+    expected_memory_reset = {
+        "domain_memory_deleted": 1,
+        "domain_run_profiles_deleted": 1,
+        "domain_cookie_memory_deleted": 1,
+        "domain_field_feedback_deleted": 1,
+        "host_protection_memory_deleted": 1,
+        "cookies_removed": 1,
+    }
+    assert {key: memory_reset[key] for key in expected_memory_reset} == (
+        expected_memory_reset
+    )
+    assert await _model_row_counts(
+        db_session,
+        (
+            DomainMemory,
+            DomainRunProfile,
+            DomainCookieMemory,
+            DomainFieldFeedback,
+            HostProtectionMemory,
+        ),
+    ) == {
+        "ExtractionTemplate": 0,
+        "DomainRunProfile": 0,
+        "DomainCookieMemory": 0,
+        "ExtractionOperatorLabel": 0,
+        "HostProtectionMemory": 0,
+    }
     assert list(cookies_dir.iterdir()) == []
 
 

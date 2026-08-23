@@ -817,7 +817,7 @@ def _select_label_text(select: HtmlNode, doc: HtmlNode) -> str:
         return parent.text()
     select_id = str(select.attribute("id") or "").strip()
     if select_id:
-        label = next(iter(doc.safe_css(f'label[for="{select_id}"]')), None)
+        label = next(iter(doc.safe_css(f"label[for={json.dumps(select_id)}]")), None)
         if label is not None:
             return label.text()
     previous = select.previous_element()

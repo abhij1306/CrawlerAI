@@ -290,9 +290,29 @@ above replaced them.
 | `core/extraction_memory/templates.py` | Pure route normalization and structural fingerprinting |
 | `core/extraction_memory/contract_runtime.py` | Pure frozen-release preference lookup; Resolve owns eligibility and ranking |
 | `api/knowledge.py` | Compatibility route surface backed only by extraction memory |
-| `alembic/versions/20260702_0004_extraction_memory.py` | Migrates five prior stores, then removes generic graph tables |
+| `alembic/versions/20260703_0001_greenfield_schema.py` | Sole clean-start schema baseline, including extraction memory |
 
 Extraction memory is the single owner for learned structural state. Run releases and URL manifests are relational rows, not payloads embedded in run settings. See `docs/INVARIANTS.md` §17.
+
+---
+
+## Backend test support owners
+
+| File | Purpose |
+|---|---|
+| `tests/component/crawl_fetch_runtime_test_support.py` | Shared fetch-context builders and the per-test fetch-runtime reset fixture for acquisition-policy tests |
+| `tests/component/browser_context_test_support.py` | Browser readiness, proxy, context, runtime-capacity, and cookie-memory test vocabulary |
+| `tests/component/crawl_service_test_support.py` | Crawl creation, acquisition-contract, profile, lifecycle, and proxy-validation test vocabulary |
+| `tests/component/sitemap_resolver_test_support.py` | Sitemap fake clients, target validation, and XML response setup |
+| `tests/regression/batch_runtime_test_support.py` | Batch concurrency, processing, policy, sitemap, and failure-recovery test vocabulary |
+| `tests/unit/extraction_pipeline_test_support.py` | Canonical extraction fixture/request/evidence vocabulary shared by behavior suites |
+| `tests/unit/extraction_contract_test_support.py`, `extraction_runtime_test_support.py` | Narrow contract/cascade and runtime/sentinel additions over the canonical extraction vocabulary |
+| `tests/unit/evaluation_phase4_test_support.py`, `crawl_run_95_test_support.py` | Phase-4 evaluation builders and run-95 regression fixture vocabulary |
+| `tests/component/learn_once_persistence_test_support.py`, `contract_runtime_test_support.py` | Extraction-memory persistence, release, matching, and claim test vocabulary |
+| `tests/component/product_intelligence_test_support.py`, `public_api_test_support.py` | Product-intelligence discovery/scoring and public-API auth/resource test vocabulary |
+| `tests/regression/harness_runtime_test_support.py`, `data_enrichment_test_support.py` | Acceptance-harness and enrichment job/deterministic/LLM test vocabulary |
+
+These modules contain setup vocabulary only. Assertions stay in behavior-named `test_*.py` owners.
 
 ---
 
@@ -302,9 +322,9 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 
 | Basename | Canonical owners |
 |---|---|
-| `contracts.py` ×5 | `acquisition/contracts.py` (browser fetch attempt specs) · `ai_visibility/contracts.py` (provider-neutral answer-engine adapter contracts) · `crawl/contracts.py` (run-facing DTOs: `UrlResult`, `RunSummary`) · `extraction/contracts.py` (extraction execution context/bundle contracts) · `persistence/contracts.py` (artifact store reference) |
+| `contracts.py` ×4 | `acquisition/contracts.py` (browser fetch attempt specs) · `crawl/contracts.py` (run-facing DTOs: `UrlResult`, `RunSummary`) · `extraction/contracts.py` (extraction execution context/bundle contracts) · `persistence/contracts.py` (artifact store reference) |
 | `extraction_memory.py` ×3 | `core/config/extraction_memory.py` (store vocabulary/versions) · `models/extraction_memory.py` (ORM tables) · `persistence/extraction_memory.py` (upsert/compile/release/observe/purge) |
-| `service.py` ×4 | `crawl/service.py` (run lifecycle control: dispatch/pause/resume/kill/cancel) · `enrichment/service.py` (data-enrichment job lifecycle) · `intelligence/service.py` (product-intelligence job lifecycle) · `ai_visibility/service.py` (AI-visibility project CRUD and run planning) |
+| `service.py` ×3 | `crawl/service.py` (run lifecycle control: dispatch/pause/resume/kill/cancel) · `enrichment/service.py` (data-enrichment job lifecycle) · `intelligence/service.py` (product-intelligence job lifecycle) |
 | `types.py` ×3 | `acquisition/fetch/types.py` (fetch runtime context and attempt state) · `connectors/llm/types.py` (LLM connector task results) · `crawl/pipeline/types.py` (URL-processing result and record-writer protocol) |
 
 ---
@@ -325,6 +345,7 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 | `components/crawl/crawl-config-screen.tsx` | Crawl Studio form and dispatch |
 | `components/crawl/use-crawl-field-actions.ts` | Generate/test/save selector rows; saved generated selectors also create Knowledge Graph contracts |
 | `components/crawl/crawl-run-screen.tsx` | Run workspace and Domain Recipe workflow |
+| `components/crawl/crawl-run-screen.test-support.tsx` | Run-workspace test mocks, builders, rendering, and per-suite lifecycle setup |
 | `components/crawl/form-fields.tsx` | Crawl form field controls and manual selector editor |
 | `components/crawl/log-terminal.tsx` | Crawl run log terminal grouping and rendering |
 | `components/crawl/records-table.tsx` | Crawl records table rendering |

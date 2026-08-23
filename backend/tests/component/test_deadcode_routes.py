@@ -41,7 +41,6 @@ async def deadcode_client(db_session, test_user):
         ("DELETE", "/api/api-keys/1"),
         # 3.14: test-only routes removed with no frontend/external caller.
         ("GET", "/api/selectors/summary"),
-        ("GET", "/api/ai-visibility/runs/1/executions"),
         ("POST", "/api/dashboard/reset-crawl-data"),
         ("POST", "/api/dashboard/reset-product-intelligence"),
         ("GET", "/api/crawls/1/export/tables.csv"),

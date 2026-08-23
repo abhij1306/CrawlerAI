@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     encryption_key: str = Field(
         validation_alias=AliasChoices("ENCRYPTION_KEY", "encryption_key"),
     )
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/crawl_db"
+    database_url: str = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/crawlerai"
+    )
     redis_url: str = "redis://localhost:6379/0"
     redis_state_enabled: bool = False
     celery_dispatch_enabled: bool = True

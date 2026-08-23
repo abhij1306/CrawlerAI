@@ -183,6 +183,200 @@ def _write_report(
     return path
 
 
+def _acquisition_request(site: dict, run_id: int, url: str, surface: str):
+    return AcquisitionRequest(
+        run_id=run_id,
+        url=url,
+        plan=AcquisitionIntent(
+            surface=surface,
+            traversal_mode=str(site.get("traversal_mode") or "").strip() or None,
+            max_pages=5,
+            max_scrolls=5,
+        ),
+        requested_fields=list(site.get("expect_fields") or []),
+    )
+
+
+def _initial_acquisition_metrics(acquisition, url: str) -> dict[str, object]:
+    blocked = (
+        is_blocked_html(acquisition.html or "", acquisition.status_code)
+        if acquisition.content_type.startswith("text/html")
+        else False
+    )
+    return {
+        "method": acquisition.method,
+        "status_code": acquisition.status_code,
+        "content_type": acquisition.content_type,
+        "platform_family": detect_platform_family(url, acquisition.html or ""),
+        "html_len": len(acquisition.html or ""),
+        "network_payloads": len(acquisition.network_payloads or []),
+        "blocked": blocked,
+        "adapter_name": None,
+        "adapter_records": 0,
+        "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
+    }
+
+
+def _retry_acquisition_metrics(acquisition) -> dict[str, object]:
+    return {
+        "method": acquisition.method,
+        "status_code": acquisition.status_code,
+        "content_type": acquisition.content_type,
+        "html_len": len(acquisition.html or ""),
+        "network_payloads": len(acquisition.network_payloads or []),
+        "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
+    }
+
+
+def _extract_site(site: dict, surface: str, url: str, acquisition):
+    return extract(
+        request_from_acquisition_result(
+            parse_surface(surface),
+            acquisition,
+            requested_url=url,
+            max_records=int(site.get("max_records") or 50),
+            requested_fields=tuple(
+                str(field) for field in site.get("expect_fields") or []
+            ),
+        )
+    )
+
+
+async def _retry_extraction_if_required(
+    site: dict,
+    surface: str,
+    url: str,
+    acquisition_request: AcquisitionRequest,
+    acquisition,
+    extraction_result,
+    timeout_seconds: int,
+):
+    retry_request = extraction_result.retry_request
+    should_retry = (
+        retry_request is not None
+        and retry_request.required
+        and acquisition.method != "browser"
+    )
+    if not should_retry:
+        return acquisition, extraction_result
+    acquisition = await asyncio.wait_for(
+        acquire(
+            acquisition_request.with_profile_updates(
+                fetch_mode="browser_only",
+                prefer_browser=True,
+                retry_reason=retry_request.reason,
+            )
+        ),
+        timeout=timeout_seconds,
+    )
+    return acquisition, _extract_site(site, surface, url, acquisition)
+
+
+def _listing_issue(
+    *,
+    verdict: str,
+    expected_verdicts: set[str],
+    record_count: int,
+    min_records: int,
+    failing_fields: list[str],
+) -> str | None:
+    issue = None
+    if expected_verdicts and verdict not in expected_verdicts:
+        issue = f"Expected verdict in {sorted(expected_verdicts)}, got {verdict}"
+    if record_count < min_records:
+        return f"Expected >= {min_records} records, got {record_count}"
+    if failing_fields:
+        return f"Coverage below threshold for: {sorted(failing_fields)}"
+    return issue
+
+
+def _listing_coverage(
+    site: dict, records: list[dict]
+) -> tuple[list[str], dict[str, float], list[str]]:
+    required_fields = [str(field) for field in site.get("required_record_fields") or []]
+    coverage = _listing_field_coverage(
+        records,
+        required_fields,
+        sample_limit=int(site.get("sample_limit") or 10),
+    )
+    thresholds = {
+        str(field): float(threshold)
+        for field, threshold in (
+            site.get("required_record_field_coverage") or {}
+        ).items()
+    }
+    failing_fields = [
+        field
+        for field, threshold in thresholds.items()
+        if coverage.get(field, 0.0) < threshold
+    ]
+    return required_fields, coverage, failing_fields
+
+
+def _listing_sample(records: list[dict]) -> tuple[list[str], str]:
+    if not records:
+        return [], ""
+    fields = [key for key in records[0] if not str(key).startswith("_")]
+    return fields, str(records[0].get("title") or "")[:120]
+
+
+def _update_listing_result(
+    result: dict[str, object], site: dict, records: list[dict], verdict: str
+) -> None:
+    required_fields, coverage, failing_fields = _listing_coverage(site, records)
+    sample_fields, sample_title = _listing_sample(records)
+    min_records = int(site.get("expect_min_records") or 0)
+    issue = _listing_issue(
+        verdict=verdict,
+        expected_verdicts=_expected_verdicts(site),
+        record_count=len(records),
+        min_records=min_records,
+        failing_fields=failing_fields,
+    )
+    result.update(
+        {
+            "records": len(records),
+            "required_record_fields": required_fields,
+            "required_record_field_coverage": coverage,
+            "sample_fields": sample_fields,
+            "sample_title": sample_title,
+            "ok": len(records) >= min_records and not failing_fields and issue is None,
+        }
+    )
+    if issue:
+        result["issue"] = issue
+
+
+def _update_detail_result(
+    result: dict[str, object], site: dict, records: list[dict], verdict: str
+) -> None:
+    expected_fields = _expected_fields(site, verdict)
+    first_record = records[0] if records else {}
+    found_fields = [
+        field
+        for field in expected_fields
+        if field in first_record and _value_present(first_record.get(field))
+    ]
+    missing_fields = [field for field in expected_fields if field not in found_fields]
+    verdict_mismatch = bool(
+        _expected_verdicts(site) and verdict not in _expected_verdicts(site)
+    )
+    result.update(
+        {
+            "candidate_fields": sorted(first_record),
+            "found_fields": found_fields,
+            "missing_fields": missing_fields,
+            "ok": not missing_fields and not verdict_mismatch,
+        }
+    )
+    if verdict_mismatch:
+        result["issue"] = (
+            f"Expected verdict in {sorted(_expected_verdicts(site))}, got {verdict}"
+        )
+    if missing_fields:
+        result["issue"] = f"Missing expected fields: {missing_fields}"
+
+
 async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
     name = str(site.get("name") or "").strip()
     url = str(site.get("url") or "").strip()
@@ -200,94 +394,31 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
     }
 
     try:
-        acquisition_request = AcquisitionRequest(
-            run_id=run_id,
-            url=url,
-            plan=AcquisitionIntent(
-                surface=surface,
-                traversal_mode=str(site.get("traversal_mode") or "").strip() or None,
-                max_pages=5,
-                max_scrolls=5,
-            ),
-            requested_fields=list(site.get("expect_fields") or []),
-        )
+        acquisition_request = _acquisition_request(site, run_id, url, surface)
         acquisition = await asyncio.wait_for(
             acquire(acquisition_request),
             timeout=timeout_seconds,
         )
-        blocked = (
-            is_blocked_html(acquisition.html or "", acquisition.status_code)
-            if acquisition.content_type.startswith("text/html")
-            else False
-        )
-        result.update(
-            {
-                "method": acquisition.method,
-                "status_code": acquisition.status_code,
-                "content_type": acquisition.content_type,
-                "platform_family": detect_platform_family(url, acquisition.html or ""),
-                "html_len": len(acquisition.html or ""),
-                "network_payloads": len(acquisition.network_payloads or []),
-                "blocked": blocked,
-                "adapter_name": None,
-                "adapter_records": 0,
-                "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
-            }
-        )
+        result.update(_initial_acquisition_metrics(acquisition, url))
 
         if acquisition.content_type.startswith("application/json"):
             result["ok"] = True
             result["note"] = "JSON response; extraction corpus checks skipped"
             return result
 
-        extraction_result = extract(
-            request_from_acquisition_result(
-                parse_surface(surface),
-                acquisition,
-                requested_url=url,
-                max_records=int(site.get("max_records") or 50),
-                requested_fields=tuple(
-                    str(field) for field in site.get("expect_fields") or []
-                ),
-            )
+        extraction_result = _extract_site(site, surface, url, acquisition)
+        initial_acquisition = acquisition
+        acquisition, extraction_result = await _retry_extraction_if_required(
+            site,
+            surface,
+            url,
+            acquisition_request,
+            acquisition,
+            extraction_result,
+            timeout_seconds,
         )
-        retry_request = extraction_result.retry_request
-        if (
-            retry_request is not None
-            and retry_request.required
-            and acquisition.method != "browser"
-        ):
-            acquisition = await asyncio.wait_for(
-                acquire(
-                    acquisition_request.with_profile_updates(
-                        fetch_mode="browser_only",
-                        prefer_browser=True,
-                        retry_reason=retry_request.reason,
-                    )
-                ),
-                timeout=timeout_seconds,
-            )
-            result.update(
-                {
-                    "method": acquisition.method,
-                    "status_code": acquisition.status_code,
-                    "content_type": acquisition.content_type,
-                    "html_len": len(acquisition.html or ""),
-                    "network_payloads": len(acquisition.network_payloads or []),
-                    "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
-                }
-            )
-            extraction_result = extract(
-                request_from_acquisition_result(
-                    parse_surface(surface),
-                    acquisition,
-                    requested_url=url,
-                    max_records=int(site.get("max_records") or 50),
-                    requested_fields=tuple(
-                        str(field) for field in site.get("expect_fields") or []
-                    ),
-                )
-            )
+        if acquisition is not initial_acquisition:
+            result.update(_retry_acquisition_metrics(acquisition))
         records = [
             record.model_dump(mode="json", exclude_none=True)
             for record in extraction_result.records
@@ -295,86 +426,12 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
         verdict = str(
             getattr(extraction_result.verdict, "value", extraction_result.verdict)
         )
-        expected_verdicts = _expected_verdicts(site)
         result["verdict"] = verdict
 
         if "listing" in surface:
-            required_fields = [
-                str(field) for field in site.get("required_record_fields") or []
-            ]
-            coverage = _listing_field_coverage(
-                records,
-                required_fields,
-                sample_limit=int(site.get("sample_limit") or 10),
-            )
-            thresholds = {
-                str(field): float(threshold)
-                for field, threshold in (
-                    site.get("required_record_field_coverage") or {}
-                ).items()
-            }
-            failing_fields = [
-                field
-                for field, threshold in thresholds.items()
-                if coverage.get(field, 0.0) < threshold
-            ]
-            result.update(
-                {
-                    "records": len(records),
-                    "required_record_fields": required_fields,
-                    "required_record_field_coverage": coverage,
-                    "sample_fields": (
-                        [key for key in records[0] if not str(key).startswith("_")]
-                        if records
-                        else []
-                    ),
-                    "sample_title": (
-                        str(records[0].get("title") or "")[:120] if records else ""
-                    ),
-                }
-            )
-            min_records = int(site.get("expect_min_records") or 0)
-            result["ok"] = len(records) >= min_records and not failing_fields
-            if expected_verdicts and verdict not in expected_verdicts:
-                result["ok"] = False
-                result["issue"] = (
-                    f"Expected verdict in {sorted(expected_verdicts)}, got {verdict}"
-                )
-            if len(records) < min_records:
-                result["issue"] = (
-                    f"Expected >= {min_records} records, got {len(records)}"
-                )
-            elif failing_fields:
-                result["issue"] = (
-                    f"Coverage below threshold for: {sorted(failing_fields)}"
-                )
+            _update_listing_result(result, site, records, verdict)
         else:
-            expected_fields = _expected_fields(site, verdict)
-            found_fields = [
-                field
-                for field in expected_fields
-                if records
-                and field in records[0]
-                and _value_present(records[0].get(field))
-            ]
-            missing_fields = [
-                field for field in expected_fields if field not in found_fields
-            ]
-            result.update(
-                {
-                    "candidate_fields": sorted(records[0].keys()) if records else [],
-                    "found_fields": found_fields,
-                    "missing_fields": missing_fields,
-                }
-            )
-            result["ok"] = not missing_fields
-            if expected_verdicts and verdict not in expected_verdicts:
-                result["ok"] = False
-                result["issue"] = (
-                    f"Expected verdict in {sorted(expected_verdicts)}, got {verdict}"
-                )
-            if missing_fields:
-                result["issue"] = f"Missing expected fields: {missing_fields}"
+            _update_detail_result(result, site, records, verdict)
     except Exception as exc:  # pylint: disable=broad-exception-caught
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"

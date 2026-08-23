@@ -226,6 +226,14 @@ Multi-thousand-line suites obscure ownership and make focused verification impos
 
 **Fix:** Split by public behavior owner. Shared fixture vocabulary may live in a non-test support module; preserve collected behavior count during the split.
 
+### AP-30: Honest maintainability gates
+
+Backend test and tool complexity is measured with `radon.complexity.cc_visit`; a callable fails only when its exact complexity is greater than 15. Backend test/tool and frontend test LOC use nonblank physical lines with no formatting normalization. Aggregate LOC is a no-regression ratchet: changing it requires an explicit ownership rationale, not silent headroom. Large cohesive files are review signals, not automatic failures.
+
+The only maintainability-LOC structural exclusion is `backend/alembic/versions/**`, because applied migrations are immutable schema history. Migration correctness remains covered by Alembic head, upgrade, and drift checks. Application code, tests, harnesses, root scripts, and browser probes receive no exclusion.
+
+Frontend test callables use ESLint's `complexity` rule at 15. Backend CI runs Ruff over the full backend tree, the architecture gates through pytest, and frontend CI runs VitePlus lint/types plus all architecture policies before build.
+
 ### AP-25: Parallel artifact layouts
 
 Writing URL diagnostics through more than one publisher creates conflicting forensic records and stale readers.
@@ -248,7 +256,7 @@ Host or retailer names inside generic extraction turn shared fixes into site-spe
 
 These are mandatory controls, not suggestions.
 
-1. `backend/tests/services/test_structure.py` is the architecture ratchet.
+1. `backend/tests/unit/test_final_architecture_ownership.py` is the backend architecture ratchet.
    It owns LOC budgets, config-placement checks, and the allowlist for private cross-module imports.
 
 2. Any new violation pattern found in an audit must become one of:

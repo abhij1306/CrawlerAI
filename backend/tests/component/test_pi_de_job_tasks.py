@@ -40,19 +40,18 @@ from app.core.config.product_intelligence import (
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_NO_RECORDS,
     product_intelligence_settings,
 )
-from app.intelligence.service import (
-    _poll_candidates_and_score,
-    dispatch_product_intelligence_job,
-    recover_orphaned_product_intelligence_jobs,
-    run_product_intelligence_job,
-)
 from app.intelligence.service_support import _update_job_summary
-from app.enrichment.service import (
-    create_data_enrichment_job,
-    recover_orphaned_data_enrichment_jobs,
-    run_data_enrichment_job,
-    run_job,
+
+_poll_candidates_and_score = pi_service._poll_candidates_and_score
+dispatch_product_intelligence_job = pi_service.dispatch_product_intelligence_job
+recover_orphaned_product_intelligence_jobs = (
+    pi_service.recover_orphaned_product_intelligence_jobs
 )
+run_product_intelligence_job = pi_service.run_product_intelligence_job
+create_data_enrichment_job = de_service.create_data_enrichment_job
+recover_orphaned_data_enrichment_jobs = de_service.recover_orphaned_data_enrichment_jobs
+run_data_enrichment_job = de_service.run_data_enrichment_job
+run_job = de_service.run_job
 
 STALE_AGE = timedelta(
     seconds=product_intelligence_settings.job_orphaned_after_seconds + 300
@@ -688,15 +687,15 @@ async def test_enrichment_run_job_batch_loads_products_and_records(
         url="https://example.com/products/batch",
         surface="ecommerce_detail",
     )
-    records = []
-    for index in range(3):
-        record = CrawlRecord(
+    records = [
+        CrawlRecord(
             run_id=run.id,
             source_url=f"https://example.com/products/batch-{index}",
             data={"title": f"Dress {index}", "price": "$49.99", "currency": "USD"},
         )
-        db_session.add(record)
-        records.append(record)
+        for index in range(3)
+    ]
+    db_session.add_all(records)
     await db_session.commit()
     for record in records:
         await db_session.refresh(record)
@@ -731,15 +730,15 @@ async def test_enrichment_run_job_batch_loads_products_and_records(
     record_selects = [s for s in statements if "crawl_records" in s]
     # No per-product session.get; one refs query + one IN batch for products,
     # one IN batch for records, regardless of product count.
-    assert get_calls == 0
-    assert len(product_selects) == 2
-    assert len(record_selects) == 1
+    assert (get_calls, len(product_selects), len(record_selects)) == (0, 2, 1)
 
     # Per-product result semantics are unchanged.
     await db_session.refresh(job)
-    assert job.status == "enriched"
-    assert job.summary["enriched_count"] == 3
-    assert job.summary["failed_count"] == 0
+    assert (
+        job.status,
+        job.summary["enriched_count"],
+        job.summary["failed_count"],
+    ) == ("enriched", 3, 0)
     products = list(
         (
             await db_session.scalars(
@@ -747,11 +746,11 @@ async def test_enrichment_run_job_batch_loads_products_and_records(
             )
         ).all()
     )
-    assert len(products) == 3
-    for product in products:
-        assert product.status == "enriched"
-        assert product.diagnostics["deterministic"] is True
+    assert [
+        (product.status, product.diagnostics["deterministic"]) for product in products
+    ] == [("enriched", True)] * 3
     for record in records:
         await db_session.refresh(record)
-        assert record.enrichment_status == "enriched"
-        assert record.enriched_at is not None
+    assert [
+        (record.enrichment_status, record.enriched_at is not None) for record in records
+    ] == [("enriched", True)] * 3

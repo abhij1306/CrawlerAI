@@ -9,7 +9,14 @@ from radon.complexity import cc_visit
 
 pytestmark = pytest.mark.unit
 
-APP_ROOT = Path(__file__).resolve().parents[2] / "app"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = BACKEND_ROOT / "app"
+IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
+# Exact post-decomposition inventory. Tool total includes the explicit
+# per-field console predicate that preserves the acceptance runner's output.
+TEST_LOC_BUDGET = 55_204
+TOOL_LOC_BUDGET = 3_723
+TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
 # cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,
 # browser_pool, cookie_store, browser_attempt_runner, intelligence/discovery,
@@ -153,6 +160,23 @@ def _physical_line_count(path: Path) -> int:
     )
 
 
+def _test_python_files() -> list[Path]:
+    return sorted((BACKEND_ROOT / "tests").rglob("*.py"))
+
+
+def _tool_python_files() -> list[Path]:
+    return sorted(
+        [
+            *BACKEND_ROOT.glob("*.py"),
+            *(BACKEND_ROOT / "browser_surface_probe").rglob("*.py"),
+        ]
+    )
+
+
+def _maintainability_loc_excluded(path: Path) -> bool:
+    return path == IMMUTABLE_MIGRATION_ROOT or IMMUTABLE_MIGRATION_ROOT in path.parents
+
+
 def _parse_module(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
@@ -281,9 +305,6 @@ PACKAGE_LOC_BUDGETS = {
 # smoke-script typing symbol (3.14).
 # Stream B commit 6 (same day): -40 net for the triplicated/copy-pasted helper
 # hoists to single owners (3.9 worker/browser helpers, 3.12 seven dupes).
-# Stream B commit 7 (same day): -1 net for the shared ai_visibility
-# _provider_http._execute_post skeleton (3.10; ~120 adapter LOC deduped
-# against the new neutral module, which is not in a budgeted package).
 # Stream B commit 8 (same day): +12 for the shared job-lifecycle schema bases
 # (3.11; the new schemas/job_lifecycle module's docstring + ORM-divergence
 # note outweigh the deduped PI/DE field re-declarations).
@@ -294,15 +315,13 @@ PACKAGE_LOC_BUDGETS = {
 # (PublicRecord/URLMetrics TypedDicts + seam adoption, 4.13).
 # Stream B commit 14 (same day): +378 for the >150-line function
 # decompositions (4.15) — raised to measured.
-# Simplify pass (same day): -1 for consolidating the ai_visibility adapter
-# imports onto the neutral _provider_http owner (anthropic/openrouter dropped
-# their gemini re-export hop) — ratcheted down to measured; no budgeted
-# package moved.
 # Mypy fix pass (same day): +53 for the typed redis eval wrappers, the
 # Sequence-typed BaseJobCreate.source_records, and the metrics bearer
 # non-ASCII guard — raised to measured.
-# Extraction runtime simplification reconciliation (2026-08-22).
-TOTAL_APP_LOC_BUDGET = 88_837
+# Extraction runtime simplification reconciliation (2026-08-22), followed by
+# complete feature removal, one-time Logfire system-metrics instrumentation,
+# and the formatter-required canonical database URL wrap (2026-08-23).
+TOTAL_APP_LOC_BUDGET = 85_280
 
 
 def test_production_package_loc_budgets() -> None:
@@ -318,6 +337,33 @@ def test_production_package_loc_budgets() -> None:
             if package_root in path.parents
         )
         assert package_total <= budget, (package, package_total, budget)
+
+
+def test_test_and_tool_loc_does_not_regress() -> None:
+    totals = {
+        "tests": sum(_physical_line_count(path) for path in _test_python_files()),
+        "tools": sum(_physical_line_count(path) for path in _tool_python_files()),
+    }
+    assert totals["tests"] <= TEST_LOC_BUDGET, totals
+    assert totals["tools"] <= TOOL_LOC_BUDGET, totals
+
+
+def test_test_and_tool_callables_stay_within_complexity_limit() -> None:
+    violations: list[tuple[str, str, int]] = []
+    for path in [*_test_python_files(), *_tool_python_files()]:
+        for block in cc_visit(path.read_text(encoding="utf-8")):
+            if block.complexity > TEST_TOOL_COMPLEXITY_LIMIT:
+                relative_path = path.relative_to(BACKEND_ROOT).as_posix()
+                violations.append((relative_path, block.name, block.complexity))
+    assert violations == []
+
+
+def test_maintainability_loc_excludes_only_immutable_migrations() -> None:
+    migration = IMMUTABLE_MIGRATION_ROOT / "20260703_0001_greenfield_schema.py"
+    assert _maintainability_loc_excluded(migration)
+    assert not _maintainability_loc_excluded(BACKEND_ROOT / "tests" / "conftest.py")
+    assert not _maintainability_loc_excluded(BACKEND_ROOT / "run_extraction_smoke.py")
+    assert not _maintainability_loc_excluded(APP_ROOT / "main.py")
 
 
 def test_no_new_oversized_modules() -> None:

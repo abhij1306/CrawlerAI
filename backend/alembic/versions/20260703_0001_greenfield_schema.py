@@ -3,9 +3,9 @@
 Revision ID: 20260703_0001
 Revises:
 
-This is a squashed baseline. The old development-only migration chain was
-intentionally removed after resetting local data. Existing databases stamped on
-old revisions must use the staged reset path, not an in-place upgrade:
+This is the single squashed baseline. The development-only migration chain was
+intentionally replaced after resetting local data. Existing databases stamped on
+removed revisions must use the staged reset path, not an in-place upgrade:
 
 1. Back up anything important.
 2. Drop and recreate the target schema/database.

@@ -78,28 +78,35 @@ async def _run_one(site: dict[str, object], mode: str) -> dict[str, object]:
 
 
 def _build_summary(results: list[dict[str, object]]) -> dict[str, object]:
-    failure_counts = Counter(
-        str(row.get("failure_mode") or "unknown") for row in results
-    )
-    bucket_counts = Counter(str(row.get("bucket") or "unbucketed") for row in results)
-    quality_verdict_counts = Counter(
-        str(row.get("quality_verdict") or "unknown") for row in results
-    )
-    observed_failure_counts = Counter(
-        str(row.get("observed_failure_mode") or "unknown") for row in results
-    )
     return {
-        "ok": sum(1 for row in results if row.get("ok")),
-        "failed": sum(1 for row in results if not row.get("ok")),
-        "tracked_issues": sum(1 for row in results if row.get("tracked_issue")),
+        "ok": _truthy_count(results, "ok"),
+        "failed": len(results) - _truthy_count(results, "ok"),
+        "tracked_issues": _truthy_count(results, "tracked_issue"),
         "total": len(results),
-        "mode": str(results[0].get("mode") or "") if results else "",
-        "timeout_owner": str(results[0].get("timeout_owner") or "") if results else "",
-        "failure_modes": dict(sorted(failure_counts.items())),
-        "quality_verdicts": dict(sorted(quality_verdict_counts.items())),
-        "observed_failure_modes": dict(sorted(observed_failure_counts.items())),
-        "buckets": dict(sorted(bucket_counts.items())),
+        "mode": _first_text(results, "mode"),
+        "timeout_owner": _first_text(results, "timeout_owner"),
+        "failure_modes": _value_counts(results, "failure_mode", "unknown"),
+        "quality_verdicts": _value_counts(results, "quality_verdict", "unknown"),
+        "observed_failure_modes": _value_counts(
+            results, "observed_failure_mode", "unknown"
+        ),
+        "buckets": _value_counts(results, "bucket", "unbucketed"),
     }
+
+
+def _truthy_count(rows: list[dict[str, object]], key: str) -> int:
+    return sum(map(bool, (row.get(key) for row in rows)))
+
+
+def _first_text(rows: list[dict[str, object]], key: str) -> str:
+    return str(rows[0].get(key) or "") if rows else ""
+
+
+def _value_counts(
+    rows: list[dict[str, object]], key: str, default: str
+) -> dict[str, int]:
+    counts = Counter(str(row.get(key) or default) for row in rows)
+    return dict(sorted(counts.items()))
 
 
 def _write_report(
@@ -131,10 +138,21 @@ def _expectation_met(site: dict[str, object], result: dict[str, object]) -> bool
     if expected:
         return _expected_contract_met(site, result, expected=expected)
     if site.get("quality_expectations"):
-        bucket = str(site.get("bucket") or "").strip().lower()
-        if bucket == "known_blocked":
-            return str(result.get("quality_verdict") or "").strip().lower() == "blocked"
-        return str(result.get("quality_verdict") or "").strip().lower() == "good"
+        return _quality_expectation_met(site, result)
+    return _failure_expectation_met(site, result)
+
+
+def _quality_expectation_met(
+    site: dict[str, object], result: dict[str, object]
+) -> bool:
+    bucket = str(site.get("bucket") or "").strip().lower()
+    expected_verdict = "blocked" if bucket == "known_blocked" else "good"
+    return str(result.get("quality_verdict") or "").strip().lower() == expected_verdict
+
+
+def _failure_expectation_met(
+    site: dict[str, object], result: dict[str, object]
+) -> bool:
     failure_mode = str(result.get("failure_mode") or "").strip().lower()
     bucket = str(site.get("bucket") or "").strip().lower()
     expected_failure_modes = {
@@ -144,8 +162,6 @@ def _expectation_met(site: dict[str, object], result: dict[str, object]) -> bool
     }
     if expected_failure_modes:
         return failure_mode in expected_failure_modes
-    if bucket == "must_pass":
-        return failure_mode == "success"
     if bucket == "known_blocked":
         return failure_mode == "blocked"
     return failure_mode == "success"
@@ -161,12 +177,8 @@ def _expected_contract_met(
     if record_count < _safe_int(expected.get("min_record_count")):
         return False
     sample_record = _object_dict(result.get("sample_record_data"))
-    for field_name in _object_list(expected.get("fields_must_be_present")):
-        if _nested_value(sample_record, str(field_name)) is _MISSING:
-            return False
-    for field_name in _object_list(expected.get("fields_must_not_be_null")):
-        if _nested_value(sample_record, str(field_name)) in (None, "", [], {}):
-            return False
+    if not _required_fields_met(sample_record, expected):
+        return False
     min_variant_count = _safe_int(expected.get("min_variant_count"))
     if min_variant_count > 0:
         variant_count = _safe_int(
@@ -174,24 +186,41 @@ def _expected_contract_met(
         )
         if variant_count < min_variant_count:
             return False
-    if bool(expected.get("price_must_be_numeric")):
-        listing_contract = _object_dict(result.get("listing_contract"))
-        surface = (
-            str((site.get("surface") or result.get("surface") or "")).strip().lower()
-        )
-        if surface.endswith("_listing"):
-            if _safe_int(listing_contract.get("price_numeric_count")) <= 0:
-                return False
-        else:
-            price_value = _nested_value(sample_record, "price")
-            if not _looks_numeric_price(price_value):
-                return False
+    if bool(expected.get("price_must_be_numeric")) and not _numeric_price_met(
+        site, result, sample_record
+    ):
+        return False
     if bool(expected.get("detail_urls_must_be_present")):
         if not bool(
             _object_dict(result.get("listing_contract")).get("detail_urls_present")
         ):
             return False
     return True
+
+
+def _required_fields_met(
+    sample_record: dict[str, object], expected: dict[str, object]
+) -> bool:
+    present = _object_list(expected.get("fields_must_be_present"))
+    non_null = _object_list(expected.get("fields_must_not_be_null"))
+    if any(_nested_value(sample_record, str(name)) is _MISSING for name in present):
+        return False
+    return not any(
+        _nested_value(sample_record, str(name)) in (None, "", [], {})
+        for name in non_null
+    )
+
+
+def _numeric_price_met(
+    site: dict[str, object],
+    result: dict[str, object],
+    sample_record: dict[str, object],
+) -> bool:
+    surface = str(site.get("surface") or result.get("surface") or "").strip().lower()
+    if surface.endswith("_listing"):
+        listing_contract = _object_dict(result.get("listing_contract"))
+        return _safe_int(listing_contract.get("price_numeric_count")) > 0
+    return _looks_numeric_price(_nested_value(sample_record, "price"))
 
 
 def _nested_value(payload: dict[str, object], dotted_key: str) -> object:
@@ -220,6 +249,100 @@ def _console_safe(value: object) -> str:
     text = str(value or "")
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
+def _selected_sites(
+    args: argparse.Namespace, source_path: Path
+) -> list[dict[str, object]]:
+    explicit_urls = _clean_cli_values(args.url)
+    explicit_surfaces = _clean_cli_values(args.surface)
+    site_set_name = str(args.site_set).strip()
+    if explicit_urls:
+        sites = [
+            _as_object_row(site)
+            for site in build_explicit_sites(
+                explicit_urls, explicit_surfaces=explicit_surfaces
+            )
+        ]
+    elif site_set_name:
+        sites = load_site_set(Path(args.site_set_path), site_set_name=site_set_name)
+    else:
+        sites = [
+            _as_object_row(site)
+            for site in parse_test_sites_markdown(
+                source_path, start_line=args.start_line
+            )
+        ]
+    return _apply_site_options(sites, args)
+
+
+def _clean_cli_values(values: list[object]) -> list[str]:
+    return [text for value in values if (text := str(value or "").strip())]
+
+
+def _apply_site_options(
+    sites: list[dict[str, object]], args: argparse.Namespace
+) -> list[dict[str, object]]:
+    selected = (
+        [{**site, "prefer_artifact": True} for site in sites]
+        if args.prefer_artifacts
+        else sites
+    )
+    return selected if args.limit is None else selected[: args.limit]
+
+
+def _run_lead(args: argparse.Namespace, site_count: int) -> str:
+    if args.url:
+        return f"Running {site_count} explicit TEST_SITES URLs"
+    if str(args.site_set or "").strip():
+        return f"Running {site_count} curated site-set entries from {args.site_set}"
+    return f"Running {site_count} TEST_SITES entries from line {args.start_line}"
+
+
+def _print_result(row: dict[str, object]) -> None:
+    print(f"  Status: {status_for_result(row)}")
+    print(
+        f"  Mode: {row.get('mode')}  Surface: {row.get('surface')}  Platform: {row.get('platform_family')}  Bucket: {row.get('bucket')}"
+    )
+    print(f"  Verdict: {row.get('verdict')}  Failure mode: {row.get('failure_mode')}")
+    print(
+        f"  Quality: {row.get('quality_verdict')}  Observed: {row.get('observed_failure_mode')}  Source: {row.get('run_source')}"
+    )
+    for key, label in (
+        ("records", "Records"),
+        ("sample_title", "Sample"),
+        ("sample_url", "Sample URL"),
+        ("sample_utility_noise_hits", "Audit utility hits"),
+        ("error", "Error"),
+    ):
+        value = row.get(key)
+        if key == "records":
+            should_print = value is not None
+        else:
+            should_print = bool(value)
+        if should_print:
+            display = _console_safe(value) if key.startswith("sample_") else value
+            print(f"  {label}: {display}")
+    _print_challenge_summary(row)
+    failed_checks = [
+        name
+        for name, value in _object_dict(row.get("quality_checks")).items()
+        if not bool(value)
+    ]
+    if failed_checks:
+        print(f"  Failed quality checks: {', '.join(failed_checks)}")
+    print(f"  Elapsed: {row.get('elapsed_s')}s")
+
+
+def _print_challenge_summary(row: dict[str, object]) -> None:
+    if not isinstance(row.get("challenge_summary"), dict):
+        return
+    challenge_summary = _object_dict(row.get("challenge_summary"))
+    provider = str(challenge_summary.get("provider") or "").strip() or "unknown"
+    evidence = _object_list(challenge_summary.get("evidence"))
+    print(f"  Challenge: provider={provider}")
+    if evidence:
+        print(f"  Challenge evidence: {', '.join(str(item) for item in evidence[:3])}")
 
 
 async def main(argv: list[str]) -> int:
@@ -269,41 +392,8 @@ async def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     source_path = Path(args.path)
-    explicit_urls = [
-        str(value or "").strip() for value in args.url if str(value or "").strip()
-    ]
-    explicit_surfaces = [
-        str(value or "").strip() for value in args.surface if str(value or "").strip()
-    ]
-    if explicit_urls:
-        sites: list[dict[str, object]] = [
-            _as_object_row(site)
-            for site in build_explicit_sites(
-                explicit_urls, explicit_surfaces=explicit_surfaces
-            )
-        ]
-    elif str(args.site_set or "").strip():
-        sites = load_site_set(
-            Path(args.site_set_path), site_set_name=str(args.site_set).strip()
-        )
-    else:
-        sites = [
-            _as_object_row(site)
-            for site in parse_test_sites_markdown(
-                source_path, start_line=args.start_line
-            )
-        ]
-    if args.prefer_artifacts:
-        sites = [{**site, "prefer_artifact": True} for site in sites]
-    if args.limit is not None:
-        sites = sites[: args.limit]
-
-    if explicit_urls:
-        lead = f"Running {len(sites)} explicit TEST_SITES URLs"
-    elif str(args.site_set or "").strip():
-        lead = f"Running {len(sites)} curated site-set entries from {args.site_set}"
-    else:
-        lead = f"Running {len(sites)} TEST_SITES entries from line {args.start_line}"
+    sites = _selected_sites(args, source_path)
+    lead = _run_lead(args, len(sites))
     print(
         f"{lead} in mode={args.mode} (timeout_owner={timeout_owner_for_mode(args.mode)})..."
     )
@@ -316,44 +406,7 @@ async def main(argv: list[str]) -> int:
             print(f"\n[{offset}/{len(sites)}] {site['url']}")
             row = await _run_one(site, args.mode)
             results.append(row)
-            print(f"  Status: {status_for_result(row)}")
-            print(
-                f"  Mode: {row.get('mode')}  Surface: {row.get('surface')}  Platform: {row.get('platform_family')}  Bucket: {row.get('bucket')}"
-            )
-            print(
-                f"  Verdict: {row.get('verdict')}  Failure mode: {row.get('failure_mode')}"
-            )
-            print(
-                f"  Quality: {row.get('quality_verdict')}  Observed: {row.get('observed_failure_mode')}  Source: {row.get('run_source')}"
-            )
-            if row.get("records") is not None:
-                print(f"  Records: {row.get('records')}")
-            if row.get("sample_title"):
-                print(f"  Sample: {_console_safe(row['sample_title'])}")
-            if row.get("sample_url"):
-                print(f"  Sample URL: {_console_safe(row['sample_url'])}")
-            if row.get("sample_utility_noise_hits"):
-                print(f"  Audit utility hits: {row['sample_utility_noise_hits']}")
-            if isinstance(row.get("challenge_summary"), dict):
-                challenge_summary = _object_dict(row.get("challenge_summary"))
-                provider = str(challenge_summary.get("provider") or "").strip()
-                evidence = _object_list(challenge_summary.get("evidence"))
-                provider_text = provider or "unknown"
-                print(f"  Challenge: provider={provider_text}")
-                if evidence:
-                    print(
-                        f"  Challenge evidence: {', '.join(str(item) for item in evidence[:3])}"
-                    )
-            failed_quality_checks = [
-                name
-                for name, value in _object_dict(row.get("quality_checks")).items()
-                if not bool(value)
-            ]
-            if failed_quality_checks:
-                print(f"  Failed quality checks: {', '.join(failed_quality_checks)}")
-            if row.get("error"):
-                print(f"  Error: {row['error']}")
-            print(f"  Elapsed: {row.get('elapsed_s')}s")
+            _print_result(row)
     finally:
         try:
             await shutdown_browser_runtime()
