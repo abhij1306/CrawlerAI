@@ -23,12 +23,7 @@ from app.core.config.variant_policy import (
 )
 from sqlalchemy import select
 
-from harness.site_sets import (
-    build_explicit_sites as build_explicit_sites,
-    load_site_set as load_site_set,
-    parse_test_sites_markdown as parse_test_sites_markdown,
-    require_explicit_surface as require_explicit_surface,
-)
+from harness import site_sets as _site_sets
 from harness.challenge_classifier import (
     _challenge_summary_from_diagnostics,
     _looks_like_detail_identity_mismatch,
@@ -37,8 +32,12 @@ from harness.challenge_classifier import (
     _looks_like_utility_chrome_success,
     _looks_like_utility_record,
     classify_failure_mode as _classify_failure_mode,
-    looks_like_utility_record as looks_like_utility_record,
 )
+
+build_explicit_sites = _site_sets.build_explicit_sites
+load_site_set = _site_sets.load_site_set
+parse_test_sites_markdown = _site_sets.parse_test_sites_markdown
+require_explicit_surface = _site_sets.require_explicit_surface
 
 logger = logging.getLogger(__name__)
 

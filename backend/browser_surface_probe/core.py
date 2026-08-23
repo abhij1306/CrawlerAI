@@ -24,6 +24,8 @@ from app.core.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_TARGETS,
 )
 from app.crawl.crud import get_run
+from browser_surface_probe import signal_extractor as _signal_extractor
+from browser_surface_probe import target_diagnostics as _target_diagnostics
 from browser_surface_probe.report_rendering import (
     build_agent_summary,
     build_findings,
@@ -37,18 +39,17 @@ from browser_surface_probe.signal_extractor import (
     _extract_generic_site,
     _extract_pixelscan,
     _sannysoft_signal_rows,
-    load_baseline_probe_script as load_baseline_probe_script,
 )
 from browser_surface_probe.target_diagnostics import (
     RuntimeSource,
     _capture_probe_artifacts,
     _failed_target_diagnostic,
-    _geo_payload_from_text as _geo_payload_from_text,
     _navigate_probe_target,
     _run_target_diagnostic,
     _target_root_cause,
     _validated_target_url,
 )
+
 from browser_surface_probe.value_coercion import (
     coalesce as _coalesce,
     normalize_space as _normalize_space,
@@ -56,6 +57,9 @@ from browser_surface_probe.value_coercion import (
     object_list,
     string_list,
 )
+
+load_baseline_probe_script = _signal_extractor.load_baseline_probe_script
+_geo_payload_from_text = _target_diagnostics._geo_payload_from_text
 
 _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")

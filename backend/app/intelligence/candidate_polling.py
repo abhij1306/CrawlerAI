@@ -53,11 +53,10 @@ async def poll_candidates_and_score(
             await session.commit()
         if pending and loop.time() <= deadline:
             await asyncio.sleep(interval)
-    if not pending:
-        return
-    await _mark_pending_candidates_timed_out(
-        session, job_id=job_id, candidate_ids=pending
-    )
+    if pending:
+        await _mark_pending_candidates_timed_out(
+            session, job_id=job_id, candidate_ids=pending
+        )
 
 
 def _pending_candidate_runs(
