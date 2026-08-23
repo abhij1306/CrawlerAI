@@ -24,7 +24,7 @@ vi.mock('../../lib/api/api-access', async (importOriginal) => {
 const ACTIVE_KEY: ApiKeyRecord = {
   id: 7,
   name: 'Production MCP',
-  key_prefix: 'cai_12345678',
+  key_prefix: 'test-prefix',
   is_active: true,
   last_used_at: null,
   created_at: '2026-08-23T00:00:00Z',
@@ -34,8 +34,8 @@ const CREATED_KEY: ApiKeyCreated = {
   ...ACTIVE_KEY,
   id: 8,
   name: 'Local MCP',
-  key_prefix: 'cai_abcdefgh',
-  api_key: 'cai_abcdefghijklmnopqrstuvwxyz',
+  key_prefix: 'test-prefix-2',
+  api_key: 'test-value',
 };
 
 function renderPage() {
@@ -74,16 +74,16 @@ beforeEach(() => {
 describe('API & MCP access page', () => {
   it('quotes PowerShell and Bash commands without changing secret values', () => {
     const apiBaseUrl = "https://api.example.test/o'hare/api/v1";
-    const apiKey = "cai_key'quoted";
+    const apiKey = "test'value";
 
     expect(restRequestCommand(apiBaseUrl, apiKey, 'powershell')).toBe(
-      "curl.exe -H 'Authorization: Bearer cai_key''quoted' 'https://api.example.test/o''hare/api/v1/capabilities'",
+      "curl.exe -H 'Authorization: Bearer test''value' 'https://api.example.test/o''hare/api/v1/capabilities'",
     );
     expect(mcpLaunchCommand(apiBaseUrl, apiKey, 'bash')).toContain(
-      `export CRAWLERAI_API_KEY='cai_key'"'"'quoted'`,
+      `export CRAWLERAI_API_KEY='test'"'"'value'`,
     );
     expect(restRequestCommand(apiBaseUrl, apiKey, 'bash')).toBe(
-      `curl -H 'Authorization: Bearer cai_key'"'"'quoted' 'https://api.example.test/o'"'"'hare/api/v1/capabilities'`,
+      `curl -H 'Authorization: Bearer test'"'"'value' 'https://api.example.test/o'"'"'hare/api/v1/capabilities'`,
     );
   });
 
