@@ -43,7 +43,7 @@ async def test_list_and_revoke_api_keys_are_user_scoped(db_session, test_user) -
 
     assert [item.id for item in listed] == [row.id]
     assert revoked.is_active is False
-    assert revoked.last_used_at is not None
+    assert revoked.last_used_at is None
     with pytest.raises(LookupError):
         await revoke_api_key(db_session, user_id=test_user.id + 999, key_id=row.id)
 

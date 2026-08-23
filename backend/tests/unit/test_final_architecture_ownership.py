@@ -12,9 +12,9 @@ pytestmark = pytest.mark.unit
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
-# Exact inventory. Services/tooling closeout adds focused regressions for the
-# moved owners and browser-probe input validation; both ratchets are measured.
-TEST_LOC_BUDGET = 55_577
+# Exact inventory. API/MCP launch adds focused key-lifecycle, protocol, and
+# authentication-cache regressions; both ratchets remain measured.
+TEST_LOC_BUDGET = 55_619
 TOOL_LOC_BUDGET = 3_813
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
