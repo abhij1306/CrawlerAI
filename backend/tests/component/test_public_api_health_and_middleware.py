@@ -2,9 +2,6 @@ from __future__ import annotations
 
 # ruff: noqa: F403, F405
 from .public_api_test_support import *
-from .public_api_test_support import _crawler_app_state
-
-
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_live_health_endpoint_is_lightweight() -> None:

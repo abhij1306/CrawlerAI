@@ -137,6 +137,10 @@ def _count_commits(db_session, monkeypatch: pytest.MonkeyPatch) -> list[int]:
 
 
 __all__ = [
+    "_crawler_app_state",
+    "_public_auth_session",
+    "_retry_after",
+    "_trim",
     "ASGITransport",
     "ApiKey",
     "AsyncClient",

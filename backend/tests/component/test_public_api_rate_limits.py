@@ -2,9 +2,6 @@ from __future__ import annotations
 
 # ruff: noqa: F403, F405
 from .public_api_test_support import *
-from .public_api_test_support import _retry_after, _trim
-
-
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_public_rate_limit_is_keyed_by_api_key(
