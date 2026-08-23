@@ -22,3 +22,22 @@ expectation_met = harness_support.expectation_met
 load_site_set = harness_support.load_site_set
 parse_test_sites_markdown = harness_support.parse_test_sites_markdown
 require_explicit_surface = harness_support.require_explicit_surface
+
+
+__all__ = [
+    "AcquisitionIntent",
+    "Path",
+    "SimpleNamespace",
+    "build_explicit_sites",
+    "classify_failure_mode",
+    "evaluate_quality",
+    "expectation_met",
+    "harness_support",
+    "hash_password",
+    "load_site_set",
+    "parse_test_sites_markdown",
+    "pytest",
+    "require_explicit_surface",
+    "select",
+    "verify_password",
+]

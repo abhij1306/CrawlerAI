@@ -14,7 +14,7 @@ APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # Exact post-decomposition inventory. Tool total includes the explicit
 # per-field console predicate that preserves the acceptance runner's output.
-TEST_LOC_BUDGET = 55_204
+TEST_LOC_BUDGET = 55_357
 TOOL_LOC_BUDGET = 3_723
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the

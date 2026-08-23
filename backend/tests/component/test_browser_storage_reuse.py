@@ -480,7 +480,7 @@ async def test_context_slot_released_when_cancelled_during_recycle_wait(
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await task
+        _ = await task
 
     assert not runtime._semaphore.locked()
     assert runtime.snapshot()["queued"] == 0
@@ -512,7 +512,7 @@ async def test_runtime_page_releases_slot_when_cancelled_during_browser_start(
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await task
+        _ = await task
 
     assert not runtime._semaphore.locked()
     assert runtime.snapshot()["active"] == 0
