@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** DONE
 **Touches buckets:** crawl terminal/workspace, API contract types, data enrichment, product intelligence, domain memory, UI primitives, frontend architecture policy
 
 ## Goal
@@ -20,7 +20,7 @@ This plan owns Q-LOC-27, Q-LOC-35, Q-FE-ARCH-800, Q-CC-FE-01 through Q-CC-FE-08,
 - [x] Data Enrichment, Crawl Run, Product Intelligence, Domain Memory, run summary/config dispatch, and dropdown behavior remain equivalent.
 - [x] Server state remains in React Query, URL state remains in search params, and temporary view state remains local; no synchronized duplicate state is introduced.
 - [x] Existing tests remain semantically intact; new characterization covers only previously unprotected branches.
-- [ ] `vp check`, focused `vp test` files, architecture policy, `vp build`, and `$ship-main` CI pass.
+- [x] `vp check`, focused `vp test` files, architecture policy, `vp build`, and `$ship-main` CI pass.
 
 ## Do Not Touch
 
@@ -87,7 +87,7 @@ This plan owns Q-LOC-27, Q-LOC-35, Q-FE-ARCH-800, Q-CC-FE-01 through Q-CC-FE-08,
 
 ### Slice 6: `$ship-main`
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Preserve unrelated work, branch safely, run focused local checks, commit/push, open a non-draft PR, wait for all required CI, fix failures on the same branch, merge only when green/mergeable, then synchronize local `main` and verify it equals remote.
@@ -109,3 +109,4 @@ This plan owns Q-LOC-27, Q-LOC-35, Q-FE-ARCH-800, Q-CC-FE-01 through Q-CC-FE-08,
 - 2026-08-23 Slice 3: moved Product Intelligence, Data Enrichment, Knowledge Graph, selector response, and LLM administration DTOs beside their API methods. Updated consumers to import owners directly; no compatibility exports remain. `lib/api/types.ts` fell from 831 to 498 physical lines. `vp check`, three focused files (13 tests), architecture policy, and `vp build` passed.
 - 2026-08-23 Slice 4: enabled the production max-15 rule and reduced all 15 live violations without exclusions. Split derivation/rendering by existing domain owners for Data Enrichment, Crawl Run, Product Intelligence, Domain Memory, run summaries, config dispatch, dropdowns, and terminal rows. Focused suites passed (17 files, 110 tests); one overloaded aggregate run timed out in a terminal test, which passed in isolation and in the smaller seven-file crawl suite.
 - 2026-08-23 Slice 5: lowered `log-terminal.tsx` and `lib/api/types.ts` budgets from 1020/875 to 820/525, updated architecture ownership docs, and passed `vp check`, frontend architecture policy, `git diff --check`, focused tests, and `vp build`.
+- 2026-08-23 Slice 6: opened PR #55 (`https://github.com/abhij1306/CrawlerAI/pull/55`); all 13 CI checks passed before the plan-closing documentation commit.
