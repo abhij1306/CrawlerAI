@@ -26,14 +26,7 @@ def match_template(
 ) -> dict[str, Any] | None:
     if not snapshot or snapshot.get("surface") != surface:
         return None
-    templates = [
-        row
-        for row in snapshot.get("templates", [])
-        if isinstance(row, dict)
-        and str(row.get("status") or "").strip().lower()
-        != EXTRACTION_MEMORY_STATUS_SUSPENDED
-        and not bool(row.get("sentinel_suspended"))
-    ]
+    templates = _active_templates(snapshot)
     exact = next(
         (row for row in templates if row.get("fingerprint") == fingerprint), None
     )
@@ -51,17 +44,7 @@ def match_template(
     # Manual extraction preferences are domain + surface defaults. Templates
     # remain in the snapshot for provenance and automatic route matching, but an
     # operator choice must apply to every future URL on the same surface.
-    operator_templates: list[dict[str, Any]] = []
-    for template in templates:
-        operator_contracts = [
-            contract
-            for contract in template.get("contracts", [])
-            if contract.get("selection_origin") == "operator"
-        ]
-        if operator_contracts:
-            operator_template = dict(template)
-            operator_template["contracts"] = operator_contracts
-            operator_templates.append(operator_template)
+    operator_templates = _operator_templates(templates)
 
     if not operator_templates:
         return matched
@@ -73,6 +56,32 @@ def match_template(
             "contracts": [],
         }
     return _merge_template_contracts(matched, operator_templates)
+
+
+def _active_templates(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in snapshot.get("templates", [])
+        if isinstance(row, dict)
+        and str(row.get("status") or "").strip().lower()
+        != EXTRACTION_MEMORY_STATUS_SUSPENDED
+        and not row.get("sentinel_suspended")
+    ]
+
+
+def _operator_templates(
+    templates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for template in templates:
+        contracts = [
+            row
+            for row in template.get("contracts", [])
+            if row.get("selection_origin") == "operator"
+        ]
+        if contracts:
+            result.append({**template, "contracts": contracts})
+    return result
 
 
 def contract_preferences(
@@ -130,20 +139,7 @@ def resolved_contract_outcomes(
     template = match_template(snapshot, fingerprint, surface, url)
     if not template:
         return ()
-    evidence_by_id = {row.evidence_id: row for row in evidence}
-    target_ids = {
-        value
-        for value in (
-            resolution.primary_product_entity_id,
-            resolution.primary_offer_entity_id,
-        )
-        if value
-    }
-    decisions = {
-        row.fact_type: row
-        for row in resolution.decisions
-        if row.entity_id in target_ids
-    }
+    evidence_by_id, decisions = _resolution_indexes(evidence, resolution)
     outcomes: list[ContractOutcome] = []
     for contract in template.get("contracts", []):
         fact_type = _contract_fact_type(contract)
@@ -158,40 +154,77 @@ def resolved_contract_outcomes(
         )
         if not selected_source:
             continue
-        decision = decisions.get(fact_type)
-        selected = (
-            next(
-                (
-                    row
-                    for evidence_id in decision.accepted_evidence_ids
-                    if (row := evidence_by_id.get(evidence_id)) is not None
-                    and _source_descriptor(row) == selected_source
-                ),
-                None,
-            )
-            if decision
-            else None
-        )
-        applied = bool(
-            selected and decision and decision.rule_id == "CONTRACT_PREFERRED_SOURCE"
-        )
         outcomes.append(
-            ContractOutcome(
-                field=fact_type,
-                outcome="hit" if applied else "fallback" if decision else "miss",
-                selected_source=str(contract.get("selected_source") or ""),
-                selection_origin=str(contract.get("selection_origin") or "generic"),
-                applied=applied,
-                detail=(
-                    "selected inside resolver-owned candidate set"
-                    if applied
-                    else "preferred source unavailable or inadmissible; used generic ranking"
-                    if decision
-                    else "field unresolved"
-                ),
+            _contract_outcome(
+                contract,
+                fact_type=fact_type,
+                selected_source=selected_source,
+                decision=decisions.get(fact_type),
+                evidence_by_id=evidence_by_id,
             )
         )
     return tuple(outcomes)
+
+
+def _resolution_indexes(
+    evidence: tuple[Evidence, ...], resolution: ResolutionResult
+) -> tuple[dict[str, Evidence], dict[str, Any]]:
+    targets = {
+        value
+        for value in (
+            resolution.primary_product_entity_id,
+            resolution.primary_offer_entity_id,
+        )
+        if value
+    }
+    return (
+        {row.evidence_id: row for row in evidence},
+        {
+            row.fact_type: row
+            for row in resolution.decisions
+            if row.entity_id in targets
+        },
+    )
+
+
+def _contract_outcome(
+    contract: dict[str, Any],
+    *,
+    fact_type: str,
+    selected_source: str,
+    decision: Any,
+    evidence_by_id: dict[str, Evidence],
+) -> ContractOutcome:
+    selected = (
+        next(
+            (
+                row
+                for evidence_id in decision.accepted_evidence_ids
+                if (row := evidence_by_id.get(evidence_id)) is not None
+                and _source_descriptor(row) == selected_source
+            ),
+            None,
+        )
+        if decision
+        else None
+    )
+    applied = bool(
+        selected and decision and decision.rule_id == "CONTRACT_PREFERRED_SOURCE"
+    )
+    return ContractOutcome(
+        field=fact_type,
+        outcome="hit" if applied else "fallback" if decision else "miss",
+        selected_source=str(contract.get("selected_source") or ""),
+        selection_origin=str(contract.get("selection_origin") or "generic"),
+        applied=applied,
+        detail=(
+            "selected inside resolver-owned candidate set"
+            if applied
+            else "preferred source unavailable or inadmissible; used generic ranking"
+            if decision
+            else "field unresolved"
+        ),
+    )
 
 
 def _contract_fact_type(contract: dict[str, Any]) -> str:
@@ -267,19 +300,16 @@ def select_active_recipe(
     ``extraction_recipe.v2`` payload — kept distinct from the selector/contract
     ``compiled_recipe`` block that drives the deterministic floors.
     """
-    if (
-        snapshot.get("schema_version") != EXTRACTION_RELEASE_VERSION
-        or snapshot.get("surface") != surface
+    if any(
+        (
+            snapshot.get("schema_version") != EXTRACTION_RELEASE_VERSION,
+            snapshot.get("surface") != surface,
+        )
     ):
         return None
     route = _normalized_recipe_route(normalize_route(url, surface))
     templates = [
-        row
-        for row in snapshot.get("templates", ())
-        if isinstance(row, dict)
-        and isinstance(row.get("executable_recipe"), dict)
-        and str(row.get("status") or "active") != EXTRACTION_MEMORY_STATUS_SUSPENDED
-        and not bool(row.get("sentinel_suspended"))
+        row for row in snapshot.get("templates", ()) if _recipe_template_is_active(row)
     ]
     if template_signature:
         exact = next(
@@ -299,6 +329,15 @@ def select_active_recipe(
             if _normalized_recipe_route(str(row.get("route_pattern") or "/")) == route
         ),
         None,
+    )
+
+
+def _recipe_template_is_active(row: object) -> bool:
+    return bool(
+        isinstance(row, dict)
+        and isinstance(row.get("executable_recipe"), dict)
+        and str(row.get("status") or "active") != EXTRACTION_MEMORY_STATUS_SUSPENDED
+        and not row.get("sentinel_suspended")
     )
 
 

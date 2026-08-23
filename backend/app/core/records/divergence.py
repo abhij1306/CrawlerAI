@@ -39,6 +39,28 @@ def compare_public_record_to_projection(
         for entry in projection.entries
         if entry.path.startswith("record.")
     }
+    findings = list(_scalar_findings(record, entries, blocking=blocking))
+    if detect_extras:
+        findings.extend(_extra_scalar_findings(record, entries, blocking=blocking))
+    findings.extend(
+        _compare_variants(
+            record, projection, blocking=blocking, detect_extras=detect_extras
+        )
+    )
+    findings.extend(
+        _compare_assets(
+            record, projection, blocking=blocking, detect_extras=detect_extras
+        )
+    )
+    return tuple(findings)
+
+
+def _scalar_findings(
+    record: Mapping[str, Any],
+    entries: Mapping[str, PublicationEntry],
+    *,
+    blocking: bool,
+) -> tuple[Finding, ...]:
     findings: list[Finding] = []
     for field, entry in entries.items():
         actual_present = field in record and record.get(field) not in _EMPTY
@@ -62,41 +84,30 @@ def compare_public_record_to_projection(
                     derived_fact_id=entry.derived_fact_id,
                 )
             )
-    if detect_extras:
-        structural_fields = {
-            "additional_images",
-            "image_url",
-            "variant_count",
-            "variants",
-        }
-        for field, value in record.items():
-            if (
-                str(field).startswith("_")
-                or value in _EMPTY
-                or field in entries
-                or field in structural_fields
-            ):
-                continue
-            findings.append(
-                _projection_divergence_finding(
-                    path=f"record.{field}",
-                    reason="unauthorized_public_field",
-                    expected=None,
-                    actual=value,
-                    blocking=blocking,
-                )
-            )
-    findings.extend(
-        _compare_variants(
-            record, projection, blocking=blocking, detect_extras=detect_extras
-        )
-    )
-    findings.extend(
-        _compare_assets(
-            record, projection, blocking=blocking, detect_extras=detect_extras
-        )
-    )
     return tuple(findings)
+
+
+def _extra_scalar_findings(
+    record: Mapping[str, Any],
+    entries: Mapping[str, PublicationEntry],
+    *,
+    blocking: bool,
+) -> tuple[Finding, ...]:
+    structural = {"additional_images", "image_url", "variant_count", "variants"}
+    return tuple(
+        _projection_divergence_finding(
+            path=f"record.{field}",
+            reason="unauthorized_public_field",
+            expected=None,
+            actual=value,
+            blocking=blocking,
+        )
+        for field, value in record.items()
+        if not str(field).startswith("_")
+        and value not in _EMPTY
+        and field not in entries
+        and field not in structural
+    )
 
 
 def compare_records_to_projection(
@@ -107,42 +118,17 @@ def compare_records_to_projection(
 ) -> tuple[Finding, ...]:
     """Exact atomic comparison for non-commerce-detail surface projections."""
 
-    if isinstance(projection, JobDetailProjection):
-        expected_ids = {projection.record_entity_id} if projection.entries else set()
-        actual_by_id = (
-            {projection.record_entity_id: records[0]} if len(records) == 1 else {}
+    expected_ids, actual_by_id, pattern = _record_projection_index(records, projection)
+    findings = list(
+        _entity_findings(
+            expected_ids,
+            set(actual_by_id),
+            kind="record",
+            missing_reason="authorized_record_missing",
+            extra_reason="unauthorized_record_published",
+            blocking=blocking,
         )
-        pattern = re.compile(r"^record\.(.+)$")
-    else:
-        expected_ids = set(projection.record_entity_ids)
-        actual_by_id = {
-            str(row.get("_subject_id")): row
-            for row in records
-            if row.get("_subject_id")
-        }
-        pattern = re.compile(r"^record\[([^]]+)]\.(.+)$")
-    actual_ids = set(actual_by_id)
-    findings: list[Finding] = []
-    for entity_id in sorted(expected_ids - actual_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"record[{entity_id}]",
-                reason="authorized_record_missing",
-                expected=entity_id,
-                actual=None,
-                blocking=blocking,
-            )
-        )
-    for entity_id in sorted(actual_ids - expected_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"record[{entity_id}]",
-                reason="unauthorized_record_published",
-                expected=None,
-                actual=entity_id,
-                blocking=blocking,
-            )
-        )
+    )
     expected_fields: dict[str, set[str]] = {}
     for entry in projection.entries:
         match = pattern.match(entry.path)
@@ -188,6 +174,24 @@ def compare_records_to_projection(
     return tuple(findings)
 
 
+def _record_projection_index(
+    records: Sequence[Mapping[str, Any]],
+    projection: CommerceListingProjection | JobDetailProjection | JobListingProjection,
+) -> tuple[set[str], dict[str, Mapping[str, Any]], re.Pattern[str]]:
+    if isinstance(projection, JobDetailProjection):
+        expected = {projection.record_entity_id} if projection.entries else set()
+        actual = {projection.record_entity_id: records[0]} if len(records) == 1 else {}
+        return expected, actual, re.compile(r"^record\.(.+)$")
+    actual = {
+        str(row.get("_subject_id")): row for row in records if row.get("_subject_id")
+    }
+    return (
+        set(projection.record_entity_ids),
+        actual,
+        re.compile(r"^record\[([^]]+)]\.(.+)$"),
+    )
+
+
 def _compare_variants(
     record: Mapping[str, Any],
     projection: CommerceDetailProjection,
@@ -195,57 +199,21 @@ def _compare_variants(
     blocking: bool,
     detect_extras: bool,
 ) -> tuple[Finding, ...]:
-    raw_rows = record.get("variants")
-    rows = tuple(raw_rows) if isinstance(raw_rows, (list, tuple)) else ()
-    raw_lineage = record.get("_lineage")
-    lineage = raw_lineage.get("variants") if isinstance(raw_lineage, Mapping) else ()
-    lineage_rows = tuple(lineage) if isinstance(lineage, (list, tuple)) else ()
-    actual_by_id = {
-        str(lineage_row.get("variant_entity_id")): row
-        for row, lineage_row in zip(rows, lineage_rows, strict=False)
-        if isinstance(row, Mapping)
-        and isinstance(lineage_row, Mapping)
-        and lineage_row.get("variant_entity_id")
-    }
+    rows, lineage_rows, actual_by_id = _variant_index(record)
     expected_ids = set(projection.variant_entity_ids)
-    actual_ids = set(actual_by_id)
     findings: list[Finding] = []
     if detect_extras:
-        for index, row in enumerate(rows):
-            lineage_row = lineage_rows[index] if index < len(lineage_rows) else None
-            if isinstance(row, Mapping) and not (
-                isinstance(lineage_row, Mapping)
-                and lineage_row.get("variant_entity_id")
-            ):
-                findings.append(
-                    _projection_divergence_finding(
-                        path=f"record.variants[{index}]",
-                        reason="variant_without_authorized_entity",
-                        expected=None,
-                        actual=row,
-                        blocking=blocking,
-                    )
-                )
-    for entity_id in sorted(expected_ids - actual_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"variant[{entity_id}]",
-                reason="authorized_variant_missing",
-                expected=entity_id,
-                actual=None,
-                blocking=blocking,
-            )
+        findings.extend(_orphan_variant_findings(rows, lineage_rows, blocking=blocking))
+    findings.extend(
+        _entity_findings(
+            expected_ids,
+            set(actual_by_id),
+            kind="variant",
+            missing_reason="authorized_variant_missing",
+            extra_reason="unauthorized_variant_published",
+            blocking=blocking,
         )
-    for entity_id in sorted(actual_ids - expected_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"variant[{entity_id}]",
-                reason="unauthorized_variant_published",
-                expected=None,
-                actual=entity_id,
-                blocking=blocking,
-            )
-        )
+    )
     pattern = re.compile(r"^variant\[([^]]+)]\.(.+)$")
     for entry in projection.entries:
         match = pattern.match(entry.path)
@@ -275,6 +243,50 @@ def _compare_variants(
     return tuple(findings)
 
 
+def _variant_index(
+    record: Mapping[str, Any],
+) -> tuple[tuple[object, ...], tuple[object, ...], dict[str, Mapping[str, Any]]]:
+    raw_rows = record.get("variants")
+    rows = tuple(raw_rows) if isinstance(raw_rows, (list, tuple)) else ()
+    raw_lineage = record.get("_lineage")
+    lineage = raw_lineage.get("variants") if isinstance(raw_lineage, Mapping) else ()
+    lineage_rows = tuple(lineage) if isinstance(lineage, (list, tuple)) else ()
+    actual = {
+        str(lineage_row.get("variant_entity_id")): row
+        for row, lineage_row in zip(rows, lineage_rows, strict=False)
+        if isinstance(row, Mapping)
+        and isinstance(lineage_row, Mapping)
+        and lineage_row.get("variant_entity_id")
+    }
+    return rows, lineage_rows, actual
+
+
+def _orphan_variant_findings(
+    rows: tuple[object, ...],
+    lineage_rows: tuple[object, ...],
+    *,
+    blocking: bool,
+) -> tuple[Finding, ...]:
+    return tuple(
+        _projection_divergence_finding(
+            path=f"record.variants[{index}]",
+            reason="variant_without_authorized_entity",
+            expected=None,
+            actual=row,
+            blocking=blocking,
+        )
+        for index, row in enumerate(rows)
+        if isinstance(row, Mapping) and _variant_lineage_missing(lineage_rows, index)
+    )
+
+
+def _variant_lineage_missing(lineage_rows: tuple[object, ...], index: int) -> bool:
+    if index >= len(lineage_rows):
+        return True
+    lineage = lineage_rows[index]
+    return not isinstance(lineage, Mapping) or not lineage.get("variant_entity_id")
+
+
 def _compare_assets(
     record: Mapping[str, Any],
     projection: CommerceDetailProjection,
@@ -282,90 +294,31 @@ def _compare_assets(
     blocking: bool,
     detect_extras: bool,
 ) -> tuple[Finding, ...]:
-    raw_lineage = record.get("_lineage")
-    lineages = raw_lineage if isinstance(raw_lineage, Mapping) else {}
-    actual_by_id: dict[str, dict[str, object]] = {}
-    primary_lineage = lineages.get("image_url")
-    if isinstance(primary_lineage, Mapping) and primary_lineage.get("asset_entity_id"):
-        actual_by_id[str(primary_lineage["asset_entity_id"])] = {
-            "url": record.get("image_url"),
-            "role": "primary",
-        }
-    additional_urls = record.get("additional_images")
-    additional_lineage = lineages.get("additional_images")
-    if isinstance(additional_urls, (list, tuple)) and isinstance(
-        additional_lineage, (list, tuple)
-    ):
-        for url, lineage in zip(additional_urls, additional_lineage, strict=False):
-            if isinstance(lineage, Mapping) and lineage.get("asset_entity_id"):
-                actual_by_id[str(lineage["asset_entity_id"])] = {
-                    "url": url,
-                    "role": "additional",
-                }
+    actual_by_id, primary_lineage, additional_urls, additional_lineage = _asset_index(
+        record
+    )
     expected_ids = set(projection.asset_entity_ids)
-    actual_ids = set(actual_by_id)
     findings: list[Finding] = []
-    if (
-        detect_extras
-        and record.get("image_url") not in _EMPTY
-        and not (
-            isinstance(primary_lineage, Mapping)
-            and primary_lineage.get("asset_entity_id")
-        )
-    ):
-        findings.append(
-            _projection_divergence_finding(
-                path="record.image_url",
-                reason="asset_without_authorized_entity",
-                expected=None,
-                actual=record.get("image_url"),
+    if detect_extras:
+        findings.extend(
+            _orphan_asset_findings(
+                record,
+                primary_lineage,
+                additional_urls,
+                additional_lineage,
                 blocking=blocking,
             )
         )
-    if detect_extras and isinstance(additional_urls, (list, tuple)):
-        additional_lineage_rows = (
-            tuple(additional_lineage)
-            if isinstance(additional_lineage, (list, tuple))
-            else ()
+    findings.extend(
+        _entity_findings(
+            expected_ids,
+            set(actual_by_id),
+            kind="asset",
+            missing_reason="authorized_asset_missing",
+            extra_reason="unauthorized_asset_published",
+            blocking=blocking,
         )
-        for index, url in enumerate(additional_urls):
-            lineage_row = (
-                additional_lineage_rows[index]
-                if index < len(additional_lineage_rows)
-                else None
-            )
-            if url not in _EMPTY and not (
-                isinstance(lineage_row, Mapping) and lineage_row.get("asset_entity_id")
-            ):
-                findings.append(
-                    _projection_divergence_finding(
-                        path=f"record.additional_images[{index}]",
-                        reason="asset_without_authorized_entity",
-                        expected=None,
-                        actual=url,
-                        blocking=blocking,
-                    )
-                )
-    for entity_id in sorted(expected_ids - actual_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"asset[{entity_id}]",
-                reason="authorized_asset_missing",
-                expected=entity_id,
-                actual=None,
-                blocking=blocking,
-            )
-        )
-    for entity_id in sorted(actual_ids - expected_ids):
-        findings.append(
-            _projection_divergence_finding(
-                path=f"asset[{entity_id}]",
-                reason="unauthorized_asset_published",
-                expected=None,
-                actual=entity_id,
-                blocking=blocking,
-            )
-        )
+    )
     if projection.primary_asset_entity_id is not None:
         actual_primary = next(
             (
@@ -421,6 +374,111 @@ def _compare_assets(
                 )
             )
     return tuple(findings)
+
+
+def _orphan_asset_findings(
+    record: Mapping[str, Any],
+    primary_lineage: object,
+    additional_urls: object,
+    additional_lineage: object,
+    *,
+    blocking: bool,
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    if record.get("image_url") not in _EMPTY and not (
+        isinstance(primary_lineage, Mapping) and primary_lineage.get("asset_entity_id")
+    ):
+        findings.append(
+            _projection_divergence_finding(
+                path="record.image_url",
+                reason="asset_without_authorized_entity",
+                expected=None,
+                actual=record.get("image_url"),
+                blocking=blocking,
+            )
+        )
+    if not isinstance(additional_urls, (list, tuple)):
+        return tuple(findings)
+    lineages = (
+        tuple(additional_lineage)
+        if isinstance(additional_lineage, (list, tuple))
+        else ()
+    )
+    findings.extend(
+        _projection_divergence_finding(
+            path=f"record.additional_images[{index}]",
+            reason="asset_without_authorized_entity",
+            expected=None,
+            actual=url,
+            blocking=blocking,
+        )
+        for index, url in enumerate(additional_urls)
+        if url not in _EMPTY
+        and not (
+            index < len(lineages)
+            and isinstance(lineages[index], Mapping)
+            and lineages[index].get("asset_entity_id")
+        )
+    )
+    return tuple(findings)
+
+
+def _asset_index(
+    record: Mapping[str, Any],
+) -> tuple[dict[str, dict[str, object]], object, object, object]:
+    raw_lineage = record.get("_lineage")
+    lineages = raw_lineage if isinstance(raw_lineage, Mapping) else {}
+    actual: dict[str, dict[str, object]] = {}
+    primary_lineage = lineages.get("image_url")
+    if isinstance(primary_lineage, Mapping) and primary_lineage.get("asset_entity_id"):
+        actual[str(primary_lineage["asset_entity_id"])] = {
+            "url": record.get("image_url"),
+            "role": "primary",
+        }
+    additional_urls = record.get("additional_images")
+    additional_lineage = lineages.get("additional_images")
+    if isinstance(additional_urls, (list, tuple)) and isinstance(
+        additional_lineage, (list, tuple)
+    ):
+        for url, lineage in zip(additional_urls, additional_lineage, strict=False):
+            if isinstance(lineage, Mapping) and lineage.get("asset_entity_id"):
+                actual[str(lineage["asset_entity_id"])] = {
+                    "url": url,
+                    "role": "additional",
+                }
+    return actual, primary_lineage, additional_urls, additional_lineage
+
+
+def _entity_findings(
+    expected_ids: set[str],
+    actual_ids: set[str],
+    *,
+    kind: str,
+    missing_reason: str,
+    extra_reason: str,
+    blocking: bool,
+) -> tuple[Finding, ...]:
+    missing = (
+        _projection_divergence_finding(
+            path=f"{kind}[{entity_id}]",
+            reason=missing_reason,
+            expected=entity_id,
+            actual=None,
+            blocking=blocking,
+        )
+        for entity_id in sorted(expected_ids - actual_ids)
+    )
+    extra = (
+        _projection_divergence_finding(
+            path=f"{kind}[{entity_id}]",
+            reason=extra_reason,
+            expected=None,
+            actual=entity_id,
+            blocking=blocking,
+        )
+        for entity_id in sorted(actual_ids - expected_ids)
+    )
+    return (*missing, *extra)
 
 
 def _values_equal(actual: object, entry: PublicationEntry) -> bool:

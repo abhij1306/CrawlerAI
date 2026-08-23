@@ -235,6 +235,8 @@ Primary files:
 - `acquisition/policy.py`
 - `acquisition/runtime.py`
 - `acquisition/browser_capture.py`
+- `acquisition/browser_content_signals.py`
+- `acquisition/browser_detail_candidates.py`
 - `acquisition/browser_runtime.py`
 - `acquisition/browser_pool.py`
 - `acquisition/browser_page_flow.py`
@@ -258,10 +260,11 @@ Responsibilities:
 - safe target validation
 - pooled HTTP/browser fetch
 - JS-shell and blocked-page escalation
+- static HTML content/shell classification, separate from live DOM readiness
 - browser identity generation
 - network payload capture
 - temporary screenshot staging for browser artifacts
-- detail-page expansion
+- detail-page expansion with candidate admission isolated from click orchestration
 - listing traversal
 - cookie policy enforcement
 - robots handling when enabled

@@ -179,18 +179,20 @@ def repair_price_unit(
     )
     for ratio in DETAIL_VISIBLE_PRICE_MAGNITUDE_RATIOS_DECIMAL:
         candidate = amount / ratio
-        if any(
-            abs(peer - candidate) <= DETAIL_PRICE_COMPARISON_TOLERANCE
-            or (
-                peer > 0
-                and candidate > 0
-                and max(peer, candidate) / min(peer, candidate)
-                <= DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL
-            )
-            for peer in peers
-        ):
+        if any(_prices_corroborate(peer, candidate) for peer in peers):
             return format(candidate, "f"), DETAIL_CORROBORATED_PRICE_SCALE_FLAG
     return None
+
+
+def _prices_corroborate(peer: Decimal, candidate: Decimal) -> bool:
+    if abs(peer - candidate) <= DETAIL_PRICE_COMPARISON_TOLERANCE:
+        return True
+    if peer <= 0 or candidate <= 0:
+        return False
+    return (
+        max(peer, candidate) / min(peer, candidate)
+        <= DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL
+    )
 
 
 def _normalize_shared_price_decimal_text(value: str) -> str:

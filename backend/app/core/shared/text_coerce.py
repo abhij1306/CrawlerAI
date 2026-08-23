@@ -95,32 +95,46 @@ def _decode_common_escaped_text(value: str) -> str:
     return text.replace('\\"', '"').replace("\\'", "'")
 
 
-# skipcq: PY-R1000
 def is_title_noise(title: object) -> bool:
     cleaned = clean_text(title)
     lowered = cleaned.lower()
-    if not lowered:
+    if _is_basic_title_noise(cleaned, lowered):
         return True
-    if is_null_text(cleaned):
-        return True
-    if cleaned.isdigit():
-        return True
-    if tracking_token_re.fullmatch(cleaned):
-        return True
-    if _REVIEW_TITLE_RE.fullmatch(cleaned):
-        return True
-    if "star" in lowered and RATING_RE.search(lowered) and len(cleaned.split()) <= 4:
+    if _is_rating_title_noise(cleaned, lowered):
         return True
     cta_normalized = re.sub(r"[\s.。…]+$", "", lowered)
-    if (
+    if _is_exact_title_noise(lowered, cta_normalized):
+        return True
+    return _matches_title_noise_pattern(lowered)
+
+
+def _is_basic_title_noise(cleaned: str, lowered: str) -> bool:
+    return bool(
+        not lowered
+        or is_null_text(cleaned)
+        or cleaned.isdigit()
+        or tracking_token_re.fullmatch(cleaned)
+        or _REVIEW_TITLE_RE.fullmatch(cleaned)
+    )
+
+
+def _is_rating_title_noise(cleaned: str, lowered: str) -> bool:
+    return bool(
+        "star" in lowered and RATING_RE.search(lowered) and len(cleaned.split()) <= 4
+    )
+
+
+def _is_exact_title_noise(lowered: str, cta_normalized: str) -> bool:
+    return bool(
         lowered in LISTING_TITLE_CTA_TITLES
         or cta_normalized in LISTING_TITLE_CTA_TITLES
-    ):
-        return True
-    if lowered in DETAIL_LOW_SIGNAL_TITLE_VALUES:
-        return True
-    if lowered in LISTING_NAVIGATION_TITLE_HINTS or lowered in LISTING_WEAK_TITLES:
-        return True
+        or lowered in DETAIL_LOW_SIGNAL_TITLE_VALUES
+        or lowered in LISTING_NAVIGATION_TITLE_HINTS
+        or lowered in LISTING_WEAK_TITLES
+    )
+
+
+def _matches_title_noise_pattern(lowered: str) -> bool:
     if any(
         lowered.startswith(prefix) for prefix in LISTING_MERCHANDISING_TITLE_PREFIXES
     ):

@@ -54,6 +54,65 @@ def build_source_capability_diagnostics(
         )
     )
 
+    observed, failed, succeeded = _product_source_rows(network_payloads)
+
+    shell_outcome = str(browser_outcome or "").strip().casefold()
+    http_error = isinstance(status_code, int) and status_code >= 400
+    has_detail_evidence = analyze_extractable_content(html).detail
+    detail_outcome = normalized_detail_outcome(
+        http_status=None if http_error and has_detail_evidence else status_code,
+        blocked=blocked,
+        browser_outcome=shell_outcome,
+    )
+    terminal_shell = bool(
+        blocked or shell_outcome in {"challenge_page", "low_content_shell"}
+    )
+    terminal_detail_unavailable = (
+        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
+    )
+    product_source_unavailable = any(
+        (
+            http_error,
+            all((observed, failed, not succeeded)),
+            terminal_detail_unavailable,
+        )
+    )
+    browser = browser_diagnostics or {}
+    interaction_present = any(
+        browser.get(key)
+        for key in (
+            "detail_expansion_attempted",
+            "variant_controls_detected",
+            "interaction_required",
+        )
+    )
+    affected_fields = (
+        DETAIL_FIELD_FAMILIES
+        if terminal_detail_unavailable
+        else (*OFFER_FIELD_FAMILIES, *VARIANT_FIELD_FAMILIES)
+        if product_source_unavailable
+        else ()
+    )
+    return {
+        "html_present": bool(text.strip()),
+        "structured_data_present": structured_present,
+        "product_data_source_observed": bool(observed),
+        "product_data_source_succeeded": bool(succeeded),
+        "product_data_source_unavailable": product_source_unavailable,
+        "terminal_shell": terminal_shell,
+        "detail_outcome": detail_outcome,
+        "status_code": status_code,
+        "browser_outcome": shell_outcome or None,
+        "interaction_controls_present": bool(interaction_present),
+        "affected_field_families": tuple(dict.fromkeys(affected_fields)),
+        "observed_product_sources": tuple(observed),
+        "failed_product_sources": tuple(failed),
+    }
+
+
+def _product_source_rows(
+    network_payloads: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     observed: list[dict[str, object]] = []
     failed: list[dict[str, object]] = []
     succeeded: list[dict[str, object]] = []
@@ -73,54 +132,7 @@ def build_source_capability_diagnostics(
         elif isinstance(status, int) and status >= 400:
             failed.append(row)
 
-    shell_outcome = str(browser_outcome or "").strip().casefold()
-    http_error = isinstance(status_code, int) and status_code >= 400
-    has_detail_evidence = analyze_extractable_content(html).detail
-    detail_outcome = normalized_detail_outcome(
-        http_status=None if http_error and has_detail_evidence else status_code,
-        blocked=blocked,
-        browser_outcome=shell_outcome,
-    )
-    terminal_shell = bool(
-        blocked or shell_outcome in {"challenge_page", "low_content_shell"}
-    )
-    terminal_detail_unavailable = (
-        detail_outcome in DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES
-    )
-    product_source_unavailable = bool(
-        http_error
-        or (observed and failed and not succeeded)
-        or terminal_detail_unavailable
-    )
-    browser = browser_diagnostics or {}
-    interaction_present = bool(
-        browser.get("detail_expansion_attempted")
-        or browser.get("variant_controls_detected")
-        or browser.get("interaction_required")
-    )
-
-    affected_fields: list[str] = []
-    if terminal_detail_unavailable:
-        affected_fields.extend(DETAIL_FIELD_FAMILIES)
-    elif product_source_unavailable:
-        affected_fields.extend(OFFER_FIELD_FAMILIES)
-        affected_fields.extend(VARIANT_FIELD_FAMILIES)
-
-    return {
-        "html_present": bool(text.strip()),
-        "structured_data_present": structured_present,
-        "product_data_source_observed": bool(observed),
-        "product_data_source_succeeded": bool(succeeded),
-        "product_data_source_unavailable": product_source_unavailable,
-        "terminal_shell": terminal_shell,
-        "detail_outcome": detail_outcome,
-        "status_code": status_code,
-        "browser_outcome": shell_outcome or None,
-        "interaction_controls_present": interaction_present,
-        "affected_field_families": tuple(dict.fromkeys(affected_fields)),
-        "observed_product_sources": tuple(observed),
-        "failed_product_sources": tuple(failed),
-    }
+    return observed, failed, succeeded
 
 
 def attach_source_capability_diagnostics(result: AcquisitionResultLike | Any) -> None:

@@ -93,7 +93,7 @@ async def authenticate_public_api_key(
     touch: bool = True,
 ) -> PublicApiPrincipal:
     scheme, _, credentials = str(authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not credentials.strip():
+    if any((scheme.lower() != "bearer", not credentials.strip())):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

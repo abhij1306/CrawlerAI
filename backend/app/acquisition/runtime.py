@@ -188,7 +188,7 @@ def should_escalate_to_browser(
     runtime_policy: Mapping[str, Any] | None = None,
 ) -> bool:
     non_retryable_http_status = is_non_retryable_http_status(result.status_code)
-    if result.blocked or is_retryable_http_status(result.status_code):
+    if any((result.blocked, is_retryable_http_status(result.status_code))):
         return True
     if is_browser_recoverable_http_status(result.status_code, surface=surface):
         return True
@@ -215,10 +215,12 @@ def should_escalate_to_browser(
     )
     has_detail_signals = content_signals.detail
     has_listing_signals = content_signals.listing
-    if (
-        bool(escalation_policy.get("js_shell_without_detail_signals", True))
-        and content_signals.js_shell
-        and not has_detail_signals
+    if all(
+        (
+            bool(escalation_policy.get("js_shell_without_detail_signals", True)),
+            content_signals.js_shell,
+            not has_detail_signals,
+        )
     ):
         return True
     if (

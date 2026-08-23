@@ -173,54 +173,62 @@ def _detail_url_title_segment_is_code(value: str) -> bool:
 def detail_title_from_url(url: str) -> str:
     parsed = urlparse(str(url or ""))
     segments = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
-    if segments:
-        terminal = re.sub(
-            DETAIL_TITLE_PATH_EXTENSION_PATTERN,
-            "",
-            segments[-1],
-            flags=re.IGNORECASE,
-        )
-        if _detail_url_title_segment_is_code(terminal):
-            previous = segments[-2] if len(segments) >= 2 else ""
-            previous_tokens = semantic_identity_tokens(previous)
-            collection_code_shape = bool(
-                re.search(
-                    r"/(?:collections?|categories?)/.+/products?/[^/]+/?$",
-                    parsed.path,
-                    re.IGNORECASE,
-                )
-            )
-            style_only_parent = bool(
-                previous_tokens
-                and len(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
-                and set(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
-            )
-            if collection_code_shape or style_only_parent:
-                return ""
+    if _terminal_code_has_non_title_parent(parsed.path, segments):
+        return ""
     for offset, segment in enumerate(reversed(segments)):
-        candidate = re.sub(
-            DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
-        )
-        title = re.sub(r"[-_]+", " ", candidate).strip()
-        key = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
-        if not title or key in DETAIL_URL_TITLE_IGNORED_SEGMENTS:
-            continue
-        if re.fullmatch(DETAIL_URL_TITLE_LOCALE_PATTERN, candidate):
-            continue
-        if _detail_url_title_segment_is_code(candidate):
-            continue
-        if offset == 0 and re.fullmatch(
-            DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, title, re.IGNORECASE
-        ):
+        title, terminal_endpoint = _usable_detail_title_segment(segment, offset=offset)
+        if terminal_endpoint:
             return ""
-        if (
-            offset
-            and len(semantic_identity_tokens(title))
-            < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
-        ):
-            continue
-        return title
+        if title:
+            return title
     return ""
+
+
+def _terminal_code_has_non_title_parent(path: str, segments: list[str]) -> bool:
+    if not segments:
+        return False
+    terminal = re.sub(
+        DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segments[-1], flags=re.IGNORECASE
+    )
+    if not _detail_url_title_segment_is_code(terminal):
+        return False
+    previous = segments[-2] if len(segments) >= 2 else ""
+    previous_tokens = semantic_identity_tokens(previous)
+    collection_code_shape = re.search(
+        r"/(?:collections?|categories?)/.+/products?/[^/]+/?$", path, re.IGNORECASE
+    )
+    style_only_parent = bool(
+        previous_tokens
+        and len(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
+        and set(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
+    )
+    return bool(collection_code_shape or style_only_parent)
+
+
+def _usable_detail_title_segment(segment: str, *, offset: int) -> tuple[str, bool]:
+    candidate = re.sub(
+        DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
+    )
+    title = re.sub(r"[-_]+", " ", candidate).strip()
+    key = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
+    rejected = bool(
+        not title
+        or key in DETAIL_URL_TITLE_IGNORED_SEGMENTS
+        or re.fullmatch(DETAIL_URL_TITLE_LOCALE_PATTERN, candidate)
+        or _detail_url_title_segment_is_code(candidate)
+    )
+    if rejected:
+        return "", False
+    if not offset and re.fullmatch(
+        DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, title, re.IGNORECASE
+    ):
+        return "", True
+    if (
+        offset
+        and len(semantic_identity_tokens(title)) < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
+    ):
+        return "", False
+    return title, False
 
 
 def detail_urls_conflict(
@@ -426,13 +434,7 @@ def _short_numeric_product_asset_conflicts(
     product_values: tuple[object, ...], asset_urls: tuple[str, ...]
 ) -> frozenset[str]:
     product_text = " ".join(unquote(str(value or "")) for value in product_values)
-    product_codes = {
-        token
-        for token in re.findall(r"\d+", product_text)
-        if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
-        <= len(token)
-        <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
-    }
+    product_codes = _short_style_codes(product_text)
     product_suffixes = {
         token for token in re.findall(r"\d+", product_text) if 2 <= len(token) <= 4
     }
@@ -440,22 +442,42 @@ def _short_numeric_product_asset_conflicts(
         token for value in product_values for token in _commerce_identity_tokens(value)
     }
     asset_codes = {
-        url: {
-            token
-            for token in re.findall(
-                r"\d+",
-                urlparse(unquote(str(url or ""))).path.rsplit("/", 1)[-1],
-            )
-            if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
-            <= len(token)
-            <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
-        }
+        url: _short_style_codes(
+            urlparse(unquote(str(url or ""))).path.rsplit("/", 1)[-1]
+        )
         for url in asset_urls
     }
     exact_anchors = product_codes & {
         token for codes in asset_codes.values() for token in codes
     }
-    suffix_anchors = {
+    suffix_anchors = _short_style_suffix_anchors(
+        product_suffixes, product_style_tokens, asset_codes
+    )
+    if not exact_anchors and not suffix_anchors:
+        return frozenset()
+    return frozenset(
+        url
+        for url, codes in asset_codes.items()
+        if _short_style_codes_conflict(codes, exact_anchors, suffix_anchors)
+    )
+
+
+def _short_style_codes(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"\d+", value)
+        if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
+        <= len(token)
+        <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
+    }
+
+
+def _short_style_suffix_anchors(
+    product_suffixes: set[str],
+    product_style_tokens: set[str],
+    asset_codes: dict[str, set[str]],
+) -> set[str]:
+    return {
         suffix
         for suffix in product_suffixes
         if any(
@@ -465,12 +487,13 @@ def _short_numeric_product_asset_conflicts(
             for code in codes
         )
     }
-    if not exact_anchors and not suffix_anchors:
-        return frozenset()
-    return frozenset(
-        url
-        for url, codes in asset_codes.items()
-        if codes
+
+
+def _short_style_codes_conflict(
+    codes: set[str], exact_anchors: set[str], suffix_anchors: set[str]
+) -> bool:
+    return bool(
+        codes
         and exact_anchors.isdisjoint(codes)
         and not any(
             code.endswith(suffix) for code in codes for suffix in suffix_anchors

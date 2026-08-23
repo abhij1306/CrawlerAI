@@ -161,17 +161,8 @@ class PageEvidence:
             return True
         if self.browser_outcome == "usable_content" and self.has_ready_readiness_probe:
             return False
-        provider_evidence = _list_or_empty(
-            self.diagnostics.get("challenge_provider_hits")
-        ) or [
-            item
-            for item in self.challenge_evidence
-            if item.startswith(("provider:", "active_provider:"))
-        ]
-        active_provider = any(
-            str(item or "").strip().lower().startswith("active_provider:")
-            for item in self.challenge_evidence
-        )
+        provider_evidence = _challenge_provider_evidence(self)
+        active_provider = _has_active_provider_evidence(self.challenge_evidence)
         if (
             self.browser_outcome == "usable_content"
             and active_provider
@@ -200,6 +191,24 @@ class PageEvidence:
 
 def _list_or_empty(value: object) -> list[object]:
     return list(value) if isinstance(value, list) else []
+
+
+def _challenge_provider_evidence(result: PageEvidence) -> list[object]:
+    configured = _list_or_empty(result.diagnostics.get("challenge_provider_hits"))
+    if configured:
+        return configured
+    return [
+        item
+        for item in result.challenge_evidence
+        if item.startswith(("provider:", "active_provider:"))
+    ]
+
+
+def _has_active_provider_evidence(evidence: list[str]) -> bool:
+    return any(
+        str(item or "").strip().lower().startswith("active_provider:")
+        for item in evidence
+    )
 
 
 async def _emit_event(on_event: Any, level: str, message: str) -> None:

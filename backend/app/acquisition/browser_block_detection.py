@@ -162,7 +162,7 @@ def _configured_marker_hits(
 def _has_product_identity_content(analysis: HtmlAnalysis) -> bool:
     heading = analysis.document.css_first("main h1, article h1, [role='main'] h1, h1")
     heading_text = " ".join(slug_tokens(heading.text() if heading else ""))
-    if heading_text and not any(
+    challenge_heading = any(
         marker in heading_text
         for marker in (
             "captcha",
@@ -172,7 +172,8 @@ def _has_product_identity_content(analysis: HtmlAnalysis) -> bool:
             "just a moment",
             "security check",
         )
-    ):
+    )
+    if all((heading_text, not challenge_heading)):
         return True
     product_types = {"product", "productmodel"}
     for script in analysis.document.safe_css('script[type*="ld+json"]'):
@@ -247,7 +248,7 @@ def _collect_block_evidence(
         forced_blocked=forced_blocked,
         forced_outcome=forced_outcome,
         base_evidence=base_evidence,
-        has_extractable_content=content_signals.detail or content_signals.listing,
+        has_extractable_content=any((content_signals.detail, content_signals.listing)),
         has_listing_content=content_signals.listing,
         has_product_identity=_has_product_identity_content(analysis),
         shell_title=shell_title,
@@ -278,31 +279,42 @@ def _block_policy_matches(evidence: _BlockEvidence) -> bool:
     active = evidence.active_provider_hits
     elements = evidence.challenge_element_hits
     titles = evidence.title_matches
-    return evidence.forced_blocked or bool(
-        len(hard) >= 2
-        or (hard and (providers or active or elements or titles))
-        or (evidence.shell_title and not evidence.has_extractable_content)
-        or "access denied" in strong
-        or (
-            "just a moment" in strong
-            # cf-browser-verification is in both provider_markers and
-            # active_provider_markers, so an active hit always implies a
-            # provider hit; checking providers alone is equivalent.
-            and bool(CLOUDFLARE_PROVIDER_TOKENS & providers)
+    corroborated_hard = all((hard, any((providers, active, elements, titles))))
+    provider_element = all((elements, any((providers, active))))
+    contentless_identity = all(
+        (
+            titles,
+            not evidence.has_extractable_content,
+            not evidence.has_product_identity,
         )
-        or (elements and (providers or active))
-        or (active and strong and not evidence.has_extractable_content)
-        or (titles and elements)
-        or (
-            titles
-            and not evidence.has_extractable_content
-            and not evidence.has_product_identity
-        )
-        or (hard and evidence.weak_hits and providers)
-        or (
-            "captcha" in strong
-            and providers
-            and (not evidence.has_extractable_content or bool(titles))
+    )
+    return bool(
+        evidence.forced_blocked
+        or any(
+            (
+                len(hard) >= 2,
+                corroborated_hard,
+                all((evidence.shell_title, not evidence.has_extractable_content)),
+                "access denied" in strong,
+                all(
+                    (
+                        "just a moment" in strong,
+                        bool(CLOUDFLARE_PROVIDER_TOKENS & providers),
+                    )
+                ),
+                provider_element,
+                all((active, strong, not evidence.has_extractable_content)),
+                all((titles, elements)),
+                contentless_identity,
+                all((hard, evidence.weak_hits, providers)),
+                all(
+                    (
+                        "captcha" in strong,
+                        providers,
+                        any((not evidence.has_extractable_content, titles)),
+                    )
+                ),
+            )
         )
     )
 

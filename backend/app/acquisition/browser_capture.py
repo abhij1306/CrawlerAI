@@ -147,6 +147,15 @@ class BrowserNetworkCapture:
     async def close(self, page: Any) -> BrowserNetworkCaptureSummary:
         if self._summary is not None:
             return self._summary
+        self._detach_listener(page)
+        if self._workers:
+            await self._close_workers()
+        self._closed = True
+        async with self._lock:
+            self._summary = self._build_summary()
+        return self._summary
+
+    def _detach_listener(self, page: Any) -> None:
         remove_listener = getattr(page, "remove_listener", None)
         if callable(remove_listener):
             try:
@@ -163,68 +172,56 @@ class BrowserNetworkCapture:
                         exc,
                     )
         self._listener_attached = False
-        if self._workers:
-            workers = set(self._workers)
-            await asyncio.sleep(0)
-            self._closing = True
-            queue_empty = getattr(self._queue, "empty", None)
-            active_payload_reads = self._pending_payloads > 0 or (
-                callable(queue_empty) and not queue_empty()
+
+    async def _close_workers(self) -> None:
+        workers = set(self._workers)
+        await asyncio.sleep(0)
+        self._closing = True
+        queue_empty = getattr(self._queue, "empty", None)
+        active_payload_reads = self._pending_payloads > 0 or (
+            callable(queue_empty) and not queue_empty()
+        )
+        join_timeout = _queue_join_timeout_seconds(
+            active_payload_reads=active_payload_reads
+        )
+        try:
+            for _worker in workers:
+                await asyncio.wait_for(self._queue.put(None), timeout=join_timeout)
+            await asyncio.wait_for(self._queue.join(), timeout=join_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Browser capture queue join timed out after %ss; cancelling workers and draining queue",
+                join_timeout,
             )
-            join_timeout_seconds = _queue_join_timeout_seconds(
-                active_payload_reads=active_payload_reads
-            )
-            try:
-                for _worker in workers:
-                    await asyncio.wait_for(
-                        self._queue.put(None),
-                        timeout=join_timeout_seconds,
-                    )
-                await asyncio.wait_for(
-                    self._queue.join(),
-                    timeout=join_timeout_seconds,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Browser capture queue join timed out after %ss; "
-                    "cancelling workers and draining queue",
-                    join_timeout_seconds,
-                )
-                for worker in workers:
-                    worker.cancel()
-                queue_empty = getattr(self._queue, "empty", None)
-                queue_get_nowait = getattr(self._queue, "get_nowait", None)
-                queue_task_done = getattr(self._queue, "task_done", None)
-                while (
-                    callable(queue_empty)
-                    and callable(queue_get_nowait)
-                    and not queue_empty()
-                ):
-                    try:
-                        queue_get_nowait()
-                        if callable(queue_task_done):
-                            queue_task_done()
-                    except asyncio.QueueEmpty:
-                        break
-            else:
-                for worker in workers:
-                    worker.cancel()
+            for worker in workers:
+                worker.cancel()
+            self._drain_capture_queue()
+        finally:
+            for worker in workers:
+                worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
             self._workers.clear()
-        self._closed = True
-        async with self._lock:
-            self._summary = BrowserNetworkCaptureSummary(
-                payloads=list(self._payloads[: self._max_payloads]),
-                network_payload_count=len(self._payloads),
-                captured_network_payload_bytes=self._captured_bytes,
-                malformed_network_payloads=self._malformed_payloads,
-                network_payload_read_failures=self._payload_read_failures,
-                network_payload_read_timeouts=self._payload_read_timeouts,
-                closed_network_payloads=self._payload_closed_failures,
-                skipped_oversized_network_payloads=self._oversized_payloads,
-                dropped_payload_events=self._dropped_payload_events,
-            )
-        return self._summary
+
+    def _drain_capture_queue(self) -> None:
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    def _build_summary(self) -> BrowserNetworkCaptureSummary:
+        return BrowserNetworkCaptureSummary(
+            payloads=list(self._payloads[: self._max_payloads]),
+            network_payload_count=len(self._payloads),
+            captured_network_payload_bytes=self._captured_bytes,
+            malformed_network_payloads=self._malformed_payloads,
+            network_payload_read_failures=self._payload_read_failures,
+            network_payload_read_timeouts=self._payload_read_timeouts,
+            closed_network_payloads=self._payload_closed_failures,
+            skipped_oversized_network_payloads=self._oversized_payloads,
+            dropped_payload_events=self._dropped_payload_events,
+        )
 
     def _schedule_capture(self, response: Any) -> None:
         if self._closing:
@@ -496,6 +493,24 @@ def _repair_truncated_json_prefix(text: str) -> object | None:
     candidate = str(text or "").strip()
     if not candidate.startswith(("{", "[")):
         return None
+    candidate = _truncate_open_json_string(candidate)
+    for _attempt in range(24):
+        candidate = candidate.rstrip().rstrip(",:")
+        if not candidate:
+            return None
+        if (repaired := _balanced_json_candidate(candidate)) is not None:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+        comma_index = candidate.rfind(",")
+        if comma_index < 0:
+            return None
+        candidate = candidate[:comma_index]
+    return None
+
+
+def _truncate_open_json_string(candidate: str) -> str:
     in_string = False
     escaped = False
     string_start = -1
@@ -512,46 +527,36 @@ def _repair_truncated_json_prefix(text: str) -> object | None:
             in_string = True
             string_start = index
     if in_string and string_start >= 0:
-        candidate = candidate[:string_start]
-    for _attempt in range(24):
-        candidate = candidate.rstrip().rstrip(",:")
-        if not candidate:
-            return None
-        stack: list[str] = []
-        in_string = False
-        escaped = False
-        valid = True
-        for char in candidate:
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == '"':
-                    in_string = False
-                continue
-            if char == '"':
-                in_string = True
-            elif char in "[{":
-                stack.append(char)
-            elif char in "]}":
-                expected = "[" if char == "]" else "{"
-                if not stack or stack.pop() != expected:
-                    valid = False
-                    break
-        if valid and not in_string:
-            repaired = candidate + "".join(
-                "]" if opener == "[" else "}" for opener in reversed(stack)
-            )
-            try:
-                return json.loads(repaired)
-            except json.JSONDecodeError:
-                pass
-        comma_index = candidate.rfind(",")
-        if comma_index < 0:
-            return None
-        candidate = candidate[:comma_index]
-    return None
+        return candidate[:string_start]
+    return candidate
+
+
+def _balanced_json_candidate(candidate: str) -> str | None:
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    for char in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            stack.append(char)
+        elif char in "]}":
+            expected = "[" if char == "]" else "{"
+            if not stack or stack.pop() != expected:
+                return None
+    if in_string:
+        return None
+    return candidate + "".join(
+        "]" if opener == "[" else "}" for opener in reversed(stack)
+    )
 
 
 def _decode_rsc_payload(text: str) -> object | None:

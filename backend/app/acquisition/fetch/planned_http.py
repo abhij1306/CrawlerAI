@@ -376,31 +376,9 @@ async def handle_planned_http_result(
         should_browser_escalate=should_browser_escalate,
         runtime_policy=result_runtime_policy,
     ):
-        if context.browser_first_failed and not (vendor or bool(result.blocked)):
-            attach_browser_attempt_diagnostics(
-                result,
-                diagnostics=context.last_browser_attempt_diagnostics,
-            )
-            return result, bool(vendor)
-        if _remaining_browser_timeout_below_retry_floor(context, deps=deps):
-            result.browser_diagnostics = {
-                **dict(result.browser_diagnostics or {}),
-                "browser_escalation_skipped": BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
-            }
-            return result, bool(vendor)
-        browser_result = await _escalate_http_result_to_browser(
-            context,
-            result=result,
-            proxy=proxy,
-            vendor=vendor,
-            deps=deps,
+        return await _handle_browser_escalation(
+            context, result=result, proxy=proxy, vendor=vendor, deps=deps
         )
-        unresolved_vendor_block = bool(vendor) and not _browser_result_is_ready(
-            browser_result
-        )
-        if unresolved_vendor_block:
-            browser_result.blocked = True
-        return browser_result, unresolved_vendor_block
     if is_non_retryable_http_status(result.status_code):
         logger.info(
             "Returning non-retryable HTTP status %s for %s without browser fallback",
@@ -417,23 +395,40 @@ async def handle_planned_http_result(
     return result, bool(vendor)
 
 
+async def _handle_browser_escalation(
+    context: Any,
+    *,
+    result: PageFetchResult,
+    proxy: str | None,
+    vendor: str | None,
+    deps: HttpAttemptDependencies,
+) -> tuple[PageFetchResult | object, bool]:
+    if context.browser_first_failed and not (vendor or bool(result.blocked)):
+        attach_browser_attempt_diagnostics(
+            result, diagnostics=context.last_browser_attempt_diagnostics
+        )
+        return result, bool(vendor)
+    if _remaining_browser_timeout_below_retry_floor(context, deps=deps):
+        result.browser_diagnostics = {
+            **dict(result.browser_diagnostics or {}),
+            "browser_escalation_skipped": BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
+        }
+        return result, bool(vendor)
+    browser_result = await _escalate_http_result_to_browser(
+        context, result=result, proxy=proxy, vendor=vendor, deps=deps
+    )
+    unresolved = bool(vendor) and not _browser_result_is_ready(browser_result)
+    if unresolved:
+        browser_result.blocked = True
+    return browser_result, unresolved
+
+
 async def run_browser_http_handoff(
     context: Any,
     *,
     deps: HttpAttemptDependencies,
 ) -> PageFetchResult | None:
-    host_policy = context.host_policy
-    if host_policy is None:
-        return None
-    if not bool(crawler_runtime_settings.browser_http_handoff_enabled):
-        return None
-    if hard_browser_requirement(context=context):
-        return None
-    if context.fetch_mode == "browser_only":
-        return None
-    if context.prefer_browser and not context.prefer_curl_handoff:
-        return None
-    if not (host_policy.prefer_browser or context.prefer_curl_handoff):
+    if not _browser_http_handoff_allowed(context):
         return None
     engines = _handoff_cookie_engines(context.handoff_cookie_engine)
     for proxy in context.proxies:
@@ -471,6 +466,20 @@ async def run_browser_http_handoff(
             context.last_browser_attempt_diagnostics = dict(result.browser_diagnostics)
             return None
     return None
+
+
+def _browser_http_handoff_allowed(context: Any) -> bool:
+    host_policy = context.host_policy
+    if host_policy is None or not crawler_runtime_settings.browser_http_handoff_enabled:
+        return False
+    if (
+        hard_browser_requirement(context=context)
+        or context.fetch_mode == "browser_only"
+    ):
+        return False
+    if context.prefer_browser and not context.prefer_curl_handoff:
+        return False
+    return bool(host_policy.prefer_browser or context.prefer_curl_handoff)
 
 
 async def _handoff_cookie_header(

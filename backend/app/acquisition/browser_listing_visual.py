@@ -4,7 +4,7 @@ import asyncio
 from html import escape
 import logging
 import re
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -150,70 +150,80 @@ def listing_visual_elements_html(snapshot: object) -> str:
                 href := " ".join(str(item.get("href") or "").split())
             ):
                 groups.setdefault(href, []).append(item)
-    cards: list[str] = []
-    for index, (href, items) in enumerate(groups.items()):
-        labels: list[str] = []
-        images: list[str] = []
-        prices: list[str] = []
-        for item in items:
-            for key in ("title", "ariaLabel", "alt", "text"):
-                value = " ".join(str(item.get(key) or "").split())
-                prices.extend(
-                    price
-                    for price in re.findall(
-                        LISTING_VISUAL_PRICE_REGEX_PATTERN, value, re.I
-                    )
-                    if price not in prices
-                )
-                label = re.sub(
-                    LISTING_VISUAL_PRICE_REGEX_PATTERN, " ", value, flags=re.I
-                ).strip(" |-–—")
-                if label and label not in labels:
-                    labels.append(label)
-            src = " ".join(str(item.get("src") or "").split())
-            if src and src not in images:
-                images.append(src)
-        if not labels:
-            continue
-        escaped_href = escape(href, quote=True)
-        links = "".join(
-            f'<a href="{escaped_href}" title="{escape(label, quote=True)}">{escape(label)}</a>'
-            for label in labels
-        )
-        image_html = "".join(f'<img src="{escape(src, quote=True)}">' for src in images)
-        price_html = "".join(
-            f'<span class="price">{escape(price)}</span>' for price in prices
-        )
-        cards.append(
-            f'<article data-product-id="visual-{index}">{links}{image_html}{price_html}</article>'
-        )
+    cards = [
+        card
+        for index, (href, items) in enumerate(groups.items())
+        if (card := _visual_card_html(index, href, items))
+    ]
     return f"<main>{''.join(cards)}</main>" if cards else ""
+
+
+def _visual_card_html(index: int, href: str, items: list[dict[str, object]]) -> str:
+    labels: list[str] = []
+    images: list[str] = []
+    prices: list[str] = []
+    for item in items:
+        for key in ("title", "ariaLabel", "alt", "text"):
+            value = " ".join(str(item.get(key) or "").split())
+            prices.extend(
+                price
+                for price in re.findall(LISTING_VISUAL_PRICE_REGEX_PATTERN, value, re.I)
+                if price not in prices
+            )
+            label = re.sub(
+                LISTING_VISUAL_PRICE_REGEX_PATTERN, " ", value, flags=re.I
+            ).strip(" |-–—")
+            if label and label not in labels:
+                labels.append(label)
+        src = " ".join(str(item.get("src") or "").split())
+        if src and src not in images:
+            images.append(src)
+    if not labels:
+        return ""
+    escaped_href = escape(href, quote=True)
+    links = "".join(
+        f'<a href="{escaped_href}" title="{escape(label, quote=True)}">{escape(label)}</a>'
+        for label in labels
+    )
+    images_html = "".join(f'<img src="{escape(src, quote=True)}">' for src in images)
+    prices_html = "".join(
+        f'<span class="price">{escape(price)}</span>' for price in prices
+    )
+    return (
+        f'<article data-product-id="visual-{index}">'
+        f"{links}{images_html}{prices_html}</article>"
+    )
 
 
 def _normalize_snapshot(snapshot: object) -> list[ListingVisualElement]:
     if not isinstance(snapshot, list):
         return []
-    rows: list[ListingVisualElement] = []
-    for item in snapshot[:300]:
-        if not isinstance(item, dict):
-            continue
-        rows.append(
-            ListingVisualElement(
-                tag=str(item.get("tag") or ""),
-                text=str(item.get("text") or ""),
-                href=str(item.get("href") or ""),
-                src=str(item.get("src") or ""),
-                alt=str(item.get("alt") or ""),
-                ariaLabel=str(item.get("ariaLabel") or ""),
-                title=str(item.get("title") or ""),
-                x=int(item.get("x") or 0),
-                y=int(item.get("y") or 0),
-                width=int(item.get("width") or 0),
-                height=int(item.get("height") or 0),
-                score=int(item.get("score") or 0),
-            )
+    return [
+        ListingVisualElement(
+            tag=_snapshot_text(item, "tag"),
+            text=_snapshot_text(item, "text"),
+            href=_snapshot_text(item, "href"),
+            src=_snapshot_text(item, "src"),
+            alt=_snapshot_text(item, "alt"),
+            ariaLabel=_snapshot_text(item, "ariaLabel"),
+            title=_snapshot_text(item, "title"),
+            x=_snapshot_int(item, "x"),
+            y=_snapshot_int(item, "y"),
+            width=_snapshot_int(item, "width"),
+            height=_snapshot_int(item, "height"),
+            score=_snapshot_int(item, "score"),
         )
-    return rows
+        for item in snapshot[:300]
+        if isinstance(item, dict)
+    ]
+
+
+def _snapshot_text(item: dict[str, object], key: str) -> str:
+    return str(item.get(key) or "")
+
+
+def _snapshot_int(item: dict[str, object], key: str) -> int:
+    return int(cast(Any, item.get(key) or 0))
 
 
 async def capture_listing_visual_elements(

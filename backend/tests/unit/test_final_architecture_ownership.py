@@ -45,9 +45,7 @@ OVERSIZED_MODULE_DEBT = {
     # diagnostics (4.8); browser_readiness +13, collectors/dom +7 — all raised
     # to measured.
     "acquisition/browser_capture.py": 704,
-    "acquisition/browser_readiness.py": 715,
     "acquisition/browser_recovery.py": 728,
-    "acquisition/browser_result_builder.py": 744,
     "core/config/field_mappings.py": 704,
     "crawl/batch_runtime.py": 709,
     "enrichment/service.py": 905,
@@ -72,49 +70,12 @@ OVERSIZED_MODULE_DEBT = {
     # find_contract_location join (2.15).
     "persistence/extraction_memory.py": 1394,
 }
-# SLICE-6 closeout reconciliation: probe_browser_readiness (30) was decomposed
-# into _listing_discovery_signals/_listing_readiness_verdict and left the
-# ledger. Four entries grew with the brand/field-state consolidation and are
-# tracked for the next cleanup slice: infer_brand_from_product_url 69 -> 86,
-# infer_brand_from_page_identity 38 -> 39, field_evidence_states 41 -> 46,
-# projection_field_states 70 -> 78.
-# Stream B commit 14 (2026-07-22): the four >150-line functions (4.15) were
-# decomposed into stage helpers and left the ledger —
-# projection_field_states 78 -> 3, commerce_detail_projection 43 -> <=18,
-# _acquire_browser_retry_result (never ledgered) -> <=10, jsonld _variant
-# 30 -> <=15, resolve 31 -> 8.
+# Core/acquisition simplification (2026-08-23): every scoped callable is now
+# CC<=15. Browser readiness state assembly moved to the existing page-helper
+# owner; browser_readiness and browser_result_builder also left the size ledger.
 COMPLEX_FUNCTION_DEBT = {
     # Extraction runtime simplification (2026-08-22): all 21 extraction
     # entries left the ledger after the package-wide CC<=15 decomposition.
-    ("acquisition/browser_block_detection.py", "_block_policy_matches"): 30,
-    ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
-    ("acquisition/browser_detail.py", "_candidate_is_admitted"): 56,
-    ("acquisition/browser_identity.py", "build_playwright_context_spec"): 22,
-    ("acquisition/browser_listing_visual.py", "listing_visual_elements_html"): 22,
-    ("acquisition/browser_page_helpers.py", "_select_primary_browser_html"): 22,
-    ("acquisition/browser_readiness.py", "analyze_extractable_content"): 35,
-    ("acquisition/browser_readiness.py", "_has_detail_dom_signals"): 22,
-    ("acquisition/platform_policy.py", "detect_platform_family"): 24,
-    ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 26,
-    ("core/records/confidence.py", "_field_penalties"): 23,
-    ("core/records/divergence.py", "compare_records_to_projection"): 21,
-    ("core/records/divergence.py", "_compare_variants"): 23,
-    ("core/records/divergence.py", "_compare_assets"): 35,
-    ("core/records/field_url_normalization.py", "canonical_public_record_url"): 30,
-    ("core/records/js_state_scope.py", "path_product_identity_conflicts"): 21,
-    ("core/records/normalizers/__init__.py", "normalize_decimal_price"): 26,
-    ("core/records/normalizers/__init__.py", "normalize_value"): 27,
-    ("core/records/schema_service.py", "_snapshot_to_resolved"): 29,
-    ("core/records/structured_variant_state.py", "with_parent_variant_axes"): 21,
-    ("core/records/url_identity.py", "_short_numeric_product_asset_conflicts"): 28,
-    ("core/shared/field_coerce.py", "sanitize_option_scalar"): 32,
-    ("core/shared/field_coerce_dispatch.py", "coerce_field_value"): 54,
-    ("core/shared/field_coerce_text.py", "infer_brand_from_page_identity"): 39,
-    ("core/shared/field_coerce_text.py", "infer_brand_from_product_url"): 86,
-    ("core/shared/text_coerce.py", "is_title_noise"): 22,
-    ("core/shared/url_utils.py", "extract_urls"): 25,
-    ("core/extraction_memory/contract_runtime.py", "match_template"): 23,
-    ("core/extraction_memory/contract_runtime.py", "resolved_contract_outcomes"): 23,
     ("crawl/crud.py", "create_crawl_run"): 24,
     ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
@@ -264,11 +225,15 @@ PACKAGE_LOC_BUDGETS = {
     # >150-line function decompositions (4.15) — raised to measured.
     # Mypy fix pass (same day): core +23, acquisition +23 for the typed
     # redis eval wrappers (str args + Awaitable casts) — raised to measured.
+    # Core/acquisition simplification (2026-08-23): acquisition +259 and core
+    # +5 after CC<=15 predicate decomposition. Static HTML classification and
+    # detail candidate admission became cohesive owners; browser_readiness and
+    # browser_result_builder left oversized debt. No complexity/size cap rose.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
-    "acquisition": 17_363,
+    "acquisition": 17_622,
     "crawl": 9_533,
-    "core": 21_096,
+    "core": 21_101,
     "enrichment": 2_252,
     "connectors": 2_427,
     "intelligence": 3_459,
@@ -321,7 +286,9 @@ PACKAGE_LOC_BUDGETS = {
 # Extraction runtime simplification reconciliation (2026-08-22), followed by
 # complete feature removal, one-time Logfire system-metrics instrumentation,
 # and the formatter-required canonical database URL wrap (2026-08-23).
-TOTAL_APP_LOC_BUDGET = 85_280
+# Core/acquisition simplification reconciliation (2026-08-23): +448 for
+# named predicate phases and the two cohesive browser owner splits above.
+TOTAL_APP_LOC_BUDGET = 85_728
 
 
 def test_production_package_loc_budgets() -> None:
