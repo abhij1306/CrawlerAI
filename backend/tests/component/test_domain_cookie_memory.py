@@ -206,7 +206,7 @@ async def test_persist_storage_state_for_domain_keeps_engine_specific_rows(
 async def test_persist_storage_state_for_domain_persists_localhost_with_port(
     db_session,
 ) -> None:
-    domain = "http://localhost:3000/products/widget"
+    domain = "http://localhost:3001/products/widget"
 
     saved = await cookie_store.persist_storage_state_for_domain(
         domain,
@@ -225,17 +225,17 @@ async def test_persist_storage_state_for_domain_persists_localhost_with_port(
     )
 
     rows = await cookie_store.list_domain_cookie_memory(
-        "localhost:3000", session=db_session
+        "localhost:3001", session=db_session
     )
     all_rows = await cookie_store.list_domain_cookie_memory(session=db_session)
     loaded = await cookie_store.load_storage_state_for_domain(
-        "localhost:3000", session=db_session
+        "localhost:3001", session=db_session
     )
 
     assert saved is True
     assert len(rows) == 1
-    assert rows[0]["domain"] == "localhost:3000"
-    assert any(row["domain"] == "localhost:3000" for row in all_rows)
+    assert rows[0]["domain"] == "localhost:3001"
+    assert any(row["domain"] == "localhost:3001" for row in all_rows)
     assert loaded is not None
 
 
@@ -728,31 +728,31 @@ class TestNativeContextContract:
     def test_native_context_deheadlessifies_user_agent(self) -> None:
         # Headless Chromium leaks a "HeadlessChrome" UA token that bot-defense
         # vendors block on sight. The context UA must present as plain Chrome.
-        opts = browser_identity.build_playwright_context_options(
+        opts = browser_identity.build_playwright_context_spec(
             browser_major_version=145
-        )
+        ).context_options
         user_agent = str(opts.get("user_agent") or "")
         assert "HeadlessChrome" not in user_agent
         assert "Chrome/145" in user_agent
 
     def test_native_context_emits_coherent_client_hints(self) -> None:
-        opts = browser_identity.build_playwright_context_options(
+        opts = browser_identity.build_playwright_context_spec(
             browser_major_version=145
-        )
+        ).context_options
         headers = opts.get("extra_http_headers") or {}
         assert headers.get("sec-ch-ua-mobile") == "?0"
         assert "Google Chrome" in str(headers.get("sec-ch-ua") or "")
         assert '"145"' in str(headers.get("sec-ch-ua") or "")
 
     def test_native_context_merges_locality_headers_with_client_hints(self) -> None:
-        opts = browser_identity.build_playwright_context_options(
+        opts = browser_identity.build_playwright_context_spec(
             browser_major_version=145,
             locality_profile={
                 "browser_context_profile": {
                     "extra_http_headers": {"Accept-Language": "en-US"}
                 }
             },
-        )
+        ).context_options
         headers = opts.get("extra_http_headers") or {}
         assert headers["Accept-Language"] == "en-US"
         assert headers.get("sec-ch-ua-mobile") == "?0"
@@ -773,9 +773,9 @@ class TestNativeContextContract:
     def test_native_context_ignores_invalid_geolocation(
         self, geolocation: dict[str, object]
     ) -> None:
-        opts = browser_identity.build_playwright_context_options(
+        opts = browser_identity.build_playwright_context_spec(
             locality_profile={"geolocation": geolocation}
-        )
+        ).context_options
 
         assert "geolocation" not in opts
 
@@ -789,15 +789,15 @@ class TestNativeContextContract:
             {"no_viewport": True, "permissions": native_permissions},
         )
 
-        opts = browser_identity.build_playwright_context_options(
+        opts = browser_identity.build_playwright_context_spec(
             locality_profile={"geolocation": {"latitude": 48.1, "longitude": 12.5}}
-        )
+        ).context_options
 
         assert opts["permissions"] == ["camera", "geolocation"]
         assert native_permissions == ["camera"]
 
     def test_native_context_uses_no_viewport_true(self) -> None:
-        opts = browser_identity.build_playwright_context_options()
+        opts = browser_identity.build_playwright_context_spec().context_options
         assert opts.get("no_viewport") is True
 
     def test_native_context_has_no_init_script(self) -> None:

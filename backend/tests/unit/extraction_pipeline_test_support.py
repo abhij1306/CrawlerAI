@@ -56,7 +56,7 @@ HTML = """
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "Trail Shoe",
-  "brand": {"@type": "Brand", "name": "Invoro"},
+  "brand": {"@type": "Brand", "name": "ExampleCo"},
   "description": "A durable trail shoe for long-distance runs.",
   "sku": "TS-1",
   "url": "https://shop.test/products/trail-shoe",

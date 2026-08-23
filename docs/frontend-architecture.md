@@ -358,7 +358,7 @@ There is also Playwright e2e coverage under `frontend/e2e`.
 Policy and CI checks:
 
 - `frontend/scripts/check-frontend-architecture.mjs` enforces feature-owner line budgets, the aggregate nonblank test-LOC ratchet, API owner files, and Data Enrichment ownership boundaries.
-- VitePlus applies ESLint complexity 15 to production and test TypeScript callables; CI runs `vp check` and architecture policy before build.
+- VitePlus applies ESLint complexity 15 to production and test TypeScript callables; CI runs `vp check`, the unit suite, and architecture policy before build and Playwright smoke. Vitest keeps the `vmThreads` pool bounded to four workers so jsdom-heavy files do not starve each other's fixed interaction deadlines.
 - `frontend/scripts/check-bundle-budgets.mjs` enforces JS/CSS route asset budgets after build and is wired into CI.
 - `check:policy` runs token, crawl architecture, frontend architecture, and bundle budget checks.
 

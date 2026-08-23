@@ -215,8 +215,8 @@ def test_listing_signals_detect_list_item_type() -> None:
 
 @pytest.mark.component
 def test_is_special_use_domain_ignores_ports() -> None:
-    assert is_special_use_domain("localhost:3000") is True
-    assert is_special_use_domain("http://localhost:3000/products/widget") is True
+    assert is_special_use_domain("localhost:3001") is True
+    assert is_special_use_domain("http://localhost:3001/products/widget") is True
 
 
 @pytest.mark.component

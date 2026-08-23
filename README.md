@@ -54,8 +54,8 @@ Minimum local values:
 
 | Variable | Required | Default/example | Notes |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@localhost:5432/crawlerai` | PostgreSQL database. |
-| `REDIS_URL` | Yes | `redis://localhost:6379/0` | Queue and cache dependency. |
+| `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/crawlerai` | Dedicated CrawlerAI PostgreSQL database. |
+| `REDIS_URL` | Yes | `redis://localhost:6379/1` | Queue and cache dependency; DB 1 isolates CrawlerAI state. |
 | `JWT_SECRET_KEY` | Yes | `replace-with-64-byte-random-secret` | Replace for real use. |
 | `ENCRYPTION_KEY` | Yes | `replace-with-32-byte-minimum-secret` | Replace for real use. |
 | `DEFAULT_ADMIN_EMAIL` | Yes | `admin@example.com` | Bootstrap admin identity. |
@@ -66,13 +66,12 @@ Minimum local values:
 
 ```powershell
 cd backend
-python -m venv .venv
-.\.venv\Scripts\pip install -e ".[dev]"
+uv sync --frozen --extra dev
 .\.venv\Scripts\python init_db.py
 .\.venv\Scripts\python run_dev_server.py
 ```
 
-API: `http://127.0.0.1:8000`
+API: `http://127.0.0.1:8001`
 
 ### Logfire
 
@@ -100,7 +99,19 @@ vp install
 vp dev
 ```
 
-UI: `http://127.0.0.1:3000`
+UI: `http://127.0.0.1:3001`
+
+### Start everything
+
+After the frozen backend and frontend installs exist, run from the repository root:
+
+```powershell
+.\start.bat
+```
+
+The script reuses healthy PostgreSQL/Redis endpoints, starts missing local Docker
+services, applies migrations, then launches the API, frontend, and configured Celery
+workers. CrawlerAI PostgreSQL is exposed on 5433; API and UI use 8001 and 3001.
 
 ## Main Routes
 
@@ -136,7 +147,7 @@ UI: `http://127.0.0.1:3000`
 Create API keys in the UI or through `/api/api-keys`. Public routes use bearer auth:
 
 ```powershell
-curl -H "Authorization: Bearer <api-key>" http://127.0.0.1:8000/api/v1/capabilities
+curl -H "Authorization: Bearer <api-key>" http://127.0.0.1:8001/api/v1/capabilities
 ```
 
 Hosted MCP server:
@@ -144,7 +155,7 @@ Hosted MCP server:
 ```powershell
 cd backend
 $env:CRAWLERAI_API_KEY='<set-api-key-in-shell>'
-$env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8000/api/v1'
+$env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8001/api/v1'
 .\.venv\Scripts\python.exe -m app.mcp_server.server
 ```
 

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         default="development",
         validation_alias=AliasChoices("APP_ENV", "app_env"),
     )
-    frontend_url: str = "http://127.0.0.1:3000"
+    frontend_url: str = "http://127.0.0.1:3001"
     frontend_origins: str = ""
     jwt_secret_key: str = Field(
         validation_alias=AliasChoices("JWT_SECRET_KEY", "jwt_secret_key"),

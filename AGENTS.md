@@ -11,7 +11,7 @@ For trivial work that needs no substantive reasoning—running tests, formatting
 CrawlerAI is a deterministic crawl, extraction, review, and export system for ecommerce, jobs, automobiles, and tabular targets.
 
 - Backend: FastAPI + PostgreSQL + Redis + Celery + Playwright
-- Frontend: Next.js
+- Frontend: React + Vite+
 - Extraction order: adapter -> structured source -> DOM
 - LLM is opt-in backfill only, never the primary extractor
 

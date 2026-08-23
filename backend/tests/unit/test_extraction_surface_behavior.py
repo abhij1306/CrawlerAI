@@ -11,7 +11,7 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
           "@context": "https://schema.org",
           "@type": "JobPosting",
           "title": "Staff Backend Engineer",
-          "hiringOrganization": {"name": "Invoro"},
+          "hiringOrganization": {"name": "ExampleCo"},
           "jobLocation": {"address": {"addressLocality": "Remote", "addressCountry": "US"}},
           "datePosted": "2026-06-01",
           "employmentType": "FULL_TIME",
@@ -26,7 +26,7 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     result = _extract("job_detail", html, "https://jobs.test/staff-backend-engineer")
     assert result.verdict == "success"
     assert result.records[0]["title"] == "Staff Backend Engineer"
-    assert result.records[0]["company"] == "Invoro"
+    assert result.records[0]["company"] == "ExampleCo"
     assert result.records[0]["location"] == "Remote, US"
     assert result.records[0]["_lineage"]["title"]
     assert result.evidence
@@ -60,7 +60,7 @@ def test_job_detail_result_is_replayable() -> None:
         """
         <main>
           <h1>Staff Backend Engineer</h1>
-          <div class="company">Invoro</div>
+          <div class="company">ExampleCo</div>
           <div class="location">Remote</div>
           <a href="/apply/staff-backend-engineer">Apply</a>
         </main>
@@ -85,12 +85,12 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
         <ul>
           <li class="job-card">
             <a href="/jobs/backend"><h2>Backend Engineer</h2></a>
-            <span class="company">Invoro</span>
+            <span class="company">ExampleCo</span>
             <span class="location">Remote</span>
           </li>
           <li class="job-card">
             <a href="/jobs/data"><h2>Data Engineer</h2></a>
-            <span class="company">Invoro</span>
+            <span class="company">ExampleCo</span>
           </li>
         </ul>
         """,
@@ -113,7 +113,7 @@ def test_job_listing_result_is_replayable() -> None:
         """
         <article class="job-card">
           <a href="/jobs/backend" title="Backend Engineer">Backend Engineer</a>
-          <span class="company">Invoro</span>
+          <span class="company">ExampleCo</span>
         </article>
         """,
         "https://jobs.test/careers",

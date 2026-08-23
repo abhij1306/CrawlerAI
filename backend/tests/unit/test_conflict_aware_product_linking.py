@@ -182,7 +182,7 @@ def test_jsonld_node_path_difference_does_not_block_url_title_merge() -> None:
             bundle,
             "script-two",
             "product.brand",
-            "Invoro",
+            "ExampleCo",
             metadata={"jsonld_node_path": "/@graph/3"},
         ),
     )

@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=duplicate-code
 
 from decimal import Decimal
 

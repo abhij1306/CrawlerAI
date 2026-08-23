@@ -221,7 +221,7 @@ async def test_cors_preflight_uses_narrow_allowlists() -> None:
         response = await client.options(
             "/api/auth/login",
             headers={
-                "Origin": "http://127.0.0.1:3000",
+                "Origin": "http://127.0.0.1:3001",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "content-type,authorization,x-request-id",
             },

@@ -8,7 +8,6 @@ import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
 import { navGroups } from '../../src/app/route-registry';
 import { Button } from '../ui/button';
-import { ThemeToggle } from '../ui/theme-toggle';
 import { Tooltip } from '../ui/tooltip';
 import { AUTH_SESSION_QUERY_KEY } from './auth-session-query';
 import { LogoMark } from './logo-mark';
@@ -18,7 +17,11 @@ function isNavItemActive(pathname: string, item: (typeof navGroups)[number]['ite
   return pathname === item.path || pathname.startsWith(`${item.path}/`);
 }
 
-export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAdmin: boolean }>) {
+export function Sidebar({
+  pathname,
+  isAdmin,
+  accountEmail,
+}: Readonly<{ pathname: string; isAdmin: boolean; accountEmail: string }>) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutPending, setLogoutPending] = useState(false);
@@ -164,17 +167,16 @@ export function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAd
             <Tooltip content="Log out">{logoutButton}</Tooltip>
           </div>
         ) : (
-          <div className="flex items-center justify-between px-2 py-1">
+          <div className="flex items-center justify-between gap-2 px-2 py-1">
             <div className="min-w-0">
               <div className="text-2xs font-semibold tracking-wide text-muted uppercase">
-                Display
+                Account
               </div>
-              <div className="truncate text-[11px] text-secondary">Theme preference</div>
+              <div className="truncate text-[11px] text-secondary" title={accountEmail}>
+                {accountEmail}
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <ThemeToggle />
-              {logoutButton}
-            </div>
+            {logoutButton}
           </div>
         )}
       </div>

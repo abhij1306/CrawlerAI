@@ -157,7 +157,7 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     record = result.records[0] if result.records else None
     assert record is not None
     assert record["title"] == "Trail Shoe"
-    assert record["brand"] == "Invoro"
+    assert record["brand"] == "ExampleCo"
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
@@ -178,7 +178,7 @@ def test_missing_default_contract_field_cannot_report_clean_success() -> None:
           "@context": "https://schema.org",
           "@type": "Product",
           "name": "Trail Shoe",
-          "brand": "Invoro",
+          "brand": "ExampleCo",
           "url": "https://shop.test/products/trail-shoe",
           "image": "https://shop.test/i/trail.jpg",
           "offers": {"price": "129", "priceCurrency": "USD"}
@@ -253,7 +253,7 @@ def test_sellable_offer_requires_atomic_price_and_currency_contract() -> None:
           "@context": "https://schema.org",
           "@type": "Product",
           "name": "Complete Product",
-          "brand": "Invoro",
+          "brand": "ExampleCo",
           "description": "A complete product description with durable materials.",
           "image": "https://shop.test/i/complete.jpg",
           "url": "https://shop.test/products/complete",

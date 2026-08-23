@@ -279,27 +279,6 @@ def browser_engine_attempts(
     return engines
 
 
-def extend_browser_engine_attempts_after_block(
-    *,
-    engine_attempts: list[str],
-    attempted_engine: str,
-    context: Any,
-    host_policy: HostProtectionPolicy,
-    real_chrome_available: bool,
-) -> list[str]:
-    refreshed_attempts = browser_engine_attempts(
-        context=context,
-        host_policy=host_policy,
-        real_chrome_available=real_chrome_available,
-    )
-    appended = list(engine_attempts)
-    for engine in refreshed_attempts:
-        if engine == attempted_engine or engine in appended:
-            continue
-        appended.append(engine)
-    return appended
-
-
 def durable_vendor_block_engine_attempts(
     *,
     engine_attempts: list[str],

@@ -186,7 +186,7 @@ async def test_redirect_to_hostname_resolving_private_is_blocked(
 def test_validate_public_url_host_blocks_literal_private_targets() -> None:
     for url in (
         "http://169.254.169.254/latest/meta-data",
-        "http://127.0.0.1:8000/api/metrics",
+        "http://127.0.0.1:8001/api/metrics",
         "http://10.1.2.3/internal",
         "http://[::1]/",
         "http://localhost/admin",
@@ -235,7 +235,7 @@ async def test_browser_route_aborts_private_ip_document_request() -> None:
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_browser_route_aborts_internal_hostname_subresource() -> None:
-    route = _FakeRoute("http://localhost:8000/api/metrics", resource_type="xhr")
+    route = _FakeRoute("http://localhost:8001/api/metrics", resource_type="xhr")
 
     await block_unneeded_route(route)
 

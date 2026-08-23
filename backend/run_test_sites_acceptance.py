@@ -61,7 +61,7 @@ async def _run_one(site: dict[str, object], mode: str) -> dict[str, object]:
                     mode=mode,
                 )
             )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     result["elapsed_s"] = round(time.perf_counter() - started, 2)
     result["failure_mode"] = classify_failure_mode(result)

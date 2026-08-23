@@ -18,7 +18,7 @@ describe('isSpecialUseDomain', () => {
   });
 
   it('still detects localhost hosts with explicit ports', () => {
-    expect(isSpecialUseDomain('localhost:3000')).toBe(true);
+    expect(isSpecialUseDomain('localhost:3001')).toBe(true);
     expect(isSpecialUseDomain('http://localhost.localdomain:8080')).toBe(true);
   });
 });

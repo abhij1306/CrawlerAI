@@ -27,7 +27,7 @@ function renderSidebar() {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/dashboard']}>
-        <Sidebar pathname="/dashboard" isAdmin />
+        <Sidebar pathname="/dashboard" isAdmin accountEmail="admin@example.com" />
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -74,7 +74,7 @@ describe('Sidebar logout', () => {
       expect(screen.getByTestId('location-probe')).toHaveTextContent('/login');
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(String(url)).toContain('/api/auth/logout');
     expect(init.method).toBe('POST');

@@ -74,11 +74,11 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
-    port: 3000,
+    port: 3001,
   },
   preview: {
     host: '127.0.0.1',
-    port: 3000,
+    port: 3001,
   },
   build: {
     target: 'esnext',
@@ -113,6 +113,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     pool: 'vmThreads',
+    maxWorkers: 4,
     include: [
       'app/**/*.{test,spec}.{ts,tsx}',
       'components/**/*.{test,spec}.{ts,tsx}',

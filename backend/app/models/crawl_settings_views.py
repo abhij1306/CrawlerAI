@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=missing-function-docstring
 
 # Derived-settings view computations extracted from CrawlRunSettings
 # (models/crawl_settings.py). Each collaborator wraps the raw settings dict and

@@ -179,20 +179,5 @@ def _merge_browser_context_profile(
         context_options[normalized_key] = value
 
 
-def build_playwright_context_options(
-    *,
-    run_id: int | None = None,
-    browser_major_version: int | None = None,
-    locality_profile: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
-    return dict(
-        build_playwright_context_spec(
-            run_id=run_id,
-            browser_major_version=browser_major_version,
-            locality_profile=locality_profile,
-        ).context_options
-    )
-
-
 def clear_browser_identity_cache() -> None:
     return None

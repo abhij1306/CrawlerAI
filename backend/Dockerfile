@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned uv toolchain; dependencies install from uv.lock only (reproducible).
-COPY --from=ghcr.io/astral-sh/uv:0.11.29 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /bin/
 
 COPY backend/ ./
 
@@ -30,7 +30,7 @@ RUN useradd --create-home --shell /bin/bash appuser && \
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8001
 
 # Run from the uv-synced venv; the system site-packages stay untouched.
-CMD [".venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD [".venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
