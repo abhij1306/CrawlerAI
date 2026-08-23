@@ -20,7 +20,7 @@ from app.core.db_utils import mapping_or_empty
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_policy import normalize_field_key
 from app.core.shared.field_coerce import object_list, safe_int
-from app.evaluation.schema import GroundedLabel
+from app.evaluation.schema import GroundedLabel, GroundingReference
 from app.extraction.documents import DocumentStore
 from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.models.extraction_memory import (
@@ -427,34 +427,17 @@ def _candidate_recipe_proposal(
             continue
         field_name = normalize_field_key(label.field_name)
         for reference in label.grounding:
-            locator = str(reference.locator or "").strip()
-            if reference.kind not in {"node", "path"} or not locator.startswith("css:"):
-                continue
-            selector = locator.removeprefix("css:").strip()
+            selector = _grounded_css_selector(reference)
             if not selector:
                 continue
             selectors_by_field.setdefault(field_name, set()).add(selector)
-            key = (field_name, selector)
-            rule = rules_by_selector.get(key)
-            if rule is None:
-                rules_by_selector[key] = {
-                    "field_name": field_name,
-                    "css_selector": selector,
-                    "source": "grounded_correction",
-                    "source_run_id": source_run_id,
-                    "status": "validated",
-                    "is_active": True,
-                    "semantic_role": label.semantic_role,
-                    "locale_interpretation": label.locale_interpretation,
-                }
-                continue
-            if rule.get("semantic_role") is None and label.semantic_role is not None:
-                rule["semantic_role"] = label.semantic_role
-            if (
-                rule.get("locale_interpretation") is None
-                and label.locale_interpretation is not None
-            ):
-                rule["locale_interpretation"] = label.locale_interpretation
+            _merge_candidate_rule(
+                rules_by_selector,
+                field_name=field_name,
+                selector=selector,
+                label=label,
+                source_run_id=source_run_id,
+            )
     conflicts = [
         {"field_name": field_name, "selectors": sorted(selectors)}
         for field_name, selectors in selectors_by_field.items()
@@ -465,6 +448,44 @@ def _candidate_recipe_proposal(
         "conflicts": conflicts,
         "label_count": len(labels),
     }
+
+
+def _grounded_css_selector(reference: GroundingReference) -> str:
+    locator = str(reference.locator or "").strip()
+    if reference.kind not in {"node", "path"} or not locator.startswith("css:"):
+        return ""
+    return locator.removeprefix("css:").strip()
+
+
+def _merge_candidate_rule(
+    rules_by_selector: dict[tuple[str, str], dict[str, object]],
+    *,
+    field_name: str,
+    selector: str,
+    label: GroundedLabel,
+    source_run_id: int,
+) -> None:
+    key = (field_name, selector)
+    rule = rules_by_selector.get(key)
+    if rule is None:
+        rules_by_selector[key] = {
+            "field_name": field_name,
+            "css_selector": selector,
+            "source": "grounded_correction",
+            "source_run_id": source_run_id,
+            "status": "validated",
+            "is_active": True,
+            "semantic_role": label.semantic_role,
+            "locale_interpretation": label.locale_interpretation,
+        }
+        return
+    if rule.get("semantic_role") is None and label.semantic_role is not None:
+        rule["semantic_role"] = label.semantic_role
+    if (
+        rule.get("locale_interpretation") is None
+        and label.locale_interpretation is not None
+    ):
+        rule["locale_interpretation"] = label.locale_interpretation
 
 
 def _selector_rules(value: object) -> list[dict[str, object]]:

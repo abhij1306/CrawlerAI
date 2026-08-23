@@ -187,6 +187,31 @@ def normalize_sizes(
     terms: dict[str, object],
     category_match: dict[str, object] | None = None,
 ) -> tuple[list[str] | None, str | None]:
+    aliases, systems = _size_rules(terms)
+    values = [
+        *candidate_values(data, *DATA_ENRICHMENT_SIZE_CANDIDATE_FIELDS),
+        *targeted_candidate_values(
+            data,
+            DATA_ENRICHMENT_SIZE_CANDIDATE_TARGETS,
+            *DATA_ENRICHMENT_SIZE_CANDIDATE_SOURCES,
+        ),
+    ]
+    category_supports_size = bool(
+        category_match and category_supports_attribute(category_match, "size")
+    )
+    if not values and not category_supports_size:
+        return None, None
+    return _normalize_size_values(
+        values,
+        aliases=aliases,
+        systems=systems,
+        require_strong=not (category_supports_size or has_size_context(data)),
+    )
+
+
+def _size_rules(
+    terms: dict[str, object],
+) -> tuple[dict[str, str], dict[str, set[str]]]:
     size_config = object_dict(terms.get("size_systems"))
     aliases_value = size_config.get("aliases")
     aliases_dict = aliases_value if isinstance(aliases_value, dict) else {}
@@ -198,20 +223,16 @@ def normalize_sizes(
         for system, values in systems_dict.items()
         if isinstance(values, list)
     }
-    values = [
-        *candidate_values(data, *DATA_ENRICHMENT_SIZE_CANDIDATE_FIELDS),
-        *targeted_candidate_values(
-            data,
-            DATA_ENRICHMENT_SIZE_CANDIDATE_TARGETS,
-            *DATA_ENRICHMENT_SIZE_CANDIDATE_SOURCES,
-        ),
-    ]
-    category_supports_size = (
-        category_supports_attribute(category_match, "size") if category_match else False
-    )
-    size_context = has_size_context(data)
-    if not values and not category_supports_size:
-        return None, None
+    return aliases, systems
+
+
+def _normalize_size_values(
+    values: list[object],
+    *,
+    aliases: dict[str, str],
+    systems: dict[str, set[str]],
+    require_strong: bool,
+) -> tuple[list[str] | None, str | None]:
     normalized: list[str] = []
     seen: set[str] = set()
     detected_system = None
@@ -223,7 +244,7 @@ def normalize_sizes(
             cleaned,
             aliases=aliases,
             systems=systems,
-            require_strong=not (category_supports_size or size_context),
+            require_strong=require_strong,
         ):
             continue
         canonical = aliases.get(

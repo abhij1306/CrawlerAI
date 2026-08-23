@@ -191,9 +191,7 @@ async def navigate_browser_page(
                 if all(
                     (
                         index == 0,
-                        not isinstance(
-                            exc, (PlaywrightTimeoutError, PlaywrightError)
-                        ),
+                        not isinstance(exc, (PlaywrightTimeoutError, PlaywrightError)),
                     )
                 ):
                     raise

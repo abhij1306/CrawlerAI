@@ -53,6 +53,29 @@ def apply_acquisition_contract_to_profile(
     cookie_engine = (
         str(normalized.get("handoff_cookie_engine") or "auto").strip().lower()
     )
+    _apply_browser_contract_preferences(
+        profile,
+        normalized=normalized,
+        engine=engine,
+        browser_only=browser_only,
+    )
+    _apply_handoff_contract_preferences(
+        profile,
+        normalized=normalized,
+        engine=engine,
+        cookie_engine=cookie_engine,
+        browser_only=browser_only,
+    )
+    return profile
+
+
+def _apply_browser_contract_preferences(
+    profile: dict[str, object],
+    *,
+    normalized: dict[str, object],
+    engine: str,
+    browser_only: bool,
+) -> None:
     if bool(normalized.get("prefer_browser")) or browser_only:
         profile["prefer_browser"] = True
         profile.setdefault("browser_reason", "acquisition-contract")
@@ -60,6 +83,16 @@ def apply_acquisition_contract_to_profile(
         "forced_browser_engine"
     ):
         profile["forced_browser_engine"] = engine
+
+
+def _apply_handoff_contract_preferences(
+    profile: dict[str, object],
+    *,
+    normalized: dict[str, object],
+    engine: str,
+    cookie_engine: str,
+    browser_only: bool,
+) -> None:
     if bool(normalized.get("handoff_eligible")) and not browser_only:
         profile["prefer_curl_handoff"] = True
         profile["handoff_eligible"] = True
@@ -71,7 +104,6 @@ def apply_acquisition_contract_to_profile(
         profile["handoff_cookie_engine"] = cookie_engine
     elif engine in {"patchright", "real_chrome"}:
         profile["handoff_cookie_engine"] = engine
-    return profile
 
 
 def build_success_acquisition_contract(
@@ -93,59 +125,90 @@ def build_success_acquisition_contract(
         if normalized_engine in {"patchright", "real_chrome"}
         else "auto"
     )
-    extraction_source = str(diagnostics.get("extraction_source") or "").strip().lower()
-    required_rendering = extraction_source in {"rendered_dom", "rendered_dom_visual"}
-    required_traversal = bool(diagnostics.get("traversal_activated"))
-    raw_network_payload_count = diagnostics.get("network_payload_count")
-    try:
-        network_payload_count = (
-            float(raw_network_payload_count)
-            if isinstance(raw_network_payload_count, (int, float, str))
-            else 0.0
-        )
-    except (TypeError, ValueError):
-        network_payload_count = 0.0
-    required_network_payloads = network_payload_count > 0
-    handoff_eligible = (
-        normalized_method == "browser"
-        and preferred_engine != "auto"
-        and not required_rendering
-        and not required_traversal
-        and not required_network_payloads
+    requirements = _contract_requirements(diagnostics)
+    handoff_eligible = _handoff_is_eligible(
+        method=normalized_method,
+        preferred_engine=preferred_engine,
+        requirements=requirements,
     )
     handoff_engine = preferred_engine if handoff_eligible else "auto"
-    requested = list(requested_fields or [])
-    requested_set = set(requested)
-    covered_fields = [
-        field for field in list(found_fields or []) if field in requested_set
-    ]
-    covered_set = set(covered_fields)
     return normalize_acquisition_contract(
         {
             "preferred_browser_engine": preferred_engine,
             "prefer_browser": normalized_method == "browser",
             "handoff_eligible": handoff_eligible,
             "handoff_cookie_engine": handoff_engine,
-            "required_rendering": required_rendering,
-            "required_traversal": required_traversal,
-            "required_network_payloads": required_network_payloads,
-            "last_quality_success": {
-                "method": normalized_method or None,
-                "browser_engine": normalized_engine,
-                "record_count": int(record_count or 0),
-                "field_coverage": {
-                    "requested": requested,
-                    "found": covered_fields,
-                    "missing": [
-                        field for field in requested if field not in covered_set
-                    ],
-                },
-                "source_run_id": int(source_run_id or 0),
-                "timestamp": timestamp or datetime.now(UTC).isoformat(),
-            },
+            **requirements,
+            "last_quality_success": _last_quality_success(
+                method=normalized_method,
+                browser_engine=normalized_engine,
+                record_count=record_count,
+                requested_fields=requested_fields,
+                found_fields=found_fields,
+                source_run_id=source_run_id,
+                timestamp=timestamp,
+            ),
             "stale_after_failures": {"failure_count": 0, "stale": False},
         }
     )
+
+
+def _contract_requirements(diagnostics: dict[str, object]) -> dict[str, bool]:
+    extraction_source = str(diagnostics.get("extraction_source") or "").strip().lower()
+    return {
+        "required_rendering": extraction_source
+        in {"rendered_dom", "rendered_dom_visual"},
+        "required_traversal": bool(diagnostics.get("traversal_activated")),
+        "required_network_payloads": _positive_network_payload_count(diagnostics),
+    }
+
+
+def _handoff_is_eligible(
+    *, method: str, preferred_engine: str, requirements: dict[str, bool]
+) -> bool:
+    return (
+        method == "browser"
+        and preferred_engine != "auto"
+        and not any(requirements.values())
+    )
+
+
+def _last_quality_success(
+    *,
+    method: str,
+    browser_engine: str | None,
+    record_count: int,
+    requested_fields: list[str],
+    found_fields: list[str],
+    source_run_id: int,
+    timestamp: str | None,
+) -> dict[str, object]:
+    requested = list(requested_fields or [])
+    requested_set = set(requested)
+    covered_fields = [field for field in found_fields if field in requested_set]
+    covered_set = set(covered_fields)
+    return {
+        "method": method or None,
+        "browser_engine": browser_engine,
+        "record_count": int(record_count or 0),
+        "field_coverage": {
+            "requested": requested,
+            "found": covered_fields,
+            "missing": [field for field in requested if field not in covered_set],
+        },
+        "source_run_id": int(source_run_id or 0),
+        "timestamp": timestamp or datetime.now(UTC).isoformat(),
+    }
+
+
+def _positive_network_payload_count(diagnostics: dict[str, object]) -> bool:
+    raw_count = diagnostics.get("network_payload_count")
+    if not isinstance(raw_count, (int, float, str)):
+        return False
+    try:
+        return float(raw_count) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _contract_without_volatile_stamps(contract: object) -> dict[str, object]:
@@ -295,13 +358,11 @@ async def record_acquisition_contract_outcome(
         and not blocked
         and verdict not in {VERDICT_BLOCKED, VERDICT_EMPTY, VERDICT_LISTING_FAILED}
     )
-    count_failure = not blocked and (
-        verdict == VERDICT_LISTING_FAILED
-        or (
-            verdict == VERDICT_EMPTY
-            and "detail" in str(surface or "")
-            and persisted_count == 0
-        )
+    count_failure = _counts_as_contract_failure(
+        blocked=blocked,
+        verdict=verdict,
+        surface=surface,
+        persisted_count=persisted_count,
     )
     if quality_success:
         found_fields = sorted(
@@ -348,6 +409,20 @@ async def record_acquisition_contract_outcome(
         domain=domain,
         surface=surface,
         threshold=stale_threshold,
+    )
+
+
+def _counts_as_contract_failure(
+    *, blocked: bool, verdict: str, surface: str, persisted_count: int
+) -> bool:
+    if blocked:
+        return False
+    if verdict == VERDICT_LISTING_FAILED:
+        return True
+    return (
+        verdict == VERDICT_EMPTY
+        and "detail" in str(surface or "")
+        and persisted_count == 0
     )
 
 

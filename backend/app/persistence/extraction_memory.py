@@ -7,19 +7,14 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import uuid
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from cachetools import LRUCache
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
-    EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS,
-    EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
-    EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
-    EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
     EXTRACTION_MEMORY_STATUS_SUSPENDED,
@@ -27,29 +22,19 @@ from app.core.config.extraction_memory import (
     EXTRACTION_MEMORY_STATUS_PROVISIONAL,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_EXECUTABLE,
-    EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
-    EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RECIPE_OWNERSHIP_LABEL_KINDS,
-    EXTRACTION_RELEASE_VERSION,
-    SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
-    SENTINEL_OBSERVATION_KIND,
-    SENTINEL_SUSPENSION_KIND,
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config.cascade import (
     CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS,
     CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS,
 )
-from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.extraction_memory.templates import (
     extract_tech_signals,
     fingerprint_template,
-    normalize_source_pattern,
     normalize_route,
-    source_pattern,
 )
-from app.models.crawl_run import CrawlRun
 from app.models.extraction_memory import (
     CompiledExtractionRecipe,
     ExtractionManifest,
@@ -60,8 +45,39 @@ from app.models.extraction_memory import (
     ExtractionTemplate,
 )
 from app.persistence.extraction_memory_sources import (
-    merge_observed_sources as _merge_observed_sources,
+    merge_observed_contracts,
+    observed_field_sources,
 )
+from app.persistence.extraction_memory_releases import (
+    RecipeCompileError,
+    activate_release_snapshot_for_run,
+    active_release_snapshot_for_run,
+    build_release_payload,
+    compile_recipe_layers,
+    create_candidate_release_snapshot,
+    create_release_snapshot,
+    load_release_payload,
+    reset_release_payload_cache,
+    rollback_release_snapshot_for_run,
+    selector_rules_from_release,
+)
+from app.persistence.extraction_memory_observations import (
+    record_sentinel_observations,
+)
+
+__all__ = [
+    "RecipeCompileError",
+    "activate_release_snapshot_for_run",
+    "active_release_snapshot_for_run",
+    "build_release_payload",
+    "compile_recipe_layers",
+    "create_candidate_release_snapshot",
+    "create_release_snapshot",
+    "load_release_payload",
+    "reset_release_payload_cache",
+    "rollback_release_snapshot_for_run",
+    "selector_rules_from_release",
+]
 
 if TYPE_CHECKING:
     from app.extraction.contracts import ExtractionResult
@@ -70,107 +86,6 @@ if TYPE_CHECKING:
 def _checksum(payload: dict) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-class RecipeCompileError(ValueError):
-    """Recipe layers cannot be merged into one bounded runtime recipe."""
-
-
-def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
-    """Flatten scoped recipe layers into one bounded payload.
-
-    Higher layers may override lower layers. Two recipes at the same layer/kind
-    that define different rules for the same field are ambiguous and fail
-    closed.
-    """
-
-    ordered = sorted(
-        recipes,
-        key=lambda row: (
-            _layer_rank(row.layer),
-            row.kind,
-            row.version,
-            str(row.id),
-        ),
-    )
-    selectors: dict[str, dict[str, object]] = {}
-    contracts: dict[str, dict[str, object]] = {}
-    provenance: list[dict[str, object]] = []
-    layer_signatures: dict[tuple[str, str, str], str] = {}
-    for recipe in ordered:
-        payload = dict(recipe.payload or {})
-        provenance.append(
-            {
-                "recipe_id": str(recipe.id),
-                "layer": recipe.layer,
-                "kind": recipe.kind,
-                "version": recipe.version,
-            }
-        )
-        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS:
-            for row in list(payload.get("rules") or []):
-                if not isinstance(row, dict):
-                    continue
-                field = str(row.get("field_name") or row.get("canonical_field") or "")
-                selector = str(row.get("css_selector") or "")
-                _merge_layer_rule(
-                    selectors,
-                    layer_signatures,
-                    recipe=recipe,
-                    field=field,
-                    value=selector,
-                    payload=dict(row),
-                )
-        elif recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS:
-            for row in list(payload.get("contracts") or []):
-                if not isinstance(row, dict):
-                    continue
-                field = str(row.get("canonical_field") or row.get("field_name") or "")
-                selected = str(row.get("selected_source") or "")
-                _merge_layer_rule(
-                    contracts,
-                    layer_signatures,
-                    recipe=recipe,
-                    field=field,
-                    value=selected,
-                    payload=dict(row),
-                )
-    return {
-        "compiler_version": EXTRACTION_COMPILER_VERSION,
-        "selector_rules": list(selectors.values()),
-        "contracts": list(contracts.values()),
-        "provenance": provenance,
-    }
-
-
-def _merge_layer_rule(
-    target: dict[str, dict[str, object]],
-    layer_signatures: dict[tuple[str, str, str], str],
-    *,
-    recipe: ExtractionRecipe,
-    field: str,
-    value: str,
-    payload: dict[str, object],
-) -> None:
-    field_key = field.strip().lower()
-    value_key = value.strip()
-    if not field_key or not value_key:
-        return
-    layer_key = (recipe.layer, recipe.kind, field_key)
-    existing = layer_signatures.get(layer_key)
-    if existing is not None and existing != value_key:
-        raise RecipeCompileError(
-            f"ambiguous {recipe.kind} override for {field_key} at {recipe.layer}"
-        )
-    layer_signatures[layer_key] = value_key
-    target[field_key] = dict(payload)
-
-
-def _layer_rank(layer: str) -> int:
-    try:
-        return EXTRACTION_RECIPE_LAYER_ORDER.index(layer)
-    except ValueError:
-        return len(EXTRACTION_RECIPE_LAYER_ORDER)
 
 
 async def ensure_template(
@@ -328,170 +243,6 @@ async def upsert_recipe(
                 )
             ).scalar_one()
     return recipe, compiled
-
-
-async def build_release_payload(
-    session: AsyncSession, *, domain: str, surface: str
-) -> dict[str, object]:
-    templates = list(
-        (
-            await session.execute(
-                select(ExtractionTemplate).where(
-                    ExtractionTemplate.domain == str(domain or "").strip().lower(),
-                    ExtractionTemplate.surface.in_((surface, DEFAULT_FALLBACK_SURFACE)),
-                    ExtractionTemplate.status.in_(
-                        (
-                            EXTRACTION_MEMORY_STATUS_ACTIVE,
-                            EXTRACTION_MEMORY_STATUS_TRUSTED,
-                        )
-                    ),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    template_rows: list[dict[str, object]] = []
-    for template in templates:
-        recipes = list(
-            (
-                await session.execute(
-                    select(ExtractionRecipe).where(
-                        ExtractionRecipe.template_id == template.id,
-                        ExtractionRecipe.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        compiled_recipe = compile_recipe_layers(recipes)
-        contracts = list(cast(list[dict], compiled_recipe["contracts"]))
-        selector_rules = list(cast(list[dict], compiled_recipe["selector_rules"]))
-        row: dict[str, object] = {
-            "template_id": str(template.id),
-            "fingerprint": template.fingerprint,
-            "surface": template.surface,
-            "route_pattern": template.route_pattern,
-            "status": template.status,
-            "contracts": contracts,
-            "selector_rules": selector_rules,
-            "compiled_recipe": compiled_recipe,
-        }
-        executable = _executable_recipe_block(recipes)
-        if executable is not None:
-            row["executable_recipe"] = executable["recipe"]
-            row["confidence"] = executable["confidence"]
-        template_rows.append(row)
-    return {
-        "schema_version": EXTRACTION_RELEASE_VERSION,
-        "domain": domain,
-        "surface": surface,
-        "templates": template_rows,
-    }
-
-
-def _executable_recipe_block(
-    recipes: list[ExtractionRecipe],
-) -> dict[str, object] | None:
-    """Pick the most-confident active executable recipe for one template.
-
-    Executable recipes live on their own recipe layer/kind; the caller embeds the
-    winner under ``executable_recipe`` so recipe replay never mixes with the
-    selector/contract ``compiled_recipe`` block. Confidence lives in the payload
-    (``_confidence``); ties keep the higher recipe version.
-    """
-
-    executable = [
-        recipe
-        for recipe in recipes
-        if recipe.kind == EXTRACTION_RECIPE_KIND_EXECUTABLE
-        and isinstance(recipe.payload, dict)
-    ]
-    if not executable:
-        return None
-    winner = max(
-        executable,
-        key=lambda recipe: (
-            float(dict(recipe.payload).get("_confidence") or 0.0),
-            recipe.version,
-        ),
-    )
-    compiled = {
-        key: value
-        for key, value in dict(winner.payload).items()
-        if not str(key).startswith("_")
-    }
-    return {
-        "recipe": compiled,
-        "confidence": float(dict(winner.payload).get("_confidence") or 0.0),
-    }
-
-
-def selector_rules_from_release(
-    payload: dict[str, object], *, surface: str
-) -> list[dict[str, object]]:
-    raw_templates = payload.get("templates")
-    templates = list(raw_templates) if isinstance(raw_templates, list) else []
-    ordered_surfaces = (surface, DEFAULT_FALLBACK_SURFACE)
-    rules: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
-    for candidate_surface in ordered_surfaces:
-        for template in templates:
-            if not isinstance(template, dict):
-                continue
-            if str(template.get("surface") or "") != candidate_surface:
-                continue
-            if str(
-                template.get("status") or ""
-            ).strip().lower() == EXTRACTION_MEMORY_STATUS_SUSPENDED or bool(
-                template.get("sentinel_suspended")
-            ):
-                continue
-            for row in list(template.get("selector_rules") or []):
-                if not isinstance(row, dict):
-                    continue
-                signature = (
-                    str(row.get("field_name") or "").strip().lower(),
-                    str(row.get("css_selector") or "").strip(),
-                )
-                if signature in seen:
-                    continue
-                seen.add(signature)
-                rules.append(dict(row))
-    return rules
-
-
-async def create_release_snapshot(
-    session: AsyncSession, *, run_id: int, domain: str, surface: str
-) -> ExtractionReleaseSnapshot:
-    row = ExtractionReleaseSnapshot(
-        run_id=run_id,
-        domain=domain,
-        surface=surface,
-        release_version=EXTRACTION_RELEASE_VERSION,
-        payload=await build_release_payload(session, domain=domain, surface=surface),
-    )
-    session.add(row)
-    await session.flush()
-    return row
-
-
-async def create_candidate_release_snapshot(
-    session: AsyncSession, *, domain: str, surface: str
-) -> ExtractionReleaseSnapshot:
-    """Create an immutable candidate release without making it active for a run."""
-
-    row = ExtractionReleaseSnapshot(
-        run_id=None,
-        domain=domain,
-        surface=surface,
-        release_version=EXTRACTION_RELEASE_VERSION,
-        payload=await build_release_payload(session, domain=domain, surface=surface),
-    )
-    session.add(row)
-    await session.flush()
-    return row
 
 
 class LearnOncePersistLockTimeout(RuntimeError):
@@ -947,108 +698,6 @@ async def reset_recipe_drift(
     await session.flush()
 
 
-async def active_release_snapshot_for_run(
-    session: AsyncSession, *, run_id: int
-) -> ExtractionReleaseSnapshot | None:
-    return (
-        await session.execute(
-            select(ExtractionReleaseSnapshot).where(
-                ExtractionReleaseSnapshot.run_id == run_id
-            )
-        )
-    ).scalar_one_or_none()
-
-
-async def activate_release_snapshot_for_run(
-    session: AsyncSession, *, run_id: int, release_snapshot_id: uuid.UUID
-) -> ExtractionReleaseSnapshot:
-    """Atomically point a run at an existing immutable release snapshot."""
-
-    run = (
-        await session.execute(
-            select(CrawlRun).where(CrawlRun.id == run_id).with_for_update()
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise ValueError(f"unknown crawl run: {run_id}")
-    target = (
-        await session.execute(
-            select(ExtractionReleaseSnapshot)
-            .where(ExtractionReleaseSnapshot.id == release_snapshot_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if target is None:
-        raise ValueError(f"unknown release snapshot: {release_snapshot_id}")
-    if target.run_id not in {None, run_id}:
-        raise ValueError("release snapshot is already active for another run")
-    if target.domain != normalize_domain(run.url) or target.surface != run.surface:
-        raise ValueError("release snapshot is incompatible with crawl run")
-    current = await active_release_snapshot_for_run(session, run_id=run_id)
-    if current is not None and current.id != target.id:
-        current.run_id = None
-        await session.flush()
-    target.run_id = run_id
-    run.extraction_release_snapshot_id = target.id
-    await session.flush()
-    return target
-
-
-async def rollback_release_snapshot_for_run(
-    session: AsyncSession, *, run_id: int, target_release_snapshot_id: uuid.UUID
-) -> ExtractionReleaseSnapshot:
-    """Rollback by re-pointing the run; release payload history stays immutable."""
-
-    return await activate_release_snapshot_for_run(
-        session,
-        run_id=run_id,
-        release_snapshot_id=target_release_snapshot_id,
-    )
-
-
-# Per-URL DB budget: every URL in a run used to reload the run's frozen release
-# payload 2-4x (selector rules + runtime snapshot + retries), each time through
-# a fresh per-URL session that could not share the identity map. A persisted
-# release snapshot is immutable (INVARIANTS §17) and keyed by an app-generated
-# UUID, so the payload is memoized at process level keyed by snapshot id. The
-# bound keeps a long-lived worker from accumulating payloads across runs; only
-# a handful of runs are in flight per process at once.
-_RELEASE_PAYLOAD_CACHE_MAX_ENTRIES = 8
-_release_payload_cache: LRUCache[uuid.UUID, dict[str, object]] = LRUCache(
-    maxsize=_RELEASE_PAYLOAD_CACHE_MAX_ENTRIES
-)
-
-
-def reset_release_payload_cache() -> None:
-    """Drop memoized release payloads (test isolation / post-migration reloads)."""
-
-    _release_payload_cache.clear()
-
-
-async def load_release_payload(
-    session: AsyncSession, release_snapshot_id: uuid.UUID | None
-) -> dict[str, object]:
-    if release_snapshot_id is None:
-        return {}
-    cached = _release_payload_cache.get(release_snapshot_id)
-    if cached is not None:
-        # Hand out a copy: callers keep the historical per-call mutable-copy
-        # semantics (``_load_runtime_snapshot`` annotates the returned dict).
-        return deepcopy(cached)
-    row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
-    if row is None:
-        # Never memoize a miss: the row may be created later in this process.
-        return {}
-    # CRITICAL 2: a persisted release snapshot is frozen. Return the stored
-    # payload unchanged so in-flight runs keep replaying the exact recipes they
-    # were created with. Current template/recipe suspension status is applied
-    # only while BUILDING a future snapshot (see ``build_release_payload``,
-    # which filters to active/trusted templates and active recipes).
-    payload = deepcopy(row.payload)
-    _release_payload_cache[release_snapshot_id] = deepcopy(payload)
-    return payload
-
-
 async def record_extraction_result(
     session: AsyncSession,
     *,
@@ -1088,7 +737,7 @@ async def record_extraction_result(
         },
     )
     session.add(observation)
-    await _record_sentinel_observations(
+    await record_sentinel_observations(
         session,
         run_id=run_id,
         url_result_id=url_result_id,
@@ -1133,79 +782,17 @@ async def _record_observed_field_preferences(
     surface: str,
     result: ExtractionResult,
 ) -> None:
-    if (
-        result.verdict not in EXTRACTION_CONTRACT_OBSERVABLE_VERDICTS
-        or not result.records
-    ):
-        return
-    evidence_by_id = {row.evidence_id: row for row in result.evidence}
-    winner_ids = {
-        row.accepted_evidence_ids[0]
-        for row in result.decisions
-        if row.status == "resolved" and row.accepted_evidence_ids
-    }
-    observed_sources: dict[str, list[str]] = {}
-    for state in result.field_states:
-        if state.state not in {"captured_published", "captured_and_resolved"}:
-            continue
-        if state.field.startswith("variants."):
-            continue
-        winner_id = next(
-            (
-                evidence_id
-                for evidence_id in state.evidence_ids
-                if evidence_id in winner_ids
-            ),
-            next(iter(state.evidence_ids), None),
-        )
-        evidence = evidence_by_id.get(winner_id) if winner_id else None
-        if evidence is None:
-            continue
-        source = normalize_source_pattern(
-            source_pattern(evidence.collector_id, evidence.locator.value)
-        )
-        if source:
-            observed_sources[evidence.fact_type] = [source]
+    observed_sources = observed_field_sources(result)
     if not observed_sources:
         return
 
     def merge_contracts(existing_payload: dict) -> dict:
-        contracts = [
-            dict(row)
-            for row in existing_payload.get("contracts", [])
-            if isinstance(row, dict)
-        ]
-        contracts_by_field = {
-            str(row.get("canonical_field") or ""): row for row in contracts
-        }
-        for canonical_field, sources in observed_sources.items():
-            contract = contracts_by_field.get(canonical_field)
-            if contract is None:
-                selected_source = sources[0]
-                contract = {
-                    "id": str(uuid.uuid4()),
-                    "template_id": str(template.id),
-                    "surface": surface,
-                    "canonical_field": canonical_field,
-                    "candidates": [],
-                    "latest_values": [],
-                    "success_count": 0,
-                    "rejection_count": 0,
-                    "resolver_rule": EXTRACTION_CONTRACT_RESOLVER_OBSERVED,
-                    "selected_source": selected_source,
-                    "selection_origin": EXTRACTION_CONTRACT_SELECTION_ORIGIN_GENERIC,
-                    "selection_history": [
-                        {
-                            "selected_source": selected_source,
-                            "source": EXTRACTION_CONTRACT_OBSERVATION_SOURCE,
-                        }
-                    ],
-                    "status": EXTRACTION_MEMORY_STATUS_ACTIVE,
-                }
-                contracts.append(contract)
-                contracts_by_field[canonical_field] = contract
-            _merge_observed_sources(contract, sources)
-        return {"contracts": contracts}
+        return merge_observed_contracts(
+            existing_payload,
+            template_id=template.id,
+            surface=surface,
+            observed_sources=observed_sources,
+        )
 
     await upsert_recipe(
         session,
@@ -1215,124 +802,6 @@ async def _record_observed_field_preferences(
         payload={"contracts": []},
         merge_payload=merge_contracts,
     )
-
-
-async def _record_sentinel_observations(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    url_result_id: int,
-    current_domain: str,
-    current_surface: str,
-    current_route_pattern: str,
-    result: ExtractionResult,
-) -> None:
-    for observation in result.sentinel_observations:
-        claimed_template_id = _uuid_or_none(observation.template_id)
-        template_id = await _sentinel_template_in_scope(
-            session,
-            template_id=claimed_template_id,
-            domain=current_domain,
-            surface=current_surface,
-            route_pattern=current_route_pattern,
-        )
-        session.add(
-            ExtractionObservation(
-                template_id=template_id,
-                run_id=run_id,
-                url_result_id=url_result_id,
-                verdict=observation.state,
-                payload={
-                    "kind": SENTINEL_OBSERVATION_KIND,
-                    **observation.model_dump(mode="json"),
-                },
-            )
-        )
-        if observation.state == "critical_drift" and template_id is not None:
-            await _suspend_confirmed_critical_drift_template(
-                session,
-                template_id=template_id,
-                run_id=run_id,
-                url_result_id=url_result_id,
-            )
-
-
-async def _sentinel_template_in_scope(
-    session: AsyncSession,
-    *,
-    template_id: uuid.UUID | None,
-    domain: str,
-    surface: str,
-    route_pattern: str,
-) -> uuid.UUID | None:
-    if template_id is None:
-        return None
-    return (
-        await session.execute(
-            select(ExtractionTemplate.id).where(
-                ExtractionTemplate.id == template_id,
-                ExtractionTemplate.domain == domain,
-                ExtractionTemplate.surface == surface,
-                ExtractionTemplate.route_pattern == route_pattern,
-            )
-        )
-    ).scalar_one_or_none()
-
-
-async def _suspend_confirmed_critical_drift_template(
-    session: AsyncSession,
-    *,
-    template_id: uuid.UUID,
-    run_id: int,
-    url_result_id: int,
-) -> None:
-    with session.no_autoflush:
-        template = (
-            await session.execute(
-                select(ExtractionTemplate)
-                .where(ExtractionTemplate.id == template_id)
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-    if template is None or template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED:
-        return
-    await session.flush()
-    confirmed_count = (
-        await session.execute(
-            select(func.count())
-            .select_from(ExtractionObservation)
-            .where(
-                ExtractionObservation.template_id == template_id,
-                ExtractionObservation.verdict == "critical_drift",
-                ExtractionObservation.payload["kind"].as_string()
-                == SENTINEL_OBSERVATION_KIND,
-            )
-        )
-    ).scalar_one()
-    if confirmed_count < SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD:
-        return
-    template.status = EXTRACTION_MEMORY_STATUS_SUSPENDED
-    session.add(
-        ExtractionObservation(
-            template_id=template_id,
-            run_id=run_id,
-            url_result_id=url_result_id,
-            verdict=EXTRACTION_MEMORY_STATUS_SUSPENDED,
-            payload={
-                "kind": SENTINEL_SUSPENSION_KIND,
-                "template_id": str(template_id),
-                "confirmed_critical_drift_count": confirmed_count,
-                "next_action": "route_future_traffic_to_generic_until_recipe_is_restored",
-            },
-        )
-    )
-
-
-def _uuid_or_none(value: object) -> uuid.UUID | None:
-    try:
-        return uuid.UUID(str(value))
-    except (TypeError, ValueError, AttributeError):
-        return None
 
 
 async def purge_extraction_memory(session: AsyncSession) -> dict[str, int]:
@@ -1352,184 +821,3 @@ async def purge_extraction_memory(session: AsyncSession) -> dict[str, int]:
         )
         await session.execute(delete(model))
     return counts
-
-
-# ---------------------------------------------------------------------------
-# Knowledge compatibility projections.
-#
-# Query/projection owners for the thin HTTP handlers in ``api/knowledge.py``.
-# Response shapes are the historical compatibility shapes; handlers only add
-# HTTP concerns (auth, status codes).
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class KnowledgeSiteProjection:
-    """Per-domain extraction-memory site row for ``GET /api/knowledge/sites``."""
-
-    id: uuid.UUID
-    domain: str
-    current_version: int
-    projection_status: str
-    last_projected_run_id: int | None
-    last_projected_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class KnowledgeContractLocation:
-    """A stored contract payload plus the template row that owns it."""
-
-    template: ExtractionTemplate
-    contract: dict[str, Any]
-
-
-async def list_knowledge_site_projections(
-    session: AsyncSession,
-) -> list[KnowledgeSiteProjection]:
-    """Project all templates into one row per domain, ordered by domain."""
-
-    templates = list(
-        (await session.execute(select(ExtractionTemplate))).scalars().all()
-    )
-    version_rows = (
-        await session.execute(
-            select(
-                ExtractionRecipe.template_id,
-                func.max(ExtractionRecipe.version),
-            ).group_by(ExtractionRecipe.template_id)
-        )
-    ).all()
-    latest_version_by_template = {
-        template_id: int(version)
-        for template_id, version in version_rows
-        if version is not None
-    }
-    domains: dict[str, list[ExtractionTemplate]] = {}
-    for template in templates:
-        domains.setdefault(template.domain, []).append(template)
-    return [
-        KnowledgeSiteProjection(
-            id=rows[0].id,
-            domain=domain,
-            current_version=max(
-                (latest_version_by_template.get(row.id, 1) for row in rows),
-                default=1,
-            ),
-            projection_status="active",
-            last_projected_run_id=max(
-                (row.last_seen_run_id or 0 for row in rows), default=0
-            )
-            or None,
-            last_projected_at=max((row.updated_at for row in rows), default=None),
-        )
-        for domain, rows in sorted(domains.items())
-    ]
-
-
-async def list_template_contracts(
-    session: AsyncSession, template: ExtractionTemplate
-) -> list[dict[str, Any]]:
-    recipe = await _contract_recipe(session, template.id)
-    return [
-        dict(row) for row in (recipe.payload.get("contracts", []) if recipe else [])
-    ]
-
-
-async def list_domain_contracts(
-    session: AsyncSession,
-    *,
-    domain: str = "",
-    surface: str = "",
-) -> list[dict[str, Any]]:
-    """All stored contract rows for the filtered templates, operator first."""
-
-    query = select(ExtractionTemplate)
-    if domain:
-        query = query.where(ExtractionTemplate.domain == normalize_domain(domain))
-    if surface:
-        query = query.where(ExtractionTemplate.surface == surface)
-    templates = list((await session.execute(query)).scalars().all())
-    contracts: list[dict[str, Any]] = []
-    for template in templates:
-        contracts.extend(await list_template_contracts(session, template))
-    contracts.sort(
-        key=lambda row: (
-            row.get("selection_origin") != "operator",
-            row.get("canonical_field", ""),
-        )
-    )
-    return contracts
-
-
-async def find_contract_location(
-    session: AsyncSession, contract_id: str
-) -> KnowledgeContractLocation | None:
-    # 2.15: ONE JSONB-containment query replaces the full template scan plus
-    # the per-template contract recipe queries.
-    row = (
-        await session.execute(
-            select(ExtractionRecipe, ExtractionTemplate)
-            .join(
-                ExtractionTemplate,
-                ExtractionRecipe.template_id == ExtractionTemplate.id,
-            )
-            .where(
-                ExtractionRecipe.layer == EXTRACTION_RECIPE_LAYER_TEMPLATE,
-                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
-                ExtractionRecipe.payload["contracts"].contains(
-                    [{"id": str(contract_id)}]
-                ),
-            )
-            .limit(1)
-        )
-    ).first()
-    if row is None:
-        return None
-    recipe, template = row
-    for contract in recipe.payload.get("contracts", []):
-        if str(contract.get("id")) == str(contract_id):
-            return KnowledgeContractLocation(template=template, contract=dict(contract))
-    return None
-
-
-def select_contract_source(
-    contract: dict[str, Any], *, selected_source: str
-) -> dict[str, Any]:
-    """Record an operator source selection on a stored contract payload."""
-
-    contract["selected_source"] = selected_source
-    contract["selection_origin"] = "operator"
-    history = list(contract.get("selection_history") or [])
-    history.append({"selected_source": selected_source, "scope": "template"})
-    contract["selection_history"] = history
-    return contract
-
-
-async def store_template_contract(
-    session: AsyncSession, template: ExtractionTemplate, contract: dict[str, Any]
-) -> None:
-    contracts = await list_template_contracts(session, template)
-    contracts = [
-        row for row in contracts if str(row.get("id")) != str(contract.get("id"))
-    ]
-    contracts.append(contract)
-    await upsert_recipe(
-        session,
-        template=template,
-        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
-        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
-        payload={"contracts": contracts},
-    )
-
-
-async def _contract_recipe(
-    session: AsyncSession, template_id: uuid.UUID
-) -> ExtractionRecipe | None:
-    return (
-        await session.execute(
-            select(ExtractionRecipe).where(
-                ExtractionRecipe.template_id == template_id,
-                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS,
-            )
-        )
-    ).scalar_one_or_none()

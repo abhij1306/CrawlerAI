@@ -28,7 +28,7 @@ from app.persistence.publish import (
     load_domain_field_mapping,
 )
 from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
-from app.core.records.schema_service import load_resolved_schema
+from app.core.records.schema_service import ResolvedSchema, load_resolved_schema
 from app.crawl.review.domain_recipe_support import (
     collect_selector_candidates,
     derive_acquisition_info,
@@ -56,7 +56,24 @@ async def build_review_payload(session: AsyncSession, run_id: int) -> dict | Non
         domain=domain,
         surface=run.surface,
     )
-    normalized_fields = sorted(
+    normalized_fields = _normalized_record_fields(records)
+    discovered_fields = _discovered_review_fields(records, artifacts_by_id)
+    suggested_mapping = {
+        field: domain_mapping.get(field, field) for field in discovered_fields
+    }
+    return {
+        "run": run,
+        "records": records,
+        "normalized_fields": normalized_fields,
+        "discovered_fields": discovered_fields,
+        "canonical_fields": canonical_fields,
+        "domain_mapping": domain_mapping,
+        "suggested_mapping": suggested_mapping,
+    }
+
+
+def _normalized_record_fields(records: list[CrawlRecord]) -> list[str]:
+    return sorted(
         {
             key
             for record in records
@@ -64,6 +81,11 @@ async def build_review_payload(session: AsyncSession, run_id: int) -> dict | Non
             if val not in (None, "", [], {}) and not str(key).startswith("_")
         }
     )
+
+
+def _discovered_review_fields(
+    records: list[CrawlRecord], artifacts_by_id: dict[int, RecordArtifacts]
+) -> list[str]:
     discovered_field_names: set[str] = set()
     for record in records:
         for row in _review_bucket_rows(artifacts_by_id[record.id]):
@@ -84,19 +106,7 @@ async def build_review_payload(session: AsyncSession, run_id: int) -> dict | Non
                         and key not in REVIEW_CONTAINER_KEYS
                     ):
                         discovered_field_names.add(str(key))
-    discovered_fields = sorted(discovered_field_names)
-    suggested_mapping = {
-        field: domain_mapping.get(field, field) for field in discovered_fields
-    }
-    return {
-        "run": run,
-        "records": records,
-        "normalized_fields": normalized_fields,
-        "discovered_fields": discovered_fields,
-        "canonical_fields": canonical_fields,
-        "domain_mapping": domain_mapping,
-        "suggested_mapping": suggested_mapping,
-    }
+    return sorted(discovered_field_names)
 
 
 async def load_review_html(session: AsyncSession, run_id: int) -> str:
@@ -125,13 +135,43 @@ async def save_review(
         and str(row.get("output_field") or "").strip()
     ]
     domain = normalize_domain(run.url)
+    mapping = _review_field_mapping(run.surface, selected_rows)
+    resolved_schema = await load_resolved_schema(session, run.surface, domain)
+    updated_schema = _updated_review_schema(
+        resolved_schema, surface=run.surface, mapping=mapping
+    )
+    db_run = await session.get(CrawlRun, run.id)
+    if db_run is None:
+        raise RuntimeError(f"CrawlRun not found for review save: run_id={run.id}")
+    promotion = _review_promotion(
+        db_run, domain=domain, schema=updated_schema, mapping=mapping
+    )
+    session.add(promotion)
+    await _promote_review_bucket_fields(session, db_run, mapping)
+    await session.commit()
+    return {
+        "run_id": run.id,
+        "domain": domain,
+        "surface": run.surface,
+        "selected_fields": list(dict.fromkeys(mapping.values())),
+        "canonical_fields": updated_schema.fields,
+        "field_mapping": mapping,
+    }
+
+
+def _review_field_mapping(surface: str, selected_rows: list[dict]) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for row in selected_rows:
         source_field = normalize_field_key(row.get("source_field"))
-        target_field = normalize_review_target(run.surface, row.get("output_field"))
+        target_field = normalize_review_target(surface, row.get("output_field"))
         if source_field and target_field:
             mapping[source_field] = target_field
-    resolved_schema = await load_resolved_schema(session, run.surface, domain)
+    return mapping
+
+
+def _updated_review_schema(
+    resolved_schema: ResolvedSchema, *, surface: str, mapping: dict[str, str]
+) -> ResolvedSchema:
     next_fields = [
         *resolved_schema.fields,
         *list(mapping.values()),
@@ -140,14 +180,14 @@ async def save_review(
         dict.fromkeys(
             normalized_field
             for field in resolved_schema.baseline_fields
-            if (normalized_field := normalize_review_target(run.surface, field))
+            if (normalized_field := normalize_review_target(surface, field))
         )
     )
     normalized_new_fields = list(
         dict.fromkeys(
             normalized_field
             for field in resolved_schema.new_fields
-            if (normalized_field := normalize_review_target(run.surface, field))
+            if (normalized_field := normalize_review_target(surface, field))
         )
     )
     normalized_baseline_field_set = set(normalized_baseline_fields)
@@ -163,11 +203,7 @@ async def save_review(
                     *[
                         normalized_value
                         for value in mapping.values()
-                        if (
-                            normalized_value := normalize_review_target(
-                                run.surface, value
-                            )
-                        )
+                        if (normalized_value := normalize_review_target(surface, value))
                         and normalized_value not in normalized_baseline_field_set
                     ],
                 ]
@@ -178,36 +214,32 @@ async def save_review(
         saved_at=None,
         stale=False,
     )
-    db_run = await session.get(CrawlRun, run.id)
-    if db_run is None:
-        raise RuntimeError(f"CrawlRun not found for review save: run_id={run.id}")
+    return updated_schema
+
+
+def _review_promotion(
+    run: CrawlRun,
+    *,
+    domain: str,
+    schema: ResolvedSchema,
+    mapping: dict[str, str],
+) -> ExtractionOperatorLabel:
     saved_at = datetime.now(UTC).isoformat()
-    promotion = ExtractionOperatorLabel(
+    return ExtractionOperatorLabel(
         label_kind=EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
-        source_run_id=db_run.id,
+        source_run_id=run.id,
         domain=domain,
-        surface=db_run.surface,
+        surface=run.surface,
         approved_schema={
-            "fields": updated_schema.fields,
-            "baseline_fields": updated_schema.baseline_fields,
-            "new_fields": updated_schema.new_fields,
-            "deprecated_fields": updated_schema.deprecated_fields,
-            "source": updated_schema.source,
+            "fields": schema.fields,
+            "baseline_fields": schema.baseline_fields,
+            "new_fields": schema.new_fields,
+            "deprecated_fields": schema.deprecated_fields,
+            "source": schema.source,
             "saved_at": saved_at,
         },
         field_mapping=mapping,
     )
-    session.add(promotion)
-    await _promote_review_bucket_fields(session, db_run, mapping)
-    await session.commit()
-    return {
-        "run_id": run.id,
-        "domain": domain,
-        "surface": run.surface,
-        "selected_fields": list(dict.fromkeys(mapping.values())),
-        "canonical_fields": updated_schema.fields,
-        "field_mapping": mapping,
-    }
 
 
 def _review_bucket_rows(artifacts: RecordArtifacts) -> list[dict]:
@@ -250,21 +282,11 @@ async def _promote_review_bucket_fields(
         if not review_bucket:
             continue
 
-        selected_values: dict[str, dict] = {}
-        remaining_rows: list[dict] = []
-        for row in review_bucket:
-            source_field = normalize_field_key(row.get("key"))
-            output_field = normalized_mapping.get(source_field)
-            if not source_field or not output_field:
-                remaining_rows.append(row)
-                continue
-            current_value = mapping_or_empty(record.data).get(output_field)
-            if current_value not in (None, "", [], {}):
-                remaining_rows.append(row)
-                continue
-            existing = selected_values.get(output_field)
-            if existing is None:
-                selected_values[output_field] = row
+        selected_values, remaining_rows = _selected_review_values(
+            review_bucket,
+            record_data=mapping_or_empty(record.data),
+            normalized_mapping=normalized_mapping,
+        )
 
         if not selected_values and len(remaining_rows) == len(review_bucket):
             continue
@@ -274,6 +296,27 @@ async def _promote_review_bucket_fields(
             normalized_value = normalize_value(output_field, row.get("value"))
             data[output_field] = normalized_value
         record.data = data
+
+
+def _selected_review_values(
+    review_bucket: list[dict],
+    *,
+    record_data: dict,
+    normalized_mapping: dict[str, str],
+) -> tuple[dict[str, dict], list[dict]]:
+    selected_values: dict[str, dict] = {}
+    remaining_rows: list[dict] = []
+    for row in review_bucket:
+        source_field = normalize_field_key(row.get("key"))
+        output_field = normalized_mapping.get(source_field)
+        if not source_field or not output_field:
+            remaining_rows.append(row)
+            continue
+        if record_data.get(output_field) not in (None, "", [], {}):
+            remaining_rows.append(row)
+            continue
+        selected_values.setdefault(output_field, row)
+    return selected_values, remaining_rows
 
 
 async def build_domain_recipe_payload(
@@ -338,7 +381,24 @@ def _resolve_recipe_fields(
     records: list[CrawlRecord],
     artifacts_by_id: dict[int, RecordArtifacts],
 ) -> tuple[list[str], list[str]]:
-    found_fields = sorted(
+    found_fields = _found_recipe_fields(records, artifacts_by_id=artifacts_by_id)
+    requested_fields = [
+        str(value) for value in run.requested_fields or [] if str(value or "").strip()
+    ]
+    if not found_fields and requested_fields:
+        dom_patterns = mapping_or_empty(EXTRACTION_RULES.get("dom_patterns"))
+        found_fields = sorted(
+            field
+            for field in requested_fields
+            if str(dom_patterns.get(field) or "").strip()
+        )
+    return found_fields, requested_fields
+
+
+def _found_recipe_fields(
+    records: list[CrawlRecord], *, artifacts_by_id: dict[int, RecordArtifacts]
+) -> list[str]:
+    return sorted(
         {
             str(field_name)
             for record in records
@@ -354,15 +414,6 @@ def _resolve_recipe_fields(
             if isinstance(payload, dict) and payload.get("status") == "found"
         }
     )
-    requested_fields = [
-        str(value) for value in run.requested_fields or [] if str(value or "").strip()
-    ]
-    if not found_fields and requested_fields:
-        dom_patterns = mapping_or_empty(EXTRACTION_RULES.get("dom_patterns"))
-        found_fields = sorted(
-            f for f in requested_fields if str(dom_patterns.get(f) or "").strip()
-        )
-    return found_fields, requested_fields
 
 
 def _assemble_recipe_payload(

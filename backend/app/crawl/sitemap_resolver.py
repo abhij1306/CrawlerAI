@@ -147,19 +147,10 @@ async def resolve_category_urls_with_site_links(
                 exc_info=True,
             )
         else:
-            if (
-                normalized_strategy == "static_only"
-                or len(static_result.urls) >= SITEMAP_THIN_RESULT_THRESHOLD
-            ):
+            if _static_result_ready(normalized_strategy, static_result):
                 return static_result
     if normalized_strategy == "static_only":
-        if static_result is not None:
-            return static_result
-        if static_error is not None:
-            raise static_error
-        raise ValueError(
-            f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}"
-        )
+        return _require_static_result(domain, static_result, static_error)
 
     try:
         discover_rendered_category_links = importlib.import_module(
@@ -189,6 +180,33 @@ async def resolve_category_urls_with_site_links(
             }
         return rendered_result
 
+    return _merge_static_and_rendered(static_result, rendered_result, limit=limit)
+
+
+def _static_result_ready(strategy: str, result: SitemapResolutionResult) -> bool:
+    return (
+        strategy == "static_only" or len(result.urls) >= SITEMAP_THIN_RESULT_THRESHOLD
+    )
+
+
+def _require_static_result(
+    domain: str,
+    result: SitemapResolutionResult | None,
+    error: Exception | None,
+) -> SitemapResolutionResult:
+    if result is not None:
+        return result
+    if error is not None:
+        raise error
+    raise ValueError(f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}")
+
+
+def _merge_static_and_rendered(
+    static_result: SitemapResolutionResult,
+    rendered_result: SitemapResolutionResult,
+    *,
+    limit: int,
+) -> SitemapResolutionResult:
     merged = _merge_dedupe_urls(static_result.urls, rendered_result.urls, limit=limit)
     labels = {
         **_labels_by_url_from_tree(static_result.nav_tree or []),
@@ -609,33 +627,27 @@ async def _extract_homepage_candidate_entries(
     for index, anchor in enumerate(
         document.safe_css("a[href]")[:SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS]
     ):
-        candidate_url = normalize_target_url(
-            _strip_fragment(absolute_url(homepage_url, anchor.attribute("href")))
+        candidate_url = _homepage_candidate_url(
+            homepage_url,
+            anchor=anchor,
+            homepage_normalized=homepage_normalized,
+            homepage_origin=homepage_origin,
         )
-        if not candidate_url:
+        if candidate_url is None:
             continue
-        if candidate_url.rstrip("/") == homepage_normalized:
-            continue
-        if _origin_key(candidate_url) != homepage_origin:
-            continue
-        if _reject_homepage_candidate(candidate_url):
-            continue
-        classification, score = _classify_homepage_candidate(
+        scored = _homepage_candidate_score(
             candidate_url=candidate_url,
             keyword=keyword,
             anchor=anchor,
+            category_only=category_only,
         )
-        category_signal = category_only and _has_category_homepage_signal(
-            candidate_url, anchor
-        )
-        if not classification and not category_signal:
-            continue
-        if category_only and (classification != "listing" and not category_signal):
+        if scored is None:
             continue
         if validations >= SITEMAP_HOMEPAGE_FALLBACK_MAX_VALIDATIONS:
             break
         await validate_public_target(candidate_url)
         validations += 1
+        classification, score = scored
         previous = scored_urls.get(candidate_url)
         next_value = (score, classification, index, _anchor_label(anchor))
         if previous is None or score > previous[0]:
@@ -653,6 +665,45 @@ async def _extract_homepage_candidate_entries(
         HomepageCandidate(url=url, label=score_data[3])
         for url, score_data in ranked[:limit]
     ]
+
+
+def _homepage_candidate_url(
+    homepage_url: str,
+    *,
+    anchor,
+    homepage_normalized: str,
+    homepage_origin: tuple[str, str, int],
+) -> str | None:
+    candidate_url = normalize_target_url(
+        _strip_fragment(absolute_url(homepage_url, anchor.attribute("href")))
+    )
+    if not candidate_url or candidate_url.rstrip("/") == homepage_normalized:
+        return None
+    if _origin_key(candidate_url) != homepage_origin:
+        return None
+    return None if _reject_homepage_candidate(candidate_url) else candidate_url
+
+
+def _homepage_candidate_score(
+    *,
+    candidate_url: str,
+    keyword: str,
+    anchor,
+    category_only: bool,
+) -> tuple[str, int] | None:
+    classification, score = _classify_homepage_candidate(
+        candidate_url=candidate_url,
+        keyword=keyword,
+        anchor=anchor,
+    )
+    category_signal = category_only and _has_category_homepage_signal(
+        candidate_url, anchor
+    )
+    if not classification and not category_signal:
+        return None
+    if category_only and classification != "listing" and not category_signal:
+        return None
+    return classification, score
 
 
 def _extract_locs(xml: ElementTree.Element) -> list[str]:

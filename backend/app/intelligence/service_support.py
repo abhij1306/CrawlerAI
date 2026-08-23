@@ -105,32 +105,51 @@ async def _score_candidate_if_ready(
         deterministic_result=result,
         prompt_task_runner=prompt_task_runner,
     )
-    reasons_raw = result.get("reasons")
     session.add(
-        ProductIntelligenceMatch(
-            job_id=job.id,
-            source_product_id=source_product.id,
-            candidate_id=candidate.id,
-            candidate_record_id=record.id,
-            score=_as_float_or_default(result.get("score"), 0.0),
-            score_label=str(result.get("label") or ""),
-            review_status=PRODUCT_INTELLIGENCE_REVIEW_PENDING,
-            source_price=source_product.price,
-            candidate_price=_as_price(candidate_snapshot.get("price")),
-            currency=str(
-                candidate_snapshot.get("currency") or source_product.currency or ""
-            ),
-            availability=str(candidate_snapshot.get("availability") or ""),
-            candidate_url=str(candidate_snapshot.get("url") or candidate.url),
-            candidate_domain=source_domain(
-                candidate_snapshot.get("url") or candidate.url
-            ),
-            score_reasons=dict(reasons_raw) if isinstance(reasons_raw, dict) else {},
+        _candidate_match(
+            job=job,
+            candidate=candidate,
+            source_product=source_product,
+            record=record,
+            candidate_snapshot=candidate_snapshot,
+            result=result,
             llm_enrichment=llm_enrichment,
         )
     )
     candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_COMPLETE
     return True
+
+
+def _candidate_match(
+    *,
+    job: ProductIntelligenceJob,
+    candidate: ProductIntelligenceCandidate,
+    source_product: ProductIntelligenceSourceProduct,
+    record: CrawlRecord,
+    candidate_snapshot: dict[str, object],
+    result: dict[str, object],
+    llm_enrichment: dict[str, object] | None,
+) -> ProductIntelligenceMatch:
+    reasons_raw = result.get("reasons")
+    return ProductIntelligenceMatch(
+        job_id=job.id,
+        source_product_id=source_product.id,
+        candidate_id=candidate.id,
+        candidate_record_id=record.id,
+        score=_as_float_or_default(result.get("score"), 0.0),
+        score_label=str(result.get("label") or ""),
+        review_status=PRODUCT_INTELLIGENCE_REVIEW_PENDING,
+        source_price=source_product.price,
+        candidate_price=_as_price(candidate_snapshot.get("price")),
+        currency=str(
+            candidate_snapshot.get("currency") or source_product.currency or ""
+        ),
+        availability=str(candidate_snapshot.get("availability") or ""),
+        candidate_url=str(candidate_snapshot.get("url") or candidate.url),
+        candidate_domain=source_domain(candidate_snapshot.get("url") or candidate.url),
+        score_reasons=dict(reasons_raw) if isinstance(reasons_raw, dict) else {},
+        llm_enrichment=llm_enrichment,
+    )
 
 
 async def _resolve_source_snapshot(

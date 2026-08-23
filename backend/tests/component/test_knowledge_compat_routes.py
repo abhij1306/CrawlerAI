@@ -16,15 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
 )
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.main import app
 from app.models.crawl_run import CrawlRun
-from app.persistence.extraction_memory import (
-    ensure_template,
+from app.persistence.extraction_memory import ensure_template, upsert_recipe
+from app.persistence.extraction_memory_knowledge import (
     find_contract_location,
-    upsert_recipe,
+    list_knowledge_site_projections,
+    list_template_contracts,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.component]
@@ -134,6 +136,61 @@ async def test_sites_shape_preserved(
     assert site["current_version"] == 1
     assert site["projection_status"] == "active"
     assert site["last_projected_run_id"] == run.id
+
+
+async def test_site_projection_uses_deterministic_template_identity(
+    db_session: AsyncSession,
+) -> None:
+    templates = [
+        await ensure_template(
+            db_session,
+            domain="stable.example",
+            surface="ecommerce_detail",
+            fingerprint=f"stable-fingerprint-{index}",
+            route_pattern=f"/products/{index}/{{slug}}",
+        )
+        for index in range(2)
+    ]
+    await db_session.commit()
+
+    sites = await list_knowledge_site_projections(db_session)
+    site = next(row for row in sites if row.domain == "stable.example")
+
+    assert site.id == sorted(template.id for template in templates)[0]
+
+
+async def test_template_contract_reader_ignores_non_template_layers(
+    db_session: AsyncSession,
+) -> None:
+    template = await ensure_template(
+        db_session,
+        domain="layered.example",
+        surface="ecommerce_detail",
+        fingerprint="layered-contracts",
+        route_pattern="/products/{slug}",
+    )
+    template_contract = _contract_payload(
+        template.id, canonical_field="price", selection_origin="operator"
+    )
+    domain_contract = _contract_payload(
+        template.id, canonical_field="brand", selection_origin="generic"
+    )
+    for layer, contract in (
+        (EXTRACTION_RECIPE_LAYER_DOMAIN, domain_contract),
+        (EXTRACTION_RECIPE_LAYER_TEMPLATE, template_contract),
+    ):
+        await upsert_recipe(
+            db_session,
+            template=template,
+            layer=layer,
+            kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+            payload={"contracts": [contract]},
+        )
+    await db_session.commit()
+
+    contracts = await list_template_contracts(db_session, template)
+
+    assert [row["canonical_field"] for row in contracts] == ["price"]
 
 
 async def test_domain_contracts_shape_and_operator_first_sort(

@@ -10,7 +10,7 @@ Memory workspace):
   selection on one contract.
 
 Handlers are thin HTTP adapters; query and projection assembly lives in
-``app/persistence/extraction_memory.py``.
+``app/persistence/extraction_memory_knowledge.py``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.persistence.extraction_memory import (
+from app.persistence.extraction_memory_knowledge import (
     find_contract_location,
     list_domain_contracts,
     list_knowledge_site_projections,

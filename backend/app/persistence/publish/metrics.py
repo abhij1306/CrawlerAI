@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.acquisition.acquirer import PageEvidence
 
 
@@ -64,54 +66,14 @@ def build_url_metrics(
         if isinstance(acquisition_result.browser_diagnostics, dict)
         else {}
     )
-    selected_traversal_mode = str(
-        browser_diagnostics.get("selected_traversal_mode")
-        or browser_diagnostics.get("requested_traversal_mode")
-        or ""
-    ).strip()
-    requested_traversal_mode = str(
-        browser_diagnostics.get("requested_traversal_mode") or ""
-    ).strip()
-    traversal_activated = bool(browser_diagnostics.get("traversal_activated"))
-    progress_events = int(browser_diagnostics.get("traversal_progress_events", 0) or 0)
-    pages_advanced = int(browser_diagnostics.get("pages_advanced", 0) or 0)
-    collected_pages = 1
-    if traversal_activated:
-        if selected_traversal_mode == "paginate":
-            collected_pages = max(1, pages_advanced + 1)
-        else:
-            collected_pages = max(1, progress_events + 1)
-    phase_timings_ms = (
-        dict(browser_diagnostics.get("phase_timings_ms") or {})
-        if isinstance(browser_diagnostics.get("phase_timings_ms"), dict)
-        else {}
-    )
-    browser_attempted = bool(browser_diagnostics.get("browser_attempted")) or (
-        acquisition_result.method == "browser"
-    )
-    memory_browser_first = str(
-        browser_diagnostics.get("browser_reason") or ""
-    ).strip().lower() in {"host-preference", "acquisition-contract"}
-    browser_engine = (
-        str(browser_diagnostics.get("browser_engine") or "").strip().lower() or None
-    )
-    browser_fetch_method = (
-        f"browser:{browser_engine}"
-        if acquisition_result.method == "browser" and browser_engine
-        else None
-    )
     return {
         **_acquisition_attempt_metrics(acquisition_result),
         "method": acquisition_result.method,
-        "browser_fetch_method": browser_fetch_method,
         "status_code": acquisition_result.status_code,
         "blocked": is_effectively_blocked(acquisition_result),
         "final_url": acquisition_result.final_url,
         "requested_fields": list(requested_fields or []),
-        "browser_used": acquisition_result.method == "browser",
-        "browser_attempted": browser_attempted,
-        "memory_browser_first": memory_browser_first,
-        "browser_engine": browser_engine,
+        **_browser_metrics(acquisition_result, browser_diagnostics),
         "browser_profile": browser_diagnostics.get("browser_profile"),
         "browser_launch_mode": browser_diagnostics.get("browser_launch_mode"),
         "browser_headless": browser_diagnostics.get("browser_headless"),
@@ -120,7 +82,6 @@ def build_url_metrics(
         "browser_reason": browser_diagnostics.get("browser_reason"),
         "browser_outcome": browser_diagnostics.get("browser_outcome"),
         "html_bytes": int(browser_diagnostics.get("html_bytes", 0) or 0),
-        "browser_phase_timings_ms": phase_timings_ms,
         "network_payloads": len(list(acquisition_result.network_payloads or [])),
         "adapter_name": acquisition_result.adapter_name,
         "platform_family": getattr(acquisition_result, "platform_family", None),
@@ -132,30 +93,77 @@ def build_url_metrics(
         "malformed_network_payloads": int(
             browser_diagnostics.get("malformed_network_payloads", 0) or 0
         ),
-        "requested_traversal_mode": requested_traversal_mode or None,
-        "traversal_mode_used": selected_traversal_mode or None,
-        "traversal_stop_reason": browser_diagnostics.get("traversal_stop_reason"),
-        "traversal_attempted": bool(requested_traversal_mode),
-        "traversal_succeeded": progress_events > 0,
-        "traversal_fell_back": bool(requested_traversal_mode)
-        and not traversal_activated,
-        "traversal_fallback_used": bool(
-            browser_diagnostics.get("traversal_fallback_used")
-        ),
-        "traversal_fallback_recovered": bool(
-            browser_diagnostics.get("traversal_fallback_recovered")
-        ),
-        "traversal_fallback_record_count": int(
-            browser_diagnostics.get("traversal_fallback_record_count", 0) or 0
-        ),
-        "pages_collected": collected_pages,
-        "pages_scrolled": pages_advanced,
-        "scroll_iterations": int(browser_diagnostics.get("scroll_iterations", 0) or 0),
-        "load_more_clicks": int(browser_diagnostics.get("load_more_clicks", 0) or 0),
-        "traversal_iterations": int(
-            browser_diagnostics.get("traversal_iterations", 0) or 0
+        **_traversal_metrics(browser_diagnostics),
+    }
+
+
+def _browser_metrics(
+    acquisition_result, diagnostics: dict[str, Any]
+) -> dict[str, object]:
+    browser_engine = (
+        str(diagnostics.get("browser_engine") or "").strip().lower() or None
+    )
+    used = acquisition_result.method == "browser"
+    return {
+        "browser_fetch_method": f"browser:{browser_engine}"
+        if used and browser_engine
+        else None,
+        "browser_used": used,
+        "browser_attempted": bool(diagnostics.get("browser_attempted")) or used,
+        "memory_browser_first": str(diagnostics.get("browser_reason") or "")
+        .strip()
+        .lower()
+        in {"host-preference", "acquisition-contract"},
+        "browser_engine": browser_engine,
+        "browser_phase_timings_ms": (
+            dict(diagnostics.get("phase_timings_ms") or {})
+            if isinstance(diagnostics.get("phase_timings_ms"), dict)
+            else {}
         ),
     }
+
+
+def _traversal_metrics(diagnostics: dict[str, Any]) -> dict[str, object]:
+    requested = str(diagnostics.get("requested_traversal_mode") or "").strip()
+    selected = str(diagnostics.get("selected_traversal_mode") or requested).strip()
+    activated = bool(diagnostics.get("traversal_activated"))
+    progress_events = int(diagnostics.get("traversal_progress_events", 0) or 0)
+    pages_advanced = int(diagnostics.get("pages_advanced", 0) or 0)
+    pages_collected = _collected_page_count(
+        activated=activated,
+        selected_mode=selected,
+        progress_events=progress_events,
+        pages_advanced=pages_advanced,
+    )
+    return {
+        "requested_traversal_mode": requested or None,
+        "traversal_mode_used": selected or None,
+        "traversal_stop_reason": diagnostics.get("traversal_stop_reason"),
+        "traversal_attempted": bool(requested),
+        "traversal_succeeded": progress_events > 0,
+        "traversal_fell_back": bool(requested) and not activated,
+        "traversal_fallback_used": bool(diagnostics.get("traversal_fallback_used")),
+        "traversal_fallback_recovered": bool(
+            diagnostics.get("traversal_fallback_recovered")
+        ),
+        "traversal_fallback_record_count": int(
+            diagnostics.get("traversal_fallback_record_count", 0) or 0
+        ),
+        "pages_collected": pages_collected,
+        "pages_scrolled": pages_advanced,
+        "scroll_iterations": int(diagnostics.get("scroll_iterations", 0) or 0),
+        "load_more_clicks": int(diagnostics.get("load_more_clicks", 0) or 0),
+        "traversal_iterations": int(diagnostics.get("traversal_iterations", 0) or 0),
+    }
+
+
+def _collected_page_count(
+    *, activated: bool, selected_mode: str, progress_events: int, pages_advanced: int
+) -> int:
+    if not activated:
+        return 1
+    progress = pages_advanced if selected_mode == "paginate" else progress_events
+    return max(1, progress + 1)
 
 
 def finalize_url_metrics(

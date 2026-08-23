@@ -12,10 +12,10 @@ pytestmark = pytest.mark.unit
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
-# Exact inventory. PR #53 regression coverage raises tests +40 to measured;
-# tools include the explicit per-field console-output predicate.
-TEST_LOC_BUDGET = 55_397
-TOOL_LOC_BUDGET = 3_723
+# Exact inventory. Services/tooling closeout adds focused regressions for the
+# moved owners and browser-probe input validation; both ratchets are measured.
+TEST_LOC_BUDGET = 55_577
+TOOL_LOC_BUDGET = 3_813
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
 # cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,
@@ -48,7 +48,10 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_recovery.py": 728,
     "core/config/field_mappings.py": 704,
     "crawl/batch_runtime.py": 709,
-    "enrichment/service.py": 905,
+    # Services/tooling simplification: LLM payload application moved to the
+    # diagnostics owner and product execution was flattened; the cohesive job
+    # lifecycle owner shrank from 905 to 708 nonblank lines.
+    "enrichment/service.py": 708,
     "extraction/collectors/dom.py": 1115,
     "extraction/collectors/js_state.py": 996,
     # Stream B commit 14 (same day): jsonld.py re-keyed (783 -> 871) and
@@ -62,40 +65,18 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/publication.py": 726,
     "extraction/result_building.py": 863,
     "extraction/validation.py": 777,
-    "intelligence/service.py": 761,
-    # LEARN-ONCE recipe tier: persist_learned_recipe + release payload building
-    # + drift counter live here (no TOML manifest counterpart; this dict is the
-    # sole ledger for this persistence module).
-    # Audit-debt chunk K (2026-07-22): grew with the single-query
-    # find_contract_location join (2.15).
-    "persistence/extraction_memory.py": 1394,
+    # Services/tooling simplification: release compilation/loading, knowledge
+    # projections, source preference shaping, and Sentinel observations moved
+    # to named extraction-memory persistence owners. Transaction/lock/write
+    # orchestration remains here and shrank from 1,394 to 752 nonblank lines.
+    "persistence/extraction_memory.py": 752,
 }
 # Core/acquisition simplification (2026-08-23): every scoped callable is now
 # CC<=15. Browser readiness state assembly moved to the existing page-helper
 # owner; browser_readiness and browser_result_builder also left the size ledger.
-COMPLEX_FUNCTION_DEBT = {
-    # Extraction runtime simplification (2026-08-22): all 21 extraction
-    # entries left the ledger after the package-wide CC<=15 decomposition.
-    ("crawl/crud.py", "create_crawl_run"): 24,
-    ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
-    ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
-    ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
-    ("enrichment/service.py", "run_job"): 25,
-    # Audit-fix reconciliation (2026-07-22): the seven resolution entries moved
-    # from the retired god-package __init__ to the split modules, values
-    # unchanged; enrichment run_job + intelligence _poll_candidates_and_score
-    # entered with the Celery job migration (2.7).
-    ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
-    ("intelligence/service.py", "_poll_candidates_and_score"): 25,
-    ("intelligence/matching.py", "_apply_identity_floor"): 21,
-    ("intelligence/matching.py", "extract_search_result_snapshot"): 22,
-    ("observability/diagnose.py", "build_diagnosis"): 25,
-    ("observability/run_report.py", "_root_causes"): 37,
-    ("persistence/publish/metrics.py", "build_url_metrics"): 30,
-    # Review-fix reconciliation (2026-07-22): verdict_counts in-flight health
-    # derivation added the counts branch (run_health_verdict 18 -> 28).
-    ("persistence/publish/verdict.py", "run_health_verdict"): 28,
-}
+# Extraction, core/acquisition, and services/tooling simplification have cleared
+# every production callable above the legacy-debt threshold.
+COMPLEX_FUNCTION_DEBT = {}
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",
@@ -229,16 +210,16 @@ PACKAGE_LOC_BUDGETS = {
     # PR #53 review follow-up: core +8 for price-context admission policy.
     # Browser readiness/result builder left oversized debt; review fixes keep
     # all touched production callables at CC<=15.
-    # Budgets are only raised, never lowered — except ratcheting down to the
-    # measured value when a deletion commit drops a package total.
-    "acquisition": 17_622,
-    "crawl": 9_533,
-    "core": 21_109,
-    "enrichment": 2_252,
+    # Services/tooling simplification adds explicit owner seams and type-safe
+    # helpers while shrinking the five named root owners by 2,870 lines.
+    "acquisition": 17_637,
+    "crawl": 9_790,
+    "core": 21_110,
+    "enrichment": 2_361,
     "connectors": 2_427,
-    "intelligence": 3_459,
+    "intelligence": 3_576,
     "extraction": 17_909,
-    "evaluation": 1_571,
+    "evaluation": 1_599,
 }
 # Audit-fix reconciliation (2026-07-22): total grew (86,376 -> 87,196) with
 # the resolution split, browser-pool collaborators, SSRF hardening, Celery
@@ -286,9 +267,10 @@ PACKAGE_LOC_BUDGETS = {
 # Extraction runtime simplification reconciliation (2026-08-22), followed by
 # complete feature removal, one-time Logfire system-metrics instrumentation,
 # and the formatter-required canonical database URL wrap (2026-08-23).
-# Core/acquisition simplification added +448; PR #53 review follow-up adds +8
-# for explicit short-price context admission, all reconciled to measured.
-TOTAL_APP_LOC_BUDGET = 85_736
+# Core/acquisition simplification added +448; PR #53 review follow-up adds +8.
+# Services/tooling owner seams add 667 lines while shrinking the named root
+# owners by 2,870 lines; reconciled to the live package inventory.
+TOTAL_APP_LOC_BUDGET = 86_433
 
 
 def test_production_package_loc_budgets() -> None:

@@ -26,6 +26,29 @@ from tests.component.contract_runtime_test_support import (
 )
 
 
+@pytest.mark.component
+def test_release_selector_rules_normalize_canonical_field() -> None:
+    payload = {
+        "templates": [
+            {
+                "surface": "ecommerce_detail",
+                "status": "active",
+                "selector_rules": [
+                    {"canonical_field": "title", "css_selector": ".title"}
+                ],
+            }
+        ]
+    }
+
+    assert selector_rules_from_release(payload, surface="ecommerce_detail") == [
+        {
+            "canonical_field": "title",
+            "field_name": "title",
+            "css_selector": ".title",
+        }
+    ]
+
+
 @pytest.mark.unit
 def test_compile_recipe_layers_allows_higher_layer_override_without_mutating_parent() -> (
     None

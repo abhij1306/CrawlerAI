@@ -34,6 +34,8 @@ _CURRENCY_CODE_CONTEXT_PATTERN = (
 _CURRENCY_CODE_TOKENS = frozenset(
     str(code).strip().casefold() for code in CURRENCY_CODES if str(code).strip()
 )
+
+
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").split()).strip()
 

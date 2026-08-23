@@ -233,6 +233,13 @@ def compose_runtime_selector_rules(
         for row in list(run_contract_rules or [])
         if isinstance(row, dict)
     ]
+    return _merge_selector_rule_sets(normalized_saved, normalized_run_contract)
+
+
+def _merge_selector_rule_sets(
+    normalized_saved: list[dict[str, object]],
+    normalized_run_contract: list[dict[str, object]],
+) -> list[dict[str, object]]:
     run_override_fields = {
         str(row.get("field_name") or "").strip().lower()
         for row in normalized_run_contract

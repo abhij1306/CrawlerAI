@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.core.telemetry import generate_correlation_id, get_correlation_id
@@ -49,78 +51,22 @@ logger = logging.getLogger(__name__)
 async def create_crawl_run(
     session: AsyncSession, user_id: int, payload: dict
 ) -> CrawlRun:
-    payload = dict(payload or {})
-    payload["url"] = normalize_target_url(payload.get("url"))
-    payload["urls"] = [
-        normalize_target_url(value) for value in (payload.get("urls") or [])
-    ]
-    urls = [value for value in (payload.get("urls") or []) if value]
-    primary_url = payload.get("url") or (urls[0] if urls else "")
-    normalized_surface = str(payload.get("surface") or "").strip().lower()
-    settings_payload = dict(payload.get("settings") or {})
-    run_type = payload.get("run_type")
-    if not run_type:
-        raise ValueError("run_type is required")
-    if not normalized_surface:
-        raise ValueError("surface is required")
-    if normalized_surface in INVALID_SURFACE_VALUES:
-        raise ValueError(SURFACE_VALIDATION_ERROR)
-    normalized_surface = parse_surface(normalized_surface).value
-    if run_type == "crawl" and primary_url:
-        saved_profile_record = await load_domain_run_profile(
-            session,
-            domain=normalize_domain(primary_url),
-            surface=normalized_surface,
-        )
-        if saved_profile_record is not None:
-            settings_payload = merge_saved_run_profile(
-                settings_payload,
-                saved_profile_record.profile,
-                ignore_default_equivalent_values=False,
-            )
-    settings = normalize_crawl_settings(settings_payload)
-    settings_view = CrawlRunSettings.from_value(settings)
-    if run_type == "batch" and urls:
-        settings = settings_view.with_updates(urls=urls).as_dict()
-        settings_view = CrawlRunSettings.from_value(settings)
-    final_run_urls = settings_view.urls()
-    if final_run_urls:
-        # Enforce the run URL cap on the FINAL settings payload too: the
-        # CrawlCreate schema validator only sees the top-level urls field, so
-        # settings.urls was a cap-bypass path for oversized batches.
-        enforce_run_url_limit(list(final_run_urls))
-    await ensure_public_crawl_targets(collect_target_urls(payload, settings_view))
-    await ensure_valid_proxy_endpoints(settings_view.proxy_list())
-    validate_extraction_contract(settings_view.extraction_contract())
-    domain_requested_fields = await load_domain_requested_fields(
-        session, url=primary_url, surface=normalized_surface
+    creation = _normalize_run_creation(payload)
+    settings, requested_fields = await _resolve_run_settings(session, creation)
+    run_urls = collect_target_urls(
+        creation.payload, CrawlRunSettings.from_value(settings)
     )
-    requested_fields = preserve_requested_fields(
-        [
-            *domain_requested_fields,
-            *(payload.get("requested_fields") or []),
-            *(payload.get("additional_fields") or []),
-        ]
-    )
-    if domain_requested_fields:
-        settings = settings_view.with_updates(
-            domain_requested_fields=domain_requested_fields
-        ).as_dict()
-        settings_view = CrawlRunSettings.from_value(settings)
-    settings = settings_view.with_updates(
-        requested_fields=requested_fields,
-        llm_config_snapshot=await snapshot_active_configs(session),
-    ).as_dict()
+    primary_url = creation.primary_url or (run_urls[0] if run_urls else "")
     run = CrawlRun(
         user_id=user_id,
-        run_type=run_type,
+        run_type=creation.run_type,
         url=primary_url,
-        surface=normalized_surface,
+        surface=creation.surface,
         status=CrawlStatus.PENDING.value,
         settings=settings,
         requested_fields=requested_fields,
         result_summary={
-            "url_count": max(1, len(urls)),
+            "url_count": max(1, len(run_urls)),
             "progress": 0,
             "current_stage": STAGE_ACQUIRE,
             "correlation_id": get_correlation_id() or generate_correlation_id(),
@@ -132,12 +78,100 @@ async def create_crawl_run(
         session,
         run_id=run.id,
         domain=normalize_domain(primary_url),
-        surface=normalized_surface,
+        surface=creation.surface,
     )
     run.extraction_release_snapshot_id = release.id
     await session.commit()
     await session.refresh(run)
     return run
+
+
+@dataclass(frozen=True, slots=True)
+class _RunCreation:
+    payload: dict
+    urls: list[str]
+    primary_url: str
+    surface: str
+    run_type: Any
+
+
+def _normalize_run_creation(payload: dict) -> _RunCreation:
+    payload = dict(payload or {})
+    payload["url"] = normalize_target_url(payload.get("url"))
+    payload["urls"] = [
+        normalize_target_url(value) for value in (payload.get("urls") or [])
+    ]
+    urls = [value for value in (payload.get("urls") or []) if value]
+    primary_url = payload.get("url") or (urls[0] if urls else "")
+    normalized_surface = str(payload.get("surface") or "").strip().lower()
+    run_type = payload.get("run_type")
+    if not run_type:
+        raise ValueError("run_type is required")
+    if not normalized_surface:
+        raise ValueError("surface is required")
+    if normalized_surface in INVALID_SURFACE_VALUES:
+        raise ValueError(SURFACE_VALIDATION_ERROR)
+    return _RunCreation(
+        payload=payload,
+        urls=urls,
+        primary_url=str(primary_url),
+        surface=parse_surface(normalized_surface).value,
+        run_type=run_type,
+    )
+
+
+async def _resolve_run_settings(
+    session: AsyncSession, creation: _RunCreation
+) -> tuple[dict[str, object], list[str]]:
+    settings_payload = dict(creation.payload.get("settings") or {})
+    if creation.run_type == "crawl" and creation.primary_url:
+        saved_profile_record = await load_domain_run_profile(
+            session,
+            domain=normalize_domain(creation.primary_url),
+            surface=creation.surface,
+        )
+        if saved_profile_record is not None:
+            settings_payload = merge_saved_run_profile(
+                settings_payload,
+                saved_profile_record.profile,
+                ignore_default_equivalent_values=False,
+            )
+    settings = normalize_crawl_settings(settings_payload)
+    settings_view = CrawlRunSettings.from_value(settings)
+    if creation.run_type == "batch" and creation.urls:
+        settings = settings_view.with_updates(urls=creation.urls).as_dict()
+        settings_view = CrawlRunSettings.from_value(settings)
+    final_run_urls = settings_view.urls()
+    if final_run_urls:
+        # Enforce the run URL cap on the FINAL settings payload too: the
+        # CrawlCreate schema validator only sees the top-level urls field, so
+        # settings.urls was a cap-bypass path for oversized batches.
+        enforce_run_url_limit(list(final_run_urls))
+    await ensure_public_crawl_targets(
+        collect_target_urls(creation.payload, settings_view)
+    )
+    await ensure_valid_proxy_endpoints(settings_view.proxy_list())
+    validate_extraction_contract(settings_view.extraction_contract())
+    domain_requested_fields = await load_domain_requested_fields(
+        session, url=creation.primary_url, surface=creation.surface
+    )
+    requested_fields = preserve_requested_fields(
+        [
+            *domain_requested_fields,
+            *(creation.payload.get("requested_fields") or []),
+            *(creation.payload.get("additional_fields") or []),
+        ]
+    )
+    if domain_requested_fields:
+        settings = settings_view.with_updates(
+            domain_requested_fields=domain_requested_fields
+        ).as_dict()
+        settings_view = CrawlRunSettings.from_value(settings)
+    settings = settings_view.with_updates(
+        requested_fields=requested_fields,
+        llm_config_snapshot=await snapshot_active_configs(session),
+    ).as_dict()
+    return settings, requested_fields
 
 
 async def list_runs(

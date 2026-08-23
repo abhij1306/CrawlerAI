@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -27,7 +28,6 @@ from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
 from app.core.config.data_enrichment import (
-    DATA_ENRICHMENT_LLM_BACKFILL_FIELDS,
     DATA_ENRICHMENT_LLM_TASK,
     DATA_ENRICHMENT_SKIP_RECORD_STATUSES,
     DATA_ENRICHMENT_STATUS_DEGRADED,
@@ -44,29 +44,14 @@ from app.crawl.access_service import (
     AccessDeniedError,
     require_accessible_run,
 )
-from app.enrichment.deterministic import (
-    build_deterministic_enrichment,
-    load_attribute_repository,
-    load_taxonomy_index,
-    normalize_from_terms,
-    normalize_materials,
-    normalize_sizes,
-)
-from app.core.shared.value_walk import without_empty
+from app.enrichment.deterministic import build_deterministic_enrichment
 from app.core.shared.text_coerce import bounded_unique_strings as string_list
-from app.enrichment.discovery_tags import (
-    ai_discovery_allowed_tags_for_product,
-    discovery_tag_slug,
-)
-from app.enrichment.llm_diagnostics import build_llm_diagnostics
-from app.enrichment.shopify_catalog import (
-    category_attribute_handles,
-    taxonomy_reference_for_category_path,
-)
-from app.core.shared.field_coerce import (
-    clean_text,
-    strip_html_tags,
-    text_or_none,
+from app.enrichment.llm_diagnostics import (
+    apply_llm_payload,
+    build_llm_diagnostics,
+    llm_prompt_context,
+    missing_llm_backfill_fields,
+    taxonomy_hint,
 )
 from app.connectors.llm.runtime import run_prompt_task
 from app.connectors.llm.config_service import snapshot_active_configs
@@ -380,89 +365,131 @@ async def run_job(session: AsyncSession, job: DataEnrichmentJob) -> None:
         if product_id is not None and source_record_id is not None
     ]
 
+    llm_enabled = bool((job.options or {}).get("llm_enabled"))
+    products_by_id, records_by_id = await _load_job_products(
+        session, product_refs=product_refs
+    )
     enriched_count = 0
     failed_count = 0
-    llm_enabled = bool((job.options or {}).get("llm_enabled"))
-    # Batch-load products and their source records with two IN queries instead
-    # of two session.get() round trips per product (N+1). Per-product commit
-    # semantics below are unchanged.
-    products_by_id: dict[int, EnrichedProduct] = {}
-    records_by_id: dict[int, CrawlRecord] = {}
-    if product_refs:
-        products_by_id = {
-            int(product.id): product
-            for product in (
-                await session.scalars(
-                    select(EnrichedProduct).where(
-                        EnrichedProduct.id.in_(
-                            [product_id for product_id, _ in product_refs]
-                        )
-                    )
-                )
-            ).all()
-        }
-        records_by_id = {
-            int(record.id): record
-            for record in (
-                await session.scalars(
-                    select(CrawlRecord).where(
-                        CrawlRecord.id.in_(
-                            [source_record_id for _, source_record_id in product_refs]
-                        )
-                    )
-                )
-            ).all()
-        }
     for product_id, source_record_id in product_refs:
-        product = products_by_id.get(product_id)
-        record = records_by_id.get(source_record_id)
-        if product is None or record is None:
-            if product is None:
-                failed_count += 1
-                continue
-            product.status = DATA_ENRICHMENT_STATUS_FAILED
-            product.diagnostics = {"error": "source_record_missing"}
-            failed_count += 1
-            continue
-        record_id = record.id
-        try:
-            product.status = DATA_ENRICHMENT_STATUS_RUNNING
-            record.enrichment_status = DATA_ENRICHMENT_STATUS_RUNNING
-            await session.commit()
-            await _enrich_product(
-                session,
-                job=job,
-                product=product,
-                record=record,
-                llm_enabled=llm_enabled,
-            )
-        except Exception as exc:  # pragma: no cover - defensive job isolation
-            if isinstance(exc, SQLAlchemyError):
-                await session.rollback()
-                refreshed_job = await session.get(DataEnrichmentJob, job_id)
-                refreshed_product = await session.get(EnrichedProduct, product_id)
-                refreshed_record = await session.get(CrawlRecord, record_id)
-                if (
-                    refreshed_job is None
-                    or refreshed_product is None
-                    or refreshed_record is None
-                ):
-                    raise
-                job = refreshed_job
-                product = refreshed_product
-                record = refreshed_record
-            product.status = DATA_ENRICHMENT_STATUS_FAILED
-            product.diagnostics = {"error": str(exc)}
-            record.enrichment_status = DATA_ENRICHMENT_STATUS_FAILED
-            failed_count += 1
-            await session.commit()
-        else:
-            product.status = DATA_ENRICHMENT_STATUS_ENRICHED
-            record.enrichment_status = DATA_ENRICHMENT_STATUS_ENRICHED
-            record.enriched_at = datetime.now(UTC)
+        job, enriched = await _process_job_product(
+            session,
+            job=job,
+            product=products_by_id.get(product_id),
+            record=records_by_id.get(source_record_id),
+            product_id=product_id,
+            llm_enabled=llm_enabled,
+        )
+        if enriched:
             enriched_count += 1
-            await session.commit()
+        else:
+            failed_count += 1
+    await _complete_job(
+        session,
+        job=job,
+        enriched_count=enriched_count,
+        failed_count=failed_count,
+        llm_enabled=llm_enabled,
+    )
 
+
+async def _load_job_products(
+    session: AsyncSession, *, product_refs: list[tuple[int, int]]
+) -> tuple[dict[int, EnrichedProduct], dict[int, CrawlRecord]]:
+    if not product_refs:
+        return {}, {}
+    products = await session.scalars(
+        select(EnrichedProduct).where(
+            EnrichedProduct.id.in_([product_id for product_id, _ in product_refs])
+        )
+    )
+    records = await session.scalars(
+        select(CrawlRecord).where(
+            CrawlRecord.id.in_([record_id for _, record_id in product_refs])
+        )
+    )
+    return (
+        {int(product.id): product for product in products.all()},
+        {int(record.id): record for record in records.all()},
+    )
+
+
+async def _process_job_product(
+    session: AsyncSession,
+    *,
+    job: DataEnrichmentJob,
+    product: EnrichedProduct | None,
+    record: CrawlRecord | None,
+    product_id: int,
+    llm_enabled: bool,
+) -> tuple[DataEnrichmentJob, bool]:
+    if product is None:
+        return job, False
+    if record is None:
+        product.status = DATA_ENRICHMENT_STATUS_FAILED
+        product.diagnostics = {"error": "source_record_missing"}
+        return job, False
+    record_id = int(record.id)
+    try:
+        product.status = DATA_ENRICHMENT_STATUS_RUNNING
+        record.enrichment_status = DATA_ENRICHMENT_STATUS_RUNNING
+        await session.commit()
+        await _enrich_product(
+            session,
+            job=job,
+            product=product,
+            record=record,
+            llm_enabled=llm_enabled,
+        )
+    except Exception as exc:  # pragma: no cover - defensive job isolation
+        if isinstance(exc, SQLAlchemyError):
+            await session.rollback()
+            (
+                refreshed_job,
+                refreshed_product,
+                refreshed_record,
+            ) = await _reload_failed_product(
+                session,
+                job_id=int(job.id),
+                product_id=product_id,
+                record_id=record_id,
+            )
+            if (
+                refreshed_job is None
+                or refreshed_product is None
+                or refreshed_record is None
+            ):
+                raise
+            job, product, record = refreshed_job, refreshed_product, refreshed_record
+        product.status = DATA_ENRICHMENT_STATUS_FAILED
+        product.diagnostics = {"error": str(exc)}
+        record.enrichment_status = DATA_ENRICHMENT_STATUS_FAILED
+        await session.commit()
+        return job, False
+    product.status = DATA_ENRICHMENT_STATUS_ENRICHED
+    record.enrichment_status = DATA_ENRICHMENT_STATUS_ENRICHED
+    record.enriched_at = datetime.now(UTC)
+    await session.commit()
+    return job, True
+
+
+async def _reload_failed_product(
+    session: AsyncSession, *, job_id: int, product_id: int, record_id: int
+) -> tuple[DataEnrichmentJob | None, EnrichedProduct | None, CrawlRecord | None]:
+    job = await session.get(DataEnrichmentJob, job_id)
+    product = await session.get(EnrichedProduct, product_id)
+    record = await session.get(CrawlRecord, record_id)
+    return job, product, record
+
+
+async def _complete_job(
+    session: AsyncSession,
+    *,
+    job: DataEnrichmentJob,
+    enriched_count: int,
+    failed_count: int,
+    llm_enabled: bool,
+) -> None:
     completed_at = datetime.now(UTC)
     job.completed_at = completed_at
     if failed_count and enriched_count:
@@ -539,17 +566,17 @@ async def _run_llm_enrichment(
     source_data: dict[str, object],
     category_candidates: list[dict[str, object]],
 ) -> dict[str, object]:
-    prompt_context = _llm_prompt_context(
+    prompt_context = llm_prompt_context(
         source_data,
         product=product,
         category_candidates=category_candidates,
     )
     variables: dict[str, object] = {
         "product_json": prompt_context,
-        "taxonomy_hint": _taxonomy_hint(
+        "taxonomy_hint": taxonomy_hint(
             product.category_path,
             category_candidates=category_candidates,
-            missing_fields=_missing_llm_backfill_fields(product),
+            missing_fields=missing_llm_backfill_fields(product),
         ),
     }
     snapshot = (job.options or {}).get("llm_config_snapshot")
@@ -582,7 +609,7 @@ async def _run_llm_enrichment(
         max_items=50,
         max_chars=60,
     )
-    applied_fields = _apply_llm_payload(product, payload, allowed_tags=allowed_tags)
+    applied_fields = apply_llm_payload(product, payload, allowed_tags=allowed_tags)
     return {
         "applied": bool(applied_fields),
         "category_applied": "category_path" in applied_fields,
@@ -590,138 +617,6 @@ async def _run_llm_enrichment(
         **build_llm_diagnostics(product, payload, applied_fields),
         "provider": result.provider or "",
         "model": result.model or "",
-    }
-
-
-def _apply_llm_payload(
-    product: EnrichedProduct,
-    payload: dict[str, object],
-    *,
-    allowed_tags: list[str] | None = None,
-) -> list[str]:
-    applied: list[str] = []
-    repository = load_attribute_repository()
-    terms = object_dict(repository.get("normalization_terms"))
-    category_path = text_or_none(payload.get("category_path"))
-    if product.category_path is None and category_path:
-        if taxonomy_reference := taxonomy_reference_for_category_path(
-            category_path,
-            load_taxonomy_index(),
-        ):
-            product.category_path = str(taxonomy_reference.get("category_path") or "")
-            applied.append("category_path")
-    for field_name, term_name in (
-        ("color_family", "color_families"),
-        ("gender_normalized", "gender_terms"),
-        ("availability_normalized", "availability_terms"),
-    ):
-        if getattr(product, field_name) is not None:
-            continue
-        raw_value = payload.get(field_name)
-        normalized = normalize_from_terms(
-            string_list(raw_value, max_items=1, max_chars=60) or [raw_value],
-            object_dict(terms.get(term_name)),
-        )
-        if normalized:
-            setattr(product, field_name, normalized)
-            applied.append(field_name)
-    if product.size_normalized is None:
-        category_match = _category_match_for_product_path(product.category_path)
-        size_normalized, size_system = normalize_sizes(
-            {
-                "size": payload.get("size_normalized"),
-                "size_system": payload.get("size_system"),
-                "category": product.category_path,
-            },
-            terms=terms,
-            category_match=category_match,
-        )
-        if size_normalized:
-            product.size_normalized = size_normalized
-            applied.append("size_normalized")
-        if product.size_system is None and size_system:
-            product.size_system = size_system
-            applied.append("size_system")
-    if product.size_system is None:
-        size_system = text_or_none(payload.get("size_system"))
-        known_systems = {
-            str(key)
-            for key in object_dict(
-                object_dict(terms.get("size_systems")).get("systems")
-            )
-        }
-        if size_system and size_system in known_systems:
-            product.size_system = size_system
-            applied.append("size_system")
-    if product.materials_normalized is None:
-        materials_normalized = normalize_materials(
-            {"materials": payload.get("materials_normalized")}, terms=terms
-        )
-        if materials_normalized:
-            product.materials_normalized = materials_normalized
-            applied.append("materials_normalized")
-    applied.extend(
-        _apply_semantic_llm_fields(product, payload, allowed_tags=allowed_tags)
-    )
-    product.taxonomy_version = DATA_ENRICHMENT_TAXONOMY_VERSION
-    return applied
-
-
-def _apply_semantic_llm_fields(
-    product: EnrichedProduct,
-    payload: dict[str, object],
-    *,
-    allowed_tags: list[str] | None,
-) -> list[str]:
-    applied: list[str] = []
-    allowed = set(allowed_tags or ai_discovery_allowed_tags_for_product(product))
-    for field_name in (
-        "intent_attributes",
-        "audience",
-        "style_tags",
-        "ai_discovery_tags",
-        "suggested_bundles",
-    ):
-        max_chars = (
-            data_enrichment_settings.llm_semantic_list_item_chars
-            if field_name in {"intent_attributes", "audience", "style_tags"}
-            else 60
-        )
-        values = string_list(payload.get(field_name), max_items=10, max_chars=max_chars)
-        if field_name == "ai_discovery_tags":
-            pairs = [(str(value), discovery_tag_slug(value)) for value in values]
-            discarded = [
-                {"value": value, "slug": slug}
-                for value, slug in pairs
-                if slug and slug not in allowed
-            ]
-            values = [slug for _value, slug in pairs if slug and slug in allowed]
-            if discarded:
-                logger.warning(
-                    "Discarded unsupported ai_discovery_tags for product_id=%s: %s",
-                    product.id,
-                    discarded,
-                )
-        setattr(product, field_name, values or None)
-        if values:
-            applied.append(field_name)
-    return applied
-
-
-def _category_match_for_product_path(
-    category_path: str | None,
-) -> dict[str, object] | None:
-    if not category_path:
-        return None
-    if not (
-        reference := taxonomy_reference_for_category_path(
-            category_path, load_taxonomy_index()
-        )
-    ):
-        return None
-    return {
-        "category_path": str(reference.get("category_path") or category_path),
-        "taxonomy_reference": reference,
     }
 
 
@@ -807,104 +702,6 @@ async def _load_source_records(
                 .limit(cast(int, options["max_source_records"]))
             )
         ).all()
-    )
-
-
-def _missing_llm_backfill_fields(product: EnrichedProduct) -> list[str]:
-    return [
-        str(name)
-        for name in DATA_ENRICHMENT_LLM_BACKFILL_FIELDS
-        if getattr(product, name) in (None, "", [], {})
-    ]
-
-
-def _llm_prompt_context(
-    source_data: dict[str, object],
-    *,
-    product: EnrichedProduct,
-    category_candidates: list[dict[str, object]],
-) -> dict[str, object]:
-    description = clean_text(strip_html_tags(source_data.get("description")))
-    category_anchor = product.category_path or text_or_none(
-        category_candidates[0].get("category_path") if category_candidates else None
-    )
-    context = without_empty(
-        {
-            "title": clean_text(source_data.get("title")),
-            "brand": clean_text(source_data.get("brand")),
-            "category": clean_text(source_data.get("category")),
-            "product_type": clean_text(source_data.get("product_type")),
-            "price_normalized": product.price_normalized,
-            "color_family": product.color_family,
-            "size_normalized": product.size_normalized,
-            "size_system": product.size_system,
-            "gender_normalized": product.gender_normalized,
-            "materials_normalized": product.materials_normalized,
-            "availability_normalized": product.availability_normalized,
-            "seo_keywords": product.seo_keywords,
-            "category_path": product.category_path,
-            "taxonomy_version": DATA_ENRICHMENT_TAXONOMY_VERSION,
-            "missing_backfill_fields": _missing_llm_backfill_fields(product),
-            "taxonomy_candidates": [
-                _taxonomy_candidate_context(candidate)
-                for candidate in category_candidates[
-                    : data_enrichment_settings.llm_taxonomy_hint_count
-                ]
-            ],
-            "category_attributes": category_attribute_handles(
-                category_anchor,
-                load_taxonomy_index(),
-            ),
-            "ai_discovery_allowed_tags": ai_discovery_allowed_tags_for_product(product),
-        }
-    )
-    if description:
-        context["description_excerpt"] = description[
-            : data_enrichment_settings.llm_description_excerpt_chars
-        ]
-    return context
-
-
-def _taxonomy_candidate_context(candidate: dict[str, object]) -> dict[str, object]:
-    taxonomy_reference = object_dict(candidate.get("taxonomy_reference"))
-    return without_empty(
-        {
-            "category_id": candidate.get("category_id"),
-            "category_path": candidate.get("category_path"),
-            "score": candidate.get("score"),
-            "source": candidate.get("source"),
-            "taxonomy_version": candidate.get("taxonomy_version")
-            or taxonomy_reference.get("taxonomy_version")
-            or DATA_ENRICHMENT_TAXONOMY_VERSION,
-            "attribute_handles": object_list(
-                taxonomy_reference.get("attribute_handles")
-            ),
-        }
-    )
-
-
-def _taxonomy_hint(
-    category_path: str | None,
-    *,
-    category_candidates: list[dict[str, object]],
-    missing_fields: list[str],
-) -> str:
-    if category_path:
-        guidance = f"Current deterministic category is {category_path}."
-    else:
-        candidate_paths = ", ".join(
-            str(item.get("category_path") or "")
-            for item in category_candidates[
-                : data_enrichment_settings.llm_taxonomy_hint_count
-            ]
-            if str(item.get("category_path") or "").strip()
-        )
-        guidance = f"Prefer one of these candidates when supported by evidence: {candidate_paths}."
-        if not candidate_paths:
-            guidance = "Return only real Shopify category paths."
-    return (
-        f"Use Shopify taxonomy version {DATA_ENRICHMENT_TAXONOMY_VERSION}. {guidance} "
-        f"Only fill missing fields: {', '.join(missing_fields) or 'none'}."
     )
 
 

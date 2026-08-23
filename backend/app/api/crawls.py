@@ -427,49 +427,17 @@ async def crawls_logs_ws(
     poll_interval_seconds = base_poll_interval_seconds
     missing_run_snapshots = 0
     log_run_id = int(run_id)
-    last_status_value = run.status_value
     try:
-        while True:
-            rows, next_run = await load_log_stream_snapshot(
-                run_id=run_id,
-                after_id=cursor,
-            )
-
-            for row in rows:
-                await websocket.send_json(serialize_log_event(row))
-                cursor = row.id
-
-            status_changed = False
-            if next_run is None:
-                missing_run_snapshots += 1
-                logger.warning(
-                    "Run logs snapshot did not reload run; retrying",
-                    extra={"run_id": log_run_id},
-                )
-                if missing_run_snapshots >= 3:
-                    await websocket.close(code=1011, reason="Run snapshot unavailable")
-                    return
-            else:
-                missing_run_snapshots = 0
-                status_changed = (
-                    next_run.status_value != last_status_value
-                    and next_run.status_value not in TERMINAL_STATUSES
-                )
-                run = next_run
-                last_status_value = run.status_value
-            if run.status_value in TERMINAL_STATUSES and not rows:
-                await websocket.close(code=1000, reason="Run completed")
-                return
-            await asyncio.sleep(poll_interval_seconds)
-            # Adaptive backoff (2.9): activity keeps the base cadence; sustained
-            # empty polls double the interval up to the configured cap so idle
-            # runs stop hammering the database.
-            if rows or status_changed:
-                poll_interval_seconds = base_poll_interval_seconds
-            else:
-                poll_interval_seconds = min(
-                    poll_interval_seconds * 2, max_poll_interval_seconds
-                )
+        await _stream_log_snapshots(
+            websocket,
+            run_id=run_id,
+            cursor=cursor,
+            run=run,
+            base_poll_interval_seconds=base_poll_interval_seconds,
+            max_poll_interval_seconds=max_poll_interval_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            missing_run_snapshots=missing_run_snapshots,
+        )
 
     except WebSocketDisconnect:
         return
@@ -486,3 +454,49 @@ async def crawls_logs_ws(
             )
         except Exception:
             logger.debug("Failed to close websocket after stream error", exc_info=True)
+
+
+async def _stream_log_snapshots(
+    websocket: WebSocket,
+    *,
+    run_id: int,
+    cursor: int | None,
+    run: CrawlRun,
+    base_poll_interval_seconds: float,
+    max_poll_interval_seconds: float,
+    poll_interval_seconds: float,
+    missing_run_snapshots: int,
+) -> None:
+    last_status_value = run.status_value
+    while True:
+        rows, next_run = await load_log_stream_snapshot(run_id=run_id, after_id=cursor)
+        for row in rows:
+            await websocket.send_json(serialize_log_event(row))
+            cursor = row.id
+        status_changed = False
+        if next_run is None:
+            missing_run_snapshots += 1
+            logger.warning(
+                "Run logs snapshot did not reload run; retrying",
+                extra={"run_id": int(run_id)},
+            )
+            if missing_run_snapshots >= 3:
+                await websocket.close(code=1011, reason="Run snapshot unavailable")
+                return
+        else:
+            missing_run_snapshots = 0
+            status_changed = (
+                next_run.status_value != last_status_value
+                and next_run.status_value not in TERMINAL_STATUSES
+            )
+            run = next_run
+            last_status_value = run.status_value
+        if run.status_value in TERMINAL_STATUSES and not rows:
+            await websocket.close(code=1000, reason="Run completed")
+            return
+        await asyncio.sleep(poll_interval_seconds)
+        poll_interval_seconds = (
+            base_poll_interval_seconds
+            if rows or status_changed
+            else min(poll_interval_seconds * 2, max_poll_interval_seconds)
+        )

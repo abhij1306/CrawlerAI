@@ -3,6 +3,7 @@ from __future__ import annotations
 import platform
 from collections.abc import Mapping
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 from app.core.config.browser_fingerprint_profiles import (
@@ -131,16 +132,32 @@ def _apply_geolocation(context_options: dict[str, Any], value: object) -> None:
     longitude = value.get("longitude")
     if latitude is None or longitude is None:
         return
-    geolocation: dict[str, Any] = {
-        "latitude": float(latitude),
-        "longitude": float(longitude),
-    }
-    if value.get("accuracy") is not None:
-        geolocation["accuracy"] = float(value["accuracy"])
+    try:
+        latitude_value = float(latitude)
+        longitude_value = float(longitude)
+        if not (
+            isfinite(latitude_value)
+            and -90 <= latitude_value <= 90
+            and isfinite(longitude_value)
+            and -180 <= longitude_value <= 180
+        ):
+            return
+        geolocation: dict[str, Any] = {
+            "latitude": latitude_value,
+            "longitude": longitude_value,
+        }
+        if value.get("accuracy") is not None:
+            accuracy = float(value["accuracy"])
+            if not isfinite(accuracy) or accuracy < 0:
+                return
+            geolocation["accuracy"] = accuracy
+    except (TypeError, ValueError):
+        return
     context_options["geolocation"] = geolocation
-    permissions = context_options.setdefault("permissions", [])
+    permissions = list(context_options.setdefault("permissions", []))
     if "geolocation" not in permissions:
         permissions.append("geolocation")
+    context_options["permissions"] = permissions
 
 
 def _merge_browser_context_profile(

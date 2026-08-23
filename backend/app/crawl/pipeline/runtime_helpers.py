@@ -166,12 +166,24 @@ def record_detail_expansion_extraction_outcome(
         clicked_count = 0
     if clicked_count <= 0:
         return
+    extracted_fields = _detail_expansion_extracted_fields(
+        records, requested_fields=requested_fields
+    )
+    detail_expansion["extraction_consumed"] = bool(extracted_fields or records)
+    detail_expansion["extracted_fields"] = extracted_fields
+    browser_diagnostics["detail_expansion"] = detail_expansion
+    acquisition_result.browser_diagnostics = browser_diagnostics
+
+
+def _detail_expansion_extracted_fields(
+    records: list[dict[str, object]], *, requested_fields: list[str]
+) -> list[str]:
     requested = {
         normalized
         for value in requested_fields
         if (normalized := normalize_requested_field(value))
     }
-    extracted_fields = sorted(
+    return sorted(
         {
             str(field_name).strip().lower()
             for record in records
@@ -188,10 +200,6 @@ def record_detail_expansion_extraction_outcome(
             )
         }
     )
-    detail_expansion["extraction_consumed"] = bool(extracted_fields or records)
-    detail_expansion["extracted_fields"] = extracted_fields
-    browser_diagnostics["detail_expansion"] = detail_expansion
-    acquisition_result.browser_diagnostics = browser_diagnostics
 
 
 async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) -> None:

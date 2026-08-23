@@ -583,72 +583,28 @@ def _parse_serpapi_immersive_results(
     limit: int | None = None,
 ) -> list[SearchResult]:
     parent_data = parent or {}
+    max_results = max(1, int(limit)) if limit is not None else None
     product_value = payload.get("product_results")
     product = product_value if isinstance(product_value, dict) else {}
-    thumbnails = product.get("thumbnails")
-    thumbnail = ""
-    if isinstance(thumbnails, list) and thumbnails:
-        thumbnail = str(thumbnails[0] or "")
-    stores = product.get("stores")
-    store_rows = stores if isinstance(stores, list) else []
+    thumbnail = _immersive_thumbnail(product)
+    store_rows = _dict_rows(product.get("stores"))
     results: list[SearchResult] = []
-
-    # Prune product block to prevent heavy recursive variants / video listings duplication inside db entries
-    about_value = product.get("about_the_product")
-    about_data = about_value if isinstance(about_value, dict) else {}
-    pruned_product = {
-        "title": product.get("title"),
-        "brand": product.get("brand"),
-        "rating": product.get("rating"),
-        "reviews": product.get("reviews"),
-        "description": product.get("description")
-        or about_data.get("description")
-        or "",
-    }
-
+    pruned_product = _pruned_immersive_product(product)
     for position, store in enumerate(store_rows, start=1):
-        if not isinstance(store, dict):
-            continue
-        url = clean_result_url(store.get("link"))
-        if not url:
-            continue
-        results.append(
-            SearchResult(
-                url=url,
-                payload={
-                    "provider": "serpapi_immersive",
-                    "title": str(
-                        store.get("title")
-                        or product.get("title")
-                        or parent_data.get("title")
-                        or ""
-                    ),
-                    "snippet": str(product.get("description") or ""),
-                    "source": str(store.get("name") or ""),
-                    "price": store.get("price"),
-                    "extracted_price": store.get("extracted_price"),
-                    "thumbnail": thumbnail,
-                    "position": position,
-                    "product_id": product.get("product_id")
-                    or parent_data.get(SERPAPI_SHOPPING_PRODUCT_ID_FIELD),
-                    "product_link": parent_data.get(
-                        SERPAPI_SHOPPING_PRODUCT_LINK_FIELD
-                    ),
-                    "rating": store.get("rating") or product.get("rating"),
-                    "reviews": store.get("reviews") or product.get("reviews"),
-                    "delivery": store.get("shipping") or "",
-                    "raw": {
-                        "store": store,
-                        "product": pruned_product,
-                        "parent": parent_data,
-                    },
-                },
-            )
+        result = _immersive_store_result(
+            store,
+            position=position,
+            product=product,
+            parent=parent_data,
+            thumbnail=thumbnail,
+            pruned_product=pruned_product,
         )
-        if limit is not None and len(results) >= max(1, int(limit)):
+        if result is not None:
+            results.append(result)
+        if _result_limit_reached(results, max_results):
             break
-    if limit is not None and len(results) >= max(1, int(limit)):
-        return results[: max(1, int(limit))]
+    if _result_limit_reached(results, max_results):
+        return results[:max_results]
     about = product.get("about_the_product")
     if isinstance(about, dict):
         about_url = clean_result_url(about.get("link"))
@@ -677,6 +633,71 @@ def _parse_serpapi_immersive_results(
                 )
             )
     return results
+
+
+def _result_limit_reached(results: list[SearchResult], max_results: int | None) -> bool:
+    return max_results is not None and len(results) >= max_results
+
+
+def _immersive_thumbnail(product: dict[str, object]) -> str:
+    thumbnails = product.get("thumbnails")
+    if not isinstance(thumbnails, list) or not thumbnails:
+        return ""
+    return str(thumbnails[0] or "")
+
+
+def _dict_rows(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, dict)]
+
+
+def _pruned_immersive_product(product: dict[str, object]) -> dict[str, object]:
+    about_value = product.get("about_the_product")
+    about = about_value if isinstance(about_value, dict) else {}
+    return {
+        "title": product.get("title"),
+        "brand": product.get("brand"),
+        "rating": product.get("rating"),
+        "reviews": product.get("reviews"),
+        "description": product.get("description") or about.get("description") or "",
+    }
+
+
+def _immersive_store_result(
+    store: dict[str, object],
+    *,
+    position: int,
+    product: dict[str, object],
+    parent: dict[str, object],
+    thumbnail: str,
+    pruned_product: dict[str, object],
+) -> SearchResult | None:
+    url = clean_result_url(store.get("link"))
+    if not url:
+        return None
+    return SearchResult(
+        url=url,
+        payload={
+            "provider": "serpapi_immersive",
+            "title": str(
+                store.get("title") or product.get("title") or parent.get("title") or ""
+            ),
+            "snippet": str(product.get("description") or ""),
+            "source": str(store.get("name") or ""),
+            "price": store.get("price"),
+            "extracted_price": store.get("extracted_price"),
+            "thumbnail": thumbnail,
+            "position": position,
+            "product_id": product.get("product_id")
+            or parent.get(SERPAPI_SHOPPING_PRODUCT_ID_FIELD),
+            "product_link": parent.get(SERPAPI_SHOPPING_PRODUCT_LINK_FIELD),
+            "rating": store.get("rating") or product.get("rating"),
+            "reviews": store.get("reviews") or product.get("reviews"),
+            "delivery": store.get("shipping") or "",
+            "raw": {"store": store, "product": pruned_product, "parent": parent},
+        },
+    )
 
 
 def _first_shopping_url(item: dict[str, object]) -> str:

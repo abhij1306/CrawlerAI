@@ -75,12 +75,11 @@ def derive_acquisition_info(
     acquisition_summary = mapping_or_empty(
         mapping_or_empty(run.result_summary).get("acquisition_summary")
     )
-    if actual_fetch_method is None and mapping_or_empty(
-        acquisition_summary.get("methods")
-    ).get("browser"):
-        actual_fetch_method = "browser"
-    if browser_reason is None and actual_fetch_method == "browser":
-        browser_reason = "http-escalation"
+    actual_fetch_method, browser_reason = _fallback_acquisition_values(
+        actual_fetch_method,
+        browser_reason,
+        acquisition_summary=acquisition_summary,
+    )
     affordance_candidates["browser_required"] = browser_required
     return {
         "actual_fetch_method": actual_fetch_method,
@@ -89,6 +88,21 @@ def derive_acquisition_info(
         "acquisition_summary": acquisition_summary,
         "affordance_candidates": affordance_candidates,
     }
+
+
+def _fallback_acquisition_values(
+    actual_fetch_method: str | None,
+    browser_reason: str | None,
+    *,
+    acquisition_summary: dict[str, object],
+) -> tuple[str | None, str | None]:
+    if actual_fetch_method is None and mapping_or_empty(
+        acquisition_summary.get("methods")
+    ).get("browser"):
+        actual_fetch_method = "browser"
+    if browser_reason is None and actual_fetch_method == "browser":
+        browser_reason = "http-escalation"
+    return actual_fetch_method, browser_reason
 
 
 def collect_selector_candidates(
@@ -161,21 +175,16 @@ def _collect_record_selector_candidates(
             field_learning=field_learning,
         )
         if not selector_kind or not selector_value:
-            if (
-                payload_map.get("status") == "found"
-                and str(field_name or "").strip().lower() in requested_fields
-            ):
-                _collect_selector_candidate(
-                    record,
-                    run=run,
-                    field_name=field_name,
-                    payload_map=payload_map,
-                    selector_trace=selector_trace,
-                    selector_kind="css_selector",
-                    selector_value=f"[data-kilo-requested-field='{str(field_name or '').strip().lower()}']",
-                    saved_selector_index=saved_selector_index,
-                    selector_candidates=selector_candidates,
-                )
+            _collect_requested_field_selector(
+                record,
+                run=run,
+                field_name=field_name,
+                payload_map=payload_map,
+                selector_trace=selector_trace,
+                requested_fields=requested_fields,
+                saved_selector_index=saved_selector_index,
+                selector_candidates=selector_candidates,
+            )
             continue
         _collect_selector_candidate(
             record,
@@ -188,6 +197,33 @@ def _collect_record_selector_candidates(
             saved_selector_index=saved_selector_index,
             selector_candidates=selector_candidates,
         )
+
+
+def _collect_requested_field_selector(
+    record: CrawlRecord,
+    *,
+    run: CrawlRun,
+    field_name: object,
+    payload_map: dict[str, object],
+    selector_trace: dict[str, object],
+    requested_fields: set[str],
+    saved_selector_index: dict[tuple[str, str, str], dict[str, object]],
+    selector_candidates: dict[str, dict[str, object]],
+) -> None:
+    normalized_field = str(field_name or "").strip().lower()
+    if payload_map.get("status") != "found" or normalized_field not in requested_fields:
+        return
+    _collect_selector_candidate(
+        record,
+        run=run,
+        field_name=field_name,
+        payload_map=payload_map,
+        selector_trace=selector_trace,
+        selector_kind="css_selector",
+        selector_value=f"[data-kilo-requested-field='{normalized_field}']",
+        saved_selector_index=saved_selector_index,
+        selector_candidates=selector_candidates,
+    )
 
 
 def _source_trace(
@@ -238,24 +274,20 @@ def _collect_field_learning(
             ),
         },
     )
-    learning_entry["source_record_ids"] = sorted(
-        {
-            parsed
-            for value in [
-                *_object_list(learning_entry.get("source_record_ids")),
-                record.id,
-            ]
-            if (parsed := _safe_int(value)) is not None
-        }
+    learning_entry["source_record_ids"] = _append_learning_id(
+        learning_entry.get("source_record_ids"), record.id
     )
-    learning_entry["representative_url_result_ids"] = sorted(
+    learning_entry["representative_url_result_ids"] = _append_learning_id(
+        learning_entry.get("representative_url_result_ids"), record.url_result_id
+    )
+
+
+def _append_learning_id(existing: object, value: object) -> list[int]:
+    return sorted(
         {
             parsed
-            for value in [
-                *_object_list(learning_entry.get("representative_url_result_ids")),
-                record.url_result_id,
-            ]
-            if (parsed := _safe_int(value)) is not None
+            for item in [*_object_list(existing), value]
+            if (parsed := _safe_int(item)) is not None
         }
     )
 

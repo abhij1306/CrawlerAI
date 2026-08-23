@@ -80,69 +80,14 @@ def build_diagnosis(
     evidence_by_id = {row.evidence_id: row for row in extraction_result.evidence}
     projection_by_field = _projection_entries_by_public_field(extraction_result)
 
-    fields_total = len(extraction_result.field_states)
-    fields_section, fields_truncated = _bounded(
-        extraction_result.field_states, _FIELDS_LIMIT
-    )
-    drops_total = len(variant_drops or ())
-    drops_section, drops_truncated = _bounded(
-        list(variant_drops or ()), _VARIANT_DROPS_LIMIT
-    )
-    collectors_total = len(extraction_result.collector_outcomes)
-    collectors_section, collectors_truncated = _bounded(
-        extraction_result.collector_outcomes, _COLLECTORS_LIMIT
-    )
-    stages_total = len(extraction_result.stage_outcomes)
-    stages_section, stages_truncated = _bounded(
-        extraction_result.stage_outcomes, _STAGES_LIMIT
-    )
-    contracts_total = len(extraction_result.contract_outcomes)
-    contract_section, contracts_truncated = _bounded(
-        extraction_result.contract_outcomes, _CONTRACTS_LIMIT
-    )
-    findings_total = len(extraction_result.findings)
-    findings_section, findings_truncated = _bounded(
-        extraction_result.findings, _FINDINGS_LIMIT
-    )
     evidence_dispositions = tuple(
         getattr(extraction_result, "evidence_dispositions", ()) or ()
     )
-    dispositions_total = len(evidence_dispositions)
-    dispositions_section, dispositions_truncated = _bounded(
-        evidence_dispositions,
-        _EVIDENCE_DISPOSITIONS_LIMIT,
+    sections, truncated = _diagnosis_sections(
+        extraction_result,
+        variant_drops=variant_drops,
+        evidence_dispositions=evidence_dispositions,
     )
-
-    truncated: dict[str, dict[str, int]] = {}
-    if fields_truncated:
-        truncated["fields"] = {"included": len(fields_section), "total": fields_total}
-    if drops_truncated:
-        truncated["variant_drops"] = {
-            "included": len(drops_section),
-            "total": drops_total,
-        }
-    if collectors_truncated:
-        truncated["collectors"] = {
-            "included": len(collectors_section),
-            "total": collectors_total,
-        }
-    if stages_truncated:
-        truncated["stages"] = {"included": len(stages_section), "total": stages_total}
-    if contracts_truncated:
-        truncated["contract_outcomes"] = {
-            "included": len(contract_section),
-            "total": contracts_total,
-        }
-    if findings_truncated:
-        truncated["findings"] = {
-            "included": len(findings_section),
-            "total": findings_total,
-        }
-    if dispositions_truncated:
-        truncated["evidence_dispositions"] = {
-            "included": len(dispositions_section),
-            "total": dispositions_total,
-        }
 
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
@@ -179,34 +124,78 @@ def build_diagnosis(
                 evidence_by_id=evidence_by_id,
                 publication_policy=rejected_public.get(state.field),
             )
-            for state in fields_section
+            for state in sections["fields"]
         ],
         "variants": {
-            "dropped": [dict(drop) for drop in drops_section],
+            "dropped": [dict(drop) for drop in sections["variant_drops"]],
         },
         "collectors": [
-            outcome.model_dump(mode="json") for outcome in collectors_section
+            outcome.model_dump(mode="json") for outcome in sections["collectors"]
         ],
-        "stages": [outcome.model_dump(mode="json") for outcome in stages_section],
-        "findings": [finding.model_dump(mode="json") for finding in findings_section],
+        "stages": [outcome.model_dump(mode="json") for outcome in sections["stages"]],
+        "findings": [
+            finding.model_dump(mode="json") for finding in sections["findings"]
+        ],
         "evidence_dispositions": {
-            "total": dispositions_total,
+            "total": len(evidence_dispositions),
             "by_status": dict(Counter(row.status for row in evidence_dispositions)),
-            "examples": [row.model_dump(mode="json") for row in dispositions_section],
+            "examples": [
+                row.model_dump(mode="json") for row in sections["evidence_dispositions"]
+            ],
         },
         # Per-field record of which frozen contract (if any) selected the winning
         # source, so a learned extraction is explainable from diagnose.json alone.
         # ``None`` when no contracts were applied keeps the "not applicable" signal
         # distinct from "applied, but every field fell back".
         "contract_outcomes": (
-            [outcome.model_dump(mode="json") for outcome in contract_section]
+            [
+                outcome.model_dump(mode="json")
+                for outcome in sections["contract_outcomes"]
+            ]
             if extraction_result.contract_outcomes
             else None
         ),
     }
+    return _with_truncation(payload, truncated)
+
+
+def _with_truncation(
+    payload: dict[str, object], truncated: dict[str, dict[str, int]]
+) -> dict[str, object]:
     if truncated:
         payload["truncated"] = truncated
     return payload
+
+
+def _diagnosis_sections(
+    extraction_result: ExtractionResult,
+    *,
+    variant_drops: Sequence[Mapping[str, object]] | None,
+    evidence_dispositions: Sequence[Any],
+) -> tuple[dict[str, list[Any]], dict[str, dict[str, int]]]:
+    sources: dict[str, tuple[Sequence[Any], int]] = {
+        "fields": (extraction_result.field_states, _FIELDS_LIMIT),
+        "variant_drops": (list(variant_drops or ()), _VARIANT_DROPS_LIMIT),
+        "collectors": (extraction_result.collector_outcomes, _COLLECTORS_LIMIT),
+        "stages": (extraction_result.stage_outcomes, _STAGES_LIMIT),
+        "contract_outcomes": (
+            extraction_result.contract_outcomes,
+            _CONTRACTS_LIMIT,
+        ),
+        "findings": (extraction_result.findings, _FINDINGS_LIMIT),
+        "evidence_dispositions": (
+            evidence_dispositions,
+            _EVIDENCE_DISPOSITIONS_LIMIT,
+        ),
+    }
+    sections: dict[str, list[Any]] = {}
+    truncated: dict[str, dict[str, int]] = {}
+    for name, (items, limit) in sources.items():
+        section, was_truncated = _bounded(items, limit)
+        sections[name] = section
+        if was_truncated:
+            truncated[name] = {"included": len(section), "total": len(items)}
+    return sections, truncated
 
 
 def _bounded(items: Sequence[Any], limit: int) -> tuple[list[Any], bool]:
@@ -574,12 +563,7 @@ def _projection_entries_by_public_field(
         for state in getattr(extraction_result, "field_states", ()) or ()
         if str(getattr(state, "state", "") or "") in {"captured_published", "resolved"}
     }
-    record_fields = {
-        key
-        for record in getattr(extraction_result, "records", ()) or ()
-        for key, value in _record_items(record)
-        if value not in (None, "", [], {}) and not str(key).startswith("_")
-    }
+    record_fields = _populated_record_fields(extraction_result)
     projection = getattr(extraction_result, "publication", None)
     entries = tuple(getattr(projection, "entries", ()) or ())
     by_field: dict[str, PublicationEntry] = {}
@@ -595,6 +579,15 @@ def _projection_entries_by_public_field(
         ):
             by_field[field] = entry
     return by_field
+
+
+def _populated_record_fields(extraction_result: ExtractionResult) -> set[str]:
+    return {
+        key
+        for record in getattr(extraction_result, "records", ()) or ()
+        for key, value in _record_items(record)
+        if value not in (None, "", [], {}) and not str(key).startswith("_")
+    }
 
 
 def _record_items(record: object) -> tuple[tuple[str, object], ...]:

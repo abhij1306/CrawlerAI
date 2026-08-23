@@ -38,7 +38,6 @@ from app.core.config.product_intelligence import (
     MATCH_TITLE_SIM_MEDIUM,
     MATCH_VARIANT_MISMATCH_PENALTY,
     MATCH_VARIANT_MISMATCH_SCORE_CAP,
-    PRIVATE_LABEL_BRANDS,
     PRODUCT_STYLE_CODE_MIN_LENGTH,
     PRODUCT_STYLE_CODE_PATTERN,
     SCORE_LABEL_HIGH_CUTOFF,
@@ -70,20 +69,11 @@ from app.core.config.product_intelligence import (
 from app.intelligence.brand_registry import (
     infer_belk_brand,
     infer_belk_brand_prefix,
-    is_belk_exclusive_brand,
+    is_private_label,
+    normalize_brand,
 )
 
-
-def normalize_brand(value: object) -> str:
-    text = _normalize_text(value)
-    normalized = re.sub(r"[^a-z0-9]+", " ", text).strip()
-    return BRAND_ALIAS_MAP.get(normalized, normalized)
-
-
-def is_private_label(brand: object) -> bool:
-    return normalize_brand(brand) in PRIVATE_LABEL_BRANDS or is_belk_exclusive_brand(
-        brand
-    )
+__all__ = ["is_private_label", "normalize_brand"]
 
 
 def source_domain(url: object) -> str:
@@ -100,10 +90,7 @@ def extract_product_snapshot(record: object) -> dict[str, object]:
     brand = _first_present(data, SOURCE_BRAND_FIELDS)
     title = _first_present(data, SOURCE_TITLE_FIELDS)
     price_value = _first_present(data, SOURCE_PRICE_FIELDS)
-    if str(brand or "").strip():
-        brand = _canonical_source_brand(brand, source_url=source_url, title=title)
-    else:
-        brand = _infer_brand(source_url=source_url, title=title)
+    brand = _resolved_source_brand(brand, source_url=source_url, title=title)
     price = _as_float(price_value)
     sku_value = str(_first_present(data, SOURCE_SKU_FIELDS) or "").strip()
     style_value = str(_first_present(data, SOURCE_STYLE_FIELDS) or "").strip()
@@ -133,6 +120,14 @@ def extract_product_snapshot(record: object) -> dict[str, object]:
         ).strip(),
         "raw": data,
     }
+
+
+def _resolved_source_brand(
+    brand: object, *, source_url: object, title: object
+) -> object:
+    if str(brand or "").strip():
+        return _canonical_source_brand(brand, source_url=source_url, title=title)
+    return _infer_brand(source_url=source_url, title=title)
 
 
 def score_candidate(
@@ -258,56 +253,85 @@ def _apply_identity_floor(
     price_match: bool = bool(reasons.get("price_band_match"))
     variant_mismatch: bool = bool(reasons.get("variant_mismatch"))
 
-    match_basis = MATCH_BASIS_TITLE
-    if gtin_match and brand_match and title_similarity >= MATCH_GTIN_MIN_TITLE_SIM:
-        score = max(score, MATCH_SCORE_FLOOR_GTIN)
-        match_basis = MATCH_BASIS_GTIN
-    elif style_code_match and not variant_mismatch:
-        floor = (
-            MATCH_SCORE_FLOOR_STYLE_CODE
-            if brand_match
-            else MATCH_SCORE_FLOOR_STYLE_CODE_NO_BRAND
-        )
+    floor, match_basis = _identity_floor(
+        brand_match=brand_match,
+        gtin_match=gtin_match,
+        style_code_match=style_code_match,
+        model_token_match=model_token_match,
+        price_match=price_match,
+        variant_mismatch=variant_mismatch,
+        source_type=source_type,
+        title_similarity=title_similarity,
+    )
+    if floor is not None:
         score = max(score, floor)
-        match_basis = MATCH_BASIS_STYLE_CODE
-    elif (
-        source_type == SOURCE_TYPE_BRAND_DTC
-        and brand_match
-        and title_similarity >= MATCH_DTC_MIN_TITLE_SIM
-    ):
-        # Brand's own listing always ranks highest.
-        score = max(score, MATCH_SCORE_FLOOR_BRAND_DTC)
-        match_basis = MATCH_BASIS_BRAND_DTC
-    elif (
-        not variant_mismatch
-        and brand_match
-        and title_similarity >= MATCH_TITLE_SIM_HIGH
-    ):
-        floor = (
-            MATCH_SCORE_FLOOR_BRAND_TITLE_PRICE_HIGH
-            if price_match
-            else MATCH_SCORE_FLOOR_BRAND_TITLE_HIGH
-        )
-        score = max(score, floor)
-        match_basis = MATCH_BASIS_BRAND_TITLE
-    elif not variant_mismatch and brand_match and model_token_match:
-        # Brand-exact + distinctive model token is a model-level match even when the terse
-        # source title and a verbose retailer title share little raw overlap.
-        score = max(score, MATCH_SCORE_FLOOR_MODEL_BRAND)
-        match_basis = MATCH_BASIS_MODEL_BRAND
-    elif (
-        not variant_mismatch
-        and brand_match
-        and title_similarity >= MATCH_TITLE_SIM_MEDIUM
-    ):
-        score = max(score, MATCH_SCORE_FLOOR_BRAND_TITLE_MEDIUM)
-        match_basis = MATCH_BASIS_BRAND_TITLE
 
     # A detected wrong-variant match must not sit in the auto-accept band.
     if variant_mismatch:
         score = min(score, MATCH_VARIANT_MISMATCH_SCORE_CAP)
     reasons["match_basis"] = match_basis
     return score, reasons
+
+
+def _identity_floor(
+    *,
+    brand_match: bool,
+    gtin_match: bool,
+    style_code_match: bool,
+    model_token_match: bool,
+    price_match: bool,
+    variant_mismatch: bool,
+    source_type: str,
+    title_similarity: float,
+) -> tuple[float | None, str]:
+    if gtin_match and brand_match and title_similarity >= MATCH_GTIN_MIN_TITLE_SIM:
+        return MATCH_SCORE_FLOOR_GTIN, MATCH_BASIS_GTIN
+    if style_code_match and not variant_mismatch:
+        floor = (
+            MATCH_SCORE_FLOOR_STYLE_CODE
+            if brand_match
+            else MATCH_SCORE_FLOOR_STYLE_CODE_NO_BRAND
+        )
+        return floor, MATCH_BASIS_STYLE_CODE
+    return _brand_identity_floor(
+        brand_match=brand_match,
+        model_token_match=model_token_match,
+        price_match=price_match,
+        variant_mismatch=variant_mismatch,
+        source_type=source_type,
+        title_similarity=title_similarity,
+    )
+
+
+def _brand_identity_floor(
+    *,
+    brand_match: bool,
+    model_token_match: bool,
+    price_match: bool,
+    variant_mismatch: bool,
+    source_type: str,
+    title_similarity: float,
+) -> tuple[float | None, str]:
+    if (
+        source_type == SOURCE_TYPE_BRAND_DTC
+        and brand_match
+        and title_similarity >= MATCH_DTC_MIN_TITLE_SIM
+    ):
+        return MATCH_SCORE_FLOOR_BRAND_DTC, MATCH_BASIS_BRAND_DTC
+    if variant_mismatch or not brand_match:
+        return None, MATCH_BASIS_TITLE
+    if title_similarity >= MATCH_TITLE_SIM_HIGH:
+        floor = (
+            MATCH_SCORE_FLOOR_BRAND_TITLE_PRICE_HIGH
+            if price_match
+            else MATCH_SCORE_FLOOR_BRAND_TITLE_HIGH
+        )
+        return floor, MATCH_BASIS_BRAND_TITLE
+    if model_token_match:
+        return MATCH_SCORE_FLOOR_MODEL_BRAND, MATCH_BASIS_MODEL_BRAND
+    if title_similarity >= MATCH_TITLE_SIM_MEDIUM:
+        return MATCH_SCORE_FLOOR_BRAND_TITLE_MEDIUM, MATCH_BASIS_BRAND_TITLE
+    return None, MATCH_BASIS_TITLE
 
 
 def extract_search_result_snapshot(
@@ -329,53 +353,69 @@ def extract_search_result_snapshot(
         snippet=merged.get("snippet"),
         source=merged.get("source"),
     )
-    candidate_sku = str(_first_present(merged, ("sku",)) or "").strip()
-    candidate_mpn = str(
-        _first_present(merged, ("mpn", "model", "model_number", "part_number")) or ""
-    ).strip()
-    candidate_gtin = str(
-        _first_present(merged, ("gtin", "barcode", "sku_upc", "upc", "ean")) or ""
-    ).strip()
-    candidate_style = str(
-        _first_present(merged, ("style", "style_id", "product_id")) or ""
-    ).strip()
+    identifiers = _search_result_identifiers(merged)
+    title = _clean_snapshot_text(merged.get("title"))
+    snippet = _clean_snapshot_text(merged.get("snippet"))
     return {
-        "title": str(merged.get("title") or "").strip(),
+        "title": title,
         "brand": brand,
         "normalized_brand": normalize_brand(brand),
         "price": _as_float(price_value),
         "currency": _currency_from_price(price_value),
-        "description": str(description or "").strip(),
-        "image_url": str(
-            _first_present(merged, ("thumbnail", "image", "favicon")) or ""
-        ).strip(),
-        "url": str(url or merged.get("link") or "").strip(),
-        "sku": candidate_sku,
-        "mpn": candidate_mpn,
-        "gtin": candidate_gtin,
+        "description": _clean_snapshot_text(description),
+        "image_url": _clean_snapshot_text(
+            _first_present(merged, ("thumbnail", "image", "favicon"))
+        ),
+        "url": _clean_snapshot_text(_first_nonempty(url, merged.get("link"))),
+        "sku": identifiers["sku"],
+        "mpn": identifiers["mpn"],
+        "gtin": identifiers["gtin"],
         # "product_id" is intentionally included as a fallback for style identification
         # and is distinct from the standalone "product_id" metadata field extracted below.
-        "style": candidate_style,
+        "style": identifiers["style"],
         # The manufacturer style code typically appears in the candidate title/snippet
         # ("...FV5285-002..."), so include those text sources alongside structured fields.
         "style_code": manufacturer_style_code(
-            candidate_sku,
-            candidate_style,
-            candidate_mpn,
-            str(merged.get("title") or ""),
-            str(merged.get("snippet") or ""),
-            gtin_value=candidate_gtin,
+            identifiers["sku"],
+            identifiers["style"],
+            identifiers["mpn"],
+            title,
+            snippet,
+            gtin_value=identifiers["gtin"],
         ),
-        "availability": str(merged.get("availability") or "").strip(),
-        "snippet": str(merged.get("snippet") or "").strip(),
-        "source": str(
-            merged.get("source") or merged.get("displayed_link") or domain or ""
-        ).strip(),
-        "product_id": str(merged.get("product_id") or "").strip(),
-        "product_link": str(merged.get("product_link") or "").strip(),
-        "provider": str(merged.get("provider") or "").strip(),
+        "availability": _clean_snapshot_text(merged.get("availability")),
+        "snippet": snippet,
+        "source": _clean_snapshot_text(
+            _first_nonempty(merged.get("source"), merged.get("displayed_link"), domain)
+        ),
+        "product_id": _clean_snapshot_text(merged.get("product_id")),
+        "product_link": _clean_snapshot_text(merged.get("product_link")),
+        "provider": _clean_snapshot_text(merged.get("provider")),
         "raw": data,
     }
+
+
+def _search_result_identifiers(merged: dict[str, object]) -> dict[str, str]:
+    return {
+        "sku": _clean_snapshot_text(_first_present(merged, ("sku",))),
+        "mpn": _clean_snapshot_text(
+            _first_present(merged, ("mpn", "model", "model_number", "part_number"))
+        ),
+        "gtin": _clean_snapshot_text(
+            _first_present(merged, ("gtin", "barcode", "sku_upc", "upc", "ean"))
+        ),
+        "style": _clean_snapshot_text(
+            _first_present(merged, ("style", "style_id", "product_id"))
+        ),
+    }
+
+
+def _clean_snapshot_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _first_nonempty(*values: object) -> object:
+    return next((value for value in values if value), "")
 
 
 def _canonical_source_brand(

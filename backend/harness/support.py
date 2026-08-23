@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import html
-import json
 import logging
 import os
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
@@ -17,38 +15,42 @@ from app.crawl.batch_runtime import process_run
 from app.crawl.crud import create_crawl_run, get_run_records
 from app.crawl.pipeline.extraction_loop import process_single_url
 from app.crawl.pipeline.types import URLMetrics, URLProcessingConfig
-from app.acquisition.platform_policy import (
-    configured_adapter_names,
-    platform_config_for_family,
-)
-from app.persistence.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
-from app.persistence.publish.metrics import diagnostics_indicate_block
+from app.acquisition.platform_policy import configured_adapter_names
 from app.core.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
 from app.core.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
     PUBLIC_VARIANT_AXIS_FIELDS,
 )
-from app.extraction.surfaces import parse_surface
 from sqlalchemy import select
+
+from harness import site_sets as _site_sets
+from harness.challenge_classifier import (
+    _challenge_summary_from_diagnostics,
+    _looks_like_detail_identity_mismatch,
+    _looks_like_placeholder_or_wrong_content,
+    _looks_like_promo_or_wrong_page,
+    _looks_like_utility_chrome_success,
+    _looks_like_utility_record,
+    classify_failure_mode as _classify_failure_mode,
+)
+
+build_explicit_sites = _site_sets.build_explicit_sites
+load_site_set = _site_sets.load_site_set
+parse_test_sites_markdown = _site_sets.parse_test_sites_markdown
+require_explicit_surface = _site_sets.require_explicit_surface
 
 logger = logging.getLogger(__name__)
 
-_UTILITY_RECORD_TOKENS = frozenset(
-    {
-        "cart",
-        "checkout",
-        "contact",
-        "faq",
-        "help",
-        "login",
-        "privacy",
-        "returns",
-        "search",
-        "shipping",
-        "sign in",
-        "wishlist",
-    }
-)
+
+def unavailable_configured_adapters() -> set[str]:
+    return set(configured_adapter_names())
+
+
+def classify_failure_mode(result: dict[str, object]) -> str:
+    return _classify_failure_mode(
+        result, missing_registrations=unavailable_configured_adapters()
+    )
+
 
 HARNESS_MODE_ACQUISITION_ONLY = "acquisition_only"
 HARNESS_MODE_FULL_PIPELINE = "full_pipeline"
@@ -88,45 +90,6 @@ if not _VARIANT_AXIS_FIELDS:
 _HIGH_DENOMINATION_PRICE_CURRENCIES = {"INR", "JPY", "KRW", "VND", "IDR", "HUF", "CLP"}
 _MIN_SANE_PRICE = 0.01
 
-_SUCCESS_VERDICTS = {VERDICT_SUCCESS.lower(), VERDICT_PARTIAL.lower()}
-_PLACEHOLDER_TITLES = {
-    "404",
-    "all products",
-    "edit",
-    "page not found",
-    "sylius demo",
-}
-_IDENTITY_SEGMENT_SKIP = {
-    "c",
-    "catalog",
-    "collections",
-    "dp",
-    "item",
-    "items",
-    "p",
-    "page",
-    "product",
-    "products",
-    "release",
-    "releases",
-    "shop",
-    "store",
-    "w",
-}
-_IDENTITY_TOKEN_SKIP = {
-    "and",
-    "for",
-    "from",
-    "the",
-    "with",
-}
-_GENERIC_DETAIL_SECTION_TITLES = {
-    "customers also bought",
-    "frequently bought together",
-    "recommended products",
-    "related products",
-    "you may also like",
-}
 _ALLOWED_GENDERS = {"Men", "Women", "Unisex", "Kids", "Boys", "Girls"}
 _ALLOWED_GENDERS_LOWER = frozenset(g.lower() for g in _ALLOWED_GENDERS)
 _BARCODE_LENGTHS = {8, 12, 13, 14}
@@ -140,165 +103,6 @@ _INTERNAL_IDENTITY_TOKENS = {
     "overview",
     "reviews",
 }
-
-
-def require_explicit_surface(explicit_surface: object | None = None) -> str:
-    explicit = str(explicit_surface or "").strip().lower()
-    if explicit:
-        return parse_surface(explicit).value
-    raise ValueError("surface is required")
-
-
-def build_explicit_sites(
-    urls: list[str],
-    *,
-    explicit_surfaces: list[str] | None = None,
-) -> list[dict[str, str]]:
-    normalized_urls = [
-        str(value or "").strip() for value in (urls or []) if str(value or "").strip()
-    ]
-    normalized_surfaces = [
-        str(value or "").strip()
-        for value in (explicit_surfaces or [])
-        if str(value or "").strip()
-    ]
-    if normalized_surfaces and len(normalized_surfaces) != len(normalized_urls):
-        raise ValueError("Explicit URL and surface counts must match")
-    rows: list[dict[str, str]] = []
-    for index, url in enumerate(normalized_urls):
-        explicit_surface = (
-            normalized_surfaces[index] if index < len(normalized_surfaces) else ""
-        )
-        rows.append(
-            {
-                "name": url,
-                "url": url,
-                "surface": require_explicit_surface(explicit_surface),
-            }
-        )
-    return rows
-
-
-def load_site_set(path: Path, *, site_set_name: str) -> list[dict[str, object]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON in site set file {path}: {exc.msg}") from exc
-    defaults: dict[str, object] = {}
-    if isinstance(payload, dict) and isinstance(payload.get("site_sets"), dict):
-        site_set = payload["site_sets"].get(site_set_name)
-        if not isinstance(site_set, dict):
-            raise ValueError(f"Unknown site set: {site_set_name}")
-        defaults = _object_dict(site_set.get("defaults"))
-        sites = site_set.get("sites")
-        if not isinstance(sites, list):
-            raise ValueError(f"Site set {site_set_name} has no sites list")
-    elif isinstance(payload, dict) and isinstance(payload.get("sites"), list):
-        manifest_name = str(payload.get("name") or path.stem).strip()
-        if site_set_name not in {"", manifest_name, path.stem}:
-            raise ValueError(f"Unknown site set: {site_set_name}")
-        defaults = _object_dict(payload.get("defaults"))
-        sites = payload["sites"]
-    else:
-        raise ValueError(f"Invalid site-set payload in {path}")
-    rows: list[dict[str, object]] = []
-    for item in sites:
-        if not isinstance(item, dict):
-            continue
-        default_quality = _object_dict(defaults.get("quality_expectations"))
-        item_quality = _object_dict(item.get("quality_expectations"))
-        site = {**defaults, **item}
-        quality_expectations = {**default_quality, **item_quality}
-        url = str(item.get("url") or "").strip()
-        if not url:
-            continue
-        row: dict[str, object] = {
-            "name": str(site.get("name") or url).strip(),
-            "url": url,
-            "surface": require_explicit_surface(site.get("surface")),
-            "bucket": str(site.get("bucket") or "").strip().lower() or None,
-            "expected_failure_modes": [
-                str(value).strip()
-                for value in _object_list(site.get("expected_failure_modes"))
-                if str(value).strip()
-            ],
-            "artifact_run_id": _safe_int(site.get("artifact_run_id")) or None,
-            "seed_failure_mode": str(site.get("seed_failure_mode") or "")
-            .strip()
-            .lower()
-            or None,
-            "quality_expectations": quality_expectations,
-        }
-        gate = str(site.get("gate") or "").strip().lower() or None
-        expected = _object_dict(site.get("expected"))
-        known_failure_mode = str(site.get("known_failure_mode") or "").strip() or None
-        if gate:
-            row["gate"] = gate
-        if expected:
-            row["expected"] = expected
-        if known_failure_mode:
-            row["known_failure_mode"] = known_failure_mode
-        rows.append(row)
-    return rows
-
-
-def parse_test_sites_markdown(path: Path, *, start_line: int) -> list[dict[str, str]]:
-    if not isinstance(start_line, int) or start_line < 1:
-        raise ValueError("parse_test_sites_markdown start_line must be an integer >= 1")
-    rows: list[dict[str, str]] = []
-    for line in path.read_text(encoding="utf-8").splitlines()[start_line - 1 :]:
-        value = html.unescape(str(line or "").strip())
-        if not value:
-            continue
-        if value.startswith(("http://", "https://")):
-            continue
-        if not value.startswith("|") or "http" not in value:
-            continue
-        cells = [cell.strip() for cell in value.strip("|").split("|")]
-        url = ""
-        explicit_surface = ""
-        name = ""
-        for index, cell in enumerate(cells):
-            match = re.search(r"https?://[^`\s|>]+", cell)
-            if match is not None and not url:
-                url = match.group(0).strip().rstrip("`")
-                name = url
-            if not explicit_surface and index > 0:
-                normalized = re.sub(
-                    r"[^a-z0-9]+", "_", str(cell or "").strip().lower()
-                ).strip("_")
-                if normalized in {
-                    "listing",
-                    "ajax_listing",
-                    "infinite_scroll",
-                    "spa_listing",
-                    "detail",
-                    "spa_detail",
-                }:
-                    explicit_surface = {
-                        "listing": "ecommerce_listing",
-                        "ajax_listing": "ecommerce_listing",
-                        "infinite_scroll": "ecommerce_listing",
-                        "spa_listing": "ecommerce_listing",
-                        "detail": "ecommerce_detail",
-                        "spa_detail": "ecommerce_detail",
-                    }[normalized]
-                    break
-        if url:
-            rows.append(
-                {
-                    "name": name or url,
-                    "url": url,
-                    "surface": require_explicit_surface(explicit_surface),
-                }
-            )
-    return rows
-
-
-def unavailable_configured_adapters() -> set[str]:
-    # The legacy adapter registry was a no-op and has been retired. Configured
-    # names remain diagnostic expectations until concrete connectors exist.
-    return set(configured_adapter_names())
 
 
 def timeout_owner_for_mode(mode: str) -> str:
@@ -394,213 +198,6 @@ async def review_saved_run(
         )
 
 
-def classify_failure_mode(result: dict[str, object]) -> str:
-    verdict = str(result.get("verdict") or "").strip().lower()
-    diagnostics = _object_dict(result.get("browser_diagnostics"))
-    error_text = str(result.get("error") or "").lower()
-    browser_outcome = str(diagnostics.get("browser_outcome") or "").strip().lower()
-    failure_kind = str(diagnostics.get("failure_kind") or "").strip().lower()
-    status_code = _safe_int(result.get("status_code"))
-    if verdict in _SUCCESS_VERDICTS and _looks_like_detail_identity_mismatch(result):
-        return "detail_identity_mismatch"
-    if verdict in _SUCCESS_VERDICTS and not _looks_like_placeholder_or_wrong_content(
-        result, diagnostics
-    ):
-        return "success"
-    if diagnostics.get("networkidle_timed_out"):
-        return "spa_readiness_timeout"
-    if browser_outcome == "low_content_shell" and status_code in {404, 410}:
-        return "spa_shell_404"
-    if browser_outcome == "low_content_shell":
-        return "spa_shell_low_content"
-    if failure_kind in {"unsupported_proxy", "proxy_error"}:
-        return "proxy_failure"
-    if failure_kind == "engine_unavailable":
-        return "engine_failure"
-    if "timeout" in error_text:
-        return "timeout"
-    if "getaddrinfo failed" in error_text:
-        return "dns_or_network_failure"
-    if "chrome-error://chromewebdata/" in error_text:
-        return "browser_navigation_failure"
-    if verdict == "blocked":
-        return "blocked"
-    if (
-        result.get("blocked")
-        or _diagnostics_indicate_challenge(diagnostics)
-        or _diagnostics_contain_strong_challenge_evidence(diagnostics)
-    ):
-        return "blocked"
-    if verdict == "listing_detection_failed":
-        return "listing_extraction_empty"
-    if verdict == "empty":
-        return "detail_extraction_empty"
-    if verdict == "error":
-        return "error"
-    if _looks_like_placeholder_or_wrong_content(result, diagnostics):
-        return "wrong_content_or_placeholder"
-    family = str(result.get("platform_family") or "").strip().lower()
-    platform_config = platform_config_for_family(family) if family else None
-    expected_adapters = {
-        str(name).strip().lower()
-        for name in (
-            platform_config.adapter_names if platform_config is not None else []
-        )
-        if str(name or "").strip()
-    }
-    missing_registrations = unavailable_configured_adapters()
-    if expected_adapters and expected_adapters.issubset(missing_registrations):
-        return "adapter_not_registered"
-    if expected_adapters and not result.get("adapter_name"):
-        return "adapter_not_matched"
-    if (
-        family
-        and not expected_adapters
-        and str(result.get("surface") or "").startswith("job_")
-    ):
-        return "platform_family_without_adapter"
-    if _safe_int(result.get("records")) == 0:
-        return (
-            "listing_extraction_empty"
-            if str(result.get("surface") or "").endswith("_listing")
-            else "detail_extraction_empty"
-        )
-    return "unknown_failure"
-
-
-def _diagnostics_indicate_challenge(diagnostics: dict[str, object]) -> bool:
-    return diagnostics_indicate_block(diagnostics)
-
-
-def _diagnostics_contain_strong_challenge_evidence(
-    diagnostics: dict[str, object],
-) -> bool:
-    evidence = [
-        str(item or "").strip().lower()
-        for item in _object_list(diagnostics.get("challenge_evidence"))
-        if str(item or "").strip()
-    ]
-    if any(
-        item.startswith(("strong:", "title:", "active_provider:", "challenge_element:"))
-        for item in evidence
-    ):
-        return True
-    return bool(diagnostics.get("challenge_element_hits")) and bool(
-        diagnostics.get("challenge_provider_hits")
-    )
-
-
-def _challenge_summary_from_diagnostics(
-    diagnostics: dict[str, object],
-) -> dict[str, object] | None:
-    if not _diagnostics_indicate_challenge(diagnostics):
-        return None
-    provider_hits = [
-        str(item or "").strip()
-        for item in _object_list(diagnostics.get("challenge_provider_hits"))
-        if str(item or "").strip()
-    ]
-    element_hits = [
-        str(item or "").strip()
-        for item in _object_list(diagnostics.get("challenge_element_hits"))
-        if str(item or "").strip()
-    ]
-    evidence = [
-        str(item or "").strip()
-        for item in _object_list(diagnostics.get("challenge_evidence"))
-        if str(item or "").strip()
-    ]
-    summary: dict[str, object] = {
-        "browser_outcome": str(diagnostics.get("browser_outcome") or "").strip().lower()
-        or None,
-        "provider": provider_hits[0].lower() if provider_hits else None,
-        "providers": [item.lower() for item in provider_hits],
-        "elements": element_hits,
-        "evidence": evidence[:5],
-    }
-    return summary
-
-
-def _looks_like_placeholder_or_wrong_content(
-    result: dict[str, object], diagnostics: dict[str, object]
-) -> bool:
-    sample_title = str(result.get("sample_title") or "").strip()
-    return (
-        str(diagnostics.get("browser_outcome") or "").strip().lower()
-        == "low_content_shell"
-        or (
-            _safe_int(result.get("records")) > 0
-            and not sample_title
-            and _safe_int(result.get("populated_fields")) <= 1
-        )
-        or _looks_like_placeholder_title(
-            sample_title, populated_fields=_safe_int(result.get("populated_fields"))
-        )
-    )
-
-
-def _looks_like_utility_chrome_success(result: dict[str, object]) -> bool:
-    sample_records = result.get("sample_records")
-    if isinstance(sample_records, list):
-        for row in sample_records[:2]:
-            if not isinstance(row, dict):
-                continue
-            if _looks_like_utility_record(
-                title=row.get("title"),
-                url=row.get("url"),
-            ):
-                return True
-    if bool(result.get("sample_looks_like_utility_chrome")):
-        return True
-    return _looks_like_utility_record(
-        title=result.get("sample_title"),
-        url=result.get("sample_url"),
-    )
-
-
-def _looks_like_detail_identity_mismatch(result: dict[str, object]) -> bool:
-    surface = str(result.get("surface") or "").strip().lower()
-    if not surface.endswith("_detail"):
-        return False
-    requested_url = str(result.get("requested_url") or "").strip()
-    if not requested_url:
-        return False
-    sample_url = str(result.get("sample_url") or "").strip()
-    if not sample_url:
-        return False
-    sample_path = _identity_path(sample_url)
-    requested_path = _identity_path(requested_url)
-    if sample_path in {"", "/"} and requested_path not in {"", "/"}:
-        return True
-    requested_tokens = _primary_identity_tokens(requested_url)
-    if len(requested_tokens) < 2:
-        return False
-    sample_url_tokens = _primary_identity_tokens(sample_url)
-    sample_title = " ".join(
-        str(result.get("sample_title") or "").strip().lower().split()
-    )
-    sample_title_tokens = _identity_tokens(sample_title)
-    overlap = max(
-        _identity_overlap_count(requested_tokens, sample_url_tokens),
-        _identity_overlap_count(requested_tokens, sample_title_tokens),
-    )
-    required_overlap = _required_identity_overlap(len(requested_tokens))
-    if sample_title in _GENERIC_DETAIL_SECTION_TITLES and overlap < required_overlap:
-        return True
-    return bool(
-        (sample_url_tokens or sample_title_tokens) and overlap < required_overlap
-    )
-
-
-def _looks_like_placeholder_title(title: str, *, populated_fields: int) -> bool:
-    normalized = " ".join(str(title or "").strip().lower().split())
-    if "can't be found" in normalized or normalized.startswith("oops!"):
-        return populated_fields <= 6
-    if normalized not in _PLACEHOLDER_TITLES:
-        return False
-    return populated_fields <= 2
-
-
 def _populated_field_count(record: dict[str, object]) -> int:
     return sum(
         1
@@ -650,24 +247,6 @@ def _sample_record_audit(sample_records: list[dict[str, object]]) -> dict[str, o
         "utility_noise_hits": utility_hits,
         "looks_like_utility_chrome": bool(utility_hits),
     }
-
-
-def _looks_like_utility_record(*, title: object, url: object) -> bool:
-    return looks_like_utility_record(title=str(title or ""), url=str(url or ""))
-
-
-def looks_like_utility_record(*, title: str, url: str) -> bool:
-    text = f"{title} {url}".casefold()
-    return any(token in text for token in _UTILITY_RECORD_TOKENS)
-
-
-def _identity_path(url: str) -> str:
-    parsed = urlsplit(str(url or "").strip())
-    path = str(parsed.path or "").strip()
-    if path in {"", "/"} and str(parsed.fragment or "").strip():
-        fragment = str(parsed.fragment or "").strip()
-        return fragment if fragment.startswith("/") else f"/{fragment}"
-    return path
 
 
 def _persisted_run_result(
@@ -958,31 +537,42 @@ def _quality_category_clean_ok(
     category = str(_object_dict(result.get("sample_record_data")).get("category") or "")
     if not category.strip():
         return True
-    lowered = f" {category.lower()} "
-    if any(
-        token in lowered
-        for token in (
-            " previous ",
-            " next ",
-            " view all ",
-            " back ",
-            " best sellers ",
-            " shop by ",
-            "···",
-            " … ",
-        )
-    ):
+    if _category_has_navigation_noise(category):
         return False
     parts = [
         part.strip().lower() for part in re.split(r">\s*|/+", category) if part.strip()
     ]
-    if any(
+    if any(_category_part_is_noise(part) for part in parts):
+        return False
+    return not _category_matches_product_identity(result, parts=parts)
+
+
+def _category_has_navigation_noise(category: str) -> bool:
+    lowered = f" {category.lower()} "
+    tokens = (
+        " previous ",
+        " next ",
+        " view all ",
+        " back ",
+        " best sellers ",
+        " shop by ",
+        "···",
+        " … ",
+    )
+    return any(token in lowered for token in tokens)
+
+
+def _category_part_is_noise(part: str) -> bool:
+    return (
         part in {"home", "...", "all categories", "best sellers"}
         or part.startswith(("...", "shop by "))
         or part.endswith("...")
-        for part in parts
-    ):
-        return False
+    )
+
+
+def _category_matches_product_identity(
+    result: dict[str, object], *, parts: list[str]
+) -> bool:
     title = " ".join(str(result.get("sample_title") or "").strip().lower().split())
     sku = " ".join(
         str(_object_dict(result.get("sample_record_data")).get("sku") or "")
@@ -990,7 +580,7 @@ def _quality_category_clean_ok(
         .lower()
         .split()
     )
-    return not bool(
+    return bool(
         (title and any(part == title for part in parts))
         or (sku and any(part == sku or part.endswith(f"sku: {sku}") for part in parts))
     )
@@ -1192,48 +782,9 @@ def _observed_quality_failure_mode(
         if _looks_like_detail_identity_mismatch(result):
             return "detail_identity_mismatch"
         return "bad_output"
-    if not checks["listing_noise_ok"]:
-        return "listing_chrome_noise"
-    if expectations.get("expect_variants") and not checks["variant_presence_ok"]:
-        return "thin_detail"
-    if (
-        expectations.get("require_semantic_variant_labels")
-        and not checks["variant_labels_ok"]
-    ):
-        return "axis_pollution"
-    if expectations.get("require_variant_price") and not checks["variant_price_ok"]:
-        return "variant_price_missing"
-    if expectations.get("require_price_sane") and not checks["price_sane_ok"]:
-        return "price_magnitude_anomaly"
-    if expectations.get("require_clean_category") and not checks["category_clean_ok"]:
-        return "category_pollution"
-    if expectations.get("require_clean_long_text") and not checks["long_text_clean_ok"]:
-        return "long_text_pollution"
-    if (
-        expectations.get("require_clean_variants")
-        and not checks["variant_artifacts_ok"]
-    ):
-        return "variant_artifact_pollution"
-    if (
-        expectations.get("require_variant_currency_parity")
-        and not checks["variant_currency_parity_ok"]
-    ):
-        return "variant_currency_mismatch"
-    if (
-        expectations.get("require_identifier_shapes")
-        and not checks["identifier_shapes_ok"]
-    ):
-        return "identifier_shape_pollution"
-    if (
-        expectations.get("require_title_not_internal_token")
-        and not checks["title_token_ok"]
-    ):
-        return "title_internal_token"
-    if (
-        expectations.get("require_clean_system_fields")
-        and not checks["system_artifacts_ok"]
-    ):
-        return "system_artifact_pollution"
+    failed_check = _named_quality_failure(checks, expectations=expectations)
+    if failed_check is not None:
+        return failed_check
     if _price_requirement_failed(result, expectations=expectations):
         return "thin_detail"
     seeded_failure_mode = str(site.get("seed_failure_mode") or "").strip().lower()
@@ -1243,6 +794,50 @@ def _observed_quality_failure_mode(
     ):
         return seeded_failure_mode
     return "control_good"
+
+
+def _named_quality_failure(
+    checks: dict[str, bool], *, expectations: dict[str, bool]
+) -> str | None:
+    if not checks["listing_noise_ok"]:
+        return "listing_chrome_noise"
+    rules = (
+        ("expect_variants", "variant_presence_ok", "thin_detail"),
+        ("require_semantic_variant_labels", "variant_labels_ok", "axis_pollution"),
+        ("require_variant_price", "variant_price_ok", "variant_price_missing"),
+        ("require_price_sane", "price_sane_ok", "price_magnitude_anomaly"),
+        ("require_clean_category", "category_clean_ok", "category_pollution"),
+        ("require_clean_long_text", "long_text_clean_ok", "long_text_pollution"),
+        (
+            "require_clean_variants",
+            "variant_artifacts_ok",
+            "variant_artifact_pollution",
+        ),
+        (
+            "require_variant_currency_parity",
+            "variant_currency_parity_ok",
+            "variant_currency_mismatch",
+        ),
+        (
+            "require_identifier_shapes",
+            "identifier_shapes_ok",
+            "identifier_shape_pollution",
+        ),
+        ("require_title_not_internal_token", "title_token_ok", "title_internal_token"),
+        (
+            "require_clean_system_fields",
+            "system_artifacts_ok",
+            "system_artifact_pollution",
+        ),
+    )
+    return next(
+        (
+            failure_mode
+            for expectation, check, failure_mode in rules
+            if expectations.get(expectation) and not checks[check]
+        ),
+        None,
+    )
 
 
 def _quality_verdict(
@@ -1292,9 +887,7 @@ def _looks_like_site_shell_success(result: dict[str, object]) -> bool:
         or _safe_int(semantics.get("variant_count")) >= 2
     ):
         return False
-    title_tokens = {
-        token for token in re.split(r"[^a-z0-9]+", sample_title) if len(token) >= 3
-    }
+    title_tokens = _shell_identity_tokens(sample_title)
     host = (
         str(
             urlsplit(
@@ -1305,11 +898,7 @@ def _looks_like_site_shell_success(result: dict[str, object]) -> bool:
         .strip()
         .lower()
     )
-    host_tokens = {
-        token
-        for token in re.split(r"[^a-z0-9]+", host.removeprefix("www."))
-        if len(token) >= 3
-    }
+    host_tokens = _shell_identity_tokens(host.removeprefix("www."))
     return bool(
         host_tokens
         and host_tokens & title_tokens
@@ -1317,67 +906,13 @@ def _looks_like_site_shell_success(result: dict[str, object]) -> bool:
     )
 
 
-def _looks_like_promo_or_wrong_page(result: dict[str, object]) -> bool:
-    sample_title = " ".join(
-        str(result.get("sample_title") or "").strip().lower().split()
-    )
-    sample_url = str(result.get("sample_url") or "").strip().lower()
-    promo_tokens = (
-        "promo",
-        "new arrivals",
-        "sale",
-        "shop all",
-        "category",
-        "categories",
-    )
-    return any(token in sample_title for token in promo_tokens) or any(
-        token in sample_url
-        for token in ("/promo", "promo-", "products=newarrival", "/sale", "/category")
-    )
+def _shell_identity_tokens(value: str) -> set[str]:
+    return {token for token in re.split(r"[^a-z0-9]+", value) if len(token) >= 3}
 
 
 def _summary_value(summary: dict[str, object], key: str) -> str | None:
     values = _object_dict(summary.get("acquisition_summary")).get(key)
     return str(next(iter(values))) if isinstance(values, dict) and values else None
-
-
-def _primary_identity_tokens(value: str) -> set[str]:
-    raw_value = str(value or "").strip()
-    if not raw_value:
-        return set()
-    parsed = urlsplit(raw_value)
-    if parsed.scheme or parsed.netloc or raw_value.startswith("/"):
-        path = unquote(str(parsed.path or "").strip())
-        segments = [segment for segment in path.split("/") if segment]
-        for segment in reversed(segments):
-            cleaned = re.sub(r"\.html?$", "", segment.strip().lower())
-            if not cleaned or cleaned.isdigit() or cleaned in _IDENTITY_SEGMENT_SKIP:
-                continue
-            return _identity_tokens(cleaned)
-        return set()
-    return _identity_tokens(unquote(raw_value.lower()))
-
-
-def _identity_tokens(value: str) -> set[str]:
-    return {
-        token
-        for token in re.split(r"[^a-z0-9]+", str(value or "").strip().lower())
-        if len(token) >= 2 and not token.isdigit() and token not in _IDENTITY_TOKEN_SKIP
-    }
-
-
-def _identity_overlap_count(left: set[str], right: set[str]) -> int:
-    if not left or not right:
-        return 0
-    return len(left & right)
-
-
-def _required_identity_overlap(token_count: int) -> int:
-    if token_count <= 2:
-        return token_count
-    if token_count == 3:
-        return 2
-    return max(2, (token_count * 3 + 4) // 5)
 
 
 def _looks_like_real_listing_row(row: object) -> bool:

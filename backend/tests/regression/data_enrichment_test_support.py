@@ -33,7 +33,6 @@ from app.core.config.data_enrichment import (
 )
 
 from app.enrichment.service import (
-    ai_discovery_allowed_tags_for_product,
     run_job,
     build_deterministic_enrichment,
     build_data_enrichment_job_payload,
@@ -41,6 +40,7 @@ from app.enrichment.service import (
     get_data_enrichment_job,
     list_data_enrichment_jobs,
 )
+from app.enrichment.discovery_tags import ai_discovery_allowed_tags_for_product
 
 from app.enrichment import shopify_catalog
 

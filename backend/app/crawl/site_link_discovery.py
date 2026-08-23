@@ -116,54 +116,27 @@ async def discover_rendered_category_links(
         if page_key in fetched_keys:
             continue
         fetched_keys.add(page_key)
-        result = await fetch_page_impl(
+        page_candidates = await _discover_page_candidates(
             page_url,
-            timeout_seconds=SITE_LINK_DISCOVERY_FETCH_TIMEOUT_SECONDS,
-            fetch_mode="auto",
-            prefer_browser=True,
-            browser_reason="site-link-discovery",
-            surface=ECOMMERCE_LISTING_SURFACE,
-            max_pages=1,
-            max_scrolls=1,
-        )
-        final_url = str(getattr(result, "final_url", "") or page_url)
-        html = str(getattr(result, "html", "") or "")
-        diagnostics.fetched.append(
-            {
-                "url": page_url,
-                "final_url": final_url,
-                "status_code": int(getattr(result, "status_code", 0) or 0),
-                "method": str(getattr(result, "method", "") or ""),
-                "blocked": bool(getattr(result, "blocked", False)),
-                "html_length": len(html),
-                "depth": depth,
-            }
-        )
-        if not html or bool(getattr(result, "blocked", False)):
-            diagnostics.reject("empty_or_blocked_page")
-            continue
-        page_candidates = _extract_rendered_candidates(
-            html=html,
-            page_url=final_url,
-            origin=origin,
             depth=depth,
+            origin=origin,
             diagnostics=diagnostics,
             requested_branch=requested_branch,
+            fetch_page_impl=fetch_page_impl,
         )
-        for candidate in page_candidates:
-            existing = candidates.get(candidate.url)
-            if existing is None or candidate.score > existing.score:
-                candidates[candidate.url] = candidate
+        if page_candidates is None:
+            continue
+        _merge_page_candidates(candidates, page_candidates)
         if depth >= bounded_depth:
             continue
-        for candidate in page_candidates:
-            key = category_url_key(candidate.url)
-            if key in fetched_keys or key in queued_keys:
-                continue
-            if len(fetched_keys) + len(queue) >= bounded_pages:
-                break
-            queue.append((candidate.url, depth + 1))
-            queued_keys.add(key)
+        _enqueue_page_candidates(
+            queue,
+            page_candidates,
+            depth=depth,
+            bounded_pages=bounded_pages,
+            fetched_keys=fetched_keys,
+            queued_keys=queued_keys,
+        )
 
     ranked = _rank_candidates(candidates.values())
     if validate_candidates:
@@ -184,6 +157,80 @@ async def discover_rendered_category_links(
         nav_tree=build_category_nav_tree(urls, labels_by_url=labels),
         diagnostics=diagnostics.as_dict(),
     )
+
+
+async def _discover_page_candidates(
+    page_url: str,
+    *,
+    depth: int,
+    origin: tuple[str, str, int],
+    diagnostics: SiteLinkDiscoveryDiagnostics,
+    requested_branch: tuple[str, ...],
+    fetch_page_impl: FetchPage,
+) -> list[SiteLinkCandidate] | None:
+    result = await fetch_page_impl(
+        page_url,
+        timeout_seconds=SITE_LINK_DISCOVERY_FETCH_TIMEOUT_SECONDS,
+        fetch_mode="auto",
+        prefer_browser=True,
+        browser_reason="site-link-discovery",
+        surface=ECOMMERCE_LISTING_SURFACE,
+        max_pages=1,
+        max_scrolls=1,
+    )
+    final_url = str(getattr(result, "final_url", "") or page_url)
+    html = str(getattr(result, "html", "") or "")
+    blocked = bool(getattr(result, "blocked", False))
+    diagnostics.fetched.append(
+        {
+            "url": page_url,
+            "final_url": final_url,
+            "status_code": int(getattr(result, "status_code", 0) or 0),
+            "method": str(getattr(result, "method", "") or ""),
+            "blocked": blocked,
+            "html_length": len(html),
+            "depth": depth,
+        }
+    )
+    if not html or blocked:
+        diagnostics.reject("empty_or_blocked_page")
+        return None
+    return _extract_rendered_candidates(
+        html=html,
+        page_url=final_url,
+        origin=origin,
+        depth=depth,
+        diagnostics=diagnostics,
+        requested_branch=requested_branch,
+    )
+
+
+def _merge_page_candidates(
+    candidates: dict[str, SiteLinkCandidate], page_candidates: list[SiteLinkCandidate]
+) -> None:
+    for candidate in page_candidates:
+        existing = candidates.get(candidate.url)
+        if existing is None or candidate.score > existing.score:
+            candidates[candidate.url] = candidate
+
+
+def _enqueue_page_candidates(
+    queue: deque[tuple[str, int]],
+    page_candidates: list[SiteLinkCandidate],
+    *,
+    depth: int,
+    bounded_pages: int,
+    fetched_keys: set[str],
+    queued_keys: set[str],
+) -> None:
+    for candidate in page_candidates:
+        key = category_url_key(candidate.url)
+        if key in fetched_keys or key in queued_keys:
+            continue
+        if len(fetched_keys) + len(queue) >= bounded_pages:
+            break
+        queue.append((candidate.url, depth + 1))
+        queued_keys.add(key)
 
 
 def _extract_rendered_candidates(
