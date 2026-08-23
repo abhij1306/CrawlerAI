@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,10 +60,7 @@ from browser_surface_probe.value_coercion import (
 load_baseline_probe_script = _signal_extractor.load_baseline_probe_script
 _geo_payload_from_text = _target_diagnostics._geo_payload_from_text
 
-_IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _BUNDLE_DIRNAME = "browser_surface_probe"
-_BASELINE_PROBE_SCRIPT_PATH = Path(__file__).resolve().with_name("baseline_probe.js")
 logger = logging.getLogger(__name__)
 
 
