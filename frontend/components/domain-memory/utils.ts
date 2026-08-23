@@ -2,8 +2,8 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfile,
   DomainRunProfileRecord,
-  KnowledgeContract,
 } from '@lib/api/types';
+import type { KnowledgeContract } from '@lib/api/knowledge';
 import { isSpecialUseDomain } from '@lib/format/domain';
 import { defaultRunProfileBase, mergeRunProfile } from '@lib/crawl/run-profile';
 import type { SurfaceWorkspace } from './types';

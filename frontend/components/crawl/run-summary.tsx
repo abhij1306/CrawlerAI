@@ -58,6 +58,59 @@ type UseRunSummaryOptions = {
   summaryRecordsFromRun: number;
 };
 
+function buildLlmSummary(run: CrawlRun | undefined, records: CrawlRecord[]) {
+  const touchedFields = new Set<string>();
+  let touchedRecords = 0;
+  for (const record of records) {
+    const fields = llmTouchedFieldNames(record);
+    if (!fields.length) continue;
+    touchedRecords += 1;
+    fields.forEach((fieldName) => touchedFields.add(fieldName));
+  }
+  return {
+    requested: Boolean(run?.settings?.llm_enabled),
+    touchedRecords,
+    touchedFields: touchedFields.size,
+  };
+}
+
+function runPageCount(run: CrawlRun | undefined) {
+  const result = run?.result_summary;
+  const completed = Number(result?.processed_urls ?? result?.completed_urls ?? 0) || 0;
+  const current = Number(result?.current_url_index ?? 0) || 0;
+  return Math.max(completed, current, Number(result?.progress ?? 0) > 0 ? 1 : 0);
+}
+
+function runDurationLabel(
+  run: CrawlRun | undefined,
+  terminal: boolean,
+  effectiveStartMs: number,
+  localNow: number,
+) {
+  const completedDuration = terminal ? formatDurationMs(run?.result_summary?.duration_ms) : null;
+  return (
+    completedDuration ??
+    formatDuration(
+      new Date(effectiveStartMs).toISOString(),
+      terminal ? run?.completed_at : new Date(localNow).toISOString(),
+    )
+  );
+}
+
+function emptyRecordsState(verdict: string) {
+  if (verdict === 'blocked') {
+    return {
+      title: 'Access blocked',
+      description:
+        'The target site blocked acquisition for this run. Check Logs or browser diagnostics for challenge details.',
+    };
+  }
+  return {
+    title: 'No records captured yet',
+    description: 'Records will appear here once extraction returns rows.',
+  };
+}
+
 export function useRunSummary({
   run,
   terminal,
@@ -70,39 +123,15 @@ export function useRunSummary({
   batchSourceRecords,
   summaryRecordsFromRun,
 }: Readonly<UseRunSummaryOptions>) {
-  const llmSummary = useMemo(() => {
-    const touchedFields = new Set<string>();
-    let touchedRecords = 0;
-    for (const record of batchSourceRecords) {
-      const fields = llmTouchedFieldNames(record);
-      if (!fields.length) continue;
-      touchedRecords += 1;
-      fields.forEach((fieldName) => touchedFields.add(fieldName));
-    }
-    return {
-      requested: Boolean(run?.settings?.llm_enabled),
-      touchedRecords,
-      touchedFields: touchedFields.size,
-    };
-  }, [batchSourceRecords, run?.settings?.llm_enabled]);
-
-  const summaryPagesFromRun =
-    Number(run?.result_summary?.processed_urls ?? run?.result_summary?.completed_urls ?? 0) || 0;
-  const summaryCurrentUrlIndex = Number(run?.result_summary?.current_url_index ?? 0) || 0;
+  const llmSummary = useMemo(
+    () => buildLlmSummary(run, batchSourceRecords),
+    [batchSourceRecords, run],
+  );
   const summary = {
     records: Math.max(summaryRecordsFromRun, recordsTotal, tableTotal),
-    pages: Math.max(
-      summaryPagesFromRun,
-      summaryCurrentUrlIndex,
-      Number(run?.result_summary?.progress ?? 0) > 0 ? 1 : 0,
-    ),
+    pages: runPageCount(run),
     fields: visibleFieldCount,
-    duration:
-      (terminal ? formatDurationMs(run?.result_summary?.duration_ms) : null) ??
-      formatDuration(
-        new Date(effectiveStartMs).toISOString(),
-        terminal ? run?.completed_at : new Date(localNow).toISOString(),
-      ),
+    duration: runDurationLabel(run, terminal, effectiveStartMs, localNow),
   };
 
   return {
@@ -110,17 +139,7 @@ export function useRunSummary({
     summary,
     qualityLevel: backendQualityLevel(run),
     runErrorMessage: typeof run?.result_summary?.error === 'string' ? run.result_summary.error : '',
-    emptyRecordsState:
-      verdict === 'blocked'
-        ? {
-            title: 'Access blocked',
-            description:
-              'The target site blocked acquisition for this run. Check Logs or browser diagnostics for challenge details.',
-          }
-        : {
-            title: 'No records captured yet',
-            description: 'Records will appear here once extraction returns rows.',
-          },
+    emptyRecordsState: emptyRecordsState(verdict),
   };
 }
 

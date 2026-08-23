@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { knowledgeApi } from '@lib/api/knowledge';
-import type { KnowledgeContract, KnowledgeSiteRecord } from '@lib/api/types';
+import type { KnowledgeContract, KnowledgeSiteRecord } from '@lib/api/knowledge';
 import type { DomainWorkspace } from './types';
 
 type KnowledgeGraphData = {

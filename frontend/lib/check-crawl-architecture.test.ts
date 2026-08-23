@@ -214,8 +214,8 @@ describe('check-frontend-architecture default LOC cap', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'frontend-architecture-'));
     try {
       writeFrontendArchitectureBase(workspace);
-      // Over the 400 default cap but under the measured exception budget (875).
-      writeLines(join(workspace, 'lib', 'api', 'types.ts'), 870);
+      // Over the 400 default cap but under the measured exception budget (525).
+      writeLines(join(workspace, 'lib', 'api', 'types.ts'), 520);
 
       expect(() => {
         execFileSync(process.execPath, [frontendScriptPath], {

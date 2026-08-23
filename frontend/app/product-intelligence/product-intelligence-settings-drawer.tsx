@@ -1,6 +1,6 @@
 import { AppDrawer } from '../../components/ui/dialog';
 import { Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
-import type { ProductIntelligenceOptions } from '../../lib/api/types';
+import type { ProductIntelligenceOptions } from '../../lib/api/product-intelligence';
 import { cn } from '../../lib/utils';
 import { clampInt, SEARCH_PROVIDER_OPTIONS } from './product-intelligence-utils';
 

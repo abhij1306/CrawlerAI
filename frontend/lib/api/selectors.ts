@@ -2,7 +2,29 @@ import { apiClient, getApiBaseUrl } from '@/api/client';
 import type { ApiRequestOptions } from '@/api/client';
 
 import { definedQuery, withQuery } from './shared';
-import type { SelectorRecord, SelectorSuggestResponse, SelectorTestResponse } from './types';
+import type { SelectorRecord } from './types';
+
+export type SelectorTestResponse = {
+  matched_value: string | null;
+  count: number;
+  selector_used?: string | null;
+};
+
+export type SelectorSuggestion = {
+  field_name?: string | null;
+  css_selector?: string | null;
+  xpath?: string | null;
+  regex?: string | null;
+  sample_value?: string | null;
+  source?: string | null;
+};
+
+export type SelectorSuggestResponse = {
+  surface: string;
+  suggestions: Record<string, SelectorSuggestion[]>;
+  preview_url?: string | null;
+  iframe_promoted?: boolean;
+};
 
 export const selectorsApi = {
   listSelectors: (params?: { domain?: string; surface?: string }, options?: ApiRequestOptions) => {

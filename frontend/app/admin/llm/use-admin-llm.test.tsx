@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import type { LlmConfigRecord, LlmCostLogRecord, LlmProviderCatalogItem } from '@lib/api/types';
+import type { LlmConfigRecord, LlmCostLogRecord, LlmProviderCatalogItem } from '@lib/api/admin';
 import { INITIAL_LLM_FORM, useAdminLlm } from './use-admin-llm';
 
 const apiMock = vi.hoisted(() => ({

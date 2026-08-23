@@ -3,8 +3,8 @@ import type {
   DomainCookieMemoryRecord,
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
-  KnowledgeSiteRecord,
 } from '@lib/api/types';
+import type { KnowledgeSiteRecord } from '@lib/api/knowledge';
 import { getNormalizedDomain, isSpecialUseDomain } from '@lib/format/domain';
 import type { DomainWorkspace, SurfaceWorkspace } from './types';
 import { feedbackSearchText, isInternalDomainMemoryArtifact, profileSearchText } from './utils';

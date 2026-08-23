@@ -2,7 +2,7 @@ import type {
   ProductIntelligenceDiscoveryResponse,
   ProductIntelligenceJobDetail,
   ProductIntelligenceOptions,
-} from '../../lib/api/types';
+} from '../../lib/api/product-intelligence';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { ProductIntelligencePrefillPayload } from '../../lib/crawl/prefill';
 import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
@@ -283,4 +283,49 @@ function clampFloat(value: unknown, min: number, max: number, fallback: number) 
     return fallback;
   }
   return Math.min(Math.max(parsed, min), max);
+}
+
+export function resolvedDefaultJobId(
+  sourceRecords: Array<unknown>,
+  jobs: Array<{ id: number }> | undefined,
+) {
+  return sourceRecords.length ? null : (jobs?.[0]?.id ?? null);
+}
+
+export function hydratedDetailState(detail: ProductIntelligenceJobDetail | undefined) {
+  return {
+    options: detail ? detailOptions(detail.job.options) : DEFAULT_OPTIONS,
+    discovery: detail ? detailToDiscovery(detail) : null,
+  };
+}
+
+export function effectiveConfiguration(
+  edited: boolean,
+  detail: ProductIntelligenceJobDetail | undefined,
+  options: ProductIntelligenceOptions,
+  hydrated: ProductIntelligenceOptions,
+  allowedDomainsText: string,
+  excludedDomainsText: string,
+) {
+  if (edited || !detail) return { options, allowedDomainsText, excludedDomainsText };
+  return {
+    options: hydrated,
+    allowedDomainsText: hydrated.allowed_domains.join('\n'),
+    excludedDomainsText: hydrated.excluded_domains.join('\n'),
+  };
+}
+
+export function discoveryLoading(
+  pending: boolean,
+  hasSourceRecords: boolean,
+  hasOverride: boolean,
+  jobsLoaded: boolean,
+  jobsLoading: boolean,
+  activeJobId: number | null,
+  detailLoaded: boolean,
+  detailLoading: boolean,
+) {
+  const resolvingJobs = !hasSourceRecords && !hasOverride && !jobsLoaded && jobsLoading;
+  const resolvingDetail = activeJobId !== null && !hasOverride && !detailLoaded && detailLoading;
+  return pending || resolvingJobs || resolvingDetail;
 }

@@ -154,6 +154,12 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ['{app,components,lib,src}/**/*.{ts,tsx}'],
+        rules: {
+          complexity: ['error', 15],
+        },
+      },
+      {
         files: ['**/*.{test,spec}.{ts,tsx}'],
         rules: {
           complexity: ['error', 15],

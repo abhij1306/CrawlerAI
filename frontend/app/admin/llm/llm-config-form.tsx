@@ -2,7 +2,7 @@ import { PlugZap, Plus } from 'lucide-react';
 
 import { Button, Dropdown, Field, Input } from '@ui/primitives';
 import { InlineAlert, SectionCard } from '@ui/patterns';
-import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '@lib/api/types';
+import type { LlmConfigCreatePayload, LlmProviderCatalogItem } from '@lib/api/admin';
 
 const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [
@@ -27,6 +27,33 @@ interface LlmConfigFormCardProps {
   onSave: () => void;
 }
 
+function modelFieldState(
+  form: LlmConfigCreatePayload,
+  providers: LlmProviderCatalogItem[],
+  customModelSelected: boolean,
+) {
+  const recommendedModels =
+    providers.find((provider) => provider.provider === form.provider)?.recommended_models ?? [];
+  const formModel = form.model.trim();
+  const modelInCatalog = recommendedModels.includes(formModel);
+  const modelIsCustom =
+    customModelSelected || (recommendedModels.length > 0 && formModel !== '' && !modelInCatalog);
+  const customCurrentModel =
+    recommendedModels.length > 0 || formModel === '' || modelInCatalog
+      ? []
+      : [{ value: formModel, label: formModel }];
+  return {
+    recommendedModels,
+    modelIsCustom,
+    modelDropdownValue: modelIsCustom ? CUSTOM_MODEL_OPTION : form.model,
+    modelOptions: [
+      ...recommendedModels.map((model) => ({ value: model, label: model })),
+      ...customCurrentModel,
+      { value: CUSTOM_MODEL_OPTION, label: 'Custom...' },
+    ],
+  };
+}
+
 export function LlmConfigFormCard({
   form,
   providers,
@@ -40,24 +67,11 @@ export function LlmConfigFormCard({
   onTest,
   onSave,
 }: Readonly<LlmConfigFormCardProps>) {
-  const recommendedModels =
-    providers.find((provider) => provider.provider === form.provider)?.recommended_models ?? [];
-  const modelCatalogLoaded = recommendedModels.length > 0;
-  const formModel = form.model.trim();
-  const modelInCatalog = recommendedModels.includes(formModel);
-  const modelIsCustom =
-    customModelSelected || (modelCatalogLoaded && formModel !== '' && !modelInCatalog);
-  const modelDropdownValue = modelIsCustom ? CUSTOM_MODEL_OPTION : form.model;
-  const modelOptions = [
-    ...recommendedModels.map((model) => ({
-      value: model,
-      label: model,
-    })),
-    ...(modelCatalogLoaded || formModel === '' || modelInCatalog
-      ? []
-      : [{ value: formModel, label: formModel }]),
-    { value: CUSTOM_MODEL_OPTION, label: 'Custom...' },
-  ];
+  const { recommendedModels, modelIsCustom, modelDropdownValue, modelOptions } = modelFieldState(
+    form,
+    providers,
+    customModelSelected,
+  );
   const modelSuggestionsId = 'llm-model-suggestions';
 
   return (

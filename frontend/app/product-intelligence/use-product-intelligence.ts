@@ -4,21 +4,24 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import type { HistoryItem } from '../../components/ui/history-drawer';
-import { productIntelligenceApi } from '../../lib/api/product-intelligence';
 import type {
   ProductIntelligenceDiscoveryResponse,
   ProductIntelligenceSourceRecordInput,
-} from '../../lib/api/types';
+} from '../../lib/api/product-intelligence';
+import { productIntelligenceApi } from '../../lib/api/product-intelligence';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { searchProviderLabel } from './product-intelligence-utils';
 import {
   DEFAULT_OPTIONS,
   candidateConfidence,
+  discoveryLoading,
   detailOptions,
-  detailToDiscovery,
+  effectiveConfiguration,
+  hydratedDetailState,
   loadPrefillPayload,
   parseDomainLines,
+  resolvedDefaultJobId,
   searchProvider,
 } from './product-intelligence-utils';
 
@@ -191,7 +194,7 @@ export function useProductIntelligence() {
     queryFn: () => productIntelligenceApi.listProductIntelligenceJobs({ limit: 20 }),
   });
   const sourceRecords = useMemo(() => prefill.records ?? [], [prefill.records]);
-  const defaultJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
+  const defaultJobId = resolvedDefaultJobId(sourceRecords, jobsData);
   const resolvedActiveJobId = activeJobId ?? defaultJobId;
   const {
     data: detailData,
@@ -203,22 +206,19 @@ export function useProductIntelligence() {
     enabled: resolvedActiveJobId !== null,
   });
   const historyItems: HistoryItem[] = useMemo(() => historyFromJobs(jobsData), [jobsData]);
-  const detailHydratedOptions = useMemo(
-    () => (detailData ? detailOptions(detailData.job.options) : DEFAULT_OPTIONS),
-    [detailData],
+  const hydratedDetail = useMemo(() => hydratedDetailState(detailData), [detailData]);
+  const discovery = discoveryOverride ?? hydratedDetail.discovery;
+  const effectiveConfig = effectiveConfiguration(
+    optionsEdited,
+    detailData,
+    options,
+    hydratedDetail.options,
+    allowedDomainsText,
+    excludedDomainsText,
   );
-  const detailDiscovery = useMemo(
-    () => (detailData ? detailToDiscovery(detailData) : null),
-    [detailData],
-  );
-  const discovery = discoveryOverride ?? detailDiscovery;
-  const effectiveOptions = optionsEdited || !detailData ? options : detailHydratedOptions;
-  const effectiveAllowedDomainsText = optionsEdited
-    ? allowedDomainsText
-    : detailHydratedOptions.allowed_domains.join('\n');
-  const effectiveExcludedDomainsText = optionsEdited
-    ? excludedDomainsText
-    : detailHydratedOptions.excluded_domains.join('\n');
+  const effectiveOptions = effectiveConfig.options;
+  const effectiveAllowedDomainsText = effectiveConfig.allowedDomainsText;
+  const effectiveExcludedDomainsText = effectiveConfig.excludedDomainsText;
   const visibleSourceRecords = useMemo(
     () => visibleRecords(sourceRecords, detailData),
     [detailData, sourceRecords],
@@ -321,14 +321,16 @@ export function useProductIntelligence() {
     setOptionsEdited(false);
   }, []);
 
-  const resolvingLatestJob =
-    !sourceRecords.length && !discoveryOverride && !jobsData && jobsLoading;
-  const resolvingDetail =
-    resolvedActiveJobId !== null &&
-    !discoveryOverride &&
-    !detailData &&
-    (detailLoading || detailFetching);
-  const loadingDiscovery = pending || resolvingLatestJob || resolvingDetail;
+  const loadingDiscovery = discoveryLoading(
+    pending,
+    sourceRecords.length > 0,
+    Boolean(discoveryOverride),
+    Boolean(jobsData),
+    jobsLoading,
+    resolvedActiveJobId,
+    Boolean(detailData),
+    detailLoading || detailFetching,
+  );
 
   return {
     confidenceDistribution,

@@ -1,4 +1,4 @@
-import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
+import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/product-intelligence';
 import type { ProductDiscoveryCandidate } from './product-intelligence-utils';
 import { isRecord } from './product-intelligence-utils';
 
