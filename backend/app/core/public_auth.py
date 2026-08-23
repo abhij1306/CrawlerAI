@@ -68,6 +68,12 @@ async def _cache_principal(key_hash: str, entry: _CachedPrincipal) -> None:
         _PRINCIPAL_CACHE[key_hash] = entry
 
 
+async def invalidate_public_api_key(key_hash: str) -> None:
+    """Remove a revoked key from this process's authentication cache."""
+    async with _PRINCIPAL_CACHE_LOCK:
+        _PRINCIPAL_CACHE.pop(key_hash, None)
+
+
 async def _touch_last_used_best_effort(
     session: AsyncSession, principal: PublicApiPrincipal
 ) -> None:

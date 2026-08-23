@@ -38,7 +38,6 @@ async def deadcode_client(db_session, test_user):
         ("GET", "/api/crawls/domain-run-profiles"),
         ("GET", "/api/dashboard/metrics"),
         ("POST", "/api/dashboard/reset-data-enrichment"),
-        ("DELETE", "/api/api-keys/1"),
         # 3.14: test-only routes removed with no frontend/external caller.
         ("GET", "/api/selectors/summary"),
         ("POST", "/api/dashboard/reset-crawl-data"),

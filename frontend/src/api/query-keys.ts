@@ -68,6 +68,10 @@ export const queryKeys = {
     jobs: () => ['data-enrichment', 'jobs'] as const,
     detail: (jobId: number) => ['data-enrichment', 'detail', jobId] as const,
   },
+  apiAccess: {
+    all: ['api-access'] as const,
+    keys: () => ['api-access', 'keys'] as const,
+  },
   admin: {
     users: (filters: RunListFilters = {}) => ['admin', 'users', filters] as const,
     llmProviders: () => ['admin', 'llm', 'providers'] as const,

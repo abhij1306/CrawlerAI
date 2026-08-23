@@ -7,6 +7,7 @@ import {
   DatabaseZap,
   FileChartColumn,
   Grid2x2,
+  KeyRound,
   Settings2,
   ShieldCheck,
   WandSparkles,
@@ -118,6 +119,17 @@ export const appRoutes: readonly AppRoute[] = [
       description: 'Inspect run profiles, grounded learning, and extraction contracts by domain.',
     },
     nav: { group: 'Intelligence', label: 'Domain Memory', icon: DatabaseZap },
+  },
+  {
+    id: 'api-access',
+    path: '/api-access',
+    access: 'authenticated',
+    lazy: () => import('../../app/api-access/page-view'),
+    metadata: {
+      title: 'API & MCP',
+      description: 'Create credentials for REST and MCP clients.',
+    },
+    nav: { group: 'Primary', label: 'API & MCP', icon: KeyRound },
   },
   {
     id: 'admin-users',

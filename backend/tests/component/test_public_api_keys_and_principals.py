@@ -23,7 +23,7 @@ async def test_public_api_requires_api_key(public_api_client: AsyncClient) -> No
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_api_key_crud_returns_plaintext_once(
+async def test_api_key_crud_returns_plaintext_once_and_revokes_immediately(
     public_api_client: AsyncClient,
     db_session,
     test_user,
@@ -37,6 +37,17 @@ async def test_api_key_crud_returns_plaintext_once(
             "/api/api-keys", json={"name": "Railway"}
         )
         listed = await public_api_client.get("/api/api-keys")
+        authenticated = await public_api_client.get(
+            "/api/v1/capabilities",
+            headers={"Authorization": f"Bearer {created.json()['api_key']}"},
+        )
+        revoked = await public_api_client.delete(
+            f"/api/api-keys/{created.json()['id']}"
+        )
+        rejected = await public_api_client.get(
+            "/api/v1/capabilities",
+            headers={"Authorization": f"Bearer {created.json()['api_key']}"},
+        )
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
@@ -46,6 +57,10 @@ async def test_api_key_crud_returns_plaintext_once(
     assert payload["key_prefix"] == payload["api_key"][:12]
     assert listed.status_code == 200
     assert listed.json()[0]["name"] == "Railway"
+    assert authenticated.status_code == 200
+    assert revoked.status_code == 200
+    assert revoked.json()["is_active"] is False
+    assert rejected.status_code == 401
     stored = await db_session.scalar(select(ApiKey).where(ApiKey.id == payload["id"]))
     assert stored is not None
     assert stored.key_hash == hash_api_key(payload["api_key"])
@@ -81,7 +96,7 @@ async def test_public_capabilities_uses_api_key_envelope(
     assert payload["status"] == "ok"
     assert payload["data"]["surfaces"] == ["ecommerce"]
     assert "extract_product" in payload["data"]["tools"]
-    assert "alert_product" in payload["data"]["tools"]
+    assert "alert_product" not in payload["data"]["tools"]
     assert "watches" not in payload["data"]["deferred"]
 
 

@@ -79,10 +79,6 @@ PUBLIC_API_CAPABILITIES = {
     "surfaces": sorted(PUBLIC_API_SUPPORTED_SURFACES),
     "tools": [
         "extract_product",
-        "alert_product",
-        "get_alert_status",
-        "cancel_alert",
-        "list_alerts",
         "check_domain",
         "list_capabilities",
     ],

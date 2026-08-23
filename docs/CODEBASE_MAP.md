@@ -366,9 +366,10 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 | `lib/crawl/quality.ts` | Crawl data-quality scoring helpers |
 | `lib/crawl/record-utils.ts` | Crawl record cleanup and value access helpers |
 | `lib/crawl/scroll.ts` | Crawl viewport scroll helper |
-| `lib/api/client.ts` | auth-aware fetch wrapper |
-| `lib/api/index.ts` | only frontend backend-access layer |
+| `src/api/client.ts` | auth-aware fetch wrapper |
+| `lib/api/*.ts` | typed domain endpoint owners; `api-access.ts` owns API-key management and capability verification |
 | `lib/api/types.ts` | frontend API types |
+| `app/api-access/` | authenticated API-key management, one-time secret reveal, REST verification, and MCP setup |
 | `components/selectors/domain-memory/knowledge-graph-tab.tsx` | Domain Memory Knowledge Graph tab: bounded graph, relationships, contracts, source controls |
 | `scripts/check-token-escapes.mjs` | frontend guard against new raw CSS-var Tailwind token escapes |
 

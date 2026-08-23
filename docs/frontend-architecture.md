@@ -50,6 +50,7 @@ The data router in `frontend/src/app/app.tsx` maps the lazy route modules declar
 - `/data-enrichment`
 - `/product-intelligence`
 - `/domain-memory`
+- `/api-access`
 - `/admin/users`
 - `/admin/llm`
 - `*` -> redirect to `/dashboard`
@@ -103,6 +104,7 @@ Primary files:
 - `lib/api/crawls.ts`
 - `lib/api/data-enrichment.ts`
 - `lib/api/product-intelligence.ts`
+- `lib/api/api-access.ts`
 - `lib/api/domain-memory.ts`
 - `lib/api/selectors.ts`
 - `lib/api/knowledge.ts`
@@ -220,6 +222,7 @@ Primary files:
 - `app/product-intelligence/product-intelligence-candidate-card.tsx`
 - `app/product-intelligence/product-intelligence-settings-drawer.tsx`
 - `app/domain-memory/page-view.tsx`
+- `app/api-access/page-view.tsx`
 - `components/domain-memory/` (feature owner for the domain-memory surface: workspace hook, tabs, sidebar)
 - `app/admin/users/page-view.tsx`
 - `app/admin/llm/page-view.tsx`
@@ -232,6 +235,7 @@ Responsibilities:
 - data enrichment record normalization and review
 - product discovery and price comparison
 - domain-memory management across domains and surfaces, including selector operations (the standalone selectors page was removed)
+- per-account public API key creation/listing/revocation, one-time secret reveal, REST verification, and MCP launch setup
 - admin user management
 - LLM provider/config/cost-log management
 
@@ -272,6 +276,7 @@ The frontend currently uses live backend routes for:
 - jobs: `/api/jobs/active`
 - data enrichment: `/api/data-enrichment/jobs`
 - product intelligence: `/api/product-intelligence/discover`, `/api/product-intelligence/jobs`, `/api/product-intelligence/jobs/{id}/matches/{match_id}/review`
+- API and MCP access: `/api/api-keys`, `/api/api-keys/{id}`, `/api/v1/capabilities`
 
 ## 5. Known Client/Backend Drift
 
@@ -351,7 +356,7 @@ Frontend tests currently cover:
 - websocket log reconnect, polling fallback, and reconnect cleanup
 - visible-dataset live record polling
 - explicit transport retry opt-in and React Query retry ownership
-- Data Enrichment, App Shell, and architecture policy checks
+- Data Enrichment, API/MCP credential management, App Shell, and architecture policy checks
 
 There is also Playwright e2e coverage under `frontend/e2e`.
 
