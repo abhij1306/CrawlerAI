@@ -242,7 +242,6 @@ def _check_secret_defaults() -> None:
     if warnings:
         logger.warning(
             "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation",
-            extra={"warnings": warnings, "warning_count": len(warnings)},
         )
     if not issues:
         return
@@ -255,7 +254,6 @@ def _check_secret_defaults() -> None:
         raise RuntimeError(msg)
     logger.warning(
         "SECURITY WARNING: insecure default secrets detected",
-        extra={"issues": issues, "issue_count": len(issues)},
     )
 
 
