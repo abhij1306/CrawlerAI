@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreatedResponse, ApiKeyResponse
-from app.core.api_key_service import create_api_key, list_api_keys
+from app.core.api_key_service import create_api_key, list_api_keys, revoke_api_key
 
 router = APIRouter(prefix="/api/api-keys", tags=["api-keys"])
 
@@ -42,3 +42,23 @@ async def api_key_list(
 ) -> list[ApiKeyResponse]:
     rows = await list_api_keys(session, user_id=int(user.id))
     return [ApiKeyResponse.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.delete("/{key_id}")
+async def api_key_revoke(
+    key_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiKeyResponse:
+    try:
+        row = await revoke_api_key(
+            session,
+            user_id=int(user.id),
+            key_id=key_id,
+        )
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found",
+        ) from None
+    return ApiKeyResponse.model_validate(row, from_attributes=True)

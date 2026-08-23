@@ -122,6 +122,7 @@ describe('AppShell reset workspace', () => {
     renderShell('user');
     expect(screen.queryByRole('button', { name: /reset workspace/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'API & MCP' })).toBeInTheDocument();
   });
 });
 

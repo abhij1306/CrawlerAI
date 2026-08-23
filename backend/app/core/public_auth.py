@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from cryptography.hazmat.primitives import hashes, hmac
@@ -19,6 +21,7 @@ from app.core.config.public_api import (
     PUBLIC_API_ERROR_API_KEY_REQUIRED,
     PUBLIC_API_ERROR_AUTH_UNAVAILABLE,
     PUBLIC_API_ERROR_INVALID_API_KEY,
+    PUBLIC_API_AUTH_LOCK_STRIPES,
     PUBLIC_API_LAST_USED_TOUCH_SECONDS,
     PUBLIC_API_PRINCIPAL_CACHE_MAX_ENTRIES,
     PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS,
@@ -47,6 +50,9 @@ class _CachedPrincipal:
 # eviction). Revocation/disable staleness is bounded by the cache TTL.
 _PRINCIPAL_CACHE: dict[str, _CachedPrincipal] = {}
 _PRINCIPAL_CACHE_LOCK = asyncio.Lock()
+_PUBLIC_API_AUTH_LOCKS = tuple(
+    asyncio.Lock() for _ in range(PUBLIC_API_AUTH_LOCK_STRIPES)
+)
 
 
 def hash_api_key(value: str) -> str:
@@ -66,6 +72,19 @@ async def _cache_principal(key_hash: str, entry: _CachedPrincipal) -> None:
         while len(_PRINCIPAL_CACHE) >= PUBLIC_API_PRINCIPAL_CACHE_MAX_ENTRIES:
             _PRINCIPAL_CACHE.pop(next(iter(_PRINCIPAL_CACHE)))
         _PRINCIPAL_CACHE[key_hash] = entry
+
+
+async def invalidate_public_api_key(key_hash: str) -> None:
+    """Remove a key while its ``public_api_key_auth_guard`` is held."""
+    async with _PRINCIPAL_CACHE_LOCK:
+        _PRINCIPAL_CACHE.pop(key_hash, None)
+
+
+@asynccontextmanager
+async def public_api_key_auth_guard(key_hash: str) -> AsyncIterator[None]:
+    stripe = int(key_hash[:8], 16) % len(_PUBLIC_API_AUTH_LOCKS)
+    async with _PUBLIC_API_AUTH_LOCKS[stripe]:
+        yield
 
 
 async def _touch_last_used_best_effort(
@@ -103,6 +122,20 @@ async def authenticate_public_api_key(
         )
     raw_key = credentials.strip()
     key_hash = hash_api_key(raw_key)
+    async with public_api_key_auth_guard(key_hash):
+        return await _authenticate_public_api_key_locked(
+            session,
+            key_hash,
+            touch=touch,
+        )
+
+
+async def _authenticate_public_api_key_locked(
+    session: AsyncSession,
+    key_hash: str,
+    *,
+    touch: bool,
+) -> PublicApiPrincipal:
     now = _monotonic()
     entry = await _principal_cache_entry(key_hash)
     # The touch stamp carries across cache refreshes: last_used_at is written

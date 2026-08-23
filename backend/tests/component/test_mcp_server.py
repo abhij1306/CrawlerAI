@@ -2,9 +2,42 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from fastmcp import Client
 
 from app.mcp_server.client import PublicApiClient
+from app.mcp_server.server import build_server
 from app.mcp_server.tools import check_domain, extract_product, list_capabilities
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_mcp_server_registers_only_supported_tools() -> None:
+    server = build_server()
+
+    tools = await server.list_tools()
+    assert [tool.name for tool in tools] == [
+        "extract_product",
+        "check_domain",
+        "list_capabilities",
+    ]
+
+    async with Client(server) as client:
+        result = await client.call_tool("list_capabilities", {})
+
+    assert result.data == {
+        "status": "ok",
+        "data": {
+            "version": "v1",
+            "surfaces": ["ecommerce"],
+            "tools": [
+                "extract_product",
+                "check_domain",
+                "list_capabilities",
+            ],
+            "deferred": ["extract_batch"],
+            "deployment": "railway-ready",
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -46,7 +79,7 @@ async def test_mcp_tools_call_public_api(monkeypatch: pytest.MonkeyPatch) -> Non
     assert product["status"] == "ok"
     assert domain["status"] == "ok"
     assert "extract_product" in caps["data"]["tools"]
-    assert "alert_product" in caps["data"]["tools"]
+    assert "alert_product" not in caps["data"]["tools"]
     assert "watches" not in caps["data"]["deferred"]
     assert calls[0] == {
         "method": "POST",

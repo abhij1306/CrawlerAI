@@ -12,9 +12,9 @@ pytestmark = pytest.mark.unit
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
-# Exact inventory. Services/tooling closeout adds focused regressions for the
-# moved owners and browser-probe input validation; both ratchets are measured.
-TEST_LOC_BUDGET = 55_577
+# Exact inventory. API/MCP launch adds focused key-lifecycle, protocol, and
+# authentication-cache regressions; both ratchets remain measured.
+TEST_LOC_BUDGET = 55_653
 TOOL_LOC_BUDGET = 3_813
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
@@ -207,14 +207,14 @@ PACKAGE_LOC_BUDGETS = {
     # Mypy fix pass (same day): core +23, acquisition +23 for the typed
     # redis eval wrappers (str args + Awaitable casts) — raised to measured.
     # Core/acquisition simplification (2026-08-23): acquisition +259, core +5.
-    # PR #53 review follow-up: core +8 for price-context admission policy.
+    # PR #53 follow-up adds core +8; API revocation race guard adds core +23.
     # Browser readiness/result builder left oversized debt; review fixes keep
     # all touched production callables at CC<=15.
     # Services/tooling simplification adds explicit owner seams and type-safe
     # helpers while shrinking the five named root owners by 2,870 lines.
     "acquisition": 17_637,
     "crawl": 9_790,
-    "core": 21_110,
+    "core": 21_133,
     "enrichment": 2_361,
     "connectors": 2_427,
     "intelligence": 3_576,

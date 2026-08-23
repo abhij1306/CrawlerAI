@@ -52,6 +52,7 @@ PUBLIC_API_RATE_LIMIT_MAX_BUCKETS = 10_000
 PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS = 60
 PUBLIC_API_LAST_USED_TOUCH_SECONDS = 300
 PUBLIC_API_PRINCIPAL_CACHE_MAX_ENTRIES = 1024
+PUBLIC_API_AUTH_LOCK_STRIPES = 64
 
 PUBLIC_API_ERROR_API_KEY_REQUIRED = "API_KEY_REQUIRED"
 PUBLIC_API_ERROR_AUTH_UNAVAILABLE = "AUTH_UNAVAILABLE"
@@ -79,10 +80,6 @@ PUBLIC_API_CAPABILITIES = {
     "surfaces": sorted(PUBLIC_API_SUPPORTED_SURFACES),
     "tools": [
         "extract_product",
-        "alert_product",
-        "get_alert_status",
-        "cancel_alert",
-        "list_alerts",
         "check_domain",
         "list_capabilities",
     ],

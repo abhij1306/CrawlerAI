@@ -56,6 +56,7 @@ function writeCrawlPage(workspace: string) {
 
 const requiredFrontendApiOwners = [
   'admin.ts',
+  'api-access.ts',
   'auth.ts',
   'crawls.ts',
   'dashboard.ts',

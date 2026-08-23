@@ -63,9 +63,9 @@ Important route groups:
 - `api/product_intelligence.py`: product discovery, candidate crawl jobs, match scoring, and review
 - `api/public/*`: API-key authenticated extraction, domain info, capabilities, and envelopes
 
-Routes with no console UI by design (do not delete as "dead"):
+External routes with special console ownership (do not delete as "dead"):
 
-- `POST + GET /api/api-keys` (`api/api_keys.py`) — operator API, no console UI by design; the only key-creation surface backing the public `/api/v1` API
+- `POST + GET /api/api-keys`, `DELETE /api/api-keys/{key_id}` (`api/api_keys.py`) — authenticated `/api-access` console surface for one-time key creation, listing, and revocation; keys back the public `/api/v1` API and hosted MCP
 - `GET /api/crawls/{run_id}/export/discoverist` (`api/records.py`) — documented external partner contract, no console caller by design
 
 Domain-recipe routes live under `api/crawl_domain.py`:
@@ -228,7 +228,7 @@ Current live behavior:
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
 - Product monitoring, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted surfaces. There are no monitor scheduler loops, alert routes, public alert routes, notification models, or monitor-owned run callbacks.
-- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl orchestration internals.
+- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey` and managed from `/api-access`; plaintext is returned only on creation. Public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl orchestration internals.
 - Alembic is reset for a fresh-start project: `backend/alembic/versions/` intentionally contains one clean baseline migration.
 
 ### 6.3 Acquisition and browser runtime

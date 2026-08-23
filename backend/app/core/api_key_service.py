@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import secrets
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.public_auth import hash_api_key
+from app.core.public_auth import (
+    hash_api_key,
+    invalidate_public_api_key,
+    public_api_key_auth_guard,
+)
 from app.models.api_key import ApiKey
 from app.core.config.public_api import (
     PUBLIC_API_KEY_BYTES,
@@ -60,8 +63,9 @@ async def revoke_api_key(
     row = await session.get(ApiKey, key_id)
     if row is None or row.user_id != user_id:
         raise LookupError("API key not found")
-    row.is_active = False
-    row.last_used_at = row.last_used_at or datetime.now(UTC)
-    await session.commit()
-    await session.refresh(row)
+    async with public_api_key_auth_guard(row.key_hash):
+        row.is_active = False
+        await session.commit()
+        await session.refresh(row)
+        await invalidate_public_api_key(row.key_hash)
     return row

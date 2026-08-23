@@ -12,7 +12,9 @@ const checks = [
 // Default per-file LOC cap over app/, components/, lib/, src/ (non-test .ts/.tsx).
 const DEFAULT_MAX_LINES = 400;
 const scannedRoots = ['app', 'components', 'lib', 'src'];
-const TEST_LOC_BUDGET = 4642;
+// 2026-08-23: API/MCP coverage adds create/probe/copy, confirmation-gated
+// revoke, and cross-shell command-generation tests for the authenticated surface.
+const TEST_LOC_BUDGET = 4753;
 
 // Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
 const lineBudgetExceptions = new Map([
@@ -26,6 +28,7 @@ const lineBudgetExceptions = new Map([
 
 const requiredApiOwners = [
   'admin.ts',
+  'api-access.ts',
   'auth.ts',
   'crawls.ts',
   'dashboard.ts',
