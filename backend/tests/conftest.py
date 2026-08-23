@@ -35,7 +35,7 @@ _WORKSPACE_TMP_ROOT = _BACKEND_ROOT / ".pytest-tmp"
 _UNSET = object()
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/crawlerai",
 )
 
 

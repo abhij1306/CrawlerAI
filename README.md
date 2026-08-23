@@ -76,9 +76,9 @@ API: `http://127.0.0.1:8000`
 
 ### Logfire
 
-Backend Logfire telemetry is opt-in and uses the existing FastAPI, Celery, and
-crawl-pipeline instrumentation. For local CLI authentication to the US Logfire
-instance and project:
+Backend Logfire telemetry is opt-in and uses FastAPI, Celery, system-metrics,
+and crawl-pipeline instrumentation. For local CLI authentication to the US
+Logfire instance and project:
 
 ```powershell
 cd backend

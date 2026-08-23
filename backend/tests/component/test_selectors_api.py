@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import pytest
 import httpx
-from httpx import ASGITransport, AsyncClient
 
 from app.core.dependencies import get_current_user, get_db
 from app.crawl.domain_memory_service import save_domain_memory
 from app.main import app
 from app.core.url_safety import SecurityError
+
+ASGITransport = httpx.ASGITransport
+AsyncClient = httpx.AsyncClient
 
 
 @pytest.fixture

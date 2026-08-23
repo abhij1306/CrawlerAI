@@ -85,8 +85,7 @@ async def test_crawls_logs_ws_treats_protocol_attribute_error_as_disconnect(
         async def accept(self) -> None:
             self.accepted = True
 
-        async def send_json(self, payload: dict) -> None:
-            del payload
+        async def send_json(self, _payload: dict) -> None:
             raise AttributeError(
                 "'WebSocketProtocol' object has no attribute 'transfer_data_task'"
             )
@@ -139,8 +138,8 @@ class _OriginWebSocket:
     async def accept(self) -> None:
         self.accepted = True
 
-    async def send_json(self, payload: dict) -> None:
-        del payload
+    async def send_json(self, _payload: dict) -> None:
+        return None
 
     async def close(self, *, code: int, reason: str) -> None:
         self.closed.append((code, reason))

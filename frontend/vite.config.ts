@@ -154,6 +154,12 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ['**/*.{test,spec}.{ts,tsx}'],
+        rules: {
+          complexity: ['error', 15],
+        },
+      },
+      {
         files: [
           'components/crawl/form-fields.tsx',
           'components/crawl/records-table.tsx',

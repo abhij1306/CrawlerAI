@@ -230,30 +230,41 @@ def _expectation_failures(
 
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    failed = [row for row in rows if row.get("expectation_failures")]
-    skipped = [row for row in rows if row.get("skipped")]
-    divergences = sum(int(row.get("divergence_count") or 0) for row in rows)
-    evidence_counts = [
-        int(row.get("evidence_count") or 0) for row in rows if not row.get("skipped")
-    ]
-    resolve_durations = [
-        float(row.get("resolve_duration_ms") or 0.0)
-        for row in rows
-        if not row.get("skipped")
-    ]
+    failed_count = _truthy_count(rows, "expectation_failures")
+    skipped_count = _truthy_count(rows, "skipped")
+    divergences = _sum_int(rows, "divergence_count")
+    active_rows = [row for row in rows if not row.get("skipped")]
     return {
-        "passed": not failed and not skipped and divergences == 0,
+        "passed": failed_count == 0 and skipped_count == 0 and divergences == 0,
         "total": len(rows),
-        "failed": len(failed),
-        "skipped": len(skipped),
+        "failed": failed_count,
+        "skipped": skipped_count,
         "publication_divergence": divergences,
         "evidence_accounting_rate": _ratio(
-            sum(int(row.get("disposition_count") or 0) for row in rows),
-            sum(int(row.get("evidence_count") or 0) for row in rows),
+            _sum_int(rows, "disposition_count"),
+            _sum_int(rows, "evidence_count"),
         ),
-        "p95_evidence_count": _p95(evidence_counts),
-        "p95_resolve_duration_ms": _p95(resolve_durations),
+        "p95_evidence_count": _p95(_int_values(active_rows, "evidence_count")),
+        "p95_resolve_duration_ms": _p95(
+            _float_values(active_rows, "resolve_duration_ms")
+        ),
     }
+
+
+def _truthy_count(rows: list[dict[str, Any]], key: str) -> int:
+    return sum(map(bool, (row.get(key) for row in rows)))
+
+
+def _sum_int(rows: list[dict[str, Any]], key: str) -> int:
+    return sum(_int_values(rows, key))
+
+
+def _int_values(rows: list[dict[str, Any]], key: str) -> list[int]:
+    return [int(row.get(key) or 0) for row in rows]
+
+
+def _float_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    return [float(row.get(key) or 0.0) for row in rows]
 
 
 def _groups(manifest: Any) -> dict[str, list[dict[str, Any]]]:

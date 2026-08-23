@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: crawlerai_smoke
+          POSTGRES_DB: crawlerai
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d crawlerai_smoke"
+          --health-cmd "pg_isready -U postgres -d crawlerai"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -32,7 +32,7 @@ jobs:
       APP_ENV: test
       JWT_SECRET_KEY: ci-jwt-secret-key-change-me-32-bytes
       ENCRYPTION_KEY: ci-encryption-key-change-me-32b
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/crawlerai_smoke
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/crawlerai
       REDIS_STATE_ENABLED: false
       CELERY_DISPATCH_ENABLED: false
       BOOTSTRAP_ADMIN_ONCE: false
@@ -53,6 +53,14 @@ jobs:
       - name: Dependency vulnerability scan
         working-directory: frontend
         run: vp pm audit -- --audit-level=high
+
+      - name: Frontend lint, types, and architecture policy
+        working-directory: frontend
+        run: |
+          vp check
+          node scripts/check-token-escapes.mjs
+          node scripts/check-crawl-architecture.mjs
+          node scripts/check-frontend-architecture.mjs
 
       - name: Build frontend and check bundle budgets
         working-directory: frontend

@@ -873,6 +873,54 @@ def _target_identity_mismatch(
     }
 
 
+def _target_vendor(
+    browser: dict[str, object], transport_payloads: list[dict[str, object]]
+) -> object:
+    browser_classification = _object_dict(browser.get("classification"))
+    header_vendors = [
+        _object_dict(payload.get("classification")).get("header_vendor")
+        for payload in transport_payloads
+    ]
+    provider_hits = [
+        _coalesce(
+            _object_list(
+                _object_dict(payload.get("classification")).get("provider_hits")
+            )
+        )
+        for payload in [browser, *transport_payloads]
+    ]
+    return (
+        browser_classification.get("header_vendor")
+        or _coalesce(header_vendors)
+        or _coalesce(provider_hits)
+    )
+
+
+def _target_path_flags(
+    browser: dict[str, object], transport_payloads: list[dict[str, object]]
+) -> tuple[list[dict[str, object]], list[dict[str, object]], bool, bool]:
+    transport_blocked = [
+        payload
+        for payload in transport_payloads
+        if payload.get("status") == "ok" and bool(payload.get("blocked"))
+    ]
+    transport_ok = [
+        payload
+        for payload in transport_payloads
+        if payload.get("status") == "ok" and not bool(payload.get("blocked"))
+    ]
+    browser_blocked = browser.get("status") == "ok" and bool(browser.get("blocked"))
+    browser_ok = browser.get("status") == "ok" and not bool(browser.get("blocked"))
+    return transport_blocked, transport_ok, browser_blocked, browser_ok
+
+
+def _geo_identity_drifts(mismatch: dict[str, object]) -> bool:
+    return (
+        mismatch.get("timezone_country_match") is False
+        or mismatch.get("locale_country_match") is False
+    )
+
+
 def _target_root_cause(
     *,
     consensus: dict[str, object],
@@ -890,38 +938,11 @@ def _target_root_cause(
         _object_dict(diagnostic.get("curl_cffi")),
     ]
     browser = _object_dict(diagnostic.get("browser"))
-    transport_blocked = [
-        payload
-        for payload in transport_payloads
-        if payload.get("status") == "ok" and bool(payload.get("blocked"))
-    ]
-    transport_ok = [
-        payload
-        for payload in transport_payloads
-        if payload.get("status") == "ok" and not bool(payload.get("blocked"))
-    ]
-    browser_blocked = browser.get("status") == "ok" and bool(browser.get("blocked"))
-    browser_ok = browser.get("status") == "ok" and not bool(browser.get("blocked"))
-    browser_classification = _object_dict(browser.get("classification"))
-    vendor = (
-        browser_classification.get("header_vendor")
-        or _coalesce(
-            [
-                _object_dict(payload.get("classification")).get("header_vendor")
-                for payload in transport_payloads
-            ]
-        )
-        or _coalesce(
-            [
-                _coalesce(
-                    _object_list(
-                        _object_dict(payload.get("classification")).get("provider_hits")
-                    )
-                )
-                for payload in [browser, *transport_payloads]
-            ]
-        )
+    transport_blocked, transport_ok, browser_blocked, browser_ok = _target_path_flags(
+        browser, transport_payloads
     )
+    browser_classification = _object_dict(browser.get("classification"))
+    vendor = _target_vendor(browser, transport_payloads)
     if transport_blocked and browser_blocked:
         return {
             "category": "target_precontent_block",
@@ -950,10 +971,7 @@ def _target_root_cause(
             },
         }
     if browser_blocked and transport_ok:
-        if (
-            mismatch.get("timezone_country_match") is False
-            or mismatch.get("locale_country_match") is False
-        ):
+        if _geo_identity_drifts(mismatch):
             return {
                 "category": "browser_geo_identity_mismatch",
                 "confidence": "high",
@@ -1012,116 +1030,110 @@ def _target_root_cause(
     }
 
 
-def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
+def _probe_status_findings(
+    sites: dict[str, object],
+) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
-    metadata = _object_dict(report.get("metadata"))
-    baseline = _object_dict(report.get("baseline"))
-    consensus = _object_dict(baseline.get("consensus"))
-    drift = _object_dict(baseline.get("drift"))
-    sites = _object_dict(report.get("sites"))
-    target_diagnostics = _object_list(report.get("target_diagnostics"))
-    failed_probe_sites = [
-        site_id
-        for site_id, site_payload in sites.items()
-        if _object_dict(site_payload).get("site_status") == "failed"
-    ]
-    degraded_probe_sites = [
-        site_id
-        for site_id, site_payload in sites.items()
-        if _object_dict(site_payload).get("site_status") == "degraded"
-    ]
-    if failed_probe_sites:
-        findings.append(
-            {
-                "severity": "warn",
-                "category": "probe_site_failure",
-                "message": "One or more browser surface probe sites failed; report is partial.",
-                "evidence": failed_probe_sites,
-            }
-        )
-    if degraded_probe_sites:
-        findings.append(
-            {
-                "severity": "warn",
-                "category": "probe_site_degraded",
-                "message": "One or more browser surface probe extractors saw unexpected page structure.",
-                "evidence": degraded_probe_sites,
-            }
-        )
-    pixelscan = _object_dict(sites.get("pixelscan"))
-    sannysoft = _object_dict(sites.get("sannysoft"))
-    creepjs = _object_dict(sites.get("creepjs"))
+    for status, category, message in (
+        (
+            "failed",
+            "probe_site_failure",
+            "One or more browser surface probe sites failed; report is partial.",
+        ),
+        (
+            "degraded",
+            "probe_site_degraded",
+            "One or more browser surface probe extractors saw unexpected page structure.",
+        ),
+    ):
+        matching = [
+            site_id
+            for site_id, payload in sites.items()
+            if _object_dict(payload).get("site_status") == status
+        ]
+        if matching:
+            findings.append(
+                {
+                    "severity": "warn",
+                    "category": category,
+                    "message": message,
+                    "evidence": matching,
+                }
+            )
+    return findings
 
-    pixelscan_country = _coalesce(
-        _string_list(_object_dict(pixelscan.get("extracted")).get("country_values"))
-    )
-    pixelscan_country_code = _country_code_from_value(str(pixelscan_country or ""))
-    observed_geo_country = None
+
+def _observed_geo_country(target_diagnostics: list[object]) -> str | None:
     for diagnostic in target_diagnostics:
-        diagnostic_geo = _object_dict(
+        geo = _object_dict(
             _object_dict(_object_dict(diagnostic).get("geo")).get("consensus")
         )
-        observed_geo_country = _country_code_from_value(
-            str(diagnostic_geo.get("country") or "")
-        )
-        if observed_geo_country:
-            break
-    geo_provider_drift = bool(
-        pixelscan_country_code
-        and observed_geo_country
-        and pixelscan_country_code != observed_geo_country
+        country = _country_code_from_value(str(geo.get("country") or ""))
+        if country:
+            return country
+    return None
+
+
+def _geo_findings(
+    consensus: dict[str, object],
+    pixelscan: dict[str, object],
+    target_diagnostics: list[object],
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    country = _coalesce(
+        _string_list(_object_dict(pixelscan.get("extracted")).get("country_values"))
     )
-    if geo_provider_drift:
+    country_code = _country_code_from_value(str(country or ""))
+    observed_country = _observed_geo_country(target_diagnostics)
+    provider_drift = bool(
+        country_code and observed_country and country_code != observed_country
+    )
+    if provider_drift:
         findings.append(
             {
                 "severity": "warn",
                 "category": "proxy_geo_provider_drift",
-                "message": (
-                    f"Pixelscan geolocates the same exit IP as {pixelscan_country_code} "
-                    f"while direct geo endpoints report {observed_geo_country}."
-                ),
+                "message": f"Pixelscan geolocates the same exit IP as {country_code} while direct geo endpoints report {observed_country}.",
                 "evidence": {
-                    "pixelscan_country": pixelscan_country,
-                    "observed_geo_country": observed_geo_country,
+                    "pixelscan_country": country,
+                    "observed_geo_country": observed_country,
                 },
             }
         )
     timezone_value = str(consensus.get("timezone") or "")
-    timezone_country_match = _timezone_matches_country(
-        timezone_value, pixelscan_country_code
-    )
-    if timezone_country_match is False and not geo_provider_drift:
+    if (
+        _timezone_matches_country(timezone_value, country_code) is False
+        and not provider_drift
+    ):
         findings.append(
             {
                 "severity": "fail",
                 "category": "timezone_country_mismatch",
-                "message": f"Timezone {timezone_value or 'unknown'} does not match Pixelscan country {pixelscan_country or 'unknown'}.",
-                "evidence": {
-                    "timezone": timezone_value,
-                    "pixelscan_country": pixelscan_country,
-                },
+                "message": f"Timezone {timezone_value or 'unknown'} does not match Pixelscan country {country or 'unknown'}.",
+                "evidence": {"timezone": timezone_value, "pixelscan_country": country},
             }
         )
-
     locale_region = _locale_region(str(consensus.get("locale") or ""))
     if (
         locale_region
-        and pixelscan_country_code
-        and locale_region != pixelscan_country_code
-        and not geo_provider_drift
+        and country_code
+        and locale_region != country_code
+        and not provider_drift
     ):
         findings.append(
             {
                 "severity": "warn",
                 "category": "locale_region_drift",
-                "message": f"Locale region {locale_region} drifts from Pixelscan country {pixelscan_country_code}.",
-                "evidence": {
-                    "locale": consensus.get("locale"),
-                    "country": pixelscan_country,
-                },
+                "message": f"Locale region {locale_region} drifts from Pixelscan country {country_code}.",
+                "evidence": {"locale": consensus.get("locale"), "country": country},
             }
         )
+    return findings
 
+
+def _version_findings(
+    consensus: dict[str, object], sites: dict[str, object]
+) -> list[dict[str, object]]:
     baseline_versions = _extract_versions([str(consensus.get("user_agent") or "")])
     extracted_versions: list[int] = []
     for site in sites.values():
@@ -1131,111 +1143,121 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
             )
         )
     extracted_versions = sorted(set(extracted_versions))
-    if (
+    if not (
         baseline_versions
         and extracted_versions
         and any(version not in baseline_versions for version in extracted_versions)
     ):
-        findings.append(
-            {
-                "severity": "fail",
-                "category": "ua_version_drift",
-                "message": "Reported browser versions drift across baseline and public checkers.",
-                "evidence": {
-                    "baseline_versions": baseline_versions,
-                    "extracted_versions": extracted_versions,
-                },
-            }
-        )
+        return []
+    return [
+        {
+            "severity": "fail",
+            "category": "ua_version_drift",
+            "message": "Reported browser versions drift across baseline and public checkers.",
+            "evidence": {
+                "baseline_versions": baseline_versions,
+                "extracted_versions": extracted_versions,
+            },
+        }
+    ]
 
-    webdriver_evidence: list[str] = []
-    if bool(consensus.get("webdriver")):
-        webdriver_evidence.append("baseline.navigator.webdriver=true")
-    webdriver_evidence.extend(
+
+def _webdriver_findings(
+    consensus: dict[str, object],
+    sannysoft: dict[str, object],
+    creepjs: dict[str, object],
+) -> list[dict[str, object]]:
+    evidence = (
+        ["baseline.navigator.webdriver=true"]
+        if bool(consensus.get("webdriver"))
+        else []
+    )
+    evidence.extend(
         _string_list(_object_dict(sannysoft.get("extracted")).get("webdriver_hits"))
     )
-    creepjs_keyword_hits = _object_dict(
+    keyword_hits = _object_dict(
         _object_dict(creepjs.get("extracted")).get("keyword_hits")
     )
-    webdriver_evidence.extend(_string_list(creepjs_keyword_hits.get("webdriver")))
-    webdriver_evidence = [
-        value for value in webdriver_evidence if _looks_like_truthy_risk(value)
+    evidence.extend(_string_list(keyword_hits.get("webdriver")))
+    evidence = [value for value in evidence if _looks_like_truthy_risk(value)]
+    if not evidence:
+        return []
+    return [
+        {
+            "severity": "fail",
+            "category": "webdriver_exposure",
+            "message": "Public checks still see webdriver or automation signals.",
+            "evidence": evidence[:10],
+        }
     ]
-    if webdriver_evidence:
-        findings.append(
-            {
-                "severity": "fail",
-                "category": "webdriver_exposure",
-                "message": "Public checks still see webdriver or automation signals.",
-                "evidence": webdriver_evidence[:10],
-            }
-        )
 
-    headless_evidence: list[str] = []
-    creepjs_extracted = _object_dict(creepjs.get("extracted"))
-    headless_evidence.extend(_string_list(creepjs_extracted.get("headless_hits")))
-    headless_evidence.extend(
-        _string_list(
-            _object_dict(creepjs_extracted.get("keyword_hits")).get("headless")
-        )
+
+def _headless_findings(creepjs: dict[str, object]) -> list[dict[str, object]]:
+    extracted = _object_dict(creepjs.get("extracted"))
+    evidence = _string_list(extracted.get("headless_hits"))
+    evidence.extend(
+        _string_list(_object_dict(extracted.get("keyword_hits")).get("headless"))
     )
-    filtered_headless_evidence: list[str] = []
-    for value in headless_evidence:
-        normalized = _normalize_space(value).lower()
-        if " like headless" in normalized:
+    filtered: list[str] = []
+    for value in evidence:
+        if " like headless" in _normalize_space(value).lower():
             percent = _percent_value(value)
             if percent is None or percent < 10:
                 continue
         if _looks_like_truthy_risk(value):
-            filtered_headless_evidence.append(value)
-    headless_evidence = filtered_headless_evidence
-    if headless_evidence:
-        findings.append(
-            {
-                "severity": "fail",
-                "category": "headless_leakage",
-                "message": "Headless or stealth leakage is visible in public checks.",
-                "evidence": headless_evidence[:10],
-            }
-        )
-
-    webrtc_ips = [
-        str(value)
-        for value in _object_list(consensus.get("webrtc_ips"))
-        if _normalize_space(value)
+            filtered.append(value)
+    if not filtered:
+        return []
+    return [
+        {
+            "severity": "fail",
+            "category": "headless_leakage",
+            "message": "Headless or stealth leakage is visible in public checks.",
+            "evidence": filtered[:10],
+        }
     ]
-    public_webrtc_ips: list[str] = []
-    private_webrtc_ips: list[str] = []
-    for value in webrtc_ips:
+
+
+def _webrtc_findings(consensus: dict[str, object]) -> list[dict[str, object]]:
+    public_ips: list[str] = []
+    private_ips: list[str] = []
+    for value in _string_list(consensus.get("webrtc_ips")):
+        if not _normalize_space(value):
+            continue
         try:
             parsed = ip_address(value)
         except ValueError:
             continue
         if parsed.is_loopback:
             continue
-        if parsed.is_private:
-            private_webrtc_ips.append(value)
-        else:
-            public_webrtc_ips.append(value)
-    if public_webrtc_ips:
-        findings.append(
+        (private_ips if parsed.is_private else public_ips).append(value)
+    if public_ips:
+        return [
             {
                 "severity": "fail",
                 "category": "webrtc_leakage",
                 "message": "WebRTC exposed public IPs from the page context.",
-                "evidence": public_webrtc_ips,
+                "evidence": public_ips,
             }
-        )
-    elif private_webrtc_ips:
-        findings.append(
+        ]
+    if private_ips:
+        return [
             {
                 "severity": "warn",
                 "category": "webrtc_private_ip_visibility",
                 "message": "WebRTC exposed private-network IPs from the page context.",
-                "evidence": private_webrtc_ips,
+                "evidence": private_ips,
             }
-        )
+        ]
+    return []
 
+
+def _baseline_drift_findings(
+    metadata: dict[str, object],
+    consensus: dict[str, object],
+    drift: dict[str, object],
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
     if "screen" in drift or "viewport" in drift:
         findings.append(
             {
@@ -1248,7 +1270,6 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 },
             }
         )
-
     automation_globals = [
         value
         for value in _string_list(consensus.get("automation_globals"))
@@ -1263,7 +1284,6 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": automation_globals[:10],
             }
         )
-
     iframe_leak = _object_dict(consensus.get("iframe_leak"))
     if iframe_leak and iframe_leak.get("content_window_array_leak") is True:
         findings.append(
@@ -1274,27 +1294,27 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": iframe_leak,
             }
         )
-
-    if "canvas" in drift:
-        findings.append(
-            {
-                "severity": "warn",
-                "category": "canvas_fingerprint_drift",
-                "message": "Canvas fingerprint values differ across probe sites.",
-                "evidence": drift.get("canvas"),
-            }
-        )
-
-    if "audio" in drift:
-        findings.append(
-            {
-                "severity": "warn",
-                "category": "audio_fingerprint_drift",
-                "message": "AudioContext fingerprint values differ across probe sites.",
-                "evidence": drift.get("audio"),
-            }
-        )
-
+    for key, category, message in (
+        (
+            "canvas",
+            "canvas_fingerprint_drift",
+            "Canvas fingerprint values differ across probe sites.",
+        ),
+        (
+            "audio",
+            "audio_fingerprint_drift",
+            "AudioContext fingerprint values differ across probe sites.",
+        ),
+    ):
+        if key in drift:
+            findings.append(
+                {
+                    "severity": "warn",
+                    "category": category,
+                    "message": message,
+                    "evidence": drift.get(key),
+                }
+            )
     behavioral = _object_dict(consensus.get("behavioral_smoke"))
     if behavioral and (
         behavioral.get("mouse_isTrusted") is False
@@ -1308,53 +1328,47 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": behavioral,
             }
         )
-
     if str(metadata.get("browser_engine") or "").strip().lower() == "chromium":
         findings.append(
             {
                 "severity": "info",
                 "category": "chromium_ja3_limitation",
                 "message": "Chromium engine still uses a Playwright Chromium TLS fingerprint; use real_chrome for native Chrome JA3 parity.",
-                "evidence": {
-                    "browser_engine": metadata.get("browser_engine"),
-                },
+                "evidence": {"browser_engine": metadata.get("browser_engine")},
             }
         )
+    return findings
 
+
+def _site_identity_findings(sites: dict[str, object]) -> list[dict[str, object]]:
     site_ips: list[str] = []
     site_countries: list[str] = []
-    for site_payload in sites.values():
-        extracted = _object_dict(_object_dict(site_payload).get("extracted"))
+    for payload in sites.values():
+        extracted = _object_dict(_object_dict(payload).get("extracted"))
         site_ips.extend(_string_list(extracted.get("ip_values")))
         site_countries.extend(_string_list(extracted.get("country_values")))
-    public_site_ips: list[str] = []
+    public_ips: list[str] = []
     for value in site_ips:
         try:
             parsed = ip_address(value)
         except ValueError:
             continue
-        if parsed.is_loopback or parsed.is_private or parsed.is_unspecified:
-            continue
-        public_site_ips.append(value)
-    if len(set(public_site_ips)) > 1:
+        if not (parsed.is_loopback or parsed.is_private or parsed.is_unspecified):
+            public_ips.append(value)
+    findings: list[dict[str, object]] = []
+    if len(set(public_ips)) > 1:
         findings.append(
             {
                 "severity": "warn",
                 "category": "cross_site_ip_drift",
                 "message": "Different public IPs were reported inside the same fingerprint run.",
-                "evidence": sorted(set(public_site_ips)),
+                "evidence": sorted(set(public_ips)),
             }
         )
-    if (
-        len(
-            {
-                code
-                for value in site_countries
-                if (code := _country_code_from_value(value))
-            }
-        )
-        > 1
-    ):
+    country_codes = {
+        code for value in site_countries if (code := _country_code_from_value(value))
+    }
+    if len(country_codes) > 1:
         findings.append(
             {
                 "severity": "warn",
@@ -1363,33 +1377,60 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": _dedupe(site_countries),
             }
         )
+    return findings
 
+
+def _target_findings(
+    consensus: dict[str, object], target_diagnostics: list[object]
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    failing = {
+        "target_precontent_block",
+        "browser_geo_identity_mismatch",
+        "browser_session_or_fingerprint_block",
+    }
+    warning = {"transport_only_block", "target_diagnostic_inconclusive"}
     for diagnostic in target_diagnostics:
-        target_payload = _object_dict(diagnostic)
-        target_url = str(target_payload.get("url") or "target")
-        root_cause = _target_root_cause(
-            consensus=consensus,
-            diagnostic=target_payload,
-        )
+        payload = _object_dict(diagnostic)
+        root_cause = _target_root_cause(consensus=consensus, diagnostic=payload)
         category = str(root_cause.get("category") or "")
-        severity = "info"
-        if category in {
-            "target_precontent_block",
-            "browser_geo_identity_mismatch",
-            "browser_session_or_fingerprint_block",
-        }:
-            severity = "fail"
-        elif category in {"transport_only_block", "target_diagnostic_inconclusive"}:
-            severity = "warn"
+        severity = (
+            "fail" if category in failing else "warn" if category in warning else "info"
+        )
         findings.append(
             {
                 "severity": severity,
                 "category": category,
-                "message": f"{target_url}: {root_cause.get('message')}",
+                "message": f"{str(payload.get('url') or 'target')}: {root_cause.get('message')}",
                 "evidence": root_cause.get("evidence"),
             }
         )
+    return findings
 
+
+def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
+    metadata = _object_dict(report.get("metadata"))
+    baseline = _object_dict(report.get("baseline"))
+    consensus = _object_dict(baseline.get("consensus"))
+    drift = _object_dict(baseline.get("drift"))
+    sites = _object_dict(report.get("sites"))
+    target_diagnostics = _object_list(report.get("target_diagnostics"))
+    pixelscan = _object_dict(sites.get("pixelscan"))
+    sannysoft = _object_dict(sites.get("sannysoft"))
+    creepjs = _object_dict(sites.get("creepjs"))
+
+    findings = _probe_status_findings(sites)
+    for group in (
+        _geo_findings(consensus, pixelscan, target_diagnostics),
+        _version_findings(consensus, sites),
+        _webdriver_findings(consensus, sannysoft, creepjs),
+        _headless_findings(creepjs),
+        _webrtc_findings(consensus),
+        _baseline_drift_findings(metadata, consensus, drift),
+        _site_identity_findings(sites),
+        _target_findings(consensus, target_diagnostics),
+    ):
+        findings.extend(group)
     if not findings:
         findings.append(
             {

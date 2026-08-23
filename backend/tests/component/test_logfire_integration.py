@@ -33,6 +33,9 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     fake_logfire = SimpleNamespace(
         AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        instrument_system_metrics=lambda **kwargs: calls.append(
+            ("system_metrics", kwargs)
+        ),
         instrument_fastapi=lambda app, **kwargs: calls.append(
             ("fastapi", {"app": app, **kwargs})
         ),
@@ -57,6 +60,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     configure_calls = [call for call in calls if call[0] == "configure"]
     fastapi_calls = [call for call in calls if call[0] == "fastapi"]
     celery_calls = [call for call in calls if call[0] == "celery"]
+    system_metrics_calls = [call for call in calls if call[0] == "system_metrics"]
     assert configure_calls == [
         (
             "configure",
@@ -74,9 +78,12 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
             },
         )
     ]
-    assert len(fastapi_calls) == 1
-    assert fastapi_calls[0][1]["capture_headers"] is False
-    assert len(celery_calls) == 1
+    assert (
+        len(fastapi_calls),
+        fastapi_calls[0][1]["capture_headers"],
+        len(celery_calls),
+        system_metrics_calls,
+    ) == (1, False, 1, [("system_metrics", {})])
 
 
 @pytest.mark.component
@@ -86,6 +93,9 @@ def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
     fake_logfire = SimpleNamespace(
         AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        instrument_system_metrics=lambda **kwargs: calls.append(
+            ("system_metrics", kwargs)
+        ),
     )
     monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
     monkeypatch.setattr(settings, "logfire_enabled", True)
@@ -108,7 +118,8 @@ def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
                 "inspect_arguments": False,
                 "advanced": None,
             },
-        )
+        ),
+        ("system_metrics", {}),
     ]
 
 
@@ -139,6 +150,9 @@ def test_logfire_span_sanitizes_attributes(monkeypatch) -> None:
     fake_logfire = SimpleNamespace(
         AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        instrument_system_metrics=lambda **kwargs: calls.append(
+            ("system_metrics", kwargs)
+        ),
         span=lambda name, **kwargs: (
             calls.append(("span", {"name": name, **kwargs})) or FakeSpan()
         ),
@@ -169,6 +183,9 @@ def test_logfire_span_strips_url_query_attributes(monkeypatch) -> None:
     fake_logfire = SimpleNamespace(
         AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        instrument_system_metrics=lambda **kwargs: calls.append(
+            ("system_metrics", kwargs)
+        ),
         span=lambda name, **kwargs: (
             calls.append(("span", {"name": name, **kwargs})) or FakeSpan()
         ),

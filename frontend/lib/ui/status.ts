@@ -33,7 +33,7 @@ export function dashboardStatusTone(status: string): Tone {
 }
 
 // Aliases kept for non-run status vocabularies (e.g. history entries,
-// ai-visibility executions).
+// product intelligence jobs).
 const GENERIC_STATUS_TONE_ALIASES: Record<string, Tone> = {
   complete: 'success',
   success: 'success',

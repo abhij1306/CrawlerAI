@@ -12,7 +12,7 @@ Frontend is a React + Vite+ UI for:
 - crawl configuration and launch
 - run history and record inspection
 - selector tooling embedded in Crawl Studio and Domain Memory (no standalone selectors page)
-- intelligence surfaces: data enrichment, product intelligence, AI visibility
+- intelligence surfaces: data enrichment and product intelligence
 - dashboard/history/jobs operations
 - admin users and LLM configuration
 
@@ -49,7 +49,6 @@ The data router in `frontend/src/app/app.tsx` maps the lazy route modules declar
 - `/jobs`
 - `/data-enrichment`
 - `/product-intelligence`
-- `/ai-visibility`
 - `/domain-memory`
 - `/admin/users`
 - `/admin/llm`
@@ -104,7 +103,6 @@ Primary files:
 - `lib/api/crawls.ts`
 - `lib/api/data-enrichment.ts`
 - `lib/api/product-intelligence.ts`
-- `lib/api/ai-visibility.ts`
 - `lib/api/domain-memory.ts`
 - `lib/api/selectors.ts`
 - `lib/api/knowledge.ts`
@@ -123,12 +121,6 @@ Responsibilities:
 - API typing and zod response schemas (`lib/api/schemas.ts`)
 - auth-aware fetch wrapper
 - URL helpers for selector preview HTML
-
-AI Visibility ownership notes:
-
-- AI Visibility endpoints moved from `src/api/ai-visibility.ts` to `lib/api/ai-visibility.ts`; the old `src/api` module is deleted and app code imports the domain module directly.
-- The module keeps its types module-local (shared `lib/api/types.ts` is owned separately) and exports `aiVisibilityQueryKeys`, which extends the central `queryKeys.aiVisibility` factory with module-only keys such as the Best&Less preset key.
-- The dead `getProject`/`deleteProject` exports (zero callers) were dropped during the move.
 
 This layer is the frontend/backend contract chokepoint.
 
@@ -227,13 +219,6 @@ Primary files:
 - `app/product-intelligence/product-intelligence-results.tsx`
 - `app/product-intelligence/product-intelligence-candidate-card.tsx`
 - `app/product-intelligence/product-intelligence-settings-drawer.tsx`
-- `app/ai-visibility/page-view.tsx` (thin composition over the hook and dialogs below)
-- `app/ai-visibility/use-ai-visibility.ts` (page state, queries, mutations)
-- `app/ai-visibility/domain-workspace.tsx`
-- `app/ai-visibility/project-form-dialog.tsx`
-- `app/ai-visibility/run-report-section.tsx`
-- `app/ai-visibility/execution-detail-dialog.tsx`
-- `app/ai-visibility/ai-visibility-status.ts` (status tone/label helpers delegating to `lib/ui/status`)
 - `app/domain-memory/page-view.tsx`
 - `components/domain-memory/` (feature owner for the domain-memory surface: workspace hook, tabs, sidebar)
 - `app/admin/users/page-view.tsx`
@@ -246,7 +231,6 @@ Responsibilities:
 - active jobs view
 - data enrichment record normalization and review
 - product discovery and price comparison
-- AI visibility benchmark projects, run progress, and report/execution inspection
 - domain-memory management across domains and surfaces, including selector operations (the standalone selectors page was removed)
 - admin user management
 - LLM provider/config/cost-log management
@@ -288,7 +272,6 @@ The frontend currently uses live backend routes for:
 - jobs: `/api/jobs/active`
 - data enrichment: `/api/data-enrichment/jobs`
 - product intelligence: `/api/product-intelligence/discover`, `/api/product-intelligence/jobs`, `/api/product-intelligence/jobs/{id}/matches/{match_id}/review`
-- ai visibility: `/api/ai-visibility/providers`, `/api/ai-visibility/presets/best-and-less`, `/api/ai-visibility/projects`, `/api/ai-visibility/runs`, `/api/ai-visibility/runs/{id}/cancel`, `/api/ai-visibility/runs/{id}/export.{csv,md}`, `/api/ai-visibility/executions/{id}`
 
 ## 5. Known Client/Backend Drift
 
@@ -369,13 +352,13 @@ Frontend tests currently cover:
 - visible-dataset live record polling
 - explicit transport retry opt-in and React Query retry ownership
 - Data Enrichment, App Shell, and architecture policy checks
-- AI Visibility page composition, `useAiVisibility` hook, project form dialog payload mapping, and status tone/label helpers
 
 There is also Playwright e2e coverage under `frontend/e2e`.
 
 Policy and CI checks:
 
-- `frontend/scripts/check-frontend-architecture.mjs` enforces feature-owner line budgets, API owner files, and Data Enrichment ownership boundaries.
+- `frontend/scripts/check-frontend-architecture.mjs` enforces feature-owner line budgets, the aggregate nonblank test-LOC ratchet, API owner files, and Data Enrichment ownership boundaries.
+- VitePlus applies ESLint complexity 15 to every `*.test.*` and `*.spec.*` callable; CI runs `vp check` and architecture policy before build.
 - `frontend/scripts/check-bundle-budgets.mjs` enforces JS/CSS route asset budgets after build and is wired into CI.
 - `check:policy` runs token, crawl architecture, frontend architecture, and bundle budget checks.
 

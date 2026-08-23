@@ -537,7 +537,7 @@ Primary files:
 - `core/extraction_memory/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
 - `core/extraction_memory/contract_runtime.py` — frozen-release preference lookup; Resolve owns final eligibility and ranking.
 - `api/knowledge.py` — compatibility read/refine API backed only by extraction memory.
-- `alembic/versions/20260702_0004_extraction_memory.py` — migrates the prior stores and deletes generic graph tables.
+- `alembic/versions/20260703_0001_greenfield_schema.py` — sole clean-start schema baseline, including extraction memory.
 
 Extraction memory is PostgreSQL-authoritative. Run creation freezes one relational release and each URL result gets a relational execution manifest. Contracts rank eligible evidence only; extraction never imports mutable memory storage. Observation failure is logged without changing crawl verdicts. See `docs/INVARIANTS.md` §17.
 
@@ -559,15 +559,13 @@ Primary models:
 `DomainCookieMemory.storage_state` is encrypted at rest (audit 1.6): rows hold
 an envelope `{"v": 1, "ct": <fernet ciphertext of the normalized storage
 state>}` keyed by `ENCRYPTION_KEY`, written by
-`acquisition/cookie_store.py` and migrated by
-`alembic/versions/20260722_0004_encrypt_domain_cookie_memory.py`. The memory
+`acquisition/cookie_store.py`; the encrypted column shape is part of the sole
+`alembic/versions/20260703_0001_greenfield_schema.py` baseline. The memory
 stays deliberately shared across users keyed by `(domain[, engine])` — it is
 the cross-run learning substrate (`docs/INVARIANTS.md` §9), so scoping it per
 user would fragment learning; encryption removes the DB-dump exposure instead.
 Readers decrypt envelopes, pass legacy plaintext rows through unchanged, and
-skip (log + re-learn) rows that no longer decrypt. Deploy ordering: run the
-migration after all workers run the new code; old workers simply skip
-encrypted rows and re-learn.
+skip (log + re-learn) rows that no longer decrypt.
 - `ApiKey`
 - `LLMConfig`
 - `LLMCostLog`

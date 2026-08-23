@@ -24,15 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.enrichment.service as de_service
 from app.core.config.product_intelligence import product_intelligence_settings
-from app.enrichment.service import (
-    _fail_stuck_job,
-    create_data_enrichment_job,
-    recover_orphaned_data_enrichment_jobs,
-    run_data_enrichment_job,
-    run_job,
-)
 from app.models.crawl_run import CrawlRecord
 from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
+
+_fail_stuck_job = de_service._fail_stuck_job
+create_data_enrichment_job = de_service.create_data_enrichment_job
+recover_orphaned_data_enrichment_jobs = de_service.recover_orphaned_data_enrichment_jobs
+run_data_enrichment_job = de_service.run_data_enrichment_job
+run_job = de_service.run_job
 
 pytestmark = pytest.mark.component
 

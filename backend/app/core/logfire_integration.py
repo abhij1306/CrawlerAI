@@ -49,6 +49,7 @@ def configure_logfire() -> bool:
         inspect_arguments=False,
         advanced=logfire.AdvancedOptions(base_url=base_url) if base_url else None,
     )
+    logfire.instrument_system_metrics()
     _LogfireState.configured = True
     if token is None and settings.logfire_send_to_logfire is not False:
         logger.warning(
