@@ -2,9 +2,36 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config.url_path_markers import ECOMMERCE_DETAIL_PATH_MARKERS
 from app.core.shared.field_coerce_text import infer_brand_from_product_url
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize("marker", ECOMMERCE_DETAIL_PATH_MARKERS)
+def test_direct_product_brand_supports_every_configured_detail_marker(
+    marker: str,
+) -> None:
+    assert (
+        infer_brand_from_product_url(
+            url=f"https://shop.test/nike-air/{marker.strip('/')}/style-1",
+            title="Nike Air Style 1",
+        )
+        == "Nike"
+    )
+
+
+@pytest.mark.parametrize("segment", ("productivity", "productpagefoo"))
+def test_direct_product_brand_requires_detail_marker_segment_boundary(
+    segment: str,
+) -> None:
+    assert (
+        infer_brand_from_product_url(
+            url=f"https://shop.test/nike-air/{segment}/style-1",
+            title="Nike Air Style 1",
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(

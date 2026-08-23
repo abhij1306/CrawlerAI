@@ -7,6 +7,7 @@ from app.acquisition.browser_readiness import (
     probe_browser_readiness,
     wait_for_listing_readiness,
 )
+from app.acquisition.browser_page_helpers import ready_probe_supports_fast_finalize
 
 pytestmark = pytest.mark.unit
 
@@ -20,6 +21,43 @@ class _Page:
 
     async def count(self) -> int:
         return 0
+
+
+@pytest.mark.parametrize("status_code", (404, 500, 503))
+def test_verified_extractability_does_not_fast_finalize_http_errors(
+    status_code: int,
+) -> None:
+    assert (
+        ready_probe_supports_fast_finalize(
+            [],
+            surface="ecommerce_detail",
+            status_code=status_code,
+            expansion_diagnostics={
+                "extractability": {
+                    "verified": True,
+                    "matched_requested_fields": ["title"],
+                }
+            },
+        )
+        is False
+    )
+
+
+def test_verified_extractability_fast_finalizes_successful_response() -> None:
+    assert (
+        ready_probe_supports_fast_finalize(
+            [],
+            surface="ecommerce_detail",
+            status_code=200,
+            expansion_diagnostics={
+                "extractability": {
+                    "verified": True,
+                    "extractable_fields": ["title"],
+                }
+            },
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config.extraction_rules import (
     CURRENCY_CODES,
+    CURRENCY_SYMBOL_MAP,
     REMOTE_BOOLEAN_FALSE_TOKENS,
     REMOTE_BOOLEAN_TRUE_TOKENS,
     normalize_availability_value as normalize_config_availability_value,
@@ -17,6 +18,7 @@ from app.core.config.field_mappings import (
     NORMALIZER_INTEGER_FIELDS,
     NORMALIZER_LIST_TEXT_FIELDS,
 )
+from app.core.config.locale_format_rules import PRICE_CONTEXT_TOKENS
 
 _NUMERIC_TEXT_RE = re.compile(r"[-+−]?\d[\d.,]*")
 _UNICODE_MINUS_CHARS = "\u2212"
@@ -29,15 +31,9 @@ _CURRENCY_CODE_CONTEXT_PATTERN = (
     )
     or r"(?!)"
 )
-_CURRENCY_CONTEXT_RE = re.compile(
-    (
-        r"[$€£¥₹]|(?:^|\b)(?:price|sale|now|from|starting(?:\s+at)?|mrp|msrp|cost|"
-        rf"{_CURRENCY_CODE_CONTEXT_PATTERN}|rs\.?)\b"
-    ),
-    re.I,
+_CURRENCY_CODE_TOKENS = frozenset(
+    str(code).strip().casefold() for code in CURRENCY_CODES if str(code).strip()
 )
-
-
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").split()).strip()
 
@@ -92,7 +88,7 @@ def normalize_decimal_price(
                 val, interpret_integral_as_cents=interpret_integral_as_cents
             )
         return None
-    text = _admitted_price_text(value, interpret_integral_as_cents)
+    text = _admitted_price_text(value)
     if text is None:
         return None
     match = _NUMERIC_TEXT_RE.search(text)
@@ -113,9 +109,7 @@ def normalize_decimal_price(
     return format(decimal, "f")
 
 
-def _admitted_price_text(
-    value: object, interpret_integral_as_cents: bool
-) -> str | None:
+def _admitted_price_text(value: object) -> str | None:
     text = _normalize_text(value)
     if not text:
         return None
@@ -128,15 +122,23 @@ def _admitted_price_text(
     if not isinstance(value, str):
         return text
     stripped = _canonicalize_decimal_candidate(text)
-    ambiguous_integer = stripped is not None and all(
-        (
-            not interpret_integral_as_cents,
-            "." not in stripped,
-            len(re.sub(r"\D+", "", stripped)) <= 3,
-            _CURRENCY_CONTEXT_RE.search(text) is None,
-        )
+    if stripped is None:
+        return None
+    digit_count = sum(char.isdigit() for char in stripped)
+    short_integral = "." not in stripped and digit_count <= 3
+    plain_numeric = _NUMERIC_TEXT_RE.fullmatch(text) is not None
+    if short_integral and not plain_numeric and not _has_price_context(text):
+        return None
+    return text
+
+
+def _has_price_context(text: str) -> bool:
+    words = frozenset(re.findall(r"[a-z]+", text.casefold()))
+    return bool(
+        any(symbol in text for symbol in CURRENCY_SYMBOL_MAP)
+        or not words.isdisjoint(_CURRENCY_CODE_TOKENS)
+        or not words.isdisjoint(PRICE_CONTEXT_TOKENS)
     )
-    return None if stripped is None or ambiguous_integer else text
 
 
 def _decimal_mapping_scalar(value: dict[object, object]) -> object | None:
@@ -261,9 +263,10 @@ def _normalize_decimal_field(value: object) -> str:
             if candidate is None:
                 return ""
             try:
-                return format(Decimal(candidate), "f")
+                decimal = Decimal(candidate)
             except (InvalidOperation, ValueError):
                 return ""
+            return "" if decimal < 0 else format(decimal, "f")
     result = normalize_decimal_price(value)
     return result if result is not None else ""
 

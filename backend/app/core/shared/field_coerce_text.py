@@ -24,7 +24,7 @@ from app.core.config.public_record_policy import (
     PUBLIC_RECORD_NUMERIC_BRAND_PATTERN,
     PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN,
 )
-from app.core.config.url_path_markers import ECOMMERCE_DETAIL_PATH_MARKERS
+from app.core.config.url_path_markers import ECOMMERCE_DETAIL_PATH_SEGMENTS
 from app.core.shared.text_coerce import clean_text, coerce_text, slug_tokens
 
 _PUBLIC_RECORD_BARCODE_LENGTHS_SET = frozenset(PUBLIC_RECORD_BARCODE_LENGTHS or ())
@@ -319,8 +319,9 @@ def _direct_product_url_brand(context: _BrandUrlContext, _url: str) -> str | Non
         and context.first_word
         and prefix_allowed
     )
-    standard = shared and any(
-        marker in context.path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS[:1]
+    path_segments = {part.casefold() for part in context.path_parts}
+    standard = bool(
+        shared and not path_segments.isdisjoint(ECOMMERCE_DETAIL_PATH_SEGMENTS)
     )
     single_path = (
         shared and len(context.title_tokens) >= 4 and len(context.path_parts) == 1

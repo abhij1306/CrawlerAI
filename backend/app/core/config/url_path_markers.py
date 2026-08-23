@@ -28,6 +28,9 @@ ECOMMERCE_DETAIL_PATH_MARKERS: tuple[str, ...] = (
     "/detail/",
     "/buy/",
 )
+ECOMMERCE_DETAIL_PATH_SEGMENTS = frozenset(
+    marker.strip("/").casefold() for marker in ECOMMERCE_DETAIL_PATH_MARKERS
+)
 
 JOB_DETAIL_PATH_MARKERS: tuple[str, ...] = (
     "/job",
