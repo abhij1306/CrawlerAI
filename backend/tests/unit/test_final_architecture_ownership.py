@@ -12,9 +12,9 @@ pytestmark = pytest.mark.unit
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
-# Exact inventory. PR #53 regression coverage raises tests +36 to measured;
+# Exact inventory. PR #53 regression coverage raises tests +40 to measured;
 # tools include the explicit per-field console-output predicate.
-TEST_LOC_BUDGET = 55_393
+TEST_LOC_BUDGET = 55_397
 TOOL_LOC_BUDGET = 3_723
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
@@ -225,15 +225,15 @@ PACKAGE_LOC_BUDGETS = {
     # >150-line function decompositions (4.15) — raised to measured.
     # Mypy fix pass (same day): core +23, acquisition +23 for the typed
     # redis eval wrappers (str args + Awaitable casts) — raised to measured.
-    # Core/acquisition simplification (2026-08-23): acquisition +259 and core
-    # +5 after CC<=15 predicate decomposition. Static HTML classification and
-    # detail candidate admission became cohesive owners; browser_readiness and
-    # browser_result_builder left oversized debt. No complexity/size cap rose.
+    # Core/acquisition simplification (2026-08-23): acquisition +259, core +5.
+    # PR #53 review follow-up: core +8 for price-context admission policy.
+    # Browser readiness/result builder left oversized debt; review fixes keep
+    # all touched production callables at CC<=15.
     # Budgets are only raised, never lowered — except ratcheting down to the
     # measured value when a deletion commit drops a package total.
     "acquisition": 17_622,
     "crawl": 9_533,
-    "core": 21_101,
+    "core": 21_109,
     "enrichment": 2_252,
     "connectors": 2_427,
     "intelligence": 3_459,
@@ -286,9 +286,9 @@ PACKAGE_LOC_BUDGETS = {
 # Extraction runtime simplification reconciliation (2026-08-22), followed by
 # complete feature removal, one-time Logfire system-metrics instrumentation,
 # and the formatter-required canonical database URL wrap (2026-08-23).
-# Core/acquisition simplification reconciliation (2026-08-23): +448 for
-# named predicate phases and the two cohesive browser owner splits above.
-TOTAL_APP_LOC_BUDGET = 85_728
+# Core/acquisition simplification added +448; PR #53 review follow-up adds +8
+# for explicit short-price context admission, all reconciled to measured.
+TOTAL_APP_LOC_BUDGET = 85_736
 
 
 def test_production_package_loc_budgets() -> None:

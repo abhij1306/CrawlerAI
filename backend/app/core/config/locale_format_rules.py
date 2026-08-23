@@ -88,6 +88,9 @@ DOT_DECIMAL_COUNTRIES = frozenset(
     {"au", "ca", "gb", "hk", "in", "jp", "nz", "sg", "us", "za"}
 )
 CURRENCY_SYMBOL_TO_ISO: dict[str, str] = dict(CURRENCY_SYMBOL_MAP)
+PRICE_CONTEXT_TOKENS = frozenset(
+    {"cost", "from", "mrp", "msrp", "now", "price", "sale", "starting"}
+)
 
 _LOCALE_SEGMENT_RE = re.compile(r"^[a-z]{2}[-_](?P<country>[a-z]{2})$")
 

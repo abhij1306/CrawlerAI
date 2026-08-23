@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config.extraction_rules import (
     CURRENCY_CODES,
+    CURRENCY_SYMBOL_MAP,
     REMOTE_BOOLEAN_FALSE_TOKENS,
     REMOTE_BOOLEAN_TRUE_TOKENS,
     normalize_availability_value as normalize_config_availability_value,
@@ -17,6 +18,7 @@ from app.core.config.field_mappings import (
     NORMALIZER_INTEGER_FIELDS,
     NORMALIZER_LIST_TEXT_FIELDS,
 )
+from app.core.config.locale_format_rules import PRICE_CONTEXT_TOKENS
 
 _NUMERIC_TEXT_RE = re.compile(r"[-+−]?\d[\d.,]*")
 _UNICODE_MINUS_CHARS = "\u2212"
@@ -28,6 +30,9 @@ _CURRENCY_CODE_CONTEXT_PATTERN = (
         if isinstance(code, str) and code.strip().lower() != "rs"
     )
     or r"(?!)"
+)
+_CURRENCY_CODE_TOKENS = frozenset(
+    str(code).strip().casefold() for code in CURRENCY_CODES if str(code).strip()
 )
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").split()).strip()
@@ -117,7 +122,23 @@ def _admitted_price_text(value: object) -> str | None:
     if not isinstance(value, str):
         return text
     stripped = _canonicalize_decimal_candidate(text)
-    return text if stripped is not None else None
+    if stripped is None:
+        return None
+    digit_count = sum(char.isdigit() for char in stripped)
+    short_integral = "." not in stripped and digit_count <= 3
+    plain_numeric = _NUMERIC_TEXT_RE.fullmatch(text) is not None
+    if short_integral and not plain_numeric and not _has_price_context(text):
+        return None
+    return text
+
+
+def _has_price_context(text: str) -> bool:
+    words = frozenset(re.findall(r"[a-z]+", text.casefold()))
+    return bool(
+        any(symbol in text for symbol in CURRENCY_SYMBOL_MAP)
+        or not words.isdisjoint(_CURRENCY_CODE_TOKENS)
+        or not words.isdisjoint(PRICE_CONTEXT_TOKENS)
+    )
 
 
 def _decimal_mapping_scalar(value: dict[object, object]) -> object | None:
