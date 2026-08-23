@@ -238,6 +238,28 @@ def _check_secret_defaults() -> None:
 
     logger = logging.getLogger("app.core.config")
     env = runtime_app_env().lower()
+    issues, warnings = _secret_default_issues()
+    if warnings:
+        logger.warning(
+            "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation",
+            extra={"warnings": warnings, "warning_count": len(warnings)},
+        )
+    if not issues:
+        return
+    msg = (
+        "SECURITY WARNING: insecure default secrets detected:\n  - "
+        + "\n  - ".join(issues)
+        + '\nGenerate secure values: python -c "import secrets; print(secrets.token_urlsafe(64))"'
+    )
+    if _is_non_dev_environment(env):
+        raise RuntimeError(msg)
+    logger.warning(
+        "SECURITY WARNING: insecure default secrets detected",
+        extra={"issues": issues, "issue_count": len(issues)},
+    )
+
+
+def _secret_default_issues() -> tuple[list[str], list[str]]:
     issues: list[str] = []
     warnings: list[str] = []
     if settings.jwt_secret_key in _INSECURE_DEFAULTS:
@@ -261,24 +283,7 @@ def _check_secret_defaults() -> None:
         and default_admin_email in _INSECURE_ADMIN_EMAIL_DEFAULTS
     ):
         issues.append("bootstrap_admin_once requires a non-default default_admin_email")
-    if warnings:
-        logger.warning(
-            "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation",
-            extra={"warnings": warnings, "warning_count": len(warnings)},
-        )
-    if not issues:
-        return
-    msg = (
-        "SECURITY WARNING: insecure default secrets detected:\n  - "
-        + "\n  - ".join(issues)
-        + '\nGenerate secure values: python -c "import secrets; print(secrets.token_urlsafe(64))"'
-    )
-    if _is_non_dev_environment(env):
-        raise RuntimeError(msg)
-    logger.warning(
-        "SECURITY WARNING: insecure default secrets detected",
-        extra={"issues": issues, "issue_count": len(issues)},
-    )
+    return issues, warnings
 
 
 _check_secret_defaults()

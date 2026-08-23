@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from app.core.config.extraction_rules import (
@@ -13,7 +14,10 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config.public_record_policy import (
     PUBLIC_RECORD_BARCODE_LENGTHS,
+    PUBLIC_RECORD_BRAND_HOST_SUFFIXES,
+    PUBLIC_RECORD_BRAND_IGNORED_HOST_LABELS,
     PUBLIC_RECORD_BRAND_REGION_SUFFIX_TOKENS,
+    PUBLIC_RECORD_GENERIC_HOST_BRANDS,
     PUBLIC_RECORD_GENDER_REJECT_TOKENS,
     PUBLIC_RECORD_GENDER_TAXONOMY,
     PUBLIC_RECORD_IDENTITY_INTERNAL_TOKENS,
@@ -72,23 +76,10 @@ def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
     host = urlparse(str(url or "")).hostname or ""
     if not text or not host:
         return None
-    ignored_labels = {
-        "www",
-        "shop",
-        "store",
-        "us",
-        "usa",
-        "uk",
-        "in",
-        "com",
-        "co",
-        "net",
-        "org",
-    }
     labels = [
         label
         for label in host.casefold().split(".")
-        if label and label not in ignored_labels
+        if label not in PUBLIC_RECORD_BRAND_IGNORED_HOST_LABELS
     ]
     if not labels:
         return None
@@ -164,59 +155,80 @@ def infer_brand_from_page_identity(
     existing_brands: tuple[object, ...] = (),
 ) -> str | None:
     text = clean_text(title)
-    host = urlparse(str(url or "")).hostname or ""
-    labels = [
-        label
-        for label in host.casefold().split(".")
-        if label
-        not in {
-            "",
-            "www",
-            "shop",
-            "store",
-            "us",
-            "usa",
-            "uk",
-            "in",
-            "com",
-            "co",
-            "net",
-            "org",
-        }
-    ]
-    if not text or not labels:
+    host = _brand_host_identity(url)
+    if not text or host is None:
         return None
-    host_label = max(labels, key=len)
-    host_words = slug_tokens(host_label)
-    compact_host = "".join(host_words)
-    suffixes = ("beauty", "cosmetics", "official", "online", "shop", "store")
-    compact_core = next(
-        (
-            compact_host[: -len(suffix)]
-            for suffix in suffixes
-            if compact_host.endswith(suffix)
-        ),
-        compact_host,
-    )
-    generic_host = compact_core in {"example", "invalid", "localhost", "test"}
-    corpus = " ".join(
+    compact_host, compact_core, generic_host = host
+    corpus_words = " ".join(
         clean_text(value) for value in evidence_values if clean_text(value)
-    )
-    corpus_words = corpus.split()
+    ).split()
     title_words = text.split()
     title_tokens = slug_tokens(text)
     existing = tuple(
         clean_text(value) for value in existing_brands if clean_text(value)
     )
-    if existing and title_words:
-        first = "".join(slug_tokens(existing[0]))
-        if (
-            first == compact_core
-            and len(title_words) >= 2
-            and title_tokens[0] in slug_tokens(existing[0])
-            and title_words[1].isupper()
-        ):
-            return " ".join(title_words[:2])
+    leading = _leading_existing_brand(compact_core, existing, title_words, title_tokens)
+    if leading:
+        return leading
+    matched = _matching_host_brand(compact_host, compact_core, corpus_words, existing)
+    if matched:
+        return matched
+    return _corroborated_page_brand(
+        url=url,
+        evidence_values=evidence_values,
+        existing=existing,
+        compact_core=compact_core,
+        generic_host=generic_host,
+        title_tokens=title_tokens,
+        title_words=title_words,
+    )
+
+
+def _brand_host_identity(url: str) -> tuple[str, str, bool] | None:
+    host = urlparse(str(url or "")).hostname or ""
+    labels = [
+        label
+        for label in host.casefold().split(".")
+        if label not in PUBLIC_RECORD_BRAND_IGNORED_HOST_LABELS
+    ]
+    if not labels:
+        return None
+    compact_host = "".join(slug_tokens(max(labels, key=len)))
+    compact_core = next(
+        (
+            compact_host[: -len(suffix)]
+            for suffix in PUBLIC_RECORD_BRAND_HOST_SUFFIXES
+            if compact_host.endswith(suffix)
+        ),
+        compact_host,
+    )
+    return compact_host, compact_core, compact_core in PUBLIC_RECORD_GENERIC_HOST_BRANDS
+
+
+def _leading_existing_brand(
+    compact_core: str,
+    existing: tuple[str, ...],
+    title_words: list[str],
+    title_tokens: list[str],
+) -> str | None:
+    if not existing or len(title_words) < 2 or not title_tokens:
+        return None
+    first = "".join(slug_tokens(existing[0]))
+    if (
+        first == compact_core
+        and title_tokens[0] in slug_tokens(existing[0])
+        and title_words[1].isupper()
+    ):
+        return " ".join(title_words[:2])
+    return None
+
+
+def _matching_host_brand(
+    compact_host: str,
+    compact_core: str,
+    corpus_words: list[str],
+    existing: tuple[str, ...],
+) -> str | None:
     for size in range(min(LISTING_BRAND_MAX_WORDS, len(corpus_words)), 0, -1):
         for start in range(len(corpus_words) - size + 1):
             candidate = " ".join(corpus_words[start : start + size]).strip(" |-–—")
@@ -228,6 +240,19 @@ def infer_brand_from_page_identity(
             remainder = compact_core[len(compact_brand) :]
             if remainder and remainder.isalpha():
                 return f"{brand} {remainder.capitalize()}"
+    return None
+
+
+def _corroborated_page_brand(
+    *,
+    url: str,
+    evidence_values: tuple[object, ...],
+    existing: tuple[str, ...],
+    compact_core: str,
+    generic_host: bool,
+    title_tokens: list[str],
+    title_words: list[str],
+) -> str | None:
     if (
         not generic_host
         and compact_core
@@ -236,143 +261,174 @@ def infer_brand_from_page_identity(
         )
     ):
         return compact_core.capitalize()
-    if existing and not generic_host and title_tokens and title_words:
-        first = title_tokens[0]
-        path_tokens = slug_tokens(urlparse(str(url or "")).path)
-        corroborations = sum(first in slug_tokens(value) for value in evidence_values)
-        if first in path_tokens and corroborations >= 2:
-            return title_words[0]
-    return None
+    if not existing or generic_host or not title_tokens or not title_words:
+        return None
+    first = title_tokens[0]
+    path_tokens = slug_tokens(urlparse(str(url or "")).path)
+    corroborations = sum(first in slug_tokens(value) for value in evidence_values)
+    return title_words[0] if first in path_tokens and corroborations >= 2 else None
+
+
+@dataclass(frozen=True, slots=True)
+class _BrandUrlContext:
+    text: str
+    title_tokens: list[str]
+    path_parts: list[str]
+    path_text: str
+    path_tokens: list[str]
+    words: list[str]
+
+    @property
+    def first_token(self) -> str:
+        return self.title_tokens[0]
+
+    @property
+    def first_word(self) -> str:
+        return self.words[0].strip(" |-–—'") if self.words else ""
 
 
 def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
     text = clean_text(title)
-    title_parts = slug_tokens(text)
-    if len(title_parts) < 2:
+    title_tokens = slug_tokens(text)
+    if len(title_tokens) < 2:
         return None
-    first_token = title_parts[0] if title_parts else ""
-    path_parts = [
-        part.split(".", 1)[0]
-        for part in (urlparse(str(url or "")).path or "").split("/")
-        if part
-    ]
     path_text = urlparse(str(url or "")).path or ""
-    path_tokens = slug_tokens(path_text)
-    first_word = text.split(" ", 1)[0].strip(" |-–—'") if text else ""
-    if (
-        len(title_parts) >= 2
-        and path_tokens[:2] == title_parts[:2]
-        and first_word
-        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
-        and (any(marker in path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS[:1]))
-    ):
-        return first_word
-    if (
-        len(title_parts) >= 4
-        and path_tokens[:2] == title_parts[:2]
-        and first_word
-        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
-        and len(path_parts) == 1
-    ):
-        return first_word
-    if (
-        any(marker in text for marker in ("\u2122", "\u00ae"))
-        and path_parts
-        and slug_tokens(path_parts[-1])[:1] == title_parts[:1]
-        and first_word
-        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
-    ):
-        return first_word
-    title_segments = text.split(" - ", 1) if text else []
-    leading_segment = title_segments[0].strip(" |-–—") if title_segments else ""
-    trailing_segment = (
-        title_segments[1].strip(" |-–—") if len(title_segments) == 2 else ""
+    context = _BrandUrlContext(
+        text=text,
+        title_tokens=title_tokens,
+        path_parts=[part.split(".", 1)[0] for part in path_text.split("/") if part],
+        path_text=path_text,
+        path_tokens=slug_tokens(path_text),
+        words=text.split(),
     )
-    leading_tokens = slug_tokens(leading_segment)
-    if (
-        " - " in text
-        and leading_segment[:1].isupper()
-        and first_token
-        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+    for inference in (
+        _direct_product_url_brand,
+        _hyphenated_product_url_brand,
+        _prefixed_product_url_brand,
+        _route_product_url_brand,
     ):
-        matching_path_part = any(
+        if brand := inference(context, url):
+            return brand
+    return None
+
+
+def _direct_product_url_brand(context: _BrandUrlContext, _url: str) -> str | None:
+    prefix_allowed = context.first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+    shared = (
+        context.path_tokens[:2] == context.title_tokens[:2]
+        and context.first_word
+        and prefix_allowed
+    )
+    standard = shared and any(
+        marker in context.path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS[:1]
+    )
+    single_path = (
+        shared and len(context.title_tokens) >= 4 and len(context.path_parts) == 1
+    )
+    marked = (
+        any(marker in context.text for marker in ("™", "®"))
+        and context.path_parts
+        and slug_tokens(context.path_parts[-1])[:1] == context.title_tokens[:1]
+        and context.first_word
+        and prefix_allowed
+    )
+    return context.first_word if standard or single_path or marked else None
+
+
+def _hyphenated_product_url_brand(context: _BrandUrlContext, url: str) -> str | None:
+    segments = context.text.split(" - ", 1)
+    leading = segments[0].strip(" |-–—")
+    leading_tokens = slug_tokens(leading)
+    eligible = (
+        len(segments) == 2
+        and leading[:1].isupper()
+        and context.first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+        and any(
             (tokens := slug_tokens(part))
-            and len(tokens) >= len(leading_tokens)
             and tokens[: len(leading_tokens)] == leading_tokens
-            for part in path_parts
+            for part in context.path_parts
         )
-        if matching_path_part:
-            host = urlparse(str(url or "")).hostname or ""
-            host_labels = {
-                "".join(slug_tokens(label))
-                for label in host.split(".")
-                if label.casefold()
-                not in {"", "www", "shop", "store", "com", "co", "net", "org"}
-            }
-            trailing_compact = "".join(slug_tokens(trailing_segment))
-            if trailing_compact and trailing_compact in host_labels:
-                return leading_segment.split(" ", 1)[0].strip(" |-–—") or None
-            if len(leading_tokens) <= LISTING_BRAND_MAX_WORDS:
-                return leading_segment
-    for path_part in reversed(path_parts):
-        path_tokens = slug_tokens(path_part)
-        if len(path_tokens) <= len(title_parts):
+    )
+    if not eligible:
+        return None
+    host = urlparse(str(url or "")).hostname or ""
+    host_labels = {
+        "".join(slug_tokens(label))
+        for label in host.split(".")
+        if label.casefold() not in PUBLIC_RECORD_BRAND_IGNORED_HOST_LABELS
+    }
+    trailing = "".join(slug_tokens(segments[1].strip(" |-–—")))
+    if trailing and trailing in host_labels:
+        return leading.split(" ", 1)[0].strip(" |-–—") or None
+    return leading if len(leading_tokens) <= LISTING_BRAND_MAX_WORDS else None
+
+
+def _tokens_before_anchor(
+    path_tokens: list[str], anchor: list[str], *, require_all_alpha: bool
+) -> list[str] | None:
+    for start in range(1, len(path_tokens) - len(anchor) + 1):
+        if path_tokens[start : start + len(anchor)] != anchor:
             continue
-        for start in range(1, len(path_tokens) - len(title_parts) + 1):
-            if path_tokens[start : start + len(title_parts)] != title_parts:
-                continue
-            brand_tokens = path_tokens[:start]
-            while brand_tokens and brand_tokens[0].isdigit():
-                brand_tokens = brand_tokens[1:]
-            if (
-                not brand_tokens
-                or len(brand_tokens) > LISTING_BRAND_MAX_WORDS
-                or not any(re.search(r"[a-z]", token) for token in brand_tokens)
-            ):
-                continue
+        brand_tokens = path_tokens[:start]
+        while brand_tokens and brand_tokens[0].isdigit():
+            brand_tokens = brand_tokens[1:]
+        if not brand_tokens or len(brand_tokens) > LISTING_BRAND_MAX_WORDS:
+            continue
+        matches = [bool(re.search(r"[a-z]", token)) for token in brand_tokens]
+        if all(matches) if require_all_alpha else any(matches):
+            return brand_tokens
+    return None
+
+
+def _prefixed_product_url_brand(context: _BrandUrlContext, _url: str) -> str | None:
+    for part in reversed(context.path_parts):
+        path_tokens = slug_tokens(part)
+        if len(path_tokens) <= len(context.title_tokens):
+            continue
+        brand_tokens = _tokens_before_anchor(
+            path_tokens, context.title_tokens, require_all_alpha=False
+        ) or _tokens_before_anchor(
+            path_tokens, context.title_tokens[:2], require_all_alpha=True
+        )
+        if brand_tokens:
             return " ".join(token.capitalize() for token in brand_tokens)
-        title_anchor = title_parts[: min(2, len(title_parts))]
-        for start in range(1, len(path_tokens) - len(title_anchor) + 1):
-            if path_tokens[start : start + len(title_anchor)] != title_anchor:
-                continue
-            brand_tokens = path_tokens[:start]
-            while brand_tokens and brand_tokens[0].isdigit():
-                brand_tokens = brand_tokens[1:]
-            if (
-                brand_tokens
-                and len(brand_tokens) <= LISTING_BRAND_MAX_WORDS
-                and all(re.search(r"[a-z]", token) for token in brand_tokens)
-            ):
-                return " ".join(token.capitalize() for token in brand_tokens)
-    path_token_set = {token for part in path_parts for token in slug_tokens(part)}
-    words = text.split()
-    leading_word = words[0].strip(" |-–—'") if words else ""
-    title_anchor = title_parts[:2]
-    matching_title_anchor_index = next(
+    return None
+
+
+def _route_product_url_brand(context: _BrandUrlContext, _url: str) -> str | None:
+    path_token_set = {
+        token for part in context.path_parts for token in slug_tokens(part)
+    }
+    anchor = context.title_tokens[:2]
+    matching_index = next(
         (
             index
-            for index, part in enumerate(path_parts)
-            if len(tokens := slug_tokens(part)) >= 5 and tokens[:2] == title_anchor
+            for index, part in enumerate(context.path_parts)
+            if len(tokens := slug_tokens(part)) >= 5 and tokens[:2] == anchor
         ),
         -1,
     )
-    leading_word_token = "".join(slug_tokens(leading_word))
-    has_brand_route_signal = matching_title_anchor_index > 0 and slug_tokens(
-        path_parts[matching_title_anchor_index - 1]
-    ) == [leading_word_token]
+    leading_token = "".join(slug_tokens(context.first_word))
     if (
-        len(title_anchor) == 2
-        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
-        and leading_word
-        and leading_word[:1].isupper()
-        and leading_word_token
-        and has_brand_route_signal
+        matching_index > 0
+        and slug_tokens(context.path_parts[matching_index - 1]) == [leading_token]
+        and context.first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+        and context.first_word[:1].isupper()
+        and leading_token
     ):
-        return leading_word
-    for index, original in enumerate(words):
+        return context.first_word
+    return _uppercase_path_brand(context, path_token_set)
+
+
+def _uppercase_path_brand(
+    context: _BrandUrlContext, path_token_set: set[str]
+) -> str | None:
+    for index, original in enumerate(context.words):
         token = "".join(slug_tokens(original))
         next_token = (
-            "".join(slug_tokens(words[index + 1])) if index + 1 < len(words) else ""
+            "".join(slug_tokens(context.words[index + 1]))
+            if index + 1 < len(context.words)
+            else ""
         )
         if (
             len(token) >= 3

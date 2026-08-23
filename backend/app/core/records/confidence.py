@@ -94,17 +94,8 @@ def score_record_confidence(
         4,
     )
 
-    raw_requested = [
-        " ".join(str(field or "").split()).strip()
-        for field in requested_fields or []
-        if " ".join(str(field or "").split()).strip()
-    ]
-    requested = repair_target_fields_for_surface(normalized_surface, raw_requested)
-    requested_found_total = sum(
-        1
-        for field_name in requested
-        if _resolved_field_value(record, field_name, normalized_surface)
-        not in (None, "", [], {})
+    raw_requested, requested, requested_found_total = _requested_metrics(
+        record, normalized_surface, requested_fields
     )
 
     return {
@@ -146,6 +137,22 @@ def score_record_confidence(
         },
         "formula": "65% field coverage + 25% source reliability + 10% value validity",
     }
+
+
+def _requested_metrics(
+    record: dict[str, Any], surface: str, requested_fields: list[str] | None
+) -> tuple[list[str], list[str], int]:
+    raw = [
+        normalized
+        for field in requested_fields or []
+        if (normalized := " ".join(str(field or "").split()).strip())
+    ]
+    requested = repair_target_fields_for_surface(surface, raw)
+    found = sum(
+        _resolved_field_value(record, field, surface) not in (None, "", [], {})
+        for field in requested
+    )
+    return raw, requested, found
 
 
 def _surface_field_weights(
@@ -275,35 +282,41 @@ def _field_penalties(
         elif len(text) < 4:
             penalties.append({"field": field_name, "kind": "too_short", "weight": 0.35})
 
-    if field_name in {"description", "responsibilities", "qualifications"}:
-        if len(text) < 40:
-            penalties.append(
-                {"field": field_name, "kind": "thin_content", "weight": 0.4}
-            )
+    if all(
+        (
+            field_name in {"description", "responsibilities", "qualifications"},
+            len(text) < 40,
+        )
+    ):
+        penalties.append({"field": field_name, "kind": "thin_content", "weight": 0.4})
 
-    if field_name in {"price", "salary"} and text and not _PRICEISH_RE.search(text):
+    if all((field_name in {"price", "salary"}, text, not _PRICEISH_RE.search(text))):
         penalties.append(
             {"field": field_name, "kind": "non_numeric_value", "weight": 0.45}
         )
 
-    if (
-        field_name in {"image_url", "apply_url", "url"}
-        and text
-        and not _URLISH_RE.match(text)
+    if all(
+        (
+            field_name in {"image_url", "apply_url", "url"},
+            text,
+            not _URLISH_RE.match(text),
+        )
     ):
         penalties.append({"field": field_name, "kind": "non_url_value", "weight": 0.45})
 
-    if surface == "ecommerce_detail" and field_name == "availability":
-        if lowered in {"maybe", "unknown", "n/a"}:
-            penalties.append(
-                {"field": field_name, "kind": "ambiguous_availability", "weight": 0.35}
-            )
+    if all(
+        (
+            surface == "ecommerce_detail",
+            field_name == "availability",
+            lowered in {"maybe", "unknown", "n/a"},
+        )
+    ):
+        penalties.append(
+            {"field": field_name, "kind": "ambiguous_availability", "weight": 0.35}
+        )
 
-    if surface == "job_detail" and field_name == "posted_date":
-        if text and len(text) < 8:
-            penalties.append(
-                {"field": field_name, "kind": "partial_date", "weight": 0.25}
-            )
+    if all((surface == "job_detail", field_name == "posted_date", text, len(text) < 8)):
+        penalties.append({"field": field_name, "kind": "partial_date", "weight": 0.25})
 
     return penalties
 

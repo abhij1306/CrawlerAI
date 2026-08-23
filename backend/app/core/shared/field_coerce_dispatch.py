@@ -209,22 +209,55 @@ def _coerce_list_value(
     return normalized_rows or None
 
 
+_UNHANDLED = object()
+
+
 def coerce_field_value(field_name: str, value: object, page_url: str) -> object | None:
     if value in (None, "", [], {}):
         return None
+    for coercer in (
+        _coerce_structural_field,
+        _coerce_identity_field,
+        _coerce_numeric_field,
+        _coerce_mapping_field,
+    ):
+        result = coercer(field_name, value, page_url)
+        if result is not _UNHANDLED:
+            return result
+    if field_name == "availability":
+        return coerce_availability_value(value)
+    if is_url_field(field_name):
+        return coerce_url_field_value(field_name, value, page_url)
+    if field_name in STRUCTURED_MULTI_FIELDS:
+        return _coerce_structured_multi_value(field_name, value)
+    if isinstance(value, list):
+        return _coerce_list_value(field_name, value, page_url)
+    if isinstance(value, (dict, set, frozenset)):
+        return None
+    if field_name in LONG_TEXT_FIELDS:
+        return coerce_long_text(value)
+    if field_name == "rating":
+        return coerce_rating_value(value)
+    return coerce_text(value)
+
+
+def _coerce_structural_field(field_name: str, value: object, _page_url: str) -> object:
     if field_name == "product_attributes":
         return _field_coerce().coerce_product_attributes(value)
     if field_name in STRUCTURED_OBJECT_FIELDS and isinstance(value, dict):
         return value
     if field_name in STRUCTURED_OBJECT_LIST_FIELDS and isinstance(value, list):
-        dict_rows = [item for item in value if isinstance(item, dict)]
-        return dict_rows or None
+        return [item for item in value if isinstance(item, dict)] or None
     if field_name == "location":
         return _field_coerce().coerce_location(value)
     if field_name == "salary":
         return _field_coerce().salary_from_json(value)
     if field_name in {"currency", "salary_currency"} and isinstance(value, str):
         return _coerce_currency_value(value)
+    return _UNHANDLED
+
+
+def _coerce_identity_field(field_name: str, value: object, _page_url: str) -> object:
     if field_name in BRAND_LIKE_FIELDS:
         return _coerce_brand_like_value(value)
     if field_name == "category":
@@ -243,13 +276,15 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         return coerce_gender(value)
     if field_name in OPTION_SCALAR_FIELDS:
         return _coerce_option_scalar_value(field_name, value)
+    return _UNHANDLED
+
+
+def _coerce_numeric_field(field_name: str, value: object, _page_url: str) -> object:
     if field_name in _field_coerce().PRICE_VALUE_FIELDS and isinstance(value, str):
         text = coerce_text(value)
-        if text and not re.search(r"\d", text):
+        if not text or not re.search(r"\d", text) or price_text_is_negative(text):
             return None
-        if price_text_is_negative(text):
-            return None
-        return text or None
+        return text
     if field_name in _field_coerce().INTEGER_VALUE_FIELDS:
         return _coerce_integer_value(value)
     if field_name in {
@@ -261,41 +296,31 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         return coerce_price_from_dict(value)
     if field_name in {"currency", "salary_currency"} and isinstance(value, dict):
         return _coerce_currency_value(value)
+    return _UNHANDLED
+
+
+def _coerce_mapping_field(field_name: str, value: object, _page_url: str) -> object:
     if field_name == "rating" and isinstance(value, dict):
-        for key in ("ratingValue", "value", "rating", "score"):
-            if value.get(key) not in (None, "", [], {}):
-                return coerce_rating_value(value.get(key))
-        return None
+        return _first_mapping_value(
+            value, ("ratingValue", "value", "rating", "score"), coerce_rating_value
+        )
     if field_name == "review_count" and isinstance(value, dict):
-        for key in (
-            "reviewCount",
-            "ratingCount",
-            "count",
-            "totalCount",
-            "numberOfReviews",
-        ):
-            if value.get(key) not in (None, "", [], {}):
-                return coerce_text(value.get(key))
-        return None
+        keys = ("reviewCount", "ratingCount", "count", "totalCount", "numberOfReviews")
+        return _first_mapping_value(value, keys, coerce_text)
     if field_name == "availability" and isinstance(value, bool):
         return "in_stock" if value else "out_of_stock"
     if field_name == "availability" and isinstance(value, dict):
         return coerce_availability_dict(value)
-    if field_name == "availability":
-        return coerce_availability_value(value)
-    if is_url_field(field_name):
-        return coerce_url_field_value(field_name, value, page_url)
-    if field_name in STRUCTURED_MULTI_FIELDS:
-        return _coerce_structured_multi_value(field_name, value)
-    if isinstance(value, list):
-        return _coerce_list_value(field_name, value, page_url)
-    if isinstance(value, (dict, set, frozenset)):
-        return None
-    if field_name in LONG_TEXT_FIELDS:
-        return coerce_long_text(value)
-    if field_name == "rating":
-        return coerce_rating_value(value)
-    return coerce_text(value)
+    return _UNHANDLED
+
+
+def _first_mapping_value(
+    value: dict[object, object], keys: tuple[str, ...], coercer
+) -> object | None:
+    for key in keys:
+        if value.get(key) not in (None, "", [], {}):
+            return coercer(value.get(key))
+    return None
 
 
 def _coerce_title_text(value: object) -> str | None:

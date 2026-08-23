@@ -69,39 +69,13 @@ def _snapshot_to_resolved(
     saved_at = str(payload.get("saved_at") or "").strip() or None
     saved_at_dt = _parse_saved_at(saved_at)
     stale = bool(saved_at_dt and datetime.now(UTC) - saved_at_dt > _SCHEMA_MAX_AGE)
-    stored_fields_raw = payload.get("fields")
-    stored_fields_list = (
-        stored_fields_raw if isinstance(stored_fields_raw, list) else []
+    stored_fields = _payload_surface_fields(payload, "fields", surface=surface)
+    baseline = _payload_surface_fields(
+        payload, "baseline_fields", surface=surface, fallback=baseline_fields
     )
-    stored_fields = _dedupe_fields(
-        field
-        for field in stored_fields_list
-        if field_allowed_for_surface(surface, field)
-    )
-    baseline_fields_raw = payload.get("baseline_fields")
-    baseline_fields_list = (
-        baseline_fields_raw
-        if isinstance(baseline_fields_raw, list)
-        else baseline_fields
-    )
-    baseline = _dedupe_fields(
-        field
-        for field in baseline_fields_list
-        if field_allowed_for_surface(surface, field)
-    )
-    new_fields_raw = payload.get("new_fields")
-    new_fields_list = new_fields_raw if isinstance(new_fields_raw, list) else []
-    new_fields = _dedupe_fields(
-        field for field in new_fields_list if field_allowed_for_surface(surface, field)
-    )
-    deprecated_fields_raw = payload.get("deprecated_fields")
-    deprecated_fields_list = (
-        deprecated_fields_raw if isinstance(deprecated_fields_raw, list) else []
-    )
-    deprecated_fields = _dedupe_fields(
-        field
-        for field in deprecated_fields_list
-        if field_allowed_for_surface(surface, field)
+    new_fields = _payload_surface_fields(payload, "new_fields", surface=surface)
+    deprecated_fields = _payload_surface_fields(
+        payload, "deprecated_fields", surface=surface
     )
     fields = _dedupe_fields(
         field
@@ -112,13 +86,7 @@ def _snapshot_to_resolved(
         baseline_set = set(baseline)
         new_fields = [field for field in fields if field not in baseline_set]
     if not deprecated_fields:
-        if stored_fields:
-            stored_field_set = set(stored_fields)
-            deprecated_fields = [
-                field for field in baseline if field not in stored_field_set
-            ]
-        else:
-            deprecated_fields = []
+        deprecated_fields = _inferred_deprecated_fields(baseline, stored_fields)
     return ResolvedSchema(
         surface=surface,
         domain=domain,
@@ -130,6 +98,29 @@ def _snapshot_to_resolved(
         saved_at=saved_at,
         stale=stale,
     )
+
+
+def _payload_surface_fields(
+    payload: dict,
+    key: str,
+    *,
+    surface: str,
+    fallback: list[str] | None = None,
+) -> list[str]:
+    raw = payload.get(key)
+    values = raw if isinstance(raw, list) else (fallback or [])
+    return _dedupe_fields(
+        field for field in values if field_allowed_for_surface(surface, field)
+    )
+
+
+def _inferred_deprecated_fields(
+    baseline: list[str], stored_fields: list[str]
+) -> list[str]:
+    if not stored_fields:
+        return []
+    stored_field_set = set(stored_fields)
+    return [field for field in baseline if field not in stored_field_set]
 
 
 async def load_resolved_schema(

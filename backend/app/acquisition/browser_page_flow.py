@@ -188,8 +188,13 @@ async def navigate_browser_page(
                 )
                 break
             except Exception as exc:
-                if index == 0 and not isinstance(
-                    exc, (PlaywrightTimeoutError, PlaywrightError)
+                if all(
+                    (
+                        index == 0,
+                        not isinstance(
+                            exc, (PlaywrightTimeoutError, PlaywrightError)
+                        ),
+                    )
                 ):
                     raise
                 if index + 1 < len(attempts):

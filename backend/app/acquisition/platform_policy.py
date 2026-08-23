@@ -142,49 +142,72 @@ def detect_platform_family(url: str, html: str = "") -> str | None:
     normalized_url = str(url or "").strip().lower()
     normalized_html = str(html or "").lower()[: _platform_detection_html_search_limit()]
     domain = normalize_domain(urlparse(normalized_url).netloc)
+    return (
+        _platform_family_for_domain(domain)
+        or _platform_family_for_html(domain, normalized_html)
+        or _platform_family_for_url(domain, normalized_url)
+    )
 
-    for config in platform_configs():
-        domain_patterns = _normalize_patterns(config.domain_patterns)
-        if any(_matches_domain(domain, pattern) for pattern in domain_patterns):
-            return config.family
 
+def _platform_family_for_domain(domain: str) -> str | None:
     for config in platform_configs():
-        domain_patterns = _normalize_patterns(config.domain_patterns)
-        if domain_patterns and not any(
-            _matches_domain(domain, pattern) for pattern in domain_patterns
+        if any(
+            _matches_domain(domain, pattern)
+            for pattern in _normalize_patterns(config.domain_patterns)
         ):
-            continue
-        html_patterns = _normalize_patterns(config.html_contains)
-        if any(pattern in normalized_html for pattern in html_patterns):
             return config.family
-        for pattern in config.html_regex:
-            raw_pattern = str(pattern or "").strip()
-            if not raw_pattern:
-                continue
-            try:
-                if re.search(raw_pattern, normalized_html, re.IGNORECASE):
-                    return config.family
-            except re.error as exc:
-                logger.warning(
-                    "Skipping invalid platform html_regex for family=%s pattern=%r: %s",
-                    config.family,
-                    raw_pattern,
-                    exc,
-                )
-
-    for config in platform_configs():
-        url_patterns = _normalize_patterns(config.url_contains)
-        if not url_patterns:
-            continue
-        domain_patterns = _normalize_patterns(config.domain_patterns)
-        if domain_patterns and not any(
-            _matches_domain(domain, pattern) for pattern in domain_patterns
-        ):
-            continue
-        if any(pattern in normalized_url for pattern in url_patterns):
-            return config.family
-
     return None
+
+
+def _platform_family_for_html(domain: str, html: str) -> str | None:
+    for config in platform_configs():
+        domains = _normalize_patterns(config.domain_patterns)
+        if domains and not any(_matches_domain(domain, pattern) for pattern in domains):
+            continue
+        if any(
+            pattern in html for pattern in _normalize_patterns(config.html_contains)
+        ):
+            return config.family
+        if _matches_config_regex(config.family, config.html_regex, html, "html_regex"):
+            return config.family
+    return None
+
+
+def _platform_family_for_url(domain: str, url: str) -> str | None:
+    for config in platform_configs():
+        patterns = _normalize_patterns(config.url_contains)
+        domains = _normalize_patterns(config.domain_patterns)
+        if not patterns:
+            continue
+        if domains and not any(_matches_domain(domain, pattern) for pattern in domains):
+            continue
+        if any(pattern in url for pattern in patterns):
+            return config.family
+    return None
+
+
+def _matches_config_regex(
+    family: str,
+    patterns: tuple[str, ...] | list[str],
+    text: str,
+    label: str,
+) -> bool:
+    for pattern in patterns:
+        raw = str(pattern or "").strip()
+        if not raw:
+            continue
+        try:
+            if re.search(raw, text, re.IGNORECASE):
+                return True
+        except re.error as exc:
+            logger.warning(
+                "Skipping invalid platform %s for family=%s pattern=%r: %s",
+                label,
+                family,
+                raw,
+                exc,
+            )
+    return False
 
 
 def resolve_listing_readiness_platform(url: str) -> str | None:
@@ -204,21 +227,14 @@ def resolve_listing_readiness_platform(url: str) -> str | None:
             for pattern in config.readiness_path_patterns
             if str(pattern or "").strip()
         ]
-        if not readiness_domains or not readiness_patterns:
+        if not all((readiness_domains, readiness_patterns)):
             continue
         if not any(_matches_domain(host, pattern) for pattern in readiness_domains):
             continue
-        for pattern in readiness_patterns:
-            try:
-                if re.search(pattern, path, re.IGNORECASE):
-                    return config.family
-            except re.error as exc:
-                logger.warning(
-                    "Skipping invalid readiness path regex for family=%s pattern=%r: %s",
-                    config.family,
-                    pattern,
-                    exc,
-                )
+        if _matches_config_regex(
+            config.family, readiness_patterns, path, "readiness path regex"
+        ):
+            return config.family
     return None
 
 

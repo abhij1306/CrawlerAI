@@ -92,6 +92,20 @@ PUBLIC_RECORD_BRAND_REGION_SUFFIX_TOKENS = frozenset(
         "WEBSITE",
     }
 )
+PUBLIC_RECORD_BRAND_IGNORED_HOST_LABELS = frozenset(
+    {"", "www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+)
+PUBLIC_RECORD_BRAND_HOST_SUFFIXES = (
+    "beauty",
+    "cosmetics",
+    "official",
+    "online",
+    "shop",
+    "store",
+)
+PUBLIC_RECORD_GENERIC_HOST_BRANDS = frozenset(
+    {"example", "invalid", "localhost", "test"}
+)
 PUBLIC_RECORD_GENDER_TAXONOMY = MappingProxyType(
     {
         "men": "Men",

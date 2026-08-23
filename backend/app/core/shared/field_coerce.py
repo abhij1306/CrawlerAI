@@ -394,85 +394,92 @@ def sanitize_option_scalar(field_name: str, value: object) -> str | None:
         return None
     if text.lstrip().startswith(("{", "[")):
         return None
-    cleaned = text
-    if field_name in OPTION_SCALAR_FIELDS:
-        for pattern in _OPTION_VALUE_SUFFIX_NOISE_RE:
-            cleaned = clean_text(pattern.sub("", cleaned))
+    cleaned = _clean_option_value(text) if field_name in OPTION_SCALAR_FIELDS else text
+    if field_name in OPTION_SCALAR_FIELDS and _option_value_is_invalid(
+        field_name, cleaned
+    ):
+        return None
+    if field_name == "color":
+        cleaned = _sanitize_color_option(cleaned)
+    elif field_name == "size":
+        cleaned = _sanitize_size_option(cleaned)
+    elif field_name == WEIGHT_FIELD and re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
+        return None
+    if not cleaned or is_null_text(cleaned):
+        return None
+    return cleaned
+
+
+def _clean_option_value(value: str) -> str:
+    cleaned = value
+    for pattern in _OPTION_VALUE_SUFFIX_NOISE_RE:
+        cleaned = clean_text(pattern.sub("", cleaned))
+    cleaned = re.sub(rf"\s+(?:{CURRENCY_SYMBOL_PATTERN})\s*\d[\d.,]*.*$", "", cleaned)
+    cleaned = re.sub(
+        rf"\s+\d[\d.,]*\s*(?:{CURRENCY_CODE_PATTERN})\b.*$", "", cleaned, flags=re.I
+    )
+    if _OPTION_VALUE_NOISE_WORD_PATTERN:
         cleaned = re.sub(
-            rf"\s+(?:{CURRENCY_SYMBOL_PATTERN})\s*\d[\d.,]*.*$", "", cleaned
-        )
-        cleaned = re.sub(
-            rf"\s+\d[\d.,]*\s*(?:{CURRENCY_CODE_PATTERN})\b.*$",
+            rf"\s+\b(?:{_OPTION_VALUE_NOISE_WORD_PATTERN})\b.*$",
             "",
             cleaned,
             flags=re.I,
         )
-        if _OPTION_VALUE_NOISE_WORD_PATTERN:
-            cleaned = re.sub(
-                rf"\s+\b(?:{_OPTION_VALUE_NOISE_WORD_PATTERN})\b.*$",
-                "",
-                cleaned,
-                flags=re.I,
-            )
-        cleaned = clean_text(cleaned)
-        key = cleaned.casefold()
-        axis_aliases = {field_name.casefold()}
-        if field_name == "color":
-            axis_aliases.add("colour")
-        if (
-            key in axis_aliases
-            or key in VARIANT_PLACEHOLDER_VALUES
-            or key in VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS
-            or any(key.startswith(prefix) for prefix in VARIANT_PLACEHOLDER_PREFIXES)
-            or variant_option_value_is_opaque_numeric(field_name, cleaned)
-        ):
-            return None
+    return clean_text(cleaned)
+
+
+def _option_value_is_invalid(field_name: str, value: str) -> bool:
+    key = value.casefold()
+    axis_aliases = {field_name.casefold()}
     if field_name == "color":
-        if _SMALL_NUMERIC_RE.fullmatch(cleaned):
-            return None
-        if _TRACKING_PIXEL_RE.fullmatch(cleaned):
-            return None
-        if (
-            _variant_color_codelike_token_re.fullmatch(cleaned)
-            and _COLOR_KEYWORD_RE.search(cleaned) is None
-        ):
-            return None
-        if _color_value_is_opaque_code(cleaned):
-            return None
-        match = re.fullmatch(r"select\s+(.+?)\s+color", cleaned, flags=re.I)
-        if match is not None:
-            cleaned = clean_text(match.group(1))
-        cleaned = re.split(r"\bstyle\s*:", cleaned, maxsplit=1, flags=re.I)[0]
-        if ":" in cleaned:
-            _prefix, suffix = cleaned.rsplit(":", 1)
-            if len(clean_text(suffix).split()) <= 4 and _COLOR_KEYWORD_RE.search(
-                suffix
-            ):
-                cleaned = suffix
-        cleaned = re.sub(r"^color\s*:\s*", "", cleaned, flags=re.I)
-        cleaned = re.sub(r"\bcolor\s+details\b.*$", "", cleaned, flags=re.I).strip()
-        cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
-        cleaned = re.split(
-            r"\bsize(?:\s*\([^)]*\))?\b", cleaned, maxsplit=1, flags=re.I
-        )[0]
-        cleaned = _strip_color_value_code_pollution(cleaned)
-        cleaned = clean_text(cleaned)
-        if not cleaned or re.search(r"\d+\s*x\s*\d+", cleaned):
-            return None
-    elif field_name == "size":
-        cleaned = re.sub(r"^size\s*:\s*", "", cleaned, flags=re.I)
-        cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
-        cleaned = re.sub(r"\s*\(size[\s_-]*chart\)", "", cleaned, flags=re.I)
-        cleaned = clean_text(cleaned)
-        if re.search(r"\b(?:please\s+)?select(?:\s+size)?\b", cleaned, flags=re.I):
-            return None
-        if cleaned.strip().lower() in _SIZE_REJECT_TOKENS_NORMALIZED:
-            return None
-    elif field_name == WEIGHT_FIELD and re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
-        return None
-    if is_null_text(cleaned):
-        return None
-    return cleaned or None
+        axis_aliases.add("colour")
+    return bool(
+        key in axis_aliases
+        or key in VARIANT_PLACEHOLDER_VALUES
+        or key in VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS
+        or any(key.startswith(prefix) for prefix in VARIANT_PLACEHOLDER_PREFIXES)
+        or variant_option_value_is_opaque_numeric(field_name, value)
+    )
+
+
+def _sanitize_color_option(value: str) -> str:
+    if _color_option_is_code(value):
+        return ""
+    match = re.fullmatch(r"select\s+(.+?)\s+color", value, flags=re.I)
+    cleaned = clean_text(match.group(1)) if match is not None else value
+    cleaned = re.split(r"\bstyle\s*:", cleaned, maxsplit=1, flags=re.I)[0]
+    if ":" in cleaned:
+        _prefix, suffix = cleaned.rsplit(":", 1)
+        if len(clean_text(suffix).split()) <= 4 and _COLOR_KEYWORD_RE.search(suffix):
+            cleaned = suffix
+    cleaned = re.sub(r"^color\s*:\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\bcolor\s+details\b.*$", "", cleaned, flags=re.I).strip()
+    cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
+    cleaned = re.split(r"\bsize(?:\s*\([^)]*\))?\b", cleaned, maxsplit=1, flags=re.I)[0]
+    cleaned = clean_text(_strip_color_value_code_pollution(cleaned))
+    return "" if re.search(r"\d+\s*x\s*\d+", cleaned) else cleaned
+
+
+def _color_option_is_code(value: str) -> bool:
+    return bool(
+        _SMALL_NUMERIC_RE.fullmatch(value)
+        or _TRACKING_PIXEL_RE.fullmatch(value)
+        or (
+            _variant_color_codelike_token_re.fullmatch(value)
+            and _COLOR_KEYWORD_RE.search(value) is None
+        )
+        or _color_value_is_opaque_code(value)
+    )
+
+
+def _sanitize_size_option(value: str) -> str:
+    cleaned = re.sub(r"^size\s*:\s*", "", value, flags=re.I)
+    cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
+    cleaned = re.sub(r"\s*\(size[\s_-]*chart\)", "", cleaned, flags=re.I)
+    cleaned = clean_text(cleaned)
+    if re.search(r"\b(?:please\s+)?select(?:\s+size)?\b", cleaned, flags=re.I):
+        return ""
+    return "" if cleaned.casefold() in _SIZE_REJECT_TOKENS_NORMALIZED else cleaned
 
 
 def coerce_location(value: object) -> str | None:

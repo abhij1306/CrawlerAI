@@ -122,6 +122,8 @@ Flow:
 | `acquisition/browser_background_tasks.py` | Observed popup, eviction, and bounded browser-close task lifecycle |
 | `acquisition/browser_fetch_support.py` | Browser fetch result, diagnostics, and page event assembly helpers |
 | `acquisition/browser_capture.py` | Screenshots and network payload capture |
+| `acquisition/browser_content_signals.py` | Static HTML extractability, detail/listing content, and shell signals |
+| `acquisition/browser_detail_candidates.py` | Detail-expansion candidate snapshot and admission policy |
 | `acquisition/browser_diagnostics.py` | Browser engine labels, profile diagnostics, and failed-fetch diagnostic contracts |
 | `acquisition/browser_identity.py` | Browser fingerprint generation |
 | `acquisition/browser_interstitial.py` | Location-interstitial detection and safe dismissal |

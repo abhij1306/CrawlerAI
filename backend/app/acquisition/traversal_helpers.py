@@ -124,35 +124,29 @@ async def looks_like_paginate_control(locator) -> bool:
         return False
     if not isinstance(inspection, dict):
         return False
-    if bool(inspection.get("pagination_container")) and (
-        bool(inspection.get("has_click_handler"))
-        or bool(inspection.get("is_button_like"))
-    ):
-        return True
-    if (
-        bool(inspection.get("pagination_container"))
-        and bool(inspection.get("follows_current_page"))
-        and (
-            bool(inspection.get("arrow_only"))
-            or bool(inspection.get("raw_href"))
-            or bool(inspection.get("is_button_like"))
-            or bool(inspection.get("has_click_handler"))
-        )
-    ):
-        return True
-    if (
-        bool(inspection.get("pagination_container"))
-        and bool(inspection.get("sibling_page_numbers"))
-        and bool(inspection.get("arrow_only"))
-    ):
-        return True
-    if bool(inspection.get("pagination_text")) and (
-        bool(inspection.get("has_click_handler"))
-        or bool(inspection.get("sibling_page_numbers"))
-        or bool(inspection.get("is_button_like"))
-    ):
-        return True
-    return False
+    return _paginate_control_inspection_matches(inspection)
+
+
+def _paginate_control_inspection_matches(inspection: dict[object, object]) -> bool:
+    container = bool(inspection.get("pagination_container"))
+    actionable = bool(
+        inspection.get("has_click_handler") or inspection.get("is_button_like")
+    )
+    follows_current = bool(
+        inspection.get("follows_current_page")
+        and (inspection.get("arrow_only") or inspection.get("raw_href") or actionable)
+    )
+    numbered_arrow = bool(
+        inspection.get("sibling_page_numbers") and inspection.get("arrow_only")
+    )
+    labeled_action = bool(
+        inspection.get("pagination_text")
+        and (actionable or inspection.get("sibling_page_numbers"))
+    )
+    return bool(
+        (container and (actionable or follows_current or numbered_arrow))
+        or labeled_action
+    )
 
 
 async def _looks_like_next_page_control(locator) -> bool:
@@ -258,14 +252,7 @@ def _collect_structured_script_fragments(
         text = str(node.text(strip=True) or "")
         if not text:
             continue
-        if not (
-            script_type in TRAVERSAL_STRUCTURED_SCRIPT_TYPES
-            or script_id in TRAVERSAL_STRUCTURED_SCRIPT_IDS
-            or any(
-                marker in text.lower()
-                for marker in TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS
-            )
-        ):
+        if not _is_structured_script(script_id, script_type, text):
             continue
         fragment = str(node.html or "").strip()
         if not fragment or fragment in seen:
@@ -277,6 +264,17 @@ def _collect_structured_script_fragments(
         fragments.append(fragment)
         used_bytes += fragment_bytes
     return fragments
+
+
+def _is_structured_script(script_id: str, script_type: str, text: str) -> bool:
+    return bool(
+        script_type in TRAVERSAL_STRUCTURED_SCRIPT_TYPES
+        or script_id in TRAVERSAL_STRUCTURED_SCRIPT_IDS
+        or any(
+            marker in text.casefold()
+            for marker in TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS
+        )
+    )
 
 
 def _collect_listing_card_fragments(

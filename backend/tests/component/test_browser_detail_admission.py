@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.acquisition.browser_detail import _candidate_is_admitted
+from app.acquisition.browser_detail_candidates import candidate_is_admitted
 
 
 def _admit(
     snapshot: dict[str, object], *, selector: str = "button[aria-controls]"
 ) -> bool:
-    admitted, _key, _label = _candidate_is_admitted(
+    admitted, _key, _label = candidate_is_admitted(
         snapshot,
         selector=selector,
         keywords=("spec", "detail"),

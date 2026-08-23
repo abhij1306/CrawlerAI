@@ -303,29 +303,13 @@ def _build_recipe(
         # count; a singleton root is not a record set (finding 7).
         min_count=(CASCADE_LISTING_MIN_REPEATED_RECORDS if is_listing else 1),
     )
-    fields: dict[str, tuple[RecipeBinding, ...]] = {}
-    for field, path in field_paths.items():
-        binding = _field_binding(
-            field,
-            path,
-            root_css=root_css,
-            flat_map_paths=flat_map_paths,
-            document=document,
-        )
-        if binding is not None:
-            fields[field] = (binding,)
-    # Attribute-only identity/image fields never appear in the flat map, so they
-    # are located structurally inside the record root (or scoped region on a
-    # document surface so the fallback cannot reach an out-of-scope node).
-    scope_css = _scoped_region_css(root_css, flat_map_paths)
-    for field in (identity_field, "image_url"):
-        if field in fields or field not in _ATTRIBUTE_FIELDS:
-            continue
-        binding = _structural_attribute_binding(
-            field, root_css, document, scope_css=scope_css
-        )
-        if binding is not None:
-            fields[field] = (binding,)
+    fields = _build_field_bindings(
+        field_paths=field_paths,
+        root_css=root_css,
+        flat_map_paths=flat_map_paths,
+        document=document,
+        identity_field=identity_field,
+    )
     if "title" not in fields or identity_field not in fields:
         return None
     required = ("record.identity", "title", identity_field)
@@ -360,6 +344,37 @@ def _build_recipe(
         fields=fields,
         required=tuple(name for name in required if name),
     )
+
+
+def _build_field_bindings(
+    *,
+    field_paths: dict[str, str],
+    root_css: str,
+    flat_map_paths: tuple[str, ...],
+    document: HtmlDocument,
+    identity_field: str,
+) -> dict[str, tuple[RecipeBinding, ...]]:
+    fields: dict[str, tuple[RecipeBinding, ...]] = {}
+    for field, path in field_paths.items():
+        binding = _field_binding(
+            field,
+            path,
+            root_css=root_css,
+            flat_map_paths=flat_map_paths,
+            document=document,
+        )
+        if binding is not None:
+            fields[field] = (binding,)
+    scope_css = _scoped_region_css(root_css, flat_map_paths)
+    for field in (identity_field, "image_url"):
+        if field in fields or field not in _ATTRIBUTE_FIELDS:
+            continue
+        binding = _structural_attribute_binding(
+            field, root_css, document, scope_css=scope_css
+        )
+        if binding is not None:
+            fields[field] = (binding,)
+    return fields
 
 
 def _identity_field(field_paths: dict[str, str], *, is_listing: bool) -> str:

@@ -562,25 +562,8 @@ def _normalize_cookies(value: object) -> list[dict[str, object]]:
         else _object_list(value)
     )
     for item in rows:
-        if not isinstance(item, Mapping):
-            continue
-        cookie: dict[str, object] = {}
-        for field_name in COOKIE_FIELDS:
-            raw_value = item.get(field_name)
-            if raw_value in (None, ""):
-                continue
-            cookie[field_name] = _sanitize_storage_state_scalar(raw_value)
-        if not cookie.get("name") or not cookie.get("value"):
-            continue
-        # Do not learn challenge-state cookies as reusable domain memory.
-        if _cookie_is_challenge_state(cookie):
-            continue
-        expires = cookie.get("expires")
-        if (
-            isinstance(expires, (int, float))
-            and float(expires) > 0
-            and float(expires) <= now
-        ):
+        cookie = _normalized_cookie(item, now=now)
+        if cookie is None:
             continue
         key = (
             str(cookie.get("name") or "").strip().lower(),
@@ -589,6 +572,24 @@ def _normalize_cookies(value: object) -> list[dict[str, object]]:
         )
         cookies_by_key[key] = cookie
     return list(cookies_by_key.values())
+
+
+def _normalized_cookie(item: object, *, now: float) -> dict[str, object] | None:
+    if not isinstance(item, Mapping):
+        return None
+    cookie = {
+        field_name: _sanitize_storage_state_scalar(item[field_name])
+        for field_name in COOKIE_FIELDS
+        if item.get(field_name) not in (None, "")
+    }
+    if not cookie.get("name") or not cookie.get("value"):
+        return None
+    if _cookie_is_challenge_state(cookie):
+        return None
+    expires = cookie.get("expires")
+    if isinstance(expires, (int, float)) and 0 < float(expires) <= now:
+        return None
+    return cookie
 
 
 def _normalized_browser_engine(value: object) -> str | None:
@@ -707,21 +708,33 @@ def _http_cookie_pairs_for_url(
     host, path = _cookie_target(url)
     candidates: list[tuple[int, int, str, str]] = []
     for cookie in _object_list(storage_state.get("cookies")):
-        if not isinstance(cookie, Mapping):
-            continue
-        name = str(cookie.get("name") or "").strip()
-        value = str(cookie.get("value") or "").strip()
-        if not name or value == "":
-            continue
-        domain = str(cookie.get("domain") or "").strip().lower()
-        cookie_path = str(cookie.get("path") or "/").strip() or "/"
-        if host and domain and not _cookie_domain_matches(host, domain):
-            continue
-        if path and not _cookie_path_matches(path, cookie_path):
-            continue
-        domain_score = len(domain.lstrip("."))
-        path_score = len(cookie_path)
-        candidates.append((domain_score, path_score, name, value))
+        candidate = _http_cookie_candidate(cookie, host=host, path=path)
+        if candidate is not None:
+            candidates.append(candidate)
+    return _select_http_cookie_pairs(candidates)
+
+
+def _http_cookie_candidate(
+    cookie: object, *, host: str, path: str
+) -> tuple[int, int, str, str] | None:
+    if not isinstance(cookie, Mapping):
+        return None
+    name = str(cookie.get("name") or "").strip()
+    value = str(cookie.get("value") or "").strip()
+    if not name or value == "":
+        return None
+    domain = str(cookie.get("domain") or "").strip().lower()
+    cookie_path = str(cookie.get("path") or "/").strip() or "/"
+    if host and domain and not _cookie_domain_matches(host, domain):
+        return None
+    if path and not _cookie_path_matches(path, cookie_path):
+        return None
+    return len(domain.lstrip(".")), len(cookie_path), name, value
+
+
+def _select_http_cookie_pairs(
+    candidates: list[tuple[int, int, str, str]],
+) -> list[tuple[str, str]]:
     selected: dict[str, tuple[int, int, str, str]] = {}
     for domain_score, path_score, name, value in candidates:
         key = name.lower()

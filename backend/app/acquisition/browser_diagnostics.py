@@ -159,9 +159,9 @@ def is_timeout_error(exc: Exception) -> bool:
 def browser_failure_kind(exc: Exception) -> str:
     class_name = type(exc).__name__.lower()
     message = str(exc or "").lower()
-    if "targetclosed" in class_name or "target closed" in message:
+    if any(("targetclosed" in class_name, "target closed" in message)):
         return "page_closed"
-    if "page closed" in message or "browser has been closed" in message:
+    if any(("page closed" in message, "browser has been closed" in message)):
         return "page_closed"
     if "connection closed while reading from the driver" in message:
         return "browser_driver_closed"

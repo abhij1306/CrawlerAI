@@ -229,7 +229,7 @@ def parent_option_value_axis(obj: dict) -> str | None:
 
 
 def with_parent_variant_axes(obj: dict, axes: tuple[str, ...]) -> dict:
-    if not axes or obj.get("selectedOptions"):
+    if any((not axes, obj.get("selectedOptions"))):
         return obj
     values = [
         scalar_value(obj.get(key))
@@ -243,23 +243,26 @@ def with_parent_variant_axes(obj: dict, axes: tuple[str, ...]) -> dict:
     selected = [
         {"name": axis, "value": value}
         for axis, value in zip(axes, values, strict=False)
-        if value not in (None, "", [], {}) and not isinstance(value, dict)
+        if all((value not in (None, "", [], {}), not isinstance(value, dict)))
     ]
     url_axis_values = variant_endpoint_url_axis_values(url_value(obj))
+    selected_axes = {str(row["name"]) for row in selected}
     selected.extend(
         {"name": axis, "value": value}
         for axis, value in url_axis_values.items()
-        if all(row["name"] != axis for row in selected)
+        if axis not in selected_axes
     )
     if not selected:
         return obj
     enriched = {**obj, "selectedOptions": selected}
     url = url_value(enriched)
-    if (
-        "variantId" not in enriched
-        and url
-        and variant_endpoint_url_axis_count(url) >= len(selected)
-        and not (len(selected) == 1 and selected[0]["name"] == "color")
+    if all(
+        (
+            "variantId" not in enriched,
+            url,
+            variant_endpoint_url_axis_count(url) >= len(selected),
+            not all((len(selected) == 1, selected[0]["name"] == "color")),
+        )
     ):
         enriched["variantId"] = url
     return enriched

@@ -34,6 +34,21 @@ _URL_SCHEME_RE = re.compile(str(URL_CONCATENATION_SCHEME_PATTERN), re.I)
 _URL_CONCAT_ALLOWED_PREFIX_SEPARATORS = tuple(
     str(value) for value in (URL_CONCATENATION_ALLOWED_PREFIX_SEPARATORS or ())
 )
+_CANONICAL_QUERY_REMOVE_KEYS = frozenset(
+    str(key).strip().casefold()
+    for key in (PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS or ())
+    if str(key).strip()
+)
+_CANONICAL_QUERY_REMOVE_PREFIXES = tuple(
+    str(prefix).strip().casefold()
+    for prefix in (PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES or ())
+    if str(prefix).strip()
+)
+_CANONICAL_QUERY_REMOVE_PATTERNS = tuple(
+    re.compile(str(pattern).strip(), re.I)
+    for pattern in (PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PATTERNS or ())
+    if str(pattern).strip()
+)
 
 
 def _text_or_none(value: object) -> str | None:
@@ -180,33 +195,22 @@ def canonical_public_record_url(
     parsed = urlparse(text)
     if not parsed.query:
         return text
-    remove_keys = {
-        str(key or "").strip().lower()
-        for key in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS or ())
-        if str(key or "").strip()
-    }
-    remove_prefixes = tuple(
-        str(prefix or "").strip().lower()
-        for prefix in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES or ())
-        if str(prefix or "").strip()
-    )
-    remove_patterns = tuple(
-        re.compile(str(pattern or "").strip(), re.I)
-        for pattern in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PATTERNS or ())
-        if str(pattern or "").strip()
-    )
     kept_pairs = []
     changed = False
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
         lowered = str(key or "").strip().lower()
-        if (
-            lowered in remove_keys
-            or any(lowered.startswith(prefix) for prefix in remove_prefixes)
-            or any(pattern.fullmatch(lowered) for pattern in remove_patterns)
-        ):
+        if _remove_canonical_detail_query_key(lowered):
             changed = True
             continue
         kept_pairs.append((key, value))
     if not changed:
         return text
     return urlunparse(parsed._replace(query=urlencode(kept_pairs, doseq=True)))
+
+
+def _remove_canonical_detail_query_key(key: str) -> bool:
+    return bool(
+        key in _CANONICAL_QUERY_REMOVE_KEYS
+        or any(key.startswith(prefix) for prefix in _CANONICAL_QUERY_REMOVE_PREFIXES)
+        or any(pattern.fullmatch(key) for pattern in _CANONICAL_QUERY_REMOVE_PATTERNS)
+    )

@@ -5,7 +5,7 @@ import binascii
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 from urllib.parse import unquote, urlparse
 
 from app.core.config import variant_policy
@@ -155,7 +155,7 @@ def _object_matches_target(obj: dict, signals: _TargetSignals) -> bool:
     # 1. URL / handle / slug agreement (absolute identity, path, or terminal slug).
     for key in _ROOT_URL_KEYS:
         value = obj.get(key)
-        if not isinstance(value, str) or not value.strip():
+        if not _has_text(value):
             continue
         text = value.strip()
         if signals.identity and detail_url_resource_identity(text) == signals.identity:
@@ -179,6 +179,10 @@ def _object_matches_target(obj: dict, signals: _TargetSignals) -> bool:
         ):
             return True
     return False
+
+
+def _has_text(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _promote_to_product_root(
@@ -347,21 +351,24 @@ def path_product_identity_conflicts(page_url: str, path: str) -> bool:
         for part in parts
         if (item_id := _normalized_cache_item_id(part)) is not None
     }
-    if any(item_id not in parent_codes for item_id in normalized_item_ids):
+    if normalized_item_ids - parent_codes:
         return True
     for index, part in enumerate(parts[:-1]):
         if part.casefold() not in variant_policy.VARIANT_PRODUCT_MAP_PATH_TOKENS:
             continue
         candidate = parts[index + 1]
         normalized = "".join(char for char in candidate if char.isalnum()).upper()
-        if (
-            len(normalized) < variant_policy.VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH
-            or not any(char.isalpha() for char in normalized)
-            or not any(char.isdigit() for char in normalized)
-        ):
+        valid_code = all(
+            (
+                len(normalized) >= variant_policy.VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH,
+                any(map(str.isalpha, normalized)),
+                any(map(str.isdigit, normalized)),
+            )
+        )
+        if not valid_code:
             continue
         if not any(
-            left == normalized or left in normalized or normalized in left
+            any((left == normalized, left in normalized, normalized in left))
             for left in parent_codes
         ):
             return True

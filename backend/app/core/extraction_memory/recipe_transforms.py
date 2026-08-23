@@ -72,24 +72,36 @@ def _normalize_field(
     request: ExtractionRequest, value: Any, binding: RecipeBinding
 ) -> Any:
     field = binding.field
-    if field in {"url", "apply_url", "image_url", "additional_images"} and isinstance(
-        value, str
-    ):
-        value = urljoin(request.capture.final_url, value)
-    if field in {"image_url", "additional_images"}:
-        value = public_asset_delivery_url(value)
+    value = _normalize_field_url(request, field, value)
     if field == "additional_images" and isinstance(value, str) or field == "variants":
         return value
-    if field in {"title", "brand", "description"}:
-        value = clean_text(strip_html_tags(value))
-    if field in {"variant_id", "sku", "gtin"} and value is not None:
-        value = str(value).strip()
+    value = _normalize_textual_field(field, value)
     price = _normalized_price(value, binding)
     if price is not None:
         return price
     if field == "currency" and isinstance(value, str):
         return value.strip().upper()
     return normalize_value(field or "", value) if binding.transform or field else value
+
+
+def _normalize_field_url(
+    request: ExtractionRequest, field: str | None, value: Any
+) -> Any:
+    if field in {"url", "apply_url", "image_url", "additional_images"} and isinstance(
+        value, str
+    ):
+        value = urljoin(request.capture.final_url, value)
+    if field in {"image_url", "additional_images"}:
+        return public_asset_delivery_url(value)
+    return value
+
+
+def _normalize_textual_field(field: str | None, value: Any) -> Any:
+    if field in {"title", "brand", "description"}:
+        value = clean_text(strip_html_tags(value))
+    if field in {"variant_id", "sku", "gtin"} and value is not None:
+        value = str(value).strip()
+    return value
 
 
 def _normalized_price(value: Any, binding: RecipeBinding) -> Any | None:

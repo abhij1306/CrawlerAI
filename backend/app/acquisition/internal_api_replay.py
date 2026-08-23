@@ -105,7 +105,7 @@ async def _replay_endpoint(
         str(endpoint.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
     )
     url = str(endpoint.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").strip()
-    if method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS or not url:
+    if any((method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS, not url)):
         return None
     if _blocked_replay_path(url):
         return None

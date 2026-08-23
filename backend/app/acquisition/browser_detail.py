@@ -10,11 +10,10 @@ from app.acquisition.browser_accessibility import (
     accessibility_expand_candidates as _accessibility_expand_candidates,
     expand_interactive_elements_via_accessibility as _expand_via_accessibility,
 )
+from app.acquisition.browser_detail_candidates import candidate_is_admitted
 from app.core.config.extraction_rules import (
     BROWSER_DETAIL_EXPAND_KEYWORDS,
-    BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS,
     BROWSER_REQUESTED_DETAIL_SELECTOR_PRIORITY,
-    DETAIL_BLOCKED_TOKENS,
     DETAIL_EXPANSION_STATUS_ATTEMPTED,
     DETAIL_EXPANSION_STATUS_EXPANDED,
     DETAIL_EXPANSION_STATUS_INTERACTION_FAILED,
@@ -235,120 +234,6 @@ async def _candidate_rows(
     ]
 
 
-def _candidate_is_admitted(
-    snapshot: dict[str, object],
-    *,
-    selector: str,
-    keywords: tuple[str, ...],
-    requested_keywords: tuple[str, ...],
-    requested_fields: list[str] | None,
-) -> tuple[bool, tuple[str, str, str], str]:
-    label = str(snapshot.get("label") or "").strip().lower()
-    probe = str(snapshot.get("probe") or "").strip().lower()
-    aria_controls = str(snapshot.get("aria_controls") or "").strip().lower()
-    aria_expanded = str(snapshot.get("aria_expanded") or "").strip().lower()
-    data_action = str(snapshot.get("data_qa_action") or "").strip().lower()
-    class_name = str(snapshot.get("class_name") or "").strip().lower()
-    tag_name = str(snapshot.get("tag_name") or "").strip().lower()
-    href = str(snapshot.get("href") or "").strip().lower()
-    target = str(snapshot.get("target") or "").strip().lower()
-    keyword_probe = " ".join(
-        part for part in (label, probe, data_action, class_name) if part
-    )
-    requested_probe = " ".join(
-        part for part in (label, aria_controls, data_action) if part
-    )
-    size_toggle = any(
-        token in f"{data_action} {class_name}"
-        for token in ("size selector", "size-selector", "open-size-selector")
-    )
-    requested_match = bool(
-        requested_keywords
-        and any(word in requested_probe for word in requested_keywords)
-    )
-    fallback_match = any(word in requested_probe for word in keywords)
-    generic_toggle = bool(
-        requested_fields
-        and aria_controls
-        and label in BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS
-    )
-    generic_match = any(word in keyword_probe for word in keywords)
-    # An anchor that would open a new browsing context — target=_blank/_new or a
-    # real http(s) destination — is treated as navigational (blocked) even when it
-    # carries aria-controls. This stops detail-expansion from clicking links that
-    # spawn the "flash open then close" tabs the popup guard would otherwise reap,
-    # while genuine in-page toggles (#, javascript:, aria-controls-only buttons)
-    # stay admitted.
-    opens_new_context = target in {"_blank", "_new"}
-    real_link = bool(href) and not href.startswith(
-        ("#", "javascript:", "mailto:", "tel:")
-    )
-    navigational = (
-        tag_name == "a" and (opens_new_context or real_link) and not size_toggle
-    )
-    blocked = (
-        any(token in keyword_probe for token in DETAIL_BLOCKED_TOKENS)
-        and not size_toggle
-    )
-    unwanted = any(
-        token in keyword_probe
-        for token in (
-            "add-to-wishlist",
-            "gallery",
-            "media-zoom",
-            "thumbnail",
-            "wishlist",
-        )
-    )
-    expandable_selector = selector in {
-        "summary",
-        "details > summary",
-        "[aria-expanded='false']",
-        "button[aria-controls]",
-        "[role='button'][aria-controls]",
-        "[role='tab'][aria-controls]",
-    }
-    expandable = (
-        expandable_selector
-        or aria_expanded == "false"
-        or bool(aria_controls)
-        or tag_name == "summary"
-        or requested_match
-        or generic_match
-    )
-    in_chrome = bool(
-        snapshot.get("inside_header")
-        or snapshot.get("inside_nav")
-        or snapshot.get("inside_footer")
-    )
-    chrome_blocked = in_chrome and not bool(snapshot.get("inside_main"))
-    aside_blocked = bool(snapshot.get("inside_aside")) and not (
-        aria_controls
-        or aria_expanded == "false"
-        or requested_match
-        or fallback_match
-        or generic_match
-        or size_toggle
-    )
-    requested_blocked = bool(requested_fields) and not (
-        requested_match or fallback_match or generic_toggle or size_toggle
-    )
-    admitted = (
-        bool(snapshot.get("visible"))
-        and bool(snapshot.get("actionable"))
-        and not (
-            navigational
-            or blocked
-            or unwanted
-            or chrome_blocked
-            or aside_blocked
-            or requested_blocked
-        )
-        and expandable
-    )
-    return admitted, (label or probe, aria_controls, tag_name), label or probe
-
-
 async def _click_dom_candidate(page: Any, handle: Any) -> None:
     await handle.scroll_into_view_if_needed()
     try:
@@ -411,7 +296,7 @@ async def _expand_selector(
             break
         try:
             snapshot = prefetched or await interactive_candidate_snapshot(handle)
-            admitted, key, label = _candidate_is_admitted(
+            admitted, key, label = candidate_is_admitted(
                 snapshot,
                 selector=selector,
                 keywords=keywords,

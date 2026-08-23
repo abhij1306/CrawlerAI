@@ -37,7 +37,7 @@ async def persist_context_storage_state(
     timeout_seconds: float | None = None,
 ) -> None:
     normalized_domain = str(domain or "").strip()
-    if run_id is None and not normalized_domain:
+    if all((run_id is None, not normalized_domain)):
         return
     storage_state_fn = getattr(context, "storage_state", None)
     if storage_state_fn is None:

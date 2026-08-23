@@ -372,40 +372,46 @@ def title_preserving_acronyms(value: str) -> str:
 
 
 def extract_urls(value: object, page_url: str) -> list[str]:
-    results: list[str] = []
+    results = _extract_url_candidates(value, page_url)
+    return _dedupe_public_urls(results)
+
+
+def _extract_url_candidates(value: object, page_url: str) -> list[str]:
     if isinstance(value, str):
-        text = str(value or "").strip()
-        if not text:
-            return results
-        if _looks_like_malformed_relative_url_candidate(text):
-            return results
-        if is_concatenated_url(text) and not _looks_like_image_fetch_proxy_url(text):
-            return results
-        if _looks_like_image_fetch_proxy_url(text):
-            absolute = absolute_url(page_url, _trim_trailing_url_candidate(text))
-            return [absolute] if absolute else results
-        embedded_urls = re.findall(r"https?://(?:(?!https?://)[^\s])+", text)
-        if len(embedded_urls) >= 2:
-            for candidate in embedded_urls:
-                absolute = absolute_url(
-                    page_url,
-                    _trim_trailing_url_candidate(candidate),
-                )
-                if absolute:
-                    results.append(absolute)
-        else:
-            absolute = absolute_url(page_url, _trim_trailing_url_candidate(text))
-            if absolute:
-                results.append(absolute)
-    elif isinstance(value, dict):
-        for key in ("url", "href", "src", "contentUrl", "image", "thumbnail"):
-            candidate = value.get(key)
-            if candidate in (None, "", [], {}):
-                continue
-            results.extend(extract_urls(candidate, page_url))
-    elif isinstance(value, list):
-        for item in value:
-            results.extend(extract_urls(item, page_url))
+        return _extract_string_urls(value, page_url)
+    if isinstance(value, dict):
+        keys = ("url", "href", "src", "contentUrl", "image", "thumbnail")
+        return [
+            url
+            for key in keys
+            if value.get(key) not in (None, "", [], {})
+            for url in extract_urls(value[key], page_url)
+        ]
+    if isinstance(value, list):
+        return [url for item in value for url in extract_urls(item, page_url)]
+    return []
+
+
+def _extract_string_urls(value: str, page_url: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text or _looks_like_malformed_relative_url_candidate(text):
+        return []
+    is_proxy = _looks_like_image_fetch_proxy_url(text)
+    if is_concatenated_url(text) and not is_proxy:
+        return []
+    if is_proxy:
+        absolute = absolute_url(page_url, _trim_trailing_url_candidate(text))
+        return [absolute] if absolute else []
+    embedded_urls = re.findall(r"https?://(?:(?!https?://)[^\s])+", text)
+    candidates = embedded_urls if len(embedded_urls) >= 2 else [text]
+    return [
+        absolute
+        for candidate in candidates
+        if (absolute := absolute_url(page_url, _trim_trailing_url_candidate(candidate)))
+    ]
+
+
+def _dedupe_public_urls(results: list[str]) -> list[str]:
     deduped: list[str] = []
     seen: set[str] = set()
     for candidate in results:
