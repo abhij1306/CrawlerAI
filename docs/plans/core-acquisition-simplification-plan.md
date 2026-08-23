@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** DONE
 **Touches buckets:** core record/coercion helpers, acquisition/browser runtime, fetch policy, URL and source-capability logic
 
 ## Goal
@@ -13,14 +13,14 @@ This plan owns all Q-CC-PY findings under `backend/app/core`, `backend/app/acqui
 
 ## Acceptance Criteria
 
-- [ ] Radon reports no callable above CC 15 in the scoped production paths.
-- [ ] Existing source/proxy/browser admission, SSRF, public-target, block classification, engine attempt, timeout, cleanup, and storage-state behavior is preserved.
-- [ ] Brand/field coercion keeps identical accepted inputs, canonical values, error/None behavior, and ordering.
-- [ ] Static heuristic tables, regexes, thresholds, and field maps move to an existing `app/core/config/*` owner; service modules contain no new tunables.
-- [ ] No generic `utils`, strategy framework, policy duplicate, compatibility shim, or tiny-helper forest is introduced.
-- [ ] Existing focused tests remain unchanged unless a test asserted a private implementation detail.
-- [ ] Scoped LOC and CC debt entries only decrease or disappear.
-- [ ] Focused backend pytest, Ruff, mypy, and `$ship-main` CI pass.
+- [x] Radon reports no callable above CC 15 in the scoped production paths.
+- [x] Existing source/proxy/browser admission, SSRF, public-target, block classification, engine attempt, timeout, cleanup, and storage-state behavior is preserved.
+- [x] Brand/field coercion keeps identical accepted inputs, canonical values, error/None behavior, and ordering.
+- [x] Static heuristic tables, regexes, thresholds, and field maps move to an existing `app/core/config/*` owner; service modules contain no new tunables.
+- [x] No generic `utils`, strategy framework, policy duplicate, compatibility shim, or tiny-helper forest is introduced.
+- [x] Existing focused tests remain unchanged unless a test asserted a private implementation detail.
+- [x] Scoped LOC and CC debt entries only decrease or disappear.
+- [x] Focused backend pytest, Ruff, mypy, and `$ship-main` CI pass.
 
 ## Do Not Touch
 
@@ -87,7 +87,7 @@ This plan owns all Q-CC-PY findings under `backend/app/core`, `backend/app/acqui
 
 ### Slice 6: `$ship-main`
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Preserve unrelated work, branch safely, run focused local checks, commit/push, open a non-draft PR, wait for all required CI, fix failures on the same branch, merge only green/mergeable work, then synchronize and verify local `main`.
@@ -98,7 +98,7 @@ This plan owns all Q-CC-PY findings under `backend/app/core`, `backend/app/acqui
 
 - [x] `docs/CODEBASE_MAP.md` — only for changed ownership.
 - [x] `docs/backend-architecture.md` — core/acquisition responsibility changes.
-- [ ] `docs/INVARIANTS.md` — only if a contract clarification is required.
+- [x] `docs/INVARIANTS.md` — no contract clarification required.
 
 ## Notes
 
@@ -110,3 +110,4 @@ This plan owns all Q-CC-PY findings under `backend/app/core`, `backend/app/acqui
 - Slice 3 cleared all 15 CC>15 callables in browser admission/content-classification owners. Candidate admission is now explicit text/match/navigation/location/expandability predicates; block detection separates product identity, marker collection, hard/shell/provider/captcha verdict groups; readiness separates detail/listing/shell signals and surface verdict assembly. Platform detection, source capabilities, listing visual snapshots, and primary HTML choice stay in their original owners with flatter stages. Focused closeout passed 107 cases; Ruff and mypy (362 files) pass.
 - Slice 4 cleared the remaining 16 acquisition CC>15 callables. Navigation attempts, HTTP/browser handoff, capture close/JSON repair, browser identity, storage persistence, cookie selection, replay, diagnostics, and traversal predicates keep their original side-effect order. Focused acquisition closeout passed 228 cases after the final owner split; the wider core/acquisition verification passed another 93 cases. Ruff passes and mypy reports no issues in 364 source files.
 - Slice 5 moved static HTML classification to `browser_content_signals.py` and detail candidate admission to `browser_detail_candidates.py`; live readiness and click orchestration remain in their prior owners. The scoped live inventory is now 0 callables above CC 15. All scoped complexity-debt entries were removed; `browser_readiness.py` and `browser_result_builder.py` left oversized debt, and no oversized/complexity cap increased. AP-30 aggregate ownership ratchets were reconciled to acquisition 17,622, core 21,101, and total app 85,728 with an explicit owner-split rationale. Architecture verification passed 36 cases; `git diff --check` passes.
+- Slice 6 shipped through PR #53. The first CI pass found two CodeQL alerts caused by logging secret-derived diagnostic collections; the log metadata was removed, 16 focused config/auth tests passed, and the replacement CI pass completed with all 14 checks green. Merge commit and local/remote `main` equality are recorded in the final ship handoff because neither exists until after this plan commit merges.
