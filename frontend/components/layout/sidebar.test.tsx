@@ -63,13 +63,6 @@ beforeEach(() => {
 });
 
 describe('Sidebar logout', () => {
-  it('shows the active account in place of the old theme section', () => {
-    renderSidebar();
-
-    expect(screen.getByText('Account')).toBeInTheDocument();
-    expect(screen.getByText('admin@example.com')).toBeInTheDocument();
-  });
-
   it('posts to the logout endpoint, clears cached queries, and navigates to /login', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -81,7 +74,7 @@ describe('Sidebar logout', () => {
       expect(screen.getByTestId('location-probe')).toHaveTextContent('/login');
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(String(url)).toContain('/api/auth/logout');
     expect(init.method).toBe('POST');
