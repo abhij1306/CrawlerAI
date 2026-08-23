@@ -602,7 +602,7 @@ async def test_await_without_cancelling_registers_task_when_caller_is_cancelled(
     caller.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await caller
+        _ = await caller
 
     assert browser_background_tasks._eviction_cleanup_tasks
     release.set()
