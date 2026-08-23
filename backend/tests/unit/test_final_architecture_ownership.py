@@ -12,9 +12,9 @@ pytestmark = pytest.mark.unit
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
-# Exact post-decomposition inventory. Tool total includes the explicit
-# per-field console predicate that preserves the acceptance runner's output.
-TEST_LOC_BUDGET = 55_357
+# Exact inventory. PR #53 regression coverage raises tests +25 to measured;
+# tools include the explicit per-field console-output predicate.
+TEST_LOC_BUDGET = 55_382
 TOOL_LOC_BUDGET = 3_723
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the

@@ -320,7 +320,7 @@ def _direct_product_url_brand(context: _BrandUrlContext, _url: str) -> str | Non
         and prefix_allowed
     )
     standard = shared and any(
-        marker in context.path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS[:1]
+        marker in context.path_text for marker in ECOMMERCE_DETAIL_PATH_MARKERS
     )
     single_path = (
         shared and len(context.title_tokens) >= 4 and len(context.path_parts) == 1

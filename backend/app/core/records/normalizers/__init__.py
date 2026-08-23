@@ -29,15 +29,6 @@ _CURRENCY_CODE_CONTEXT_PATTERN = (
     )
     or r"(?!)"
 )
-_CURRENCY_CONTEXT_RE = re.compile(
-    (
-        r"[$€£¥₹]|(?:^|\b)(?:price|sale|now|from|starting(?:\s+at)?|mrp|msrp|cost|"
-        rf"{_CURRENCY_CODE_CONTEXT_PATTERN}|rs\.?)\b"
-    ),
-    re.I,
-)
-
-
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").split()).strip()
 
@@ -92,7 +83,7 @@ def normalize_decimal_price(
                 val, interpret_integral_as_cents=interpret_integral_as_cents
             )
         return None
-    text = _admitted_price_text(value, interpret_integral_as_cents)
+    text = _admitted_price_text(value)
     if text is None:
         return None
     match = _NUMERIC_TEXT_RE.search(text)
@@ -113,9 +104,7 @@ def normalize_decimal_price(
     return format(decimal, "f")
 
 
-def _admitted_price_text(
-    value: object, interpret_integral_as_cents: bool
-) -> str | None:
+def _admitted_price_text(value: object) -> str | None:
     text = _normalize_text(value)
     if not text:
         return None
@@ -128,15 +117,7 @@ def _admitted_price_text(
     if not isinstance(value, str):
         return text
     stripped = _canonicalize_decimal_candidate(text)
-    ambiguous_integer = stripped is not None and all(
-        (
-            not interpret_integral_as_cents,
-            "." not in stripped,
-            len(re.sub(r"\D+", "", stripped)) <= 3,
-            _CURRENCY_CONTEXT_RE.search(text) is None,
-        )
-    )
-    return None if stripped is None or ambiguous_integer else text
+    return text if stripped is not None else None
 
 
 def _decimal_mapping_scalar(value: dict[object, object]) -> object | None:
@@ -261,9 +242,10 @@ def _normalize_decimal_field(value: object) -> str:
             if candidate is None:
                 return ""
             try:
-                return format(Decimal(candidate), "f")
+                decimal = Decimal(candidate)
             except (InvalidOperation, ValueError):
                 return ""
+            return "" if decimal < 0 else format(decimal, "f")
     result = normalize_decimal_price(value)
     return result if result is not None else ""
 

@@ -319,7 +319,7 @@ def ready_probe_supports_fast_finalize(
     status_code: int,
     expansion_diagnostics: dict[str, object] | None = None,
 ) -> bool:
-    if int(status_code or 0) in {401, 403, 429}:
+    if int(status_code or 0) not in range(200, 300):
         return False
     normalized_surface = str(surface).strip().lower()
     min_visible_text = int(crawler_runtime_settings.browser_readiness_visible_text_min)

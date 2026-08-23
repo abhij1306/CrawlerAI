@@ -100,6 +100,8 @@ Complete variant offers are semantic data, not transport duplication. Public-con
 
 Locale and market interpretation are policy, not structural extraction. Decimal/thousands parsing, ccTLD/locale currency inference, currency-symbol mapping, and GTIN check-digit validation belong to `app/core/config/locale_format_rules.py`. Availability enum/tokens and token-to-enum normalization belong beside the canonical enum in `app/core/config/extraction_rules/`. Extraction normalizes evidence by delegating to these config-owned policy surfaces; resolution remains the semantic authority for choosing currency evidence and deriving currency fallback facts.
 
+Plain integral price strings represent whole currency units unless the calling transform explicitly enables integral-cent interpretation. Price and other decimal fields reject negative numeric values in every accepted string representation.
+
 Asset dedupe uses canonical asset identity, not delivery URL equality. Storefront-host and CDN-host Shopify URLs for the same file, and transformed Nike URLs for the same asset ID, are one asset. Keep the strongest delivery URL.
 
 Image candidate parsing must preserve delivery-URL syntax before normalization. In particular, a comma inside a `srcset` URL is part of that URL; only the candidate grammar may separate source-set entries. A malformed relative fragment created by source-set parsing is not admissible image evidence.
@@ -183,6 +185,8 @@ Ecommerce detail must not call missing-field value generation. LLM may later cho
 
 Browser acquisition may use Patchright or real Chrome to produce better observations: rendered HTML, network payloads, visible text, accessibility text, readiness probes, and screenshots when enabled. It may also produce explicit detail-expansion artifacts (HTML/JSON from clicked size/color variant controls, expanded accordion sections, etc.). These are observation artifacts and are allowed inputs to extraction and LLM repair.
 Browser acquisition must not fabricate fields. It must not run hidden page scripts that directly assign `price`, `brand`, `variants`, or other logical fields outside the normal extraction/repair provenance path.
+
+Readiness and verified detail-extractability evidence may fast-finalize browser acquisition only for successful 2xx responses. HTTP error responses must continue through normal block/error classification even when their rendered body contains otherwise extractable fields.
 
 A crawl page must never open a second browsing context. As soon as the page is created, `suppress_new_context_openers` installs an idempotent guard (init script for every navigation plus an immediate `evaluate` for the live document) that neutralizes both new-tab vectors: `window.open` is overridden to return null, and a capture-phase click listener rewrites any anchor `target` to `_self`. Detail expansion deliberately keeps clicking accordions/tabs/"show more"; suppression is what makes those clicks safe so collapsed content is still revealed without a tab flashing open. The reactive popup guard (`install_popup_guard`) stays as the backstop for anything JS contrives that attribute/`window.open` rewriting can't catch — it is the safety net, not the primary defense. Detail admission (`_candidate_is_admitted`) is the third layer: navigational anchors (a real http(s) `href` or `target=_blank`/`_new`) are never clicked even when they also carry `aria-controls`, so only genuine in-page toggles are exercised.
 
