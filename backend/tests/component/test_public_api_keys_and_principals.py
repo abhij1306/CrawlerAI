@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 # ruff: noqa: F403, F405
 from .public_api_test_support import *
 from .public_api_test_support import (
@@ -8,6 +10,7 @@ from .public_api_test_support import (
     _public_auth_session,
     _seed_public_api_key,
 )
+from app.core.api_key_service import revoke_api_key
 
 
 @pytest.mark.asyncio
@@ -244,6 +247,44 @@ async def test_public_api_principal_cache_bounds_revocation_staleness_by_ttl(
     with pytest.raises(HTTPException) as exc_info:
         await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
     assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_revoke_cannot_be_undone_by_inflight_authentication_cache_fill(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_key = "crawlerai_race_regression_key"
+    api_key = _seed_public_api_key(db_session, test_user.id, raw_key)
+    await db_session.commit()
+    cache_fill_started = asyncio.Event()
+    allow_cache_fill = asyncio.Event()
+    original_cache_principal = public_auth._cache_principal
+
+    async def _paused_cache_fill(key_hash, entry):
+        cache_fill_started.set()
+        await allow_cache_fill.wait()
+        await original_cache_principal(key_hash, entry)
+
+    monkeypatch.setattr(public_auth, "_cache_principal", _paused_cache_fill)
+    authentication = asyncio.create_task(
+        authenticate_public_api_key(db_session, f"Bearer {raw_key}", touch=False)
+    )
+    await cache_fill_started.wait()
+    revocation = asyncio.create_task(
+        revoke_api_key(db_session, user_id=test_user.id, key_id=api_key.id)
+    )
+    await asyncio.sleep(0)
+    assert revocation.done() is False
+
+    allow_cache_fill.set()
+    await authentication
+    await revocation
+
+    with pytest.raises(HTTPException):
+        await authenticate_public_api_key(db_session, f"Bearer {raw_key}", touch=False)
 
 
 @pytest.mark.asyncio

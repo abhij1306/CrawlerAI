@@ -14,7 +14,7 @@ APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # Exact inventory. API/MCP launch adds focused key-lifecycle, protocol, and
 # authentication-cache regressions; both ratchets remain measured.
-TEST_LOC_BUDGET = 55_619
+TEST_LOC_BUDGET = 55_653
 TOOL_LOC_BUDGET = 3_813
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
