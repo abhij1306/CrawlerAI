@@ -2,6 +2,27 @@ from __future__ import annotations
 
 # ruff: noqa: F403, F405
 from .harness_runtime_test_support import *
+from harness.artifact_quality_cases import _first_mapping
+from harness.quality_evaluator import build_acceptance_gate_report
+
+
+@pytest.mark.regression
+def test_artifact_mapping_normalization_preserves_direct_mappings() -> None:
+    mapping = {"price": "captured_published"}
+
+    assert _first_mapping(mapping) is mapping
+    assert _first_mapping([mapping]) is mapping
+    assert _first_mapping([]) == {}
+
+
+@pytest.mark.regression
+def test_acceptance_gate_keeps_unknown_reopened_issue_ids() -> None:
+    report = build_acceptance_gate_report(
+        {"gate_result": "passed", "reopened_issue_ids": ["QD-03", "CUSTOM-01"]}
+    )
+
+    assert report["quality_clean"] is False
+    assert report["unresolved_issue_ids"] == ("QD-03", "CUSTOM-01")
 
 
 @pytest.mark.regression

@@ -758,6 +758,40 @@ class TestNativeContextContract:
         assert headers.get("sec-ch-ua-mobile") == "?0"
         assert "Google Chrome" in str(headers.get("sec-ch-ua") or "")
 
+    @pytest.mark.parametrize(
+        "geolocation",
+        (
+            {"latitude": "north", "longitude": 12.5},
+            {"latitude": 48.1, "longitude": object()},
+            {"latitude": 48.1, "longitude": 12.5, "accuracy": "exact"},
+        ),
+    )
+    def test_native_context_ignores_invalid_geolocation(
+        self, geolocation: dict[str, object]
+    ) -> None:
+        opts = browser_identity.build_playwright_context_options(
+            locality_profile={"geolocation": geolocation}
+        )
+
+        assert "geolocation" not in opts
+
+    def test_native_context_copies_permissions_before_adding_geolocation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        native_permissions = ["camera"]
+        monkeypatch.setattr(
+            browser_identity,
+            "NATIVE_REAL_CHROME_CONTEXT_OPTIONS",
+            {"no_viewport": True, "permissions": native_permissions},
+        )
+
+        opts = browser_identity.build_playwright_context_options(
+            locality_profile={"geolocation": {"latitude": 48.1, "longitude": 12.5}}
+        )
+
+        assert opts["permissions"] == ["camera", "geolocation"]
+        assert native_permissions == ["camera"]
+
     def test_native_context_uses_no_viewport_true(self) -> None:
         opts = browser_identity.build_playwright_context_options()
         assert opts.get("no_viewport") is True

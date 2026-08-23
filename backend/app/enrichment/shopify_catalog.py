@@ -288,31 +288,11 @@ def phrase_path_category_match(
         if not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
     ]
     if not matches:
-        # Fallback: build leaf token sets via clean_text/tokenize_text, then keep
-        # paths whose normalized path tokens cover the phrase, share a leaf token,
-        # and do not conflict; the post-filter prefers non-accessory paths.
-        leaf_tokens_by_path = {
-            str(item.get("category_path") or ""): set(
-                tokenize_text(
-                    item.get("leaf")
-                    or clean_text(item.get("category_path")).split(">")[-1]
-                )
-            )
-            for item in taxonomy_index.categories
-        }
-        matches = [
-            item
-            for item in taxonomy_index.categories
-            if phrase_tokens
-            <= normalized_token_set(string_iterable(item.get("path_match_tokens")))
-            and bool(
-                phrase_tokens
-                & leaf_tokens_by_path[str(item.get("category_path") or "")]
-            )
-            and not taxonomy_candidate_conflicts(
-                source_tokens, item.get("category_path")
-            )
-        ]
+        matches = _fallback_phrase_path_matches(
+            phrase_tokens,
+            taxonomy_index=taxonomy_index,
+            source_tokens=source_tokens,
+        )
     non_accessory_matches = [
         item
         for item in matches
@@ -329,6 +309,32 @@ def phrase_path_category_match(
         )
     )
     return category_match_payload(matches[0], score=0.87, source="path_phrase")
+
+
+def _fallback_phrase_path_matches(
+    phrase_tokens: set[str],
+    *,
+    taxonomy_index: TaxonomyIndex,
+    source_tokens: set[str],
+) -> list[dict[str, object]]:
+    leaf_tokens_by_path = {
+        str(item.get("category_path") or ""): set(
+            tokenize_text(
+                item.get("leaf") or clean_text(item.get("category_path")).split(">")[-1]
+            )
+        )
+        for item in taxonomy_index.categories
+    }
+    return [
+        item
+        for item in taxonomy_index.categories
+        if phrase_tokens
+        <= normalized_token_set(string_iterable(item.get("path_match_tokens")))
+        and bool(
+            phrase_tokens & leaf_tokens_by_path[str(item.get("category_path") or "")]
+        )
+        and not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+    ]
 
 
 def leaf_token_category_match(

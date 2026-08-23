@@ -45,20 +45,28 @@ def looks_like_product_detail_url(value: object) -> bool:
         return False
     has_product_hint = any(hint in path for hint in DISCOVERY_PRODUCT_PATH_HINTS)
     segments = [segment for segment in path.strip("/").split("/") if segment]
-    if any(_non_product_path_segment(segment) for segment in segments):
-        return False
-    if not has_product_hint and any(
-        segment in DISCOVERY_LISTING_PATH_SEGMENTS for segment in segments
-    ):
+    if _path_is_rejected(segments, has_product_hint=has_product_hint):
         return False
     if has_product_hint:
         return True
     terminal = segments[-1] if segments else ""
-    if terminal.endswith(tuple(DISCOVERY_PRODUCT_DETAIL_EXTENSIONS)):
+    return _terminal_looks_like_product(terminal)
+
+
+def _path_is_rejected(segments: list[str], *, has_product_hint: bool) -> bool:
+    if any(_non_product_path_segment(segment) for segment in segments):
         return True
-    if _descriptive_product_slug(terminal):
-        return True
-    return _product_id_like(terminal)
+    return not has_product_hint and any(
+        segment in DISCOVERY_LISTING_PATH_SEGMENTS for segment in segments
+    )
+
+
+def _terminal_looks_like_product(terminal: str) -> bool:
+    return (
+        terminal.endswith(tuple(DISCOVERY_PRODUCT_DETAIL_EXTENSIONS))
+        or _descriptive_product_slug(terminal)
+        or _product_id_like(terminal)
+    )
 
 
 def normalized_compare_url(value: object) -> str:

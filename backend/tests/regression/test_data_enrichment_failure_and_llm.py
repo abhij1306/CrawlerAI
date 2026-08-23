@@ -3,6 +3,25 @@ from __future__ import annotations
 # ruff: noqa: F403, F405
 from .data_enrichment_test_support import *
 from .data_enrichment_test_support import _as_async
+from app.enrichment import llm_diagnostics
+
+
+@pytest.mark.regression
+def test_llm_category_backfill_ignores_empty_resolved_reference(monkeypatch) -> None:
+    product = EnrichedProduct(job_id=1, source_url="https://example.com/product")
+    monkeypatch.setattr(
+        llm_diagnostics,
+        "taxonomy_reference_for_category_path",
+        lambda *_args: {"category_path": "   "},
+    )
+
+    applied = llm_diagnostics.apply_llm_payload(
+        product,
+        {"category_path": "Apparel & Accessories > Clothing"},
+    )
+
+    assert product.category_path is None
+    assert "category_path" not in applied
 
 
 @pytest.mark.asyncio

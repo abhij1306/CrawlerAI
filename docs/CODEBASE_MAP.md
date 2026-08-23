@@ -11,9 +11,11 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
-| `harness_support.py` | Acceptance helpers, `TEST_SITES.md` parsing, explicit-surface handling, audit shaping |
+| `harness_support.py`, `harness/support.py` | Stable acceptance entry points plus live-run/review orchestration and result-quality evaluation |
+| `harness/site_sets.py`, `harness/challenge_classifier.py`, `harness/quality_evaluator.py`, `harness/artifact_quality_cases.py` | Site input parsing, failure classification, catalog gates, and artifact replay auditing |
 | `test_site_sets/commerce_browser_heavy.json` | Commerce acceptance manifest and quality expectations |
-| `browser_surface_probe/core.py`, `browser_surface_probe/report_rendering.py` | Browser-surface diagnostic harness and report rendering |
+| `browser_surface_probe/core.py` | Browser-surface probe orchestration and artifact bundle assembly |
+| `browser_surface_probe/signal_extractor.py`, `target_diagnostics.py`, `report_rendering.py`, `value_coercion.py` | Page-signal collection, target transport/browser diagnosis, report/findings rendering, and shared probe value normalization |
 
 ### `api/` — route handlers only
 
@@ -83,13 +85,14 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `crawl/profile/*` | Reusable domain run-profile normalization, merge, persistence, and acquisition-contract learning |
 | `crawl/events.py` | WebSocket log emission |
 | `intelligence/*` | Product web discovery, candidate URL admission/dedupe, brand registry loading, candidate crawl orchestration, deterministic match scoring |
-| `../data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
+| `intelligence/candidate_polling.py` | Batched candidate crawl-status polling, ready-candidate scoring, timeout transitions, and summary refresh |
+| `data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
 | `enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `crawl/category_discovery.py` | Shared Crawl Studio category discovery response assembly for one or more seed URLs |
 | `connectors/public_api/extraction_service.py` | Public HTTP-only single-product extraction wrapper over normal crawl creation and per-URL pipeline processing |
 | `connectors/public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
 | `enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
-| `enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
+| `enrichment/llm_diagnostics.py` | Data enrichment LLM payload application, rejection, and skip-reason diagnostics |
 | `enrichment/shopify_catalog.py` | Shopify taxonomy scoring, matching, and exact-conflict policy |
 | `enrichment/shopify_repository.py` | Shopify taxonomy/attribute JSON loading, normalization, and lookup indexes |
 | `crawl/batch_runtime.py` | URL orchestration, per-URL session ownership, concurrency, progress, pause, kill checks |
@@ -288,7 +291,11 @@ above replaced them.
 |---|---|
 | `core/config/extraction_memory.py` | Stable store vocabulary and versions |
 | `models/extraction_memory.py` | Purpose-built template, recipe, compiled recipe, release, manifest, label, and observation tables |
-| `persistence/extraction_memory.py` | Template/recipe upsert, compilation, release freezing, per-URL observation, and purge |
+| `persistence/extraction_memory.py` | Template/recipe writes, learn-once claims and drift locking, per-URL manifest orchestration, and purge |
+| `persistence/extraction_memory_releases.py` | Recipe-layer compilation, immutable release creation/activation, selector projection, and bounded release-payload caching |
+| `persistence/extraction_memory_sources.py` | Published-evidence source preference shaping and observed contract merging |
+| `persistence/extraction_memory_observations.py` | Sentinel observation validation, recording, and confirmed-drift suspension |
+| `persistence/extraction_memory_knowledge.py` | Knowledge-site and contract query projections plus operator source-selection persistence |
 | `core/extraction_memory/templates.py` | Pure route normalization and structural fingerprinting |
 | `core/extraction_memory/contract_runtime.py` | Pure frozen-release preference lookup; Resolve owns eligibility and ranking |
 | `api/knowledge.py` | Compatibility route surface backed only by extraction memory |
@@ -325,7 +332,7 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 | Basename | Canonical owners |
 |---|---|
 | `contracts.py` ×4 | `acquisition/contracts.py` (browser fetch attempt specs) · `crawl/contracts.py` (run-facing DTOs: `UrlResult`, `RunSummary`) · `extraction/contracts.py` (extraction execution context/bundle contracts) · `persistence/contracts.py` (artifact store reference) |
-| `extraction_memory.py` ×3 | `core/config/extraction_memory.py` (store vocabulary/versions) · `models/extraction_memory.py` (ORM tables) · `persistence/extraction_memory.py` (upsert/compile/release/observe/purge) |
+| `extraction_memory.py` owners | `core/config/extraction_memory.py` (store vocabulary/versions) · `models/extraction_memory.py` (ORM tables) · `persistence/extraction_memory*.py` (writes/locks, releases, observations, source preference, and knowledge projections) |
 | `service.py` ×3 | `crawl/service.py` (run lifecycle control: dispatch/pause/resume/kill/cancel) · `enrichment/service.py` (data-enrichment job lifecycle) · `intelligence/service.py` (product-intelligence job lifecycle) |
 | `types.py` ×3 | `acquisition/fetch/types.py` (fetch runtime context and attempt state) · `connectors/llm/types.py` (LLM connector task results) · `crawl/pipeline/types.py` (URL-processing result and record-writer protocol) |
 

@@ -131,16 +131,20 @@ def _apply_geolocation(context_options: dict[str, Any], value: object) -> None:
     longitude = value.get("longitude")
     if latitude is None or longitude is None:
         return
-    geolocation: dict[str, Any] = {
-        "latitude": float(latitude),
-        "longitude": float(longitude),
-    }
-    if value.get("accuracy") is not None:
-        geolocation["accuracy"] = float(value["accuracy"])
+    try:
+        geolocation: dict[str, Any] = {
+            "latitude": float(latitude),
+            "longitude": float(longitude),
+        }
+        if value.get("accuracy") is not None:
+            geolocation["accuracy"] = float(value["accuracy"])
+    except (TypeError, ValueError):
+        return
     context_options["geolocation"] = geolocation
-    permissions = context_options.setdefault("permissions", [])
+    permissions = list(context_options.setdefault("permissions", []))
     if "geolocation" not in permissions:
         permissions.append("geolocation")
+    context_options["permissions"] = permissions
 
 
 def _merge_browser_context_profile(

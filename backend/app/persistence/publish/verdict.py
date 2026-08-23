@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 VERDICT_SUCCESS: str = "success"
 VERDICT_PARTIAL: str = "partial"
@@ -68,53 +68,25 @@ def run_health_verdict(summary: dict[str, object] | object) -> dict[str, object]
         for value in list(raw_verdicts or [])
         if str(value or "").strip()
     ]
-    try:
-        url_count = int(payload.get("url_count") or 0)
-    except (TypeError, ValueError):
-        url_count = 0
-    # In-flight fixed-size progress patches carry verdict_counts instead of
-    # the full url_verdicts list; derive the same failure signal from counts.
-    count_processed = 0
-    count_failures = 0
-    raw_counts = payload.get("verdict_counts")
-    if not isinstance(raw_verdicts, list) and isinstance(raw_counts, Mapping):
-        for key, value in raw_counts.items():
-            verdict_key = str(key or "").strip()
-            if not verdict_key:
-                continue
-            try:
-                count = int(value or 0)
-            except (TypeError, ValueError):
-                continue
-            if count <= 0:
-                continue
-            count_processed += count
-            if verdict_key not in {VERDICT_SUCCESS, VERDICT_PARTIAL}:
-                count_failures += count
-    if isinstance(raw_verdicts, list):
-        total = max(url_count, len(verdicts)) if verdicts else 0
-        failures = sum(
-            1
-            for verdict in verdicts
-            if verdict not in {VERDICT_SUCCESS, VERDICT_PARTIAL}
-        )
-    elif count_processed:
-        total = max(url_count, count_processed)
-        failures = count_failures
-    else:
-        total = url_count
-        failures = 0
+    url_count = _safe_count(payload.get("url_count"))
+    count_processed, count_failures = _verdict_count_summary(
+        raw_verdicts, payload.get("verdict_counts")
+    )
+    total, failures = _health_totals(
+        raw_verdicts=raw_verdicts,
+        verdicts=verdicts,
+        url_count=url_count,
+        count_processed=count_processed,
+        count_failures=count_failures,
+    )
     failure_rate = failures / total if total else 0.0
-    status = "unknown"
-    if total:
-        if failure_rate >= crawler_runtime_settings.run_health_failed_error_rate:
-            status = "failed"
-        elif failure_rate >= crawler_runtime_settings.run_health_degraded_error_rate:
-            status = "degraded"
-        else:
-            status = "healthy"
-    elif isinstance(raw_verdicts, list):
-        status = "healthy"
+    status = _health_status(
+        total=total,
+        failure_rate=failure_rate,
+        has_verdict_list=isinstance(raw_verdicts, list),
+        degraded_rate=crawler_runtime_settings.run_health_degraded_error_rate,
+        failed_rate=crawler_runtime_settings.run_health_failed_error_rate,
+    )
     return {
         "status": status,
         "url_count": total,
@@ -123,3 +95,61 @@ def run_health_verdict(summary: dict[str, object] | object) -> dict[str, object]
         "degraded_error_rate": crawler_runtime_settings.run_health_degraded_error_rate,
         "failed_error_rate": crawler_runtime_settings.run_health_failed_error_rate,
     }
+
+
+def _safe_count(value: object) -> int:
+    try:
+        return int(cast(Any, value) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _verdict_count_summary(raw_verdicts: object, raw_counts: object) -> tuple[int, int]:
+    if isinstance(raw_verdicts, list) or not isinstance(raw_counts, Mapping):
+        return 0, 0
+    processed = failures = 0
+    for key, value in raw_counts.items():
+        verdict = str(key or "").strip()
+        count = _safe_count(value)
+        if not verdict or count <= 0:
+            continue
+        processed += count
+        if verdict not in {VERDICT_SUCCESS, VERDICT_PARTIAL}:
+            failures += count
+    return processed, failures
+
+
+def _health_totals(
+    *,
+    raw_verdicts: object,
+    verdicts: list[str],
+    url_count: int,
+    count_processed: int,
+    count_failures: int,
+) -> tuple[int, int]:
+    if isinstance(raw_verdicts, list):
+        total = max(url_count, len(verdicts)) if verdicts else 0
+        failures = sum(
+            verdict not in {VERDICT_SUCCESS, VERDICT_PARTIAL} for verdict in verdicts
+        )
+        return total, failures
+    if count_processed:
+        return max(url_count, count_processed), count_failures
+    return url_count, 0
+
+
+def _health_status(
+    *,
+    total: int,
+    failure_rate: float,
+    has_verdict_list: bool,
+    degraded_rate: float,
+    failed_rate: float,
+) -> str:
+    if not total:
+        return "healthy" if has_verdict_list else "unknown"
+    if failure_rate >= failed_rate:
+        return "failed"
+    if failure_rate >= degraded_rate:
+        return "degraded"
+    return "healthy"

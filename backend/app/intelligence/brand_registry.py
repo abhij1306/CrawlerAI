@@ -4,11 +4,25 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from app.core.config.product_intelligence import BRAND_ALIAS_MAP, PRIVATE_LABEL_BRANDS
+
 
 _DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "product_intelligence"
 _BELK_BRANDS_FILE = _DATA_DIR / "belk_brands.txt"
 _BELK_EXCLUSIVE_BRANDS_FILE = _DATA_DIR / "belk_exclusive_brands.txt"
 _MIN_BRAND_KEY_LENGTH = 3
+
+
+def normalize_brand(value: object) -> str:
+    text = str(value or "").casefold().strip()
+    normalized = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    return BRAND_ALIAS_MAP.get(normalized, normalized)
+
+
+def is_private_label(brand: object) -> bool:
+    return normalize_brand(brand) in PRIVATE_LABEL_BRANDS or is_belk_exclusive_brand(
+        brand
+    )
 
 
 @lru_cache(maxsize=1)

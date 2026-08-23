@@ -50,8 +50,6 @@ from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRec
 
 from app.persistence.extraction_memory import (
     RecipeCompileError,
-    _merge_observed_sources,
-    _sentinel_template_in_scope,
     activate_release_snapshot_for_run,
     active_release_snapshot_for_run,
     build_release_payload,
@@ -63,6 +61,12 @@ from app.persistence.extraction_memory import (
     rollback_release_snapshot_for_run,
     selector_rules_from_release,
     upsert_recipe,
+)
+from app.persistence.extraction_memory_observations import (
+    _sentinel_template_in_scope,
+)
+from app.persistence.extraction_memory_sources import (
+    merge_observed_sources as _merge_observed_sources,
 )
 
 

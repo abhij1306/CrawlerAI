@@ -48,32 +48,7 @@ class ModelPrediction(ModelHarnessModel):
 
     @model_validator(mode="after")
     def validate_evidence_only_prediction(self) -> ModelPrediction:
-        if self.kind == "page_type" and self.page_type is None:
-            raise ValueError("Page-type predictions require page_type")
-        if self.kind == "record_boundary":
-            if self.record_id is None or not self.grounding:
-                raise ValueError(
-                    "Grounded prediction record boundaries require record_id and grounding"
-                )
-        if self.kind == "field":
-            if self.field_name is None or self.value is None:
-                raise ValueError("Field predictions require field_name and value")
-            if not self.grounding:
-                raise ValueError("Grounded prediction fields require source grounding")
-        if self.kind == "exclusion_region":
-            if self.region_role not in {"recommendation", "boilerplate", "unrelated"}:
-                raise ValueError(
-                    "Exclusion-region predictions require a non-primary region_role"
-                )
-            if not self.grounding:
-                raise ValueError(
-                    "Grounded prediction exclusion regions require source grounding"
-                )
-        if self.kind == "entity_relationship":
-            if self.relationship is None or not self.grounding:
-                raise ValueError(
-                    "Grounded prediction relationships require relationship and grounding"
-                )
+        _validate_prediction_shape(self)
         return self
 
 
@@ -91,6 +66,54 @@ class ModelAdapterResult(ModelHarnessModel):
     def validate_prediction_graph(self) -> ModelAdapterResult:
         _validate_prediction_graph(self.predictions)
         return self
+
+
+def _validate_prediction_shape(prediction: ModelPrediction) -> None:
+    validators = {
+        "page_type": _validate_page_type_prediction,
+        "record_boundary": _validate_record_boundary_prediction,
+        "field": _validate_field_prediction,
+        "exclusion_region": _validate_exclusion_prediction,
+        "entity_relationship": _validate_relationship_prediction,
+    }
+    validators[prediction.kind](prediction)
+
+
+def _validate_page_type_prediction(prediction: ModelPrediction) -> None:
+    if prediction.page_type is None:
+        raise ValueError("Page-type predictions require page_type")
+
+
+def _validate_record_boundary_prediction(prediction: ModelPrediction) -> None:
+    if prediction.record_id is None or not prediction.grounding:
+        raise ValueError(
+            "Grounded prediction record boundaries require record_id and grounding"
+        )
+
+
+def _validate_field_prediction(prediction: ModelPrediction) -> None:
+    if prediction.field_name is None or prediction.value is None:
+        raise ValueError("Field predictions require field_name and value")
+    if not prediction.grounding:
+        raise ValueError("Grounded prediction fields require source grounding")
+
+
+def _validate_exclusion_prediction(prediction: ModelPrediction) -> None:
+    if prediction.region_role not in {"recommendation", "boilerplate", "unrelated"}:
+        raise ValueError(
+            "Exclusion-region predictions require a non-primary region_role"
+        )
+    if not prediction.grounding:
+        raise ValueError(
+            "Grounded prediction exclusion regions require source grounding"
+        )
+
+
+def _validate_relationship_prediction(prediction: ModelPrediction) -> None:
+    if prediction.relationship is None or not prediction.grounding:
+        raise ValueError(
+            "Grounded prediction relationships require relationship and grounding"
+        )
 
 
 class OfflineModelAdapter(Protocol):

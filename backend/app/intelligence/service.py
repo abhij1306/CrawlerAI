@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -29,11 +28,9 @@ from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.core.config.product_intelligence import (
     ADMIN_ROLE,
-    CRAWL_RUN_FINAL_STATUSES,
     ECOMMERCE_DETAIL_SURFACE,
     PRIVATE_LABEL_EXCLUDE,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED,
-    PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT,
     PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE,
     PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
     PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED,
@@ -51,6 +48,9 @@ from app.core.domain_utils import normalize_domain
 from app.connectors.llm.runtime import run_prompt_task
 from app.intelligence.discovery import discover_candidates
 from app.intelligence.discovery import shared_query_runner
+from app.intelligence.candidate_polling import (
+    poll_candidates_and_score as _support_poll_candidates_and_score,
+)
 from app.intelligence.matching import (
     build_search_result_intelligence,
     is_private_label,
@@ -705,90 +705,12 @@ async def _poll_candidates_and_score(
     job: ProductIntelligenceJob,
     candidates: list[ProductIntelligenceCandidate],
 ) -> None:
-    """Drive candidate crawl runs to completion in batched status rounds.
-
-    Replaces the old per-candidate sequential polling loop (each candidate
-    previously blocked up to ``candidate_poll_seconds`` before the next was
-    checked, ~150 candidates per 10-product job). Each round performs a single
-    run-status lookup for every still-pending candidate and only scores
-    candidates whose run reached a final status, keeping the pacing interval
-    polite regardless of candidate count. The total poll budget stays
-    proportional to the pending-candidate count (candidate_poll_seconds per
-    candidate) so large batches are not starved by a single shared window.
-    Matching/scoring itself is unchanged.
-    """
-    job_id = int(job.id)
-    pending: dict[int, int | None] = {
-        int(candidate.id): (
-            int(candidate.candidate_crawl_run_id)
-            if candidate.candidate_crawl_run_id is not None
-            else None
-        )
-        for candidate in candidates
-    }
-    if not pending:
-        return
-    loop = asyncio.get_running_loop()
-    # Budget parity with the legacy sequential loop: each pending candidate
-    # keeps its own candidate_poll_seconds window, so a full candidate batch
-    # cannot time out before its crawl runs had a fair chance to finish
-    # (batched polling makes the common case far faster than sequential).
-    deadline = loop.time() + (
-        product_intelligence_settings.candidate_poll_seconds * max(1, len(pending))
+    await _support_poll_candidates_and_score(
+        session,
+        job,
+        candidates,
+        prompt_task_runner=run_prompt_task,
     )
-    interval = product_intelligence_settings.candidate_poll_interval_seconds
-    while pending and loop.time() <= deadline:
-        run_ids = [run_id for run_id in pending.values() if run_id is not None]
-        status_by_run_id: dict[int, str] = {}
-        if run_ids:
-            status_by_run_id = {
-                int(run_id): str(run_status)
-                for run_id, run_status in (
-                    await session.execute(
-                        select(CrawlRun.id, CrawlRun.status).where(
-                            CrawlRun.id.in_(run_ids)
-                        )
-                    )
-                ).all()
-            }
-        progressed = False
-        for candidate_id, run_id in list(pending.items()):
-            if run_id is None:
-                # Never dispatched: cannot score, times out at the deadline
-                # (same outcome as the legacy sequential loop).
-                continue
-            run_status = status_by_run_id.get(run_id)
-            if run_status is not None and run_status not in CRAWL_RUN_FINAL_STATUSES:
-                continue
-            # Refresh the run row: this session created it, so the identity map
-            # holds a stale pre-dispatch copy (expire_on_commit=False).
-            await session.get(CrawlRun, run_id, populate_existing=True)
-            current_job = await session.get(ProductIntelligenceJob, job_id)
-            candidate = await session.get(ProductIntelligenceCandidate, candidate_id)
-            if current_job is None or candidate is None:
-                pending.pop(candidate_id, None)
-                continue
-            scored = await _score_candidate_if_ready(session, current_job, candidate)
-            if scored:
-                progressed = True
-                pending.pop(candidate_id, None)
-        if session.in_transaction():
-            await session.commit()
-        if progressed:
-            await _update_job_summary(session, job)
-            await session.commit()
-        if pending and loop.time() <= deadline:
-            await asyncio.sleep(interval)
-    if not pending:
-        return
-    refreshed_job = await session.get(ProductIntelligenceJob, job_id)
-    for candidate_id in pending:
-        candidate = await session.get(ProductIntelligenceCandidate, candidate_id)
-        if candidate is not None:
-            candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
-    if refreshed_job is not None:
-        await _update_job_summary(session, refreshed_job)
-    await session.commit()
 
 
 async def poll_candidate_and_score(

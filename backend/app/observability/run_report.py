@@ -128,6 +128,17 @@ def _root_causes(
 ) -> list[tuple[str, dict[str, object]]]:
     """Group keys for one diagnose.json. Empty when nothing went wrong."""
     causes: dict[str, dict[str, object]] = {}
+    field_status = _add_field_causes(causes, diagnosis)
+    _add_parent_child_causes(causes, field_status)
+    _add_variant_drop_causes(causes, diagnosis)
+    _add_finding_causes(causes, diagnosis)
+    _add_acquisition_causes(causes, diagnosis)
+    return sorted(causes.items())
+
+
+def _add_field_causes(
+    causes: dict[str, dict[str, object]], diagnosis: Mapping[str, object]
+) -> dict[str, str]:
     field_status: dict[str, str] = {}
     for field in _object_list(diagnosis.get("fields")):
         field_name = str(field.get("field") or "").strip() or "?"
@@ -168,6 +179,12 @@ def _root_causes(
                     f"field_reason:{field_name}:{status}:{reason}",
                     {"field": field_name, "status": status, "reason": reason},
                 )
+    return field_status
+
+
+def _add_parent_child_causes(
+    causes: dict[str, dict[str, object]], field_status: Mapping[str, str]
+) -> None:
     # Run-level metric (audit Slice 1.5): a public parent commercial field is
     # absent while the same field is published on a child variant. This is the
     # divergence that path-aware field states make visible; surface it as its own
@@ -188,6 +205,11 @@ def _root_causes(
                     "child_status": child_status,
                 },
             )
+
+
+def _add_variant_drop_causes(
+    causes: dict[str, dict[str, object]], diagnosis: Mapping[str, object]
+) -> None:
     for drop in _object_list(_mapping(diagnosis.get("variants")).get("dropped")):
         stage = str(drop.get("stage") or "?").strip()
         rule = str(drop.get("rule") or "?").strip()
@@ -195,6 +217,11 @@ def _root_causes(
             f"variant_dropped:{stage}:{rule}",
             {"stage": stage, "rule": rule, "reason": str(drop.get("reason") or "")},
         )
+
+
+def _add_finding_causes(
+    causes: dict[str, dict[str, object]], diagnosis: Mapping[str, object]
+) -> None:
     for finding in _object_list(diagnosis.get("findings")):
         rule_id = str(finding.get("rule_id") or "").strip()
         if not rule_id or rule_id in _INFORMATIONAL_FINDING_RULES:
@@ -223,6 +250,11 @@ def _root_causes(
                 **({"field": field_name} if field_name else {}),
             },
         )
+
+
+def _add_acquisition_causes(
+    causes: dict[str, dict[str, object]], diagnosis: Mapping[str, object]
+) -> None:
     acquisition = _mapping(diagnosis.get("acquisition"))
     if bool(acquisition.get("blocked")):
         causes.setdefault(
@@ -234,7 +266,6 @@ def _root_causes(
             f"capture_failure:{_scalar(acquisition.get('failure_reason'))}",
             {"failure_reason": _scalar(acquisition.get("failure_reason"))},
         )
-    return sorted(causes.items())
 
 
 def _mapping(value: object) -> Mapping[str, object]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 import signal
 from collections.abc import Callable, Coroutine
 from contextlib import contextmanager
@@ -220,17 +221,21 @@ async def _sweep_run_artifacts() -> None:
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     runs_by_id = {int(row[0]): row for row in rows}
     for run_id in candidate_ids:
-        row = runs_by_id.get(run_id)
-        if row is not None:
-            if str(row[1] or "").strip().lower() not in TERMINAL_STATUS_VALUES:
-                continue
-            updated_at = row[2]
-            if updated_at is not None and updated_at.tzinfo is None:
-                updated_at = updated_at.replace(tzinfo=UTC)
-            if updated_at is None or updated_at >= cutoff:
-                continue
+        if not _artifact_tree_expired(runs_by_id.get(run_id), cutoff=cutoff):
+            continue
         await asyncio.to_thread(repository.remove_run_tree, run_id)
         logger.info("Swept artifact tree for run=%s", run_id)
+
+
+def _artifact_tree_expired(row: Any, *, cutoff: datetime) -> bool:
+    if row is None:
+        return True
+    if str(row[1] or "").strip().lower() not in TERMINAL_STATUS_VALUES:
+        return False
+    updated_at = row[2]
+    if updated_at is not None and updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return updated_at is not None and updated_at < cutoff
 
 
 @celery_app.task(name="maintenance.sweep_run_artifacts")

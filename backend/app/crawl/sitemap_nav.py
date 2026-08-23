@@ -193,16 +193,30 @@ def _looks_like_category_url(url: str) -> bool:
         return False
     if any(token in path for token in SITEMAP_CATEGORY_PATH_TOKENS):
         return True
+    return _generic_category_path(path)
+
+
+def _generic_category_path(path: str) -> bool:
     segments = [segment for segment in path.split("/") if segment]
-    if not segments or any(_looks_like_locale_segment(segment) for segment in segments):
-        return False
-    if any(segment.isdigit() for segment in segments):
+    if not _plain_category_segments(segments):
         return False
     segment_text = " ".join(segment.replace("-", " ") for segment in segments)
     if any(
         token in segment_text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
     ):
         return False
+    return _has_category_segment(segments)
+
+
+def _plain_category_segments(segments: list[str]) -> bool:
+    if not segments:
+        return False
+    if any(_looks_like_locale_segment(segment) for segment in segments):
+        return False
+    return not any(segment.isdigit() for segment in segments)
+
+
+def _has_category_segment(segments: list[str]) -> bool:
     category_segments = {
         token
         for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS

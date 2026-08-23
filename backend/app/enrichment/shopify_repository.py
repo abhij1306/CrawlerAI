@@ -200,24 +200,10 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
     attributes = [
         item for item in object_list(raw.get("attributes")) if isinstance(item, dict)
     ]
-    by_handle = {
-        str(item.get("handle") or "").replace("-", "_"): {
-            "name": str(item.get("name") or ""),
-            "handle": str(item.get("handle") or ""),
-            "values": _attribute_values(item),
-        }
-        for item in attributes
-        if str(item.get("handle") or "").strip()
-    }
     names = DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES
     color = _attribute_by_name(attributes, names["color"], merge=True)
     size = _attribute_by_name(attributes, names["size"])
     audience = _attribute_by_name(attributes, names["audience"])
-    material_terms = {
-        value: [value]
-        for name in (names["fabric"], names["material"])
-        for value in _attribute_terms(_attribute_by_name(attributes, name))
-    }
     audience_terms = _attribute_terms(audience) or {
         key: list(values) for key, values in DATA_ENRICHMENT_AUDIENCE_ALIASES.items()
     }
@@ -234,11 +220,35 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
                 key: list(values)
                 for key, values in DATA_ENRICHMENT_GENDER_ALIASES.items()
             },
-            "material_terms": material_terms,
+            "material_terms": _material_terms(attributes, names),
             "seo_stopwords": list(DATA_ENRICHMENT_SEO_STOPWORDS),
             "size_systems": _size_systems(size),
         },
-        "attributes_by_handle": by_handle,
+        "attributes_by_handle": _attributes_by_handle(attributes),
+    }
+
+
+def _attributes_by_handle(
+    attributes: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    return {
+        str(item.get("handle") or "").replace("-", "_"): {
+            "name": str(item.get("name") or ""),
+            "handle": str(item.get("handle") or ""),
+            "values": _attribute_values(item),
+        }
+        for item in attributes
+        if str(item.get("handle") or "").strip()
+    }
+
+
+def _material_terms(
+    attributes: list[dict[str, object]], names: dict[str, str]
+) -> dict[str, list[str]]:
+    return {
+        value: [value]
+        for name in (names["fabric"], names["material"])
+        for value in _attribute_terms(_attribute_by_name(attributes, name))
     }
 
 

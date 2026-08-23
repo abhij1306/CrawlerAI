@@ -536,13 +536,22 @@ Primary files:
 
 - `core/config/extraction_memory.py` — store vocabulary and release/compiler/manifest versions.
 - `models/extraction_memory.py` — templates, recipe layers, compiled recipes, run releases, URL manifests, operator labels, and observations.
-- `persistence/extraction_memory.py` — recipe compilation, release freezing, observation/manifest writes, and purge.
+- `persistence/extraction_memory.py` — template/recipe writes, learn-once claims and drift locking, manifest orchestration, and purge.
+- `persistence/extraction_memory_releases.py` — recipe-layer compilation, immutable release creation/activation, selector projection, and bounded frozen-payload caching.
+- `persistence/extraction_memory_sources.py` and `extraction_memory_observations.py` — published-source preference shaping and Sentinel observation/suspension handling.
+- `persistence/extraction_memory_knowledge.py` — knowledge compatibility queries and operator source selection.
 - `core/extraction_memory/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
 - `core/extraction_memory/contract_runtime.py` — frozen-release preference lookup; Resolve owns final eligibility and ranking.
 - `api/knowledge.py` — compatibility read/refine API backed only by extraction memory.
 - `alembic/versions/20260703_0001_greenfield_schema.py` — sole clean-start schema baseline, including extraction memory.
 
 Extraction memory is PostgreSQL-authoritative. Run creation freezes one relational release and each URL result gets a relational execution manifest. Contracts rank eligible evidence only; extraction never imports mutable memory storage. Observation failure is logged without changing crawl verdicts. See `docs/INVARIANTS.md` §17.
+
+### 6.10 Offline Harness and Browser-Surface Probe
+
+- `harness/support.py` keeps stable acceptance entry points, live-run/review orchestration, and result-quality evaluation. `site_sets.py` owns input parsing, `challenge_classifier.py` owns failure classification, and the quality/artifact evaluators own their report contracts.
+- `browser_surface_probe/core.py` orchestrates a probe run and assembles its artifact bundle. `signal_extractor.py` collects and interprets page signals, `target_diagnostics.py` owns target transport/browser checks, `report_rendering.py` owns findings and human/agent reports, and `value_coercion.py` owns shared normalization.
+- These packages are offline tooling. They may reuse runtime vocabulary but do not own crawl, extraction, persistence, or publication behavior.
 
 ## 7. Persistence Model
 
@@ -610,7 +619,7 @@ The normal records API hides:
 
 ## 9. Product Intelligence Discovery
 
-Product Intelligence lives under `app/intelligence/` and remains upstream of candidate crawl/export paths. SerpAPI discovery is Shopping-first: `engine=google_shopping` results are parsed, Immersive Product store links are expanded, then organic results remain as fallback evidence. Candidate ranking prefers exact identifiers, Shopping product-group evidence, and title overlap before source-type authority, so a strong marketplace match can outrank a weak brand-site adjacent product without adding extra search queries.
+Product Intelligence lives under `app/intelligence/` and remains upstream of candidate crawl/export paths. `service.py` owns job lifecycle and candidate dispatch; `candidate_polling.py` owns batched crawl-status rounds, ready-candidate scoring, timeout transitions, and summary refresh. SerpAPI discovery is Shopping-first: `engine=google_shopping` results are parsed, Immersive Product store links are expanded, then organic results remain as fallback evidence. Candidate ranking prefers exact identifiers, Shopping product-group evidence, and title overlap before source-type authority, so a strong marketplace match can outrank a weak brand-site adjacent product without adding extra search queries.
 
 Belk brand inference uses data files under `app/data/product_intelligence/`, with `belk_brands.txt` for longest-match brand inference from Belk source titles/URLs and `belk_exclusive_brands.txt` for private-label exclusion. Belk detail extraction preserves UPC-like `sku_upc` values as public `barcode`/Product Intelligence `gtin` evidence while keeping retailer SKU/product ID separate. Confidence scoring is deterministic and evidence-based: title similarity, brand match, valid GTIN/barcode match, retailer SKU match, MPN/style match, Shopping product-group evidence, price band, and source authority are scored separately so the UI can explain why a candidate URL is strong or weak.
 

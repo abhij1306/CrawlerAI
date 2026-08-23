@@ -188,6 +188,13 @@ def merge_saved_run_profile(
             saved_contract,
             ignore_default_equivalent_values=ignore_default_equivalent_values,
         )
+    _merge_internal_api_endpoints(merged, saved)
+    return merged
+
+
+def _merge_internal_api_endpoints(
+    merged: dict[str, object], saved: dict[str, object]
+) -> None:
     saved_endpoints = normalize_internal_api_endpoints(
         saved.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
     )
@@ -212,7 +219,6 @@ def merge_saved_run_profile(
             }
         )
         merged[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = list(endpoints_by_key.values())
-    return merged
 
 
 async def resolve_url_acquisition_recipe(

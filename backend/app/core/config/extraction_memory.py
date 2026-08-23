@@ -49,6 +49,7 @@ EXTRACTION_COMPILER_VERSION = "recipe.v1"
 # drives both the deterministic floors and LEARN-ONCE recipe replay. Bumped from
 # ``release.v1`` when executable recipes were folded into the unified payload.
 EXTRACTION_RELEASE_VERSION = "release.v2"
+EXTRACTION_RELEASE_PAYLOAD_CACHE_MAX_ENTRIES = 8
 EXTRACTION_MANIFEST_VERSION = "manifest.v1"
 SENTINEL_DETERMINISTIC_CHALLENGER_ENABLED = True
 SENTINEL_DEFAULT_SAMPLE_RATE = 0.05

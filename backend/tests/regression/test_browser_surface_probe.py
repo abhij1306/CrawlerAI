@@ -7,6 +7,8 @@ from app.acquisition import browser_identity
 from app.acquisition import browser_pool as acquisition_browser_pool
 from app.acquisition import browser_runtime as acquisition_browser_runtime
 import run_browser_surface_probe as probe
+from browser_surface_probe import target_diagnostics
+from browser_surface_probe.value_coercion import country_code_from_value
 
 
 def _report(
@@ -357,6 +359,37 @@ def test_validated_target_url_rejects_non_http_and_local_targets() -> None:
     ):
         with pytest.raises(ValueError):
             probe._validated_target_url(url)
+
+
+@pytest.mark.regression
+def test_validated_target_url_rejects_encoded_and_resolved_local_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved = {
+        "2130706433": ["127.0.0.1"],
+        "0x7f000001": ["127.0.0.1"],
+        "mixed.example": ["93.184.216.34", "10.0.0.4"],
+        "public.example": ["93.184.216.34"],
+    }
+
+    def fake_getaddrinfo(host, *_args, **_kwargs):
+        return [(2, 1, 6, "", (address, 0)) for address in resolved[str(host)]]
+
+    monkeypatch.setattr(target_diagnostics.socket, "getaddrinfo", fake_getaddrinfo)
+
+    for host in ("2130706433", "0x7f000001", "mixed.example"):
+        with pytest.raises(ValueError, match="local or private"):
+            probe._validated_target_url(f"http://{host}/admin")
+    assert probe._validated_target_url("https://public.example/path") == (
+        "https://public.example/path"
+    )
+
+
+@pytest.mark.regression
+def test_country_code_aliases_and_names_use_token_boundaries() -> None:
+    assert country_code_from_value("UK") == "GB"
+    assert country_code_from_value("Greater Germany region") == "DE"
+    assert country_code_from_value("germanyc") is None
 
 
 @pytest.mark.regression
