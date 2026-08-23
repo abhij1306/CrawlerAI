@@ -62,6 +62,10 @@ jobs:
           node scripts/check-crawl-architecture.mjs
           node scripts/check-frontend-architecture.mjs
 
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: vp test
+
       - name: Build frontend and check bundle budgets
         working-directory: frontend
         env:

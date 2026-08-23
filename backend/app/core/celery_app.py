@@ -104,7 +104,7 @@ def celery_task_state(task_id: str) -> str | None:
     """
     try:
         return str(celery_app.AsyncResult(task_id).state)
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:
         logger.debug("Celery state lookup failed for task %s", task_id, exc_info=True)
         return None
 
@@ -180,7 +180,7 @@ async def enqueue_celery_job(
     await session.commit()
     try:
         task.apply_async(args=[int(job.id)], task_id=task_id)
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:
         logger.exception(
             "Celery enqueue failed for %s job %s; falling back to in-process execution",
             label,

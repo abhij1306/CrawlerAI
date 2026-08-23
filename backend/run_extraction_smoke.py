@@ -432,7 +432,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             _update_listing_result(result, site, records, verdict)
         else:
             _update_detail_result(result, site, records, verdict)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"
     finally:

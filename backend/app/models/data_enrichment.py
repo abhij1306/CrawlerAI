@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=duplicate-code
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB

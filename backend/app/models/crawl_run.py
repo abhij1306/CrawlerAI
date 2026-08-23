@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=missing-function-docstring
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta

@@ -16,42 +16,6 @@ def _document(value: str | HtmlDocument, artifact_id: str) -> HtmlDocument:
     )
 
 
-def parse_json_ld(document: HtmlDocument) -> list[object]:
-    rows: list[object] = []
-    for script in document.safe_css('script[type*="ld+json"]'):
-        text = script.text(separator="", strip=True)
-        if not text.strip():
-            continue
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, list):
-            rows.extend(payload)
-        else:
-            rows.append(payload)
-    return rows
-
-
-def harvest_js_state_objects(document: HtmlDocument) -> dict[str, object]:
-    states: dict[str, object] = {}
-    for script in document.safe_css(
-        'script[type="application/json"], script#__NEXT_DATA__'
-    ):
-        key = (
-            str(script.attribute("id") or "application_json").strip()
-            or "application_json"
-        )
-        text = script.text(separator="", strip=True)
-        if not text.strip():
-            continue
-        try:
-            states[key] = json.loads(text)
-        except json.JSONDecodeError:
-            continue
-    return states
-
-
 def truncate_html(
     html_text: str,
     limit: int,

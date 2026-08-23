@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=missing-function-docstring
 
 from enum import StrEnum
 

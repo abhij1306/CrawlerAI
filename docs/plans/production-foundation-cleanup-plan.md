@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** QUEUED
+**Status:** IN PROGRESS
 **Touches buckets:** repository instructions, dependency locks, CI workflows, extraction/LLM/fetch dead code, quality-tool configuration
 
 ## Goal
@@ -13,18 +13,18 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ## Acceptance Criteria
 
-- [ ] Backend CI installs exactly `backend/uv.lock` with the dev extra and audits that resolved environment.
-- [ ] The unexplained `PYSEC-2025-183` ignore is removed unless the locked graph newly proves it is required and the reason is documented.
-- [ ] The `cryptography` fixed release is admitted with focused Fernet, JWT, cookie, and configuration tests passing.
-- [ ] `vp pm audit -- --audit-level=high` exits 0 after the smallest compatible frontend dependency/override change; unrelated majors are not bundled.
-- [ ] Every open PR is reviewed with `gh-axi`; only clearly superseded, duplicate, abandoned automation, or obsolete/conflicting PRs are closed, each with an explanatory comment and readback confirmation.
-- [ ] Active human work and any PR containing unique unmerged changes remain open.
-- [ ] Backend format checking and frontend `vp check` plus unit tests are blocking CI steps.
-- [ ] Confirmed callerless wrappers/helpers are deleted; the test-only browser context wrapper is either folded into the production spec owner or retained with a documented contract reason.
-- [ ] Exact JS-state/metadata helper clones are consolidated only where inputs, outputs, and error behavior match.
-- [ ] Dormant Pylint size/complexity configuration is removed if no committed caller uses Pylint; no second lint stack is added.
-- [ ] `AGENTS.md` identifies the frontend as React + Vite+, not Next.js.
-- [ ] Focused backend pytest and VitePlus verification exits 0.
+- [x] Backend CI installs exactly `backend/uv.lock` with the dev extra and audits that resolved environment.
+- [x] The unexplained `PYSEC-2025-183` ignore is removed unless the locked graph newly proves it is required and the reason is documented.
+- [x] The `cryptography` fixed release is admitted with focused Fernet, JWT, cookie, and configuration tests passing.
+- [x] `vp pm audit -- --audit-level=high` exits 0 after the smallest compatible frontend dependency/override change; unrelated majors are not bundled.
+- [x] Every open PR is reviewed with `gh-axi`; only clearly superseded, duplicate, abandoned automation, or obsolete/conflicting PRs are closed, each with an explanatory comment and readback confirmation.
+- [x] Active human work and any PR containing unique unmerged changes remain open.
+- [x] Backend format checking and frontend `vp check` plus unit tests are blocking CI steps.
+- [x] Confirmed callerless wrappers/helpers are deleted; the test-only browser context wrapper is either folded into the production spec owner or retained with a documented contract reason.
+- [x] Exact JS-state/metadata helper clones are consolidated only where inputs, outputs, and error behavior match.
+- [x] Dormant Pylint size/complexity configuration is removed if no committed caller uses Pylint; no second lint stack is added.
+- [x] `AGENTS.md` identifies the frontend as React + Vite+, not Next.js.
+- [x] Focused backend pytest and VitePlus verification exits 0.
 - [ ] Required GitHub CI is green and the PR is merged through `$ship-main`.
 
 ## Do Not Touch
@@ -49,7 +49,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 1: Update dependencies and close stale PRs
 
-**Status:** TODO
+**Status:** DONE
 **Files:** `backend/pyproject.toml`, `backend/uv.lock`, `frontend/package.json`, frontend lockfile, open GitHub pull requests
 
 **What:** Use `npx -y gh-axi` and `pr list/view/checks` to inventory open PRs before changing dependencies. Classify a PR as stale only with concrete evidence: its change is already on `main`, a newer PR supersedes it, it is a duplicate/outdated bot upgrade, or it cannot merge and contains no unique work. Close qualifying PRs one at a time with a concise reason, then read them back; do not close active or ambiguous human work. Re-run backend and frontend dependency audits/outdated reports. Admit the smallest fixed `cryptography` release and minimal compatible frontend fixes for `react-router-dom`, `undici`, and `nanoid`. Do not bundle unrelated majors or broad maintenance updates.
@@ -58,7 +58,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 2: Reconfirm the live baseline and delete dead code
 
-**Status:** TODO
+**Status:** DONE
 **Files:** `backend/app/extraction/pipeline.py`, `backend/app/connectors/llm/prompt_rendering.py`, `backend/app/acquisition/fetch/browser_policy.py`, `backend/app/acquisition/fetch/fetch_context.py`, `backend/app/acquisition/browser_identity.py`, direct focused tests
 
 **What:** Re-run repository-wide reference searches for `collect_ecommerce_detail`, `parse_json_ld`, `harvest_js_state_objects`, `extend_browser_engine_attempts_after_block`, and `build_playwright_context_options`. Delete the first three findings only if still callerless. Keep the fetch-context implementation as the sole block-extension owner. For the browser context wrapper, compare its observable result with `build_playwright_context_spec`; fold tests into the production owner only if behavior is equivalent. Preserve existing tests unless they only assert a deleted private implementation.
@@ -67,7 +67,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 3: Consolidate proven clones and remove decorative tooling
 
-**Status:** TODO
+**Status:** DONE
 **Files:** `backend/app/extraction/collectors/js_state.py`, `backend/app/extraction/collectors/metadata.py`, the existing nearest shared owner, `backend/pyproject.toml`, `AGENTS.md`
 
 **What:** Compare the jscpd-reported collector clones semantically. Move only truly identical parsing/walking behavior to the existing `_helpers.py` or `json_walk.py` owner; do not create a generic utilities layer. Confirm Pylint has no workflow/script caller, then delete its unused dependency/config rather than enabling a redundant lint stack. Correct the frontend stack statement in `AGENTS.md`.
@@ -76,7 +76,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 4: Make CI deterministic and enforce existing checks
 
-**Status:** TODO
+**Status:** DONE
 **Files:** `.github/workflows/backend-ci.yml`, `.github/workflows/frontend-playwright-smoke.yml`, dependency files changed in Slice 1
 
 **What:** Replace ad hoc backend `pip install -e ".[dev]"` resolution with `uv sync --frozen --extra dev`. Audit the locked environment and remove the stale PyJWT ignore unless current locked evidence requires it. Add Ruff format checking with the locked Ruff version. Add `vp check` and `vp test` before frontend build/e2e. Keep existing Playwright smoke and bundle-budget behavior.
@@ -85,7 +85,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 5: Reconcile docs and review the complete diff
 
-**Status:** TODO
+**Status:** DONE
 **Files:** `docs/backend-architecture.md`, `docs/frontend-architecture.md`, `docs/CODEBASE_MAP.md` only if ownership changed, this plan, `docs/plans/ACTIVE.md`
 
 **What:** Document only durable CI/toolchain or ownership changes. Record exact package/audit decisions and verification in Notes. Confirm net code/config complexity decreased, no compatibility shim was added, no unrelated lock upgrades slipped in, and all acceptance criteria are checked.
@@ -94,7 +94,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 6: `$ship-main`
 
-**Status:** TODO
+**Status:** IN PROGRESS
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Inspect branch, worktree, remotes, and upstream; preserve unrelated files. Create a feature branch if needed, run only the focused static/build checks above locally, commit and push, open a non-draft PR with exact checks, wait for every required CI job, fix failures on the same branch, merge only when green and mergeable, then switch to `main`, pull `--ff-only`, prune the merged local branch when safe, and verify local HEAD equals remote `main`.
@@ -103,13 +103,18 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ## Doc Updates Required
 
-- [ ] `AGENTS.md` — correct frontend stack.
-- [ ] `docs/backend-architecture.md` — locked CI/audit behavior if durable architecture guidance changes.
-- [ ] `docs/frontend-architecture.md` — CI/toolchain behavior if changed.
-- [ ] `docs/CODEBASE_MAP.md` — only if a shared helper owner moves.
+- [x] `AGENTS.md` — correct frontend stack.
+- [x] `docs/backend-architecture.md` — locked CI/audit behavior if durable architecture guidance changes.
+- [x] `docs/frontend-architecture.md` — CI/toolchain behavior if changed.
+- [x] `docs/CODEBASE_MAP.md` — no update required; no shared helper owner moved.
 
 ## Notes
 
 - Evidence baseline: report commit `bfc76636`; live planning checkout was `7ea5a61d` on 2026-08-22. Re-run audits and GitHub state because advisories, lock resolution, and PR status are time-sensitive.
 - The code-simplification rule applies: delete or consolidate only when behavior boundaries are known; do not optimize for line count alone.
-- No implementation has started.
+- Live dependency state already contained the planned minimal fixes: `cryptography==50.0.0`, `react-router-dom==7.18.2`, `undici==8.10.0`, and `nanoid==3.3.18`. Backend OSV audit and frontend high audit both report no known vulnerabilities, so no unrelated runtime dependency changed. `pip-audit==2.10.1` replaced unused Pylint in the locked dev extra so CI audits the exact frozen environment.
+- `gh-axi` review on 2026-08-23 found PRs #51, #43, and #42 open. #51 retains unique human-authored CodeQL test-support work. #43 and #42 retain still-applicable GitHub Action upgrades. None met the plan's proof threshold for closure, so all remain open.
+- `collect_ecommerce_detail` and the reported JS-state/metadata clones were already removed/consolidated by the completed extraction-runtime work on the live base. Current focused jscpd reports zero exact clones between `js_state.py` and `metadata.py`. This slice deleted callerless `parse_json_ld`, `harvest_js_state_objects`, and `browser_policy.extend_browser_engine_attempts_after_block`; fetch-context remains the sole block-extension owner. Browser context tests now call `build_playwright_context_spec` directly and the test-only dictionary wrapper is gone.
+- No committed workflow or script invoked Pylint. Its dependency, configuration, transitive-only packages, and stale inline directives were removed. Ruff remains the single lint/format owner. Vulture's sole 100% finding is Pydantic's required `model_post_init(self, __context)` framework parameter in `persistence/export/schema.py`; it is not dead code.
+- The frontend unit suite initially exposed CPU contention from unrestricted `vmThreads` workers. `maxWorkers: 4` makes the existing assertions and timeouts deterministic without weakening them; exact `vp test` then passed all 221 tests.
+- Local verification: frozen backend sync and audit; locked Ruff check and format over 631 files; 49 collector tests, 27 security/config/LLM tests, 49 fetch/context tests (one timing-sensitive case reconfirmed alone), 14 auth/logout tests, and 77 extraction/browser-context tests; frontend `vp check`, 221 unit tests, build, and high audit. One fetch timeout-budget case failed only during concurrent local test processes and passed immediately alone. CI owns the full backend suite.

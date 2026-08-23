@@ -175,6 +175,10 @@ Security posture notes:
 - The backend image builds with `uv sync --locked --no-dev --extra prod`: the
   lockfile is the only dependency source, dev extras never ship, and the prod
   extra keeps `psycopg2` install-time compilation isolated to the image build.
+- Backend CI installs the committed environment with
+  `uv sync --frozen --extra dev`. The locked `pip-audit`, Ruff, Mypy, and Pytest
+  commands run through `uv run --frozen --extra dev`; audit has no advisory
+  ignores, and both Ruff lint and format checks block the build.
 
 ### 6.2 Crawl ingestion and orchestration
 

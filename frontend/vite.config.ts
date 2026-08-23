@@ -113,6 +113,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     pool: 'vmThreads',
+    maxWorkers: 4,
     include: [
       'app/**/*.{test,spec}.{ts,tsx}',
       'components/**/*.{test,spec}.{ts,tsx}',

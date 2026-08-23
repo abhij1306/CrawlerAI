@@ -1,6 +1,5 @@
 # FastAPI application factory and route registration.
 from __future__ import annotations
-# pylint: disable=missing-function-docstring
 
 import asyncio
 import hmac

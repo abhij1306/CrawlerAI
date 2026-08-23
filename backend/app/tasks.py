@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pylint: disable=missing-function-docstring
 
 import asyncio
 import logging
@@ -47,7 +46,7 @@ _WORKER_TASK_STATE = _WorkerTaskState()
 def _run_worker_shutdown_step(name: str, action: Callable[[], object]) -> None:
     try:
         action()
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:
         logger.exception("Worker shutdown step failed: %s", name)
 
 

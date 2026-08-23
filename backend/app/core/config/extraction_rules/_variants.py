@@ -1,6 +1,5 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
-# pylint: disable=wildcard-import,unused-wildcard-import
 
 from ._common import *
 from ._detail import *
