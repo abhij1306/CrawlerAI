@@ -32,7 +32,7 @@
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-hook-form": "^7.85.0",
+    "react-hook-form": "^7.86.0",
     "react-router-dom": "^7.18.2",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
@@ -55,5 +55,5 @@
   "engines": {
     "node": ">=20.19"
   },
-  "packageManager": "pnpm@11.9.0"
+  "packageManager": "pnpm@11.23.0"
 }

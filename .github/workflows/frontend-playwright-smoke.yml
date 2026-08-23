@@ -38,10 +38,10 @@ jobs:
       BOOTSTRAP_ADMIN_ONCE: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
         with:
           node-version: 24
           cache: true
@@ -69,7 +69,7 @@ jobs:
       - name: Build frontend and check bundle budgets
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: http://127.0.0.1:8000
+          VITE_API_BASE_URL: http://127.0.0.1:8001
         run: |
           vp build
           node scripts/check-bundle-budgets.mjs --require-dist
@@ -79,32 +79,35 @@ jobs:
         run: vp exec playwright install --with-deps chromium
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
       - name: Install backend dependencies
         working-directory: backend
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpq-dev
-          python -m pip install --upgrade pip
-          pip install -e .
+        run: uv sync --frozen
 
       - name: Apply backend migrations
         working-directory: backend
         run: |
-          python -c "from app.core.migrations import apply_pending_migrations; apply_pending_migrations()"
+          uv run python -c "from app.core.migrations import apply_pending_migrations; apply_pending_migrations()"
 
       - name: Start backend API server
         working-directory: backend
         run: |
-          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/backend.log 2>&1 &
+          nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 > /tmp/backend.log 2>&1 &
 
       - name: Wait for backend healthcheck
         run: |
           for i in {1..60}; do
-            if curl -fsS "http://127.0.0.1:8000/api/health" >/dev/null; then
+            if curl -fsS "http://127.0.0.1:8001/api/health" >/dev/null; then
               exit 0
             fi
             sleep 2
@@ -116,14 +119,14 @@ jobs:
       - name: Start frontend dev server
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: http://127.0.0.1:8000
+          VITE_API_BASE_URL: http://127.0.0.1:8001
         run: |
           nohup vp dev > /tmp/frontend.log 2>&1 &
 
       - name: Wait for frontend root URL
         run: |
           for i in {1..60}; do
-            if curl -fsS "http://127.0.0.1:3000/" >/dev/null; then
+            if curl -fsS "http://127.0.0.1:3001/" >/dev/null; then
               exit 0
             fi
             sleep 2
@@ -136,5 +139,5 @@ jobs:
         working-directory: frontend
         env:
           CI: true
-          VITE_API_BASE_URL: http://127.0.0.1:8000
+          VITE_API_BASE_URL: http://127.0.0.1:8001
         run: vp exec playwright test --config playwright.config.ts smoke.spec.ts

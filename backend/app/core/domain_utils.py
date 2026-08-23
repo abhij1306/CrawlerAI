@@ -35,7 +35,7 @@ def normalize_domain(url: str) -> str:
         https://www.example.com/a  -> example.com
         http://example.com/b       -> example.com
         https://shop.example.com   -> shop.example.com
-        http://localhost:3000      -> localhost:3000
+        http://localhost:3001      -> localhost:3001
     """
     parsed = urlparse(url)
     if not parsed.netloc and parsed.path and not parsed.path.startswith("/"):

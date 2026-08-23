@@ -270,7 +270,7 @@ def test_standard_and_twitter_metadata_recover_missing_product_fields() -> None:
         <head>
           <meta name="twitter:title" content="Trail Shoe">
           <meta name="description" content="A durable trail shoe for long-distance runs.">
-          <meta name="brand" content="Invoro">
+          <meta name="brand" content="ExampleCo">
           <meta name="twitter:image" content="https://shop.test/i/trail.jpg">
         </head>
         <main></main>
@@ -280,7 +280,7 @@ def test_standard_and_twitter_metadata_recover_missing_product_fields() -> None:
 
     record = result.records[0]
     assert record["title"] == "Trail Shoe"
-    assert record["brand"] == "Invoro"
+    assert record["brand"] == "ExampleCo"
     assert record["description"] == "A durable trail shoe for long-distance runs."
     assert record["image_url"] == "https://shop.test/i/trail.jpg"
 
@@ -379,7 +379,7 @@ def test_network_product_aliases_require_context_and_map_canonical_fields() -> N
                 "body": {
                     "product": {
                         "productName": "Trail Shoe",
-                        "brand": {"name": "Invoro"},
+                        "brand": {"name": "ExampleCo"},
                         "productDescription": "Built for long trail days.",
                         "price": "129",
                         "currencyCode": "USD",
@@ -396,7 +396,7 @@ def test_network_product_aliases_require_context_and_map_canonical_fields() -> N
 
     record = result.records[0]
     assert record["title"] == "Trail Shoe"
-    assert record["brand"] == "Invoro"
+    assert record["brand"] == "ExampleCo"
     assert record["description"] == "Built for long trail days."
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"

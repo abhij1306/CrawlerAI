@@ -18,7 +18,7 @@ _DETAIL_HTML = """
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "Trail Runner",
-  "brand": {"@type": "Brand", "name": "Invoro"},
+  "brand": {"@type": "Brand", "name": "ExampleCo"},
   "sku": "TR-9",
   "url": "https://shop.test/products/trail-runner",
   "image": ["https://shop.test/i/trail-runner.jpg"],

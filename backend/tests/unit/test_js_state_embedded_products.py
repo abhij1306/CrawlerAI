@@ -93,7 +93,7 @@ def test_js_state_parent_selling_price_and_vendor_brand_paths_publish() -> None:
           "props": {"pageProps": {"product": {
             "name": "Studio Bike",
             "url": "https://shop.test/products/studio-bike",
-            "vendor": [{"name": "Invoro Fitness"}],
+            "vendor": [{"name": "Example Fitness"}],
             "sellingPrice": {
               "amount": "3295.00",
               "currencyCode": "USD",
@@ -107,7 +107,7 @@ def test_js_state_parent_selling_price_and_vendor_brand_paths_publish() -> None:
     )
 
     record = result.records[0]
-    assert record["brand"] == "Invoro Fitness"
+    assert record["brand"] == "Example Fitness"
     assert record["price"] == "3295.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"

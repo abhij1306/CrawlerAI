@@ -4,15 +4,15 @@ export default defineConfig({
   testDir: './e2e',
   retries: 1,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://127.0.0.1:3001',
     trace: 'on-first-retry',
   },
   webServer: {
     command: 'vp dev',
-    url: 'http://127.0.0.1:3000',
+    url: 'http://127.0.0.1:3001',
     reuseExistingServer: true,
     env: {
-      VITE_API_BASE_URL: 'http://127.0.0.1:8000',
+      VITE_API_BASE_URL: 'http://127.0.0.1:8001',
     },
   },
 });

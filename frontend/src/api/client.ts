@@ -15,7 +15,7 @@ function parseConfiguredApiBaseUrl(configured: string) {
     parsed = new URL(configured);
   } catch {
     throw new Error(
-      'VITE_API_BASE_URL must be a valid absolute URL (for example, http://127.0.0.1:8000).',
+      'VITE_API_BASE_URL must be a valid absolute URL (for example, http://127.0.0.1:8001).',
     );
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -38,10 +38,10 @@ export function getApiBaseUrl() {
   }
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
-    resolvedBaseUrl = `${protocol}//${hostname}:8000`;
+    resolvedBaseUrl = `${protocol}//${hostname}:8001`;
     return resolvedBaseUrl;
   }
-  resolvedBaseUrl = 'http://127.0.0.1:8000';
+  resolvedBaseUrl = 'http://127.0.0.1:8001';
   return resolvedBaseUrl;
 }
 

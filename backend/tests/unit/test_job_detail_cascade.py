@@ -36,7 +36,7 @@ _JOB_POSTING_HTML = """
   "title": "Senior Platform Engineer",
   "identifier": "JOB-42",
   "url": "https://jobs.test/j/42",
-  "hiringOrganization": {"@type": "Organization", "name": "Invoro"},
+  "hiringOrganization": {"@type": "Organization", "name": "ExampleCo"},
   "jobLocation": {
     "@type": "Place",
     "address": {"addressLocality": "Berlin", "addressCountry": "DE"}
@@ -107,7 +107,7 @@ def test_job_detail_structured_floor_publishes_jobposting() -> None:
     assert result.verdict == "success"
     record = result.records[0]
     assert record["title"] == "Senior Platform Engineer"
-    assert record["company"] == "Invoro"
+    assert record["company"] == "ExampleCo"
     assert record["location"] == "Berlin, DE"
     assert all(row.surface is Surface.JOB_DETAIL for row in result.evidence)
 

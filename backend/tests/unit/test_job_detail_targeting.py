@@ -34,7 +34,7 @@ def _two_posting_html(*, primary_url: str, similar_url: str) -> str:
   "title": "Senior Platform Engineer",
   "identifier": "JOB-42",
   "url": "{primary_url}",
-  "hiringOrganization": {{"@type": "Organization", "name": "Invoro"}},
+  "hiringOrganization": {{"@type": "Organization", "name": "ExampleCo"}},
   "jobLocation": {{
     "@type": "Place",
     "address": {{"addressLocality": "Berlin", "addressCountry": "DE"}}
@@ -49,7 +49,7 @@ def _two_posting_html(*, primary_url: str, similar_url: str) -> str:
   "title": "Staff Platform Engineer",
   "identifier": "JOB-99",
   "url": "{similar_url}",
-  "hiringOrganization": {{"@type": "Organization", "name": "Invoro"}},
+  "hiringOrganization": {{"@type": "Organization", "name": "ExampleCo"}},
   "jobLocation": {{
     "@type": "Place",
     "address": {{"addressLocality": "Munich", "addressCountry": "DE"}}

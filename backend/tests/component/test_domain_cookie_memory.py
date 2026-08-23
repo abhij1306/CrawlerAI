@@ -206,7 +206,7 @@ async def test_persist_storage_state_for_domain_keeps_engine_specific_rows(
 async def test_persist_storage_state_for_domain_persists_localhost_with_port(
     db_session,
 ) -> None:
-    domain = "http://localhost:3000/products/widget"
+    domain = "http://localhost:3001/products/widget"
 
     saved = await cookie_store.persist_storage_state_for_domain(
         domain,
@@ -225,17 +225,17 @@ async def test_persist_storage_state_for_domain_persists_localhost_with_port(
     )
 
     rows = await cookie_store.list_domain_cookie_memory(
-        "localhost:3000", session=db_session
+        "localhost:3001", session=db_session
     )
     all_rows = await cookie_store.list_domain_cookie_memory(session=db_session)
     loaded = await cookie_store.load_storage_state_for_domain(
-        "localhost:3000", session=db_session
+        "localhost:3001", session=db_session
     )
 
     assert saved is True
     assert len(rows) == 1
-    assert rows[0]["domain"] == "localhost:3000"
-    assert any(row["domain"] == "localhost:3000" for row in all_rows)
+    assert rows[0]["domain"] == "localhost:3001"
+    assert any(row["domain"] == "localhost:3001" for row in all_rows)
     assert loaded is not None
 
 

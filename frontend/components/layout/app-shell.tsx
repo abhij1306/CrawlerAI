@@ -33,7 +33,11 @@ export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
         >
           Skip to main content
         </a>
-        <Sidebar pathname={pathname} isAdmin={session.role === 'admin'} />
+        <Sidebar
+          pathname={pathname}
+          isAdmin={session.role === 'admin'}
+          accountEmail={session.email}
+        />
         <ShellContent pathname={pathname} canResetWorkspace={session.role === 'admin'}>
           {children ?? <Outlet />}
         </ShellContent>

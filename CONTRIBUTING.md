@@ -1,6 +1,6 @@
 # Contributing
 
-Invoro changes follow the same rules humans and agents use in this repo.
+CrawlerAI changes follow the same rules humans and agents use in this repo.
 
 ## Start Here
 

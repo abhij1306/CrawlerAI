@@ -119,11 +119,11 @@ def test_no_structured_source_falls_through() -> None:
 def test_jobposting_itemlist_grounds_without_surface_specific_scanner() -> None:
     html = """
     <script type="application/ld+json">{"@type":"ItemList","itemListElement":[
-      {"@type":"ListItem","url":"/jobs/backend","item":{"@type":"JobPosting","title":"Backend Engineer","hiringOrganization":{"name":"Invoro"},"jobLocation":{"address":{"addressLocality":"Remote"}}}},
-      {"@type":"ListItem","url":"/jobs/data","item":{"@type":"JobPosting","title":"Data Engineer","hiringOrganization":{"name":"Invoro"},"jobLocation":{"address":{"addressLocality":"New Delhi"}}}}
+      {"@type":"ListItem","url":"/jobs/backend","item":{"@type":"JobPosting","title":"Backend Engineer","hiringOrganization":{"name":"ExampleCo"},"jobLocation":{"address":{"addressLocality":"Remote"}}}},
+      {"@type":"ListItem","url":"/jobs/data","item":{"@type":"JobPosting","title":"Data Engineer","hiringOrganization":{"name":"ExampleCo"},"jobLocation":{"address":{"addressLocality":"New Delhi"}}}}
     ]}</script>
-    <ul><li><a href="/jobs/backend">Backend Engineer</a><span>Invoro Remote</span></li>
-    <li><a href="/jobs/data">Data Engineer</a><span>Invoro New Delhi</span></li></ul>
+    <ul><li><a href="/jobs/backend">Backend Engineer</a><span>ExampleCo Remote</span></li>
+    <li><a href="/jobs/data">Data Engineer</a><span>ExampleCo New Delhi</span></li></ul>
     """
     doc = HtmlDocument("t", html)
     boundaries = discover_listing_records(doc, page_url="https://jobs.test/careers")

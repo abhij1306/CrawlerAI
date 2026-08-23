@@ -27,7 +27,7 @@ function renderSidebar() {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/dashboard']}>
-        <Sidebar pathname="/dashboard" isAdmin />
+        <Sidebar pathname="/dashboard" isAdmin accountEmail="admin@example.com" />
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -63,6 +63,13 @@ beforeEach(() => {
 });
 
 describe('Sidebar logout', () => {
+  it('shows the active account in place of the old theme section', () => {
+    renderSidebar();
+
+    expect(screen.getByText('Account')).toBeInTheDocument();
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument();
+  });
+
   it('posts to the logout endpoint, clears cached queries, and navigates to /login', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
