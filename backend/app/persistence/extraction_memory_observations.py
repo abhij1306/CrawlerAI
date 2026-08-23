@@ -99,7 +99,7 @@ async def _suspend_confirmed_critical_drift_template(
     await session.flush()
     confirmed_count = (
         await session.execute(
-            select(func.count())
+            select(func.count(func.distinct(ExtractionObservation.url_result_id)))
             .select_from(ExtractionObservation)
             .where(
                 ExtractionObservation.template_id == template_id,

@@ -250,14 +250,19 @@ def selector_rules_from_release(
     for candidate_surface in (surface, DEFAULT_FALLBACK_SURFACE):
         for template in _active_templates(payload, candidate_surface):
             for row in _selector_rule_rows(template):
+                rule = dict(row)
+                field_name = str(
+                    rule.get("field_name") or rule.get("canonical_field") or ""
+                ).strip()
+                rule["field_name"] = field_name
                 signature = (
-                    str(row.get("field_name") or "").strip().lower(),
-                    str(row.get("css_selector") or "").strip(),
+                    field_name.lower(),
+                    str(rule.get("css_selector") or "").strip(),
                 )
                 if signature in seen:
                     continue
                 seen.add(signature)
-                rules.append(dict(row))
+                rules.append(rule)
     return rules
 
 

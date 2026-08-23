@@ -60,6 +60,31 @@ async def test_create_crawl_run_sets_pending_and_preserves_surface(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_create_batch_uses_settings_urls_for_primary_url_and_count(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    urls = [
+        "https://example.com/products/one",
+        "https://example.com/products/two",
+    ]
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {"urls": urls},
+        },
+    )
+
+    assert run.url == urls[0]
+    assert run.result_summary["url_count"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_create_crawl_run_preserves_raw_additional_fields_and_keeps_domain_fields(
     db_session: AsyncSession,
     test_user,

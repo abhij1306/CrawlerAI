@@ -764,6 +764,10 @@ class TestNativeContextContract:
             {"latitude": "north", "longitude": 12.5},
             {"latitude": 48.1, "longitude": object()},
             {"latitude": 48.1, "longitude": 12.5, "accuracy": "exact"},
+            {"latitude": "nan", "longitude": 12.5},
+            {"latitude": 91, "longitude": 12.5},
+            {"latitude": 48.1, "longitude": 181},
+            {"latitude": 48.1, "longitude": 12.5, "accuracy": -1},
         ),
     )
     def test_native_context_ignores_invalid_geolocation(

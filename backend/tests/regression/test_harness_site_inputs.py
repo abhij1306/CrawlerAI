@@ -59,6 +59,21 @@ def test_parse_test_sites_markdown_reads_urls_from_markdown_tables(
 
 
 @pytest.mark.regression
+def test_parse_test_sites_markdown_strips_markdown_link_punctuation(
+    tmp_path: Path,
+) -> None:
+    fixture = tmp_path / "TEST_SITES.md"
+    fixture.write_text(
+        "| Product | [Widget](https://example.com/products/widget) | Detail |",
+        encoding="utf-8",
+    )
+
+    assert parse_test_sites_markdown(fixture, start_line=1)[0]["url"] == (
+        "https://example.com/products/widget"
+    )
+
+
+@pytest.mark.regression
 def test_build_explicit_sites_preserves_explicit_surface_order() -> None:
     rows = build_explicit_sites(
         [

@@ -14,8 +14,8 @@ APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # Exact inventory. Services/tooling closeout adds focused regressions for the
 # moved owners and browser-probe input validation; both ratchets are measured.
-TEST_LOC_BUDGET = 55_517
-TOOL_LOC_BUDGET = 3_817
+TEST_LOC_BUDGET = 55_577
+TOOL_LOC_BUDGET = 3_813
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
 # cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,
@@ -212,12 +212,12 @@ PACKAGE_LOC_BUDGETS = {
     # all touched production callables at CC<=15.
     # Services/tooling simplification adds explicit owner seams and type-safe
     # helpers while shrinking the five named root owners by 2,870 lines.
-    "acquisition": 17_626,
-    "crawl": 9_788,
+    "acquisition": 17_637,
+    "crawl": 9_790,
     "core": 21_110,
     "enrichment": 2_361,
     "connectors": 2_427,
-    "intelligence": 3_577,
+    "intelligence": 3_576,
     "extraction": 17_909,
     "evaluation": 1_599,
 }
@@ -270,7 +270,7 @@ PACKAGE_LOC_BUDGETS = {
 # Core/acquisition simplification added +448; PR #53 review follow-up adds +8.
 # Services/tooling owner seams add 667 lines while shrinking the named root
 # owners by 2,870 lines; reconciled to the live package inventory.
-TOTAL_APP_LOC_BUDGET = 86_412
+TOTAL_APP_LOC_BUDGET = 86_433
 
 
 def test_production_package_loc_budgets() -> None:

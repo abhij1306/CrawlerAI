@@ -53,16 +53,20 @@ async def create_crawl_run(
 ) -> CrawlRun:
     creation = _normalize_run_creation(payload)
     settings, requested_fields = await _resolve_run_settings(session, creation)
+    run_urls = collect_target_urls(
+        creation.payload, CrawlRunSettings.from_value(settings)
+    )
+    primary_url = creation.primary_url or (run_urls[0] if run_urls else "")
     run = CrawlRun(
         user_id=user_id,
         run_type=creation.run_type,
-        url=creation.primary_url,
+        url=primary_url,
         surface=creation.surface,
         status=CrawlStatus.PENDING.value,
         settings=settings,
         requested_fields=requested_fields,
         result_summary={
-            "url_count": max(1, len(creation.urls)),
+            "url_count": max(1, len(run_urls)),
             "progress": 0,
             "current_stage": STAGE_ACQUIRE,
             "correlation_id": get_correlation_id() or generate_correlation_id(),
@@ -73,7 +77,7 @@ async def create_crawl_run(
     release = await create_release_snapshot(
         session,
         run_id=run.id,
-        domain=normalize_domain(creation.primary_url),
+        domain=normalize_domain(primary_url),
         surface=creation.surface,
     )
     run.extraction_release_snapshot_id = release.id

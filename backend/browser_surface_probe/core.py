@@ -24,7 +24,6 @@ from app.core.config.browser_surface_probe import (
 )
 from app.crawl.crud import get_run
 from browser_surface_probe import signal_extractor as _signal_extractor
-from browser_surface_probe import target_diagnostics as _target_diagnostics
 from browser_surface_probe.report_rendering import (
     build_agent_summary,
     build_findings,
@@ -58,7 +57,6 @@ from browser_surface_probe.value_coercion import (
 )
 
 load_baseline_probe_script = _signal_extractor.load_baseline_probe_script
-_geo_payload_from_text = _target_diagnostics._geo_payload_from_text
 
 _BUNDLE_DIRNAME = "browser_surface_probe"
 logger = logging.getLogger(__name__)

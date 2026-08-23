@@ -394,7 +394,7 @@ def test_country_code_aliases_and_names_use_token_boundaries() -> None:
 
 @pytest.mark.regression
 def test_geo_payload_from_text_accepts_alternate_provider_shapes() -> None:
-    payload = probe._geo_payload_from_text(
+    payload = target_diagnostics._geo_payload_from_text(
         '{"ip":"8.8.8.8","country_code":"US","regionName":"California",'
         '"timezone":{"id":"America/Los_Angeles"},"connection":{"org":"Google"}}'
     )

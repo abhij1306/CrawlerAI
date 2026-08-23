@@ -169,7 +169,7 @@ def _markdown_site_row(line: object) -> dict[str, str] | None:
     cells = [cell.strip() for cell in value.strip("|").split("|")]
     url = next(
         (
-            match.group(0).strip().rstrip("`")
+            match.group(0).strip().rstrip("`.,;:)")
             for cell in cells
             if (match := re.search(r"https?://[^`\s|>]+", cell))
         ),

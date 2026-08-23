@@ -77,6 +77,21 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
         )
         db_session.add(url_result)
         await db_session.flush()
+        observation = SentinelObservation(
+            challenger="deterministic",
+            state="critical_drift",
+            template_id=str(template.id),
+            release_snapshot_id=str(release.id),
+            sample_rate=1.0,
+            recipe_verdict="success",
+            challenger_verdict="success",
+            recipe_record_count=1,
+            challenger_record_count=0,
+            disagreement_classes=("record_count",),
+            evidence_ids=("e1", "e2"),
+            diagnostic="Sentinel deterministic challenger is critical_drift.",
+            next_action="confirm_drift_before_suspending_template",
+        )
         result = ExtractionResult(
             surface=Surface.ECOMMERCE_DETAIL,
             records=(
@@ -86,23 +101,7 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
                 ),
             ),
             verdict="success",
-            sentinel_observations=(
-                SentinelObservation(
-                    challenger="deterministic",
-                    state="critical_drift",
-                    template_id=str(template.id),
-                    release_snapshot_id=str(release.id),
-                    sample_rate=1.0,
-                    recipe_verdict="success",
-                    challenger_verdict="success",
-                    recipe_record_count=1,
-                    challenger_record_count=0,
-                    disagreement_classes=("record_count",),
-                    evidence_ids=("e1", "e2"),
-                    diagnostic="Sentinel deterministic challenger is critical_drift.",
-                    next_action="confirm_drift_before_suspending_template",
-                ),
-            ),
+            sentinel_observations=(observation, observation),
         )
         await record_extraction_result(
             db_session,
@@ -113,6 +112,10 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
             surface="ecommerce_detail",
             result=result,
         )
+        await db_session.flush()
+        await db_session.refresh(template)
+        if index == 0:
+            assert template.status != EXTRACTION_MEMORY_STATUS_SUSPENDED
 
     await db_session.flush()
     await db_session.refresh(template)
