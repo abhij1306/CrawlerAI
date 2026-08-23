@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** DONE
 **Touches buckets:** persistence/extraction memory, enrichment, product intelligence, crawl orchestration, observability, public/API services, harness and browser-surface probe tooling
 
 ## Goal
@@ -20,7 +20,7 @@ This plan owns Q-LOC-04, Q-LOC-07, Q-LOC-08, Q-LOC-28, Q-LOC-36 and all remainin
 - [x] Existing owners (`extraction_memory_sources`, enrichment deterministic/diagnostics/repository modules, intelligence discovery/matching/service support, harness modules) are extended before creating files.
 - [x] New files, if unavoidable, own one named responsibility and are added to `CODEBASE_MAP.md`; no `_misc`, generic `utils`, or compatibility barrels.
 - [x] Net scoped LOC decreases and all cleared debt entries are deleted.
-- [ ] Focused backend pytest, Ruff, mypy, and `$ship-main` CI pass.
+- [x] Focused backend pytest, Ruff, mypy, and `$ship-main` CI pass.
 
 ## Do Not Touch
 
@@ -105,7 +105,7 @@ This plan owns Q-LOC-04, Q-LOC-07, Q-LOC-08, Q-LOC-28, Q-LOC-36 and all remainin
 
 ### Slice 7: `$ship-main`
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Preserve unrelated work, branch safely, run focused local checks, commit/push, open a non-draft PR, wait for every required CI job, fix on the same branch, merge only when green and mergeable, then synchronize local `main` with `--ff-only` and prune safely.
@@ -133,3 +133,4 @@ This plan owns Q-LOC-04, Q-LOC-07, Q-LOC-08, Q-LOC-28, Q-LOC-36 and all remainin
 - Slice 5: harness parsing/classification moved to `site_sets.py`, `challenge_classifier.py`, and the existing quality owner. Browser-probe collection, target diagnostics, rendering, and value coercion now have named owners. `harness/support.py` shrank 1,463→1,026 and `browser_surface_probe/core.py` 2,037→520 nonblank lines. All tooling callables are CC 15 or lower; 65 focused tests, Ruff, and mypy passed.
 - Slice 6: all five named oversized roots shrank by 2,870 nonblank lines in aggregate. Cleared oversized and complexity debt entries were removed; exact full-tree LOC ratchets were reconciled to the readable implementation and focused regressions. Architecture ownership, size, and complexity checks pass without exclusions or weakened scanners.
 - Closeout review findings: nine findings were live and fixed with focused coverage. Empty LLM categories remain backfillable; probe targets reject encoded/local DNS answers; country aliases and token matching are canonical; direct artifact mappings and all reopened IDs are retained; knowledge projections are ordered and template-layer scoped; both documentation findings were corrected. The diagnose/run-report request was skipped: `diagnose.json` is intentionally bounded, and `run_report` derives from persisted bounded artifacts; making it unbounded would change the protected diagnostic/artifact contract rather than repair a dropped in-memory handoff. The first combined review run passed 85 of 86 tests; after correcting its unsupported country fixture, all 51 impacted regression/component tests passed.
+- Slice 7: PR #56 (`https://github.com/abhij1306/CrawlerAI/pull/56`) passed Backend CI twice (2,122 passed, 1 skipped), CodeQL, gitleaks, Playwright smoke, CodeFactor, and repository review checks at `5ece5b96`. The merge commit is recorded in the final handoff because GitHub creates it only after this plan content is merged.
