@@ -1,10 +1,10 @@
 # Active Plan
 
-**Current:** Production Foundation and Cleanup → `docs/plans/production-foundation-cleanup-plan.md`
+**Current:** Test-Suite Decomposition, Quality Guardrails, AI Visibility Removal, and CodeQL Closeout → `docs/plans/test-suite-strict-gates-plan.md`
 **Status:** IN PROGRESS
-**Started:** 2026-08-23
-**Last slice completed:** Slice 11 — Final runtime and documentation reconciliation
+**Started:** 2026-08-22
+**Last slice completed:** Slice 8 — Enable honest blocking quality gates
 
 ## Queue
 
-1. Test Suite Strict Gates — continue Slice 9 after production foundation closes
+1. Continue Slice 9 — Resolve and close open CodeQL findings

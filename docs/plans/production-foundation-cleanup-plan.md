@@ -2,7 +2,7 @@
 
 **Created:** 2026-08-22
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** DONE
 **Touches buckets:** repository instructions, dependency locks, CI workflows, extraction/LLM/fetch dead code, quality-tool configuration, local runtime/bootstrap, auth shell, database and cache setup
 
 ## Goal
@@ -31,7 +31,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 - [x] Local runtime uses backend port 8001 and frontend port 3001 consistently across config, scripts, tests, docs, health checks, and browser URLs.
 - [x] `start.bat` launches the backend API, Redis-backed Celery workers, and frontend successfully with Redis/Celery enabled, reusing a healthy compatible Redis endpoint when available.
 - [x] The app shell shows the active account and logout control in the bottom sidebar area while preserving the top-bar theme toggle and current single-account scope.
-- [ ] Required GitHub CI is green and the PR is merged through `$ship-main`.
+- [x] Required GitHub CI is green and the PR is merged through `$ship-main`.
 
 ## Do Not Touch
 
@@ -155,7 +155,7 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 
 ### Slice 12: `$ship-main`
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** all and only changes belonging to this plan
 
 **What:** Invoke `$ship-main`. Inspect branch, worktree, remotes, and upstream; preserve unrelated files. Create a feature branch if needed, run only the focused static/build checks above locally, commit and push, open a non-draft PR with exact checks, wait for every required CI job, fix failures on the same branch, merge only when green and mergeable, then switch to `main`, pull `--ff-only`, prune the merged local branch when safe, and verify local HEAD equals remote `main`.
@@ -185,3 +185,4 @@ This plan covers Q-CI-LOCK, Q-CI-FE-AUDIT, Q-CI-PYJWT, Q-CI-BE-FMT, Q-CI-FE-CHEC
 - Local installations were deleted and rebuilt from `uv.lock` and `pnpm-lock.yaml`. Generated project cache/build directories were bounded to the workspace. CrawlerAI now owns `crawlerai-db-1` on host port 5433; its fresh schema contains 25 tables at revision `20260703_0001`. No unrelated database or volume was reset. A compatible Redis endpoint on localhost:6379 is reused through isolated logical DB 1.
 - Local API/UI contracts are 8001/3001 across runtime config, Docker, CI, Playwright, tests, and docs. `start.bat` validates installs, reuses healthy dependencies or starts missing CrawlerAI Docker services, migrates the database, and starts two uniquely named Celery workers without killing browser processes from other projects.
 - Live `start.bat` verification passed: backend and frontend returned 200; both Celery workers returned `pong`; CrawlerAI bootstrapped one admin; live login/session/logout returned 200/200/204 and the post-logout session check returned 401. Repository-wide case-insensitive search reports zero references to the superseded product name.
+- PR #57 passed all 13 GitHub checks after the account-display assertion was folded into existing logout coverage to preserve the frontend test LOC ratchet at 4642/4642. The PR was squash-merged through `$ship-main`.
