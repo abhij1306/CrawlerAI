@@ -100,3 +100,10 @@ export function validateAdditionalFieldName(value: string) {
   }
   return null;
 }
+
+export function validateAdditionalFieldNames(fields: string[]) {
+  for (const field of fields) {
+    const reason = validateAdditionalFieldName(field);
+    if (reason) throw new Error(`Invalid additional field "${field}": ${reason}`);
+  }
+}

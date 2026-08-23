@@ -116,9 +116,9 @@ Responsibilities:
 
 - HTTP transport, abort signals, and request IDs
 - one query-key factory and application query defaults
-- typed domain endpoint modules for backend calls
+- typed domain endpoint modules for backend calls; domain DTOs live beside their methods
 - direct domain imports (`lib/api/<domain>.ts`) at every call site; the former `lib/api/index.ts` compatibility facade is deleted
-- API typing and zod response schemas (`lib/api/schemas.ts`)
+- genuinely shared crawl/transport contracts in `lib/api/types.ts` and zod response schemas in `lib/api/schemas.ts`
 - auth-aware fetch wrapper
 - URL helpers for selector preview HTML
 
@@ -358,7 +358,7 @@ There is also Playwright e2e coverage under `frontend/e2e`.
 Policy and CI checks:
 
 - `frontend/scripts/check-frontend-architecture.mjs` enforces feature-owner line budgets, the aggregate nonblank test-LOC ratchet, API owner files, and Data Enrichment ownership boundaries.
-- VitePlus applies ESLint complexity 15 to every `*.test.*` and `*.spec.*` callable; CI runs `vp check` and architecture policy before build.
+- VitePlus applies ESLint complexity 15 to production and test TypeScript callables; CI runs `vp check` and architecture policy before build.
 - `frontend/scripts/check-bundle-budgets.mjs` enforces JS/CSS route asset budgets after build and is wired into CI.
 - `check:policy` runs token, crawl architecture, frontend architecture, and bundle budget checks.
 
@@ -369,10 +369,11 @@ Policy and CI checks:
 - Feature components live in top-level `components/<feature>/` directories: `components/domain-memory/` owns the domain-memory surface (moved out of the removed `components/selectors/` parent in audit 7.9).
 - Import aliases: `@/*` → `src/*`, `@lib/*` → `lib/*`, `@ui/*` → `components/ui/*` (tsconfig paths + vite resolve.alias). Deep `../../../+` cross-area imports use the aliases; short intra-feature relative imports stay relative.
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
+- `components/crawl/log-terminal-utils.ts` owns log grouping, while `log-terminal-display.ts` owns pure coverage, confidence, duration, row, and summary derivation; terminal state and reconciliation remain in `use-log-terminal-state.ts`.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.
 - `components/ui/table.tsx` owns table primitive styling (semantic Tailwind tokens); call sites compose the typed primitives directly.
-- When backend record contracts change, update `lib/api/types.ts` and this doc together.
+- When backend record contracts change, update the owning `lib/api/<domain>.ts` DTO (or `lib/api/types.ts` for a genuinely shared contract) and this doc together.
 
 ## 9. Companion Docs
 

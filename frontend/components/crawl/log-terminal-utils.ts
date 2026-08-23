@@ -74,39 +74,42 @@ export const LOG_PATTERNS = {
   COUNTER: /\(\d+\/\d+\)/,
 } as const;
 
+const STAGE_MESSAGE_TERMS: ReadonlyArray<{ stage: LogStage; terms: readonly string[] }> = [
+  { stage: 'persistence', terms: ['persisted', 'persisting', 'committed'] },
+  {
+    stage: 'normalize',
+    terms: ['normalized', 'normalised', 'schema validation cleaned'],
+  },
+  {
+    stage: 'extraction',
+    terms: [
+      'extracted',
+      'extraction yielded',
+      'rejected detail extraction',
+      'traversal yielded',
+      'selector self-heal',
+    ],
+  },
+  {
+    stage: 'acquisition',
+    terms: [
+      'acquiring',
+      'robots',
+      'proxy',
+      'browser',
+      'navigation',
+      'page loaded',
+      'acquired payload',
+    ],
+  },
+];
+
 export function getLogStage(message: string): LogStage {
   const text = message.toLowerCase();
-  if (text.includes('persisted') || text.includes('persisting') || text.includes('committed')) {
-    return 'persistence';
-  }
-  if (
-    text.includes('normalized') ||
-    text.includes('normalised') ||
-    text.includes('schema validation cleaned')
-  ) {
-    return 'normalize';
-  }
-  if (
-    text.includes('extracted') ||
-    text.includes('extraction yielded') ||
-    text.includes('rejected detail extraction') ||
-    text.includes('traversal yielded') ||
-    text.includes('selector self-heal')
-  ) {
-    return 'extraction';
-  }
-  if (
-    text.includes('acquiring') ||
-    text.includes('robots') ||
-    text.includes('proxy') ||
-    text.includes('browser') ||
-    text.includes('navigation') ||
-    text.includes('page loaded') ||
-    text.includes('acquired payload')
-  ) {
-    return 'acquisition';
-  }
-  return 'system';
+  return (
+    STAGE_MESSAGE_TERMS.find(({ terms }) => terms.some((term) => text.includes(term)))?.stage ??
+    'system'
+  );
 }
 
 export type LogSiteGroup = {

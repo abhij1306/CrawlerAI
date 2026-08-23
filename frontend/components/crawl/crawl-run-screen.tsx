@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { HistoryDrawer } from '../ui/history-drawer';
-import { parseApiDate } from '../../lib/format/date';
 import { extractionVerdict } from './shared';
 import { CrawlTerminalTabContent } from './crawl-terminal-tab-content';
 
@@ -26,7 +25,7 @@ import { useRunRecipe } from './use-run-recipe';
 import { useRunRecipeActions } from './use-run-recipe-actions';
 import { useRunRecordSelection } from './use-run-record-selection';
 import { useRunRecords } from './use-run-records';
-import { useRunWorkspace } from './use-run-workspace';
+import { followUpVisibility, useRunWorkspace, workspaceRunState } from './use-run-workspace';
 
 type CrawlRunScreenProps = { runId: number };
 
@@ -41,14 +40,12 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
   const { runQuery, run, live, terminal } = useRunWorkspace(runId);
   const localNow = useLiveClock(live);
   const { refetch: refetchRunQuery } = runQuery;
-  const runCreatedMs = run?.created_at ? parseApiDate(run.created_at).getTime() : null;
-  const effectiveStartMs = runCreatedMs ?? sessionStartMs;
-  const failedRunWithoutRecords = Boolean(
-    run &&
-    (run.status === 'failed' || run.status === 'proxy_exhausted') &&
-    Number(run?.result_summary?.record_count ?? 0) === 0,
-  );
-  const showRunLearningTab = Boolean(run?.run_type === 'crawl' && terminal);
+  const {
+    effectiveStartMs,
+    failedRunWithoutRecords,
+    showLearningTab: showRunLearningTab,
+    requestedFields,
+  } = workspaceRunState(run, terminal, sessionStartMs);
   const {
     outputTab,
     setOutputTab,
@@ -179,6 +176,14 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     selectedRecords,
     batchSourceRecords,
   });
+  const actionVisibility = followUpVisibility({
+    listingRun,
+    ecommerceDetailRun,
+    batchCount: batchFromResultsUrls.length,
+    productIntelligenceCount: productIntelligenceRecords.length,
+    dataEnrichmentCount: dataEnrichmentRecords.length,
+  });
+  const { showBatch, showProductIntelligence, showDataEnrichment } = actionVisibility;
   const {
     llmSummary,
     summary,
@@ -204,13 +209,11 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
   const terminalActions = useMemo(
     () => (
       <RunWorkspaceActions
-        showBatch={listingRun && batchFromResultsUrls.length > 0}
+        showBatch={showBatch}
         batchLabel={batchFromResultsLabel}
-        showProductIntelligence={
-          (listingRun || ecommerceDetailRun) && productIntelligenceRecords.length > 0
-        }
+        showProductIntelligence={showProductIntelligence}
         productIntelligenceLabel={productIntelligenceLabel}
-        showDataEnrichment={ecommerceDetailRun && dataEnrichmentRecords.length > 0}
+        showDataEnrichment={showDataEnrichment}
         dataEnrichmentLabel={dataEnrichmentLabel}
         onBatch={startBatchCrawl}
         onProductIntelligence={startProductIntelligence}
@@ -221,13 +224,11 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
       />
     ),
     [
-      listingRun,
-      batchFromResultsUrls.length,
+      showBatch,
       batchFromResultsLabel,
-      ecommerceDetailRun,
-      productIntelligenceRecords.length,
+      showProductIntelligence,
       productIntelligenceLabel,
-      dataEnrichmentRecords.length,
+      showDataEnrichment,
       dataEnrichmentLabel,
       startBatchCrawl,
       startProductIntelligence,
@@ -336,7 +337,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
             logs={{
               logs,
               batchSourceRecords,
-              requestedFields: run?.requested_fields ?? [],
+              requestedFields,
               logViewportRef,
               nowMs: localNow,
             }}

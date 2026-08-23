@@ -1,6 +1,6 @@
 import { CheckCircle2, RefreshCcw, SlidersHorizontal } from 'lucide-react';
 
-import type { KnowledgeContract, KnowledgeSiteRecord } from '@lib/api/types';
+import type { KnowledgeContract, KnowledgeSiteRecord } from '@lib/api/knowledge';
 import { surfaceLabel } from '@lib/format/domain';
 import { DataRegionEmpty, DataRegionError, DataRegionLoading, SurfaceSection } from '@ui/patterns';
 import { Badge, Button, Dropdown } from '@ui/primitives';
@@ -17,22 +17,29 @@ type OriginDescriptor = {
   tone: 'accent' | 'info' | 'neutral';
 };
 
+function queryErrorMessage(error: unknown, fallback: string) {
+  if (!error) return '';
+  return error instanceof Error ? error.message : fallback;
+}
+
+function mutationContractId(
+  enabled: boolean,
+  variables: { contract: KnowledgeContract } | undefined,
+) {
+  return enabled ? (variables?.contract.id ?? '') : '';
+}
+
 export function KnowledgeGraphTab({ selectedWorkspace }: KnowledgeGraphTabProps) {
   const { query, selectSource } = useKnowledgeGraph(selectedWorkspace);
   const data = query.data ?? null;
   const site = scopedSite(data?.site, selectedWorkspace);
   const graphVersion = site?.current_version ?? null;
 
-  const mutationError = selectSource.error
-    ? selectSource.error instanceof Error
-      ? selectSource.error.message
-      : 'Unable to update extraction preference.'
-    : '';
-  const loadError = query.error
-    ? query.error instanceof Error
-      ? query.error.message
-      : 'Unable to load extraction preferences.'
-    : '';
+  const mutationError = queryErrorMessage(
+    selectSource.error,
+    'Unable to update extraction preference.',
+  );
+  const loadError = queryErrorMessage(query.error, 'Unable to load extraction preferences.');
   const contracts = data?.contracts ?? [];
 
   function runSelect(contract: KnowledgeContract, selectedSource: string) {
@@ -68,12 +75,8 @@ export function KnowledgeGraphTab({ selectedWorkspace }: KnowledgeGraphTabProps)
           <PreferenceScope domain={selectedWorkspace.domain} site={site} contracts={contracts} />
           <ContractPanel
             contracts={contracts}
-            pendingContractId={
-              selectSource.isPending ? (selectSource.variables?.contract.id ?? '') : ''
-            }
-            savedContractId={
-              selectSource.isSuccess ? (selectSource.variables?.contract.id ?? '') : ''
-            }
+            pendingContractId={mutationContractId(selectSource.isPending, selectSource.variables)}
+            savedContractId={mutationContractId(selectSource.isSuccess, selectSource.variables)}
             onSelectSource={runSelect}
           />
         </>

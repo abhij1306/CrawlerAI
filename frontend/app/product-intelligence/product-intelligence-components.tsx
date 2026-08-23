@@ -3,7 +3,7 @@ import React from 'react';
 
 import { AppDialog } from '../../components/ui/dialog';
 import { Badge, Button } from '../../components/ui/primitives';
-import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
+import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/product-intelligence';
 import { decodeUrlsForDisplay } from '../../lib/crawl/format';
 import { isSafeHttpUrl } from '../../lib/format/domain';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';

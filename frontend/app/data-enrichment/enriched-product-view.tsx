@@ -5,7 +5,7 @@ import type { Ref } from 'react';
 import { KVTile } from '../../components/ui/patterns';
 import { Badge } from '../../components/ui/primitives';
 import { SafeExternalLink } from '../../components/ui/safe-external-link';
-import type { EnrichedProduct } from '../../lib/api/types';
+import type { EnrichedProduct } from '../../lib/api/data-enrichment';
 import { cn } from '../../lib/utils';
 
 function formatPriceObject(value: Record<string, unknown>) {
@@ -212,6 +212,14 @@ interface EnrichedProductDetailProps {
   product: EnrichedProduct | null;
 }
 
+function displayValue(value: string | null) {
+  return value || '--';
+}
+
+function displayList(values: string[] | null) {
+  return values?.join(', ') || '--';
+}
+
 export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>) {
   if (!product) {
     return (
@@ -256,15 +264,15 @@ export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetai
                 label="Price (Normalized)"
                 value={formatValue(product.price_normalized) || '--'}
               />
-              <KVTile label="Color Family" value={product.color_family || '--'} />
-              <KVTile label="Size Normalized" value={product.size_normalized?.join(', ') || '--'} />
-              <KVTile label="Size System" value={product.size_system || '--'} />
-              <KVTile label="Gender Normalized" value={product.gender_normalized || '--'} />
+              <KVTile label="Color Family" value={displayValue(product.color_family)} />
+              <KVTile label="Size Normalized" value={displayList(product.size_normalized)} />
+              <KVTile label="Size System" value={displayValue(product.size_system)} />
+              <KVTile label="Gender Normalized" value={displayValue(product.gender_normalized)} />
               <KVTile
                 label="Materials Normalized"
-                value={product.materials_normalized?.join(', ') || '--'}
+                value={displayList(product.materials_normalized)}
               />
-              <KVTile label="Availability" value={product.availability_normalized || '--'} />
+              <KVTile label="Availability" value={displayValue(product.availability_normalized)} />
             </div>
           </div>
 
@@ -274,8 +282,8 @@ export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetai
               Taxonomy &amp; Context
             </h3>
             <div className="grid grid-cols-1 gap-4">
-              <KVTile label="Category Path" value={product.category_path || '--'} />
-              <KVTile label="Audience" value={product.audience?.join(', ') || '--'} />
+              <KVTile label="Category Path" value={displayValue(product.category_path)} />
+              <KVTile label="Audience" value={displayList(product.audience)} />
             </div>
           </div>
 

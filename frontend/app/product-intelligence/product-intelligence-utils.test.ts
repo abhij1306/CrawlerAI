@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 
-import type { ProductIntelligenceJobDetail } from '../../lib/api/types';
+import type { ProductIntelligenceJobDetail } from '../../lib/api/product-intelligence';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import {
   candidateConfidence,

@@ -1,6 +1,7 @@
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
 import { defaultRunProfileBase, mergeRunProfile } from '../../lib/crawl/run-profile';
+import { validateAdditionalFieldName, validateAdditionalFieldNames } from '../../lib/crawl/fields';
 import {
   clampNumber,
   type CategoryMode,
@@ -13,7 +14,6 @@ import {
   normalizeField,
   uniqueFields,
   uniqueRequestedFields,
-  validateAdditionalFieldName,
 } from './shared';
 import { DEFAULT_FIELDS } from './domain-surface-config';
 
@@ -162,9 +162,8 @@ function buildExtractionContract(fieldRows: FieldRow[]) {
         return null;
       }
       const reason = validateAdditionalFieldName(fieldName);
-      if (reason) {
+      if (reason)
         throw new Error(`Invalid manual field "${row.fieldName || fieldName}": ${reason}`);
-      }
       return {
         field_name: fieldName,
         css_selector: cssSelector || undefined,
@@ -209,37 +208,25 @@ function buildSingleUrlDispatch(
   };
 }
 
-export function buildDispatch(
+function commonDispatchSettings(
   config: CrawlConfig,
-  fieldRows: FieldRow[] = [],
-  options?: {
-    runProfile?: DomainRunProfile;
-    studioMode?: StudioMode;
-  },
-): PendingDispatch {
-  const additionalFields = uniqueRequestedFields(config.additional_fields);
-  for (const field of additionalFields) {
-    const reason = validateAdditionalFieldName(field);
-    if (reason) {
-      throw new Error(`Invalid additional field "${field}": ${reason}`);
-    }
-  }
-  const surface = deriveSurface(config.domain, config.module);
-  const runProfile = cloneRunProfile(options?.runProfile);
-  const studioMode = options?.studioMode ?? 'quick';
+  runProfile: DomainRunProfile,
+  studioMode: StudioMode,
+  fieldRows: FieldRow[],
+  additionalFields: string[],
+) {
   const traversalMode = studioMode === 'advanced' ? runProfile.fetch_profile.traversal_mode : null;
-  const commonSettings = {
+  const proxyList = config.proxy_enabled ? config.proxy_lines : [];
+  const hostMemoryTtl = runProfile.fetch_profile.host_memory_ttl_seconds;
+  return {
     llm_enabled: config.smart_extraction,
     advanced_enabled: studioMode === 'advanced',
     advanced_mode: traversalMode,
     max_records: config.max_records,
     respect_robots_txt: config.respect_robots_txt,
     proxy_enabled: config.proxy_enabled,
-    proxy_list: config.proxy_enabled ? config.proxy_lines : [],
-    proxy_profile: {
-      enabled: config.proxy_enabled,
-      proxy_list: config.proxy_enabled ? config.proxy_lines : [],
-    },
+    proxy_list: proxyList,
+    proxy_profile: { enabled: config.proxy_enabled, proxy_list: proxyList },
     additional_fields: additionalFields,
     crawl_module: config.module,
     crawl_mode: config.mode,
@@ -253,10 +240,10 @@ export function buildDispatch(
         CRAWL_DEFAULTS.REQUEST_DELAY_MS,
       ),
       host_memory_ttl_seconds:
-        runProfile.fetch_profile.host_memory_ttl_seconds == null
+        hostMemoryTtl == null
           ? null
           : clampNumber(
-              runProfile.fetch_profile.host_memory_ttl_seconds,
+              hostMemoryTtl,
               CRAWL_LIMITS.MIN_HOST_MEMORY_TTL_SECONDS,
               CRAWL_LIMITS.MAX_HOST_MEMORY_TTL_SECONDS,
               CRAWL_DEFAULTS.HOST_MEMORY_TTL_SECONDS,
@@ -267,55 +254,90 @@ export function buildDispatch(
     acquisition_contract: { ...runProfile.acquisition_contract },
     extraction_contract: buildExtractionContract(fieldRows),
   };
+}
 
-  if (config.module === 'category') {
-    if (config.mode === 'sitemap') {
-      const domain = config.sitemap_domain?.trim();
-      if (!domain) throw new Error('Enter a site domain for sitemap discovery.');
-      return {
-        runType: 'batch',
-        surface,
-        url: domain,
-        urls: undefined,
-        settings: {
-          ...commonSettings,
-          sitemap_domain: domain,
-          sitemap_filter_keyword: config.sitemap_filter_keyword?.trim() || 'collections',
-          sitemap_max_urls: config.sitemap_max_urls ?? 500,
-        },
-        additionalFields,
-        csvFile: null,
-      };
-    }
-    if (config.mode === 'bulk') {
-      const urls = parseLines(config.bulk_urls);
-      if (!urls.length) throw new Error('Bulk crawl needs at least one URL.');
-      return buildBatchDispatch(surface, urls, commonSettings, additionalFields);
-    }
-    if (!config.target_url.trim()) throw new Error('Enter a target URL.');
-    return buildSingleUrlDispatch(surface, config.target_url, commonSettings, additionalFields);
+function buildCategoryDispatch(
+  config: CrawlConfig,
+  surface: PendingDispatch['surface'],
+  settings: Record<string, unknown>,
+  additionalFields: string[],
+) {
+  if (config.mode === 'sitemap') {
+    const domain = config.sitemap_domain?.trim();
+    if (!domain) throw new Error('Enter a site domain for sitemap discovery.');
+    return {
+      runType: 'batch' as const,
+      surface,
+      url: domain,
+      urls: undefined,
+      settings: {
+        ...settings,
+        sitemap_domain: domain,
+        sitemap_filter_keyword: config.sitemap_filter_keyword?.trim() || 'collections',
+        sitemap_max_urls: config.sitemap_max_urls ?? 500,
+      },
+      additionalFields,
+      csvFile: null,
+    };
   }
+  if (config.mode === 'bulk') {
+    const urls = parseLines(config.bulk_urls);
+    if (!urls.length) throw new Error('Bulk crawl needs at least one URL.');
+    return buildBatchDispatch(surface, urls, settings, additionalFields);
+  }
+  if (!config.target_url.trim()) throw new Error('Enter a target URL.');
+  return buildSingleUrlDispatch(surface, config.target_url, settings, additionalFields);
+}
 
+function buildPdpDispatch(
+  config: CrawlConfig,
+  surface: PendingDispatch['surface'],
+  settings: Record<string, unknown>,
+  additionalFields: string[],
+) {
   if (config.mode === 'csv') {
     if (!config.csv_file) throw new Error('Select a CSV file.');
     return {
-      runType: 'csv',
+      runType: 'csv' as const,
       surface,
       url: config.target_url.trim() || undefined,
-      settings: commonSettings,
+      settings,
       additionalFields,
       csvFile: config.csv_file,
     };
   }
-
   if (config.mode === 'batch') {
     const urls = parseLines(config.bulk_urls);
     if (!urls.length) throw new Error('Batch crawl needs at least one URL.');
-    return buildBatchDispatch(surface, urls, commonSettings, additionalFields);
+    return buildBatchDispatch(surface, urls, settings, additionalFields);
   }
-
   if (!config.target_url.trim()) throw new Error('Enter a target URL.');
-  return buildSingleUrlDispatch(surface, config.target_url, commonSettings, additionalFields);
+  return buildSingleUrlDispatch(surface, config.target_url, settings, additionalFields);
+}
+
+export function buildDispatch(
+  config: CrawlConfig,
+  fieldRows: FieldRow[] = [],
+  options?: {
+    runProfile?: DomainRunProfile;
+    studioMode?: StudioMode;
+  },
+): PendingDispatch {
+  const additionalFields = uniqueRequestedFields(config.additional_fields);
+  validateAdditionalFieldNames(additionalFields);
+  const surface = deriveSurface(config.domain, config.module);
+  const runProfile = cloneRunProfile(options?.runProfile);
+  const studioMode = options?.studioMode ?? 'quick';
+  const settings = commonDispatchSettings(
+    config,
+    runProfile,
+    studioMode,
+    fieldRows,
+    additionalFields,
+  );
+  return config.module === 'category'
+    ? buildCategoryDispatch(config, surface, settings, additionalFields)
+    : buildPdpDispatch(config, surface, settings, additionalFields);
 }
 
 export function canPreview(

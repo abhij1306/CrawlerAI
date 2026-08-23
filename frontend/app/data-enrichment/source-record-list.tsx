@@ -1,6 +1,6 @@
 import { Badge } from '../../components/ui/primitives';
 import { SafeExternalLink } from '../../components/ui/safe-external-link';
-import type { DataEnrichmentSourceRecordInput } from '../../lib/api/types';
+import type { DataEnrichmentSourceRecordInput } from '../../lib/api/data-enrichment';
 
 function recordTitle(record: DataEnrichmentSourceRecordInput) {
   const title = record.data?.title;

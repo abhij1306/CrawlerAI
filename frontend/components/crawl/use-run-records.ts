@@ -105,9 +105,8 @@ function deriveRecordView({
   const latestJsonPage = jsonPages.at(-1);
   const records =
     outputTab === 'json' ? flattenedJsonRecords : (latestTablePage?.items ?? EMPTY_RECORDS);
-  const tableTotal = latestTablePage?.meta?.total ?? tableRecords.length;
-  const recordsTotal =
-    latestJsonPage?.meta?.total ?? latestTablePage?.meta?.total ?? records.length;
+  const tableTotal = pageTotal(latestTablePage, tableRecords.length);
+  const recordsTotal = pageTotal(latestJsonPage, pageTotal(latestTablePage, records.length));
   const jsonRecords = records.slice(0, Math.min(records.length, jsonVisibleCount));
   const recordsFetchCapReached = records.length >= CRAWL_DEFAULTS.JSON_RECORD_FETCH_CAP;
   const hasMoreJsonRecords =
@@ -126,6 +125,10 @@ function deriveRecordView({
       outputTab === 'json' ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2) : '',
     latestTablePage,
   };
+}
+
+function pageTotal(page: Paginated<CrawlRecord> | undefined, fallback: number) {
+  return page?.meta?.total ?? fallback;
 }
 
 export function useRunRecords({

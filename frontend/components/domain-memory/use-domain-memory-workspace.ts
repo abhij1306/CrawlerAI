@@ -12,11 +12,11 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfile,
   DomainRunProfileRecord,
-  KnowledgeSiteRecord,
 } from '@lib/api/types';
+import type { KnowledgeSiteRecord } from '@lib/api/knowledge';
 import { getNormalizedDomain } from '@lib/format/domain';
 import { buildDomainWorkspaces } from './build-workspaces';
-import type { SurfaceWorkspace } from './types';
+import type { DomainWorkspace, SurfaceWorkspace } from './types';
 import { cloneDomainRunProfile, firstUsableDomain, profileDraftKey } from './utils';
 
 const EMPTY_PROFILES: DomainRunProfileRecord[] = [];
@@ -24,6 +24,19 @@ const EMPTY_COOKIES: DomainCookieMemoryRecord[] = [];
 const EMPTY_FEEDBACK: DomainFieldFeedbackRecord[] = [];
 const EMPTY_KNOWLEDGE_SITES: KnowledgeSiteRecord[] = [];
 const EMPTY_RUNS: CrawlRun[] = [];
+
+function workspaceQueryError(queries: ReadonlyArray<{ error: unknown }>) {
+  const error = queries.map((query) => query.error).find(Boolean);
+  if (!error) return '';
+  return error instanceof Error ? error.message : 'Unable to load domain memory.';
+}
+
+function resolveSelectedDomain(selectedDomain: string, workspaces: DomainWorkspace[]) {
+  if (selectedDomain && workspaces.some((entry) => entry.domain === selectedDomain)) {
+    return selectedDomain;
+  }
+  return workspaces[0]?.domain ?? '';
+}
 
 function latestCompletedRunIdFor(surfaceWorkspace: SurfaceWorkspace): number | null {
   let latestId: number | null = null;
@@ -78,13 +91,7 @@ export function useDomainMemoryWorkspace() {
     completedRunsQuery,
     knowledgeSitesQuery,
   ] as const;
-  const queryError = workspaceQueries.map((query) => query.error).find(Boolean);
-  const queryErrorMessage =
-    queryError instanceof Error
-      ? queryError.message
-      : queryError
-        ? 'Unable to load domain memory.'
-        : '';
+  const queryErrorMessage = workspaceQueryError(workspaceQueries);
 
   const profiles = profilesQuery.data ?? EMPTY_PROFILES;
   const cookies = cookiesQuery.data ?? EMPTY_COOKIES;
@@ -143,10 +150,7 @@ export function useDomainMemoryWorkspace() {
     ],
   );
 
-  const resolvedSelectedDomain =
-    selectedDomain && groupedWorkspaces.some((entry) => entry.domain === selectedDomain)
-      ? selectedDomain
-      : (groupedWorkspaces[0]?.domain ?? '');
+  const resolvedSelectedDomain = resolveSelectedDomain(selectedDomain, groupedWorkspaces);
   const selectedWorkspace =
     groupedWorkspaces.find((entry) => entry.domain === resolvedSelectedDomain) ??
     groupedWorkspaces[0] ??

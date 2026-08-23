@@ -4,7 +4,7 @@ import { CheckCircle2, Trash2 } from 'lucide-react';
 import { Button } from '@ui/primitives';
 import { DetailRow, MutedPanelMessage, PageHeader, SectionCard } from '@ui/patterns';
 import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from '@ui/table';
-import type { LlmConfigRecord, LlmCostLogRecord } from '@lib/api/types';
+import type { LlmConfigRecord, LlmCostLogRecord } from '@lib/api/admin';
 import { LlmConfigFormCard } from './llm-config-form';
 import { useAdminLlm } from './use-admin-llm';
 

@@ -3,8 +3,8 @@ import type {
   DomainCookieMemoryRecord,
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
-  KnowledgeSiteRecord,
 } from '@lib/api/types';
+import type { KnowledgeSiteRecord } from '@lib/api/knowledge';
 
 export type SurfaceWorkspace = {
   surface: string;
