@@ -10,7 +10,7 @@ from .public_api_test_support import (
     _public_auth_session,
     _seed_public_api_key,
 )
-from app.core.api_key_service import revoke_api_key
+from app.core.api_key_service import delete_api_key
 from app.main import _crawler_app_state
 
 
@@ -61,7 +61,7 @@ async def test_invalid_api_key_flood_is_limited_before_database_authentication(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_api_key_crud_returns_plaintext_once_and_revokes_immediately(
+async def test_api_key_crud_returns_plaintext_once_and_deletes_immediately(
     public_api_client: AsyncClient,
     db_session,
     test_user,
@@ -79,9 +79,10 @@ async def test_api_key_crud_returns_plaintext_once_and_revokes_immediately(
             "/api/v1/capabilities",
             headers={"Authorization": f"Bearer {created.json()['api_key']}"},
         )
-        revoked = await public_api_client.delete(
+        deleted = await public_api_client.delete(
             f"/api/api-keys/{created.json()['id']}"
         )
+        listed_after = await public_api_client.get("/api/api-keys")
         rejected = await public_api_client.get(
             "/api/v1/capabilities",
             headers={"Authorization": f"Bearer {created.json()['api_key']}"},
@@ -96,12 +97,15 @@ async def test_api_key_crud_returns_plaintext_once_and_revokes_immediately(
     assert listed.status_code == 200
     assert listed.json()[0]["name"] == "Railway"
     assert authenticated.status_code == 200
-    assert revoked.status_code == 200
-    assert revoked.json()["is_active"] is False
+    assert deleted.status_code == 204
+    assert deleted.content == b""
     assert rejected.status_code == 401
+    # Deletion is permanent: the key leaves no row behind and stops being
+    # listed, so its key_hash also frees up the unique index.
+    assert listed_after.status_code == 200
+    assert listed_after.json() == []
     stored = await db_session.scalar(select(ApiKey).where(ApiKey.id == payload["id"]))
-    assert stored is not None
-    assert stored.key_hash == hash_api_key(payload["api_key"])
+    assert stored is None
 
 
 @pytest.mark.asyncio
@@ -257,12 +261,19 @@ async def test_public_api_principal_cache_throttled_touch_advances_after_interva
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_public_api_principal_cache_bounds_revocation_staleness_by_ttl(
+async def test_public_api_principal_cache_bounds_deletion_staleness_by_ttl(
     db_session,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    raw_key = "crawlerai_revoked_cached_key"
+    """A deleted key keeps working until the per-process cache entry expires.
+
+    This staleness is deliberate and documented in the UI ("can take up to one
+    minute"): the principal cache is per-process and there is no cross-process
+    invalidation, so the TTL is the upper bound on how long a deleted key can
+    still authenticate in a process that did not perform the delete.
+    """
+    raw_key = "crawlerai_deleted_cached_key"
     api_key = _seed_public_api_key(db_session, test_user.id, raw_key)
     await db_session.commit()
     clock = {"now": 2_000.0}
@@ -270,14 +281,14 @@ async def test_public_api_principal_cache_bounds_revocation_staleness_by_ttl(
 
     principal = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
 
-    api_key.is_active = False
+    await db_session.delete(api_key)
     await db_session.commit()
 
-    # Within the cache TTL the revoked key is still accepted (bounded staleness).
+    # Within the cache TTL the deleted key is still accepted (bounded staleness).
     cached = await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
     assert cached == principal
 
-    # After the TTL the revocation is observed and the key is rejected.
+    # After the TTL the deletion is observed and the key is rejected.
     clock["now"] += PUBLIC_API_PRINCIPAL_CACHE_TTL_SECONDS + 1
     with pytest.raises(HTTPException) as exc_info:
         await authenticate_public_api_key(db_session, f"Bearer {raw_key}")
@@ -286,7 +297,7 @@ async def test_public_api_principal_cache_bounds_revocation_staleness_by_ttl(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_revoke_cannot_be_undone_by_inflight_authentication_cache_fill(
+async def test_delete_cannot_be_undone_by_inflight_authentication_cache_fill(
     db_session,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -308,15 +319,15 @@ async def test_revoke_cannot_be_undone_by_inflight_authentication_cache_fill(
         authenticate_public_api_key(db_session, f"Bearer {raw_key}", touch=False)
     )
     await cache_fill_started.wait()
-    revocation = asyncio.create_task(
-        revoke_api_key(db_session, user_id=test_user.id, key_id=api_key.id)
+    deletion = asyncio.create_task(
+        delete_api_key(db_session, user_id=test_user.id, key_id=api_key.id)
     )
     await asyncio.sleep(0)
-    assert revocation.done() is False
+    assert deletion.done() is False
 
     allow_cache_fill.set()
     await authentication
-    await revocation
+    await deletion
 
     with pytest.raises(HTTPException):
         await authenticate_public_api_key(db_session, f"Bearer {raw_key}", touch=False)

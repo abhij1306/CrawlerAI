@@ -10,13 +10,13 @@ import {
   mcpLoopbackCommand,
   restExtractCommand,
   restRequestCommand,
-} from './api-access-setup';
+} from './api-access-commands';
 import ApiAccessPage from './page-view';
 
 const apiMock = vi.hoisted(() => ({
   listKeys: vi.fn(),
   createKey: vi.fn(),
-  revokeKey: vi.fn(),
+  deleteKey: vi.fn(),
   getCapabilities: vi.fn(),
 }));
 const clipboardWrite = vi.fn();
@@ -62,7 +62,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   apiMock.listKeys.mockResolvedValue([ACTIVE_KEY]);
   apiMock.createKey.mockResolvedValue(CREATED_KEY);
-  apiMock.revokeKey.mockResolvedValue({ ...ACTIVE_KEY, is_active: false });
+  apiMock.deleteKey.mockResolvedValue(undefined);
   apiMock.getCapabilities.mockResolvedValue({
     version: 'v1',
     surfaces: ['ecommerce'],
@@ -113,30 +113,37 @@ describe('API & MCP access page', () => {
     expect(apiMock.createKey.mock.calls[0]?.[0]).toBe('Local MCP');
     await waitFor(() => expect(apiMock.getCapabilities).toHaveBeenCalledWith(CREATED_KEY.api_key));
     expect(await screen.findByText(/API verified.*extract_product/)).toBeInTheDocument();
-    expect(screen.getByText(/curl\.exe -H/)).toBeInTheDocument();
     expect(screen.getByText(/Public hosted MCP is not supported/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bash' }));
-    expect(screen.getByText(/curl -H/)).toBeInTheDocument();
-    expect(screen.getAllByText(/export CRAWLERAI_API_KEY/)).toHaveLength(2);
-
-    const setup = screen.getByText('Save this key now').closest('div.space-y-4');
+    // Scoped to the reveal panel: the persistent "Connect a client" card
+    // renders the same commands with a placeholder key and its own tabs.
+    const setup = screen.getByText('Save this key now').closest('div.space-y-4') as HTMLElement;
     expect(setup).not.toBeNull();
-    fireEvent.click(within(setup as HTMLElement).getAllByRole('button', { name: 'Copy' })[0]);
+
+    // Platform is selected explicitly so the assertion does not depend on the
+    // default detected from whatever machine runs the suite.
+    fireEvent.click(within(setup).getByRole('button', { name: 'Windows' }));
+    expect(within(setup).getByText(/curl\.exe -H/)).toBeInTheDocument();
+
+    fireEvent.click(within(setup).getByRole('button', { name: 'macOS & Linux' }));
+    expect(within(setup).getByText(/curl -H/)).toBeInTheDocument();
+    expect(within(setup).getAllByText(/export CRAWLERAI_API_KEY/)).toHaveLength(2);
+
+    fireEvent.click(within(setup).getAllByRole('button', { name: 'Copy' })[0]);
     expect(clipboardWrite).toHaveBeenCalledWith(CREATED_KEY.api_key);
   });
 
-  it('requires confirmation before revoking a key', async () => {
+  it('requires confirmation before deleting a key', async () => {
     renderPage();
     expect(await screen.findByText('Production MCP')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Revoke API key?' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete API key?' });
     expect(dialog).toHaveTextContent('Production MCP');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Revoke key' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete key' }));
 
-    await waitFor(() => expect(apiMock.revokeKey).toHaveBeenCalled());
-    expect(apiMock.revokeKey.mock.calls[0]?.[0]).toBe(ACTIVE_KEY.id);
+    await waitFor(() => expect(apiMock.deleteKey).toHaveBeenCalled());
+    expect(apiMock.deleteKey.mock.calls[0]?.[0]).toBe(ACTIVE_KEY.id);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 });

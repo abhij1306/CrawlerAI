@@ -54,18 +54,28 @@ async def list_api_keys(session: AsyncSession, *, user_id: int) -> list[ApiKey]:
     return list(result.scalars().all())
 
 
-async def revoke_api_key(
+async def delete_api_key(
     session: AsyncSession,
     *,
     user_id: int,
     key_id: int,
-) -> ApiKey:
+) -> None:
+    """Permanently remove an API key.
+
+    The row is deleted outright rather than flagged inactive: a key the user
+    deleted should leave nothing behind, and keeping the row would hold its
+    key_hash in the unique index forever.
+
+    The auth guard and cache invalidation are still required. The guard is a
+    per-hash lock that prevents an in-flight authentication from re-populating
+    the principal cache from a row this transaction is about to remove, which
+    would resurrect the key for the remainder of the cache TTL.
+    """
     row = await session.get(ApiKey, key_id)
     if row is None or row.user_id != user_id:
         raise LookupError("API key not found")
-    async with public_api_key_auth_guard(row.key_hash):
-        row.is_active = False
+    key_hash = row.key_hash
+    async with public_api_key_auth_guard(key_hash):
+        await session.delete(row)
         await session.commit()
-        await session.refresh(row)
-        await invalidate_public_api_key(row.key_hash)
-    return row
+        await invalidate_public_api_key(key_hash)

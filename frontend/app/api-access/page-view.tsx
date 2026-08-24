@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, PlugZap } from 'lucide-react';
+import { KeyRound, PlugZap, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
@@ -10,7 +10,7 @@ import {
   type PublicApiCapabilities,
 } from '@lib/api/api-access';
 import { formatAdminUserDate } from '@lib/format/date';
-import { Badge, Button, Field, Input } from '@ui/primitives';
+import { Button, Field, Input } from '@ui/primitives';
 import { ConfirmDialog } from '@ui/dialog';
 import {
   DataRegionEmpty,
@@ -20,6 +20,7 @@ import {
   SectionCard,
 } from '@ui/patterns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ui/table';
+import { ApiAccessConnect } from './api-access-connect';
 import { ApiAccessSetup } from './api-access-setup';
 
 function errorMessage(error: unknown, fallback: string) {
@@ -32,7 +33,7 @@ export default function ApiAccessPage() {
   const [created, setCreated] = useState<ApiKeyCreated | null>(null);
   const [capabilities, setCapabilities] = useState<PublicApiCapabilities | null>(null);
   const [probeError, setProbeError] = useState('');
-  const [revokeTarget, setRevokeTarget] = useState<ApiKeyRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ApiKeyRecord | null>(null);
   const keysQuery = useQuery({
     queryKey: queryKeys.apiAccess.keys(),
     queryFn: apiAccessApi.listKeys,
@@ -52,10 +53,10 @@ export default function ApiAccessPage() {
       }
     },
   });
-  const revokeMutation = useMutation({
-    mutationFn: apiAccessApi.revokeKey,
+  const deleteMutation = useMutation({
+    mutationFn: apiAccessApi.deleteKey,
     onSuccess: async () => {
-      setRevokeTarget(null);
+      setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiAccess.all });
     },
   });
@@ -113,7 +114,7 @@ export default function ApiAccessPage() {
 
       <SectionCard
         title="API keys"
-        description="Revoke credentials you no longer use. Revocation can take up to one minute across running API processes."
+        description="Delete credentials you no longer use. Deletion can take up to one minute to propagate across running API processes."
       >
         {keysQuery.error ? (
           <InlineAlert message={errorMessage(keysQuery.error, 'Unable to load API keys.')} />
@@ -128,12 +129,14 @@ export default function ApiAccessPage() {
         ) : null}
         {keys.length ? (
           <div className="surface-muted rounded-md border">
+            {/* No status column: deleting removes the row, so every key listed
+                here is by definition active. */}
             <Table className="compact-data-table min-w-[720px] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Prefix</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead>Last used</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -143,23 +146,19 @@ export default function ApiAccessPage() {
                   <TableRow key={key.id}>
                     <TableCell className="font-medium text-foreground">{key.name}</TableCell>
                     <TableCell className="font-mono text-sm">{key.key_prefix}…</TableCell>
-                    <TableCell>
-                      <Badge tone={key.is_active ? 'success' : 'neutral'} flat>
-                        {key.is_active ? 'active' : 'revoked'}
-                      </Badge>
-                    </TableCell>
+                    <TableCell className="text-sm">{formatAdminUserDate(key.created_at)}</TableCell>
                     <TableCell className="text-sm">
                       {key.last_used_at ? formatAdminUserDate(key.last_used_at) : 'Never'}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
                         type="button"
-                        variant="neutral"
+                        variant="destructive"
                         size="sm"
-                        disabled={!key.is_active}
-                        onClick={() => setRevokeTarget(key)}
+                        onClick={() => setDeleteTarget(key)}
                       >
-                        Revoke
+                        <Trash2 className="size-3.5" />
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -169,6 +168,8 @@ export default function ApiAccessPage() {
           </div>
         ) : null}
       </SectionCard>
+
+      <ApiAccessConnect />
 
       <SectionCard
         title="Public REST API"
@@ -192,24 +193,24 @@ export default function ApiAccessPage() {
       </SectionCard>
 
       <ConfirmDialog
-        open={Boolean(revokeTarget)}
-        onOpenChange={(open) => !open && setRevokeTarget(null)}
-        title="Revoke API key?"
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete API key?"
         description={
           <>
-            <strong>{revokeTarget?.name}</strong> will stop authenticating API and MCP requests.
-            This cannot be undone.
+            <strong>{deleteTarget?.name}</strong> will be deleted permanently and will stop
+            authenticating API and MCP requests. This cannot be undone.
           </>
         }
-        confirmLabel="Revoke key"
+        confirmLabel="Delete key"
         danger
-        pending={revokeMutation.isPending}
+        pending={deleteMutation.isPending}
         error={
-          revokeMutation.error
-            ? errorMessage(revokeMutation.error, 'Unable to revoke API key.')
+          deleteMutation.error
+            ? errorMessage(deleteMutation.error, 'Unable to delete API key.')
             : undefined
         }
-        onConfirm={() => revokeTarget && revokeMutation.mutate(revokeTarget.id)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
       />
     </div>
   );
