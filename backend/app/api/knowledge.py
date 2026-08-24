@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, require_admin
 from app.models.user import User
 from app.persistence.extraction_memory_knowledge import (
     find_contract_location,
@@ -84,7 +84,7 @@ async def knowledge_contract_selection(
     contract_id: uuid.UUID,
     payload: ContractSelectionRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
 ) -> dict[str, Any]:
     location = await find_contract_location(session, str(contract_id))
     if location is None:

@@ -160,6 +160,31 @@ async def test_celery_dispatch_enqueues_with_persisted_task_id(
     assert persisted.summary_dict()[CELERY_TASK_ID_KEY] == task_id
 
 
+async def test_celery_dispatch_task_payload_contains_only_run_id_for_secret_runs(
+    db_session: AsyncSession,
+    create_test_run,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = "proxy-password-sentinel"
+    run = await create_test_run(
+        url="https://example.com/products/proxied",
+        surface="ecommerce_detail",
+        settings={
+            "proxy_enabled": True,
+            "proxy_list": [f"http://proxy-user:{sentinel}@93.184.216.34:8080"],
+            "respect_robots_txt": False,
+        },
+    )
+    stub = _StubTask()
+    monkeypatch.setattr(celery_dispatcher_module, "_process_run_task", lambda: stub)
+
+    await CeleryRunDispatcher().dispatch(db_session, run)
+
+    assert len(stub.calls) == 1
+    assert stub.calls[0][1]["args"] == [run.id]
+    assert sentinel not in repr(stub.calls)
+
+
 async def test_celery_dispatch_enqueue_failure_clears_task_id(
     db_session: AsyncSession,
     create_test_run,

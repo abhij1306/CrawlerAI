@@ -41,6 +41,7 @@ from app.core.url_safety import (
     ensure_valid_proxy_endpoints,
 )
 from app.persistence.artifacts import ArtifactRepository
+from app.acquisition.run_cookie_storage import delete_run_storage_states
 from app.schemas.crawl import enforce_run_url_limit
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -237,6 +238,12 @@ async def delete_run(session: AsyncSession, run: CrawlRun) -> None:
     except Exception:
         logger.warning(
             "Failed to remove artifact tree for run=%s", db_run.id, exc_info=True
+        )
+    try:
+        await delete_run_storage_states(int(db_run.id))
+    except Exception:
+        logger.warning(
+            "Failed to remove cookie state for run=%s", db_run.id, exc_info=True
         )
 
 

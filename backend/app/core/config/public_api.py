@@ -43,6 +43,10 @@ PUBLIC_API_EXTRACT_BURST_LIMIT = 10
 PUBLIC_API_READ_RATE_LIMIT = 600
 PUBLIC_API_READ_BURST_LIMIT = 100
 PUBLIC_API_RATE_LIMIT_MAX_BUCKETS = 10_000
+PUBLIC_API_PREAUTH_WINDOW_SECONDS = 60
+PUBLIC_API_PREAUTH_IP_RATE_LIMIT = 600
+PUBLIC_API_PREAUTH_GLOBAL_RATE_LIMIT = 10_000
+PUBLIC_API_PREAUTH_MAX_BUCKETS = 10_000
 
 # Principal cache (2.12): a validated API-key principal is cached per process
 # for the TTL, skipping the per-request ApiKey+User SELECTs on warm hits.
@@ -74,6 +78,11 @@ PUBLIC_API_MCP_BASE_URL_ENV = "CRAWLERAI_API_BASE_URL"
 PUBLIC_API_MCP_DEFAULT_BASE_URL = "https://api.crawlerai.com/api/v1"
 PUBLIC_API_MCP_HOST_ENV = "CRAWLERAI_MCP_HOST"
 PUBLIC_API_MCP_DEFAULT_HOST = "127.0.0.1"
+PUBLIC_API_MCP_PORT_ENV = "PORT"
+PUBLIC_API_MCP_DEFAULT_PORT = 8001
+PUBLIC_API_MCP_TRANSPORT_ENV = "CRAWLERAI_MCP_TRANSPORT"
+PUBLIC_API_MCP_DEFAULT_TRANSPORT = "stdio"
+PUBLIC_API_MCP_ALLOWED_TRANSPORTS = frozenset({"stdio", "sse"})
 
 PUBLIC_API_CAPABILITIES = {
     "version": "v1",
@@ -84,5 +93,10 @@ PUBLIC_API_CAPABILITIES = {
         "list_capabilities",
     ],
     "deferred": ["extract_batch"],
-    "deployment": "railway-ready",
+    "deployment": "self-hosted",
+    "mcp": {
+        "default_transport": PUBLIC_API_MCP_DEFAULT_TRANSPORT,
+        "network_scope": "loopback-only",
+        "hosted": False,
+    },
 }

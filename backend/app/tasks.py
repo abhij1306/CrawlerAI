@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 import signal
 from collections.abc import Callable, Coroutine
@@ -25,6 +26,7 @@ from app.crawl.batch_runtime import process_run
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.models.crawl_run import TERMINAL_STATUS_VALUES, CrawlRun
 from app.persistence.artifacts import ArtifactRepository
+from app.acquisition.run_cookie_storage import delete_run_storage_states
 
 logger = logging.getLogger(__name__)
 _SignalHandler = Callable[[int, FrameType | None], object]
@@ -237,6 +239,51 @@ def _artifact_tree_expired(row: Any, *, cutoff: datetime) -> bool:
     return updated_at is not None and updated_at < cutoff
 
 
+async def _sweep_run_cookie_states() -> None:
+    retention_days = int(settings.run_artifacts_retention_days or 0)
+    if retention_days <= 0 or not settings.cookie_store_dir.is_dir():
+        return
+    candidate_ids = sorted(
+        {
+            run_id
+            for path in settings.cookie_store_dir.iterdir()
+            if path.is_file()
+            for run_id in [_cookie_state_run_id(path.name)]
+            if run_id is not None
+        }
+    )
+    if not candidate_ids:
+        return
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(CrawlRun.id, CrawlRun.status, CrawlRun.updated_at).where(
+                    CrawlRun.id.in_(candidate_ids)
+                )
+            )
+        ).all()
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    runs_by_id = {int(row[0]): row for row in rows}
+    for run_id in candidate_ids:
+        if not _artifact_tree_expired(runs_by_id.get(run_id), cutoff=cutoff):
+            continue
+        await delete_run_storage_states(run_id)
+        logger.info("Swept cookie state for run=%s", run_id)
+
+
+def _cookie_state_run_id(filename: str) -> int | None:
+    match = re.fullmatch(
+        r"(?:run_|\.run_)(\d+)(?:__[a-z0-9_-]+)?\.json(?:\..*\.tmp)?",
+        str(filename or "").lower(),
+    )
+    return int(match.group(1)) if match else None
+
+
+async def _sweep_retained_run_state() -> None:
+    await _sweep_run_artifacts()
+    await _sweep_run_cookie_states()
+
+
 @celery_app.task(name="maintenance.sweep_run_artifacts")
 def sweep_run_artifacts_task() -> None:
-    _run_coro_in_worker_loop("sweep-run-artifacts", _sweep_run_artifacts)
+    _run_coro_in_worker_loop("sweep-run-artifacts", _sweep_retained_run_state)

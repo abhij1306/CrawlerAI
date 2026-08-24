@@ -7,8 +7,13 @@ import re
 from threading import Lock
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.config.database_settings import (
+    build_database_url,
+    production_database_issues,
+)
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 PROJECT_ROOT = BASE_DIR.parent
@@ -43,8 +48,28 @@ class Settings(BaseSettings):
     encryption_key: str = Field(
         validation_alias=AliasChoices("ENCRYPTION_KEY", "encryption_key"),
     )
-    database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/crawlerai"
+    database_url: str = ""
+    database_host: str = Field(
+        default="localhost",
+        validation_alias=AliasChoices("DATABASE_HOST", "DB_HOST", "POSTGRES_HOST"),
+    )
+    database_port: int = Field(
+        default=5432,
+        validation_alias=AliasChoices("DATABASE_PORT", "DB_PORT", "POSTGRES_PORT"),
+    )
+    database_name: str = Field(
+        default="crawlerai",
+        validation_alias=AliasChoices("DATABASE_NAME", "DB_NAME", "POSTGRES_DB"),
+    )
+    database_user: str = Field(
+        default="postgres",
+        validation_alias=AliasChoices("DATABASE_USER", "DB_USER", "POSTGRES_USER"),
+    )
+    database_password: str = Field(
+        default="postgres",
+        validation_alias=AliasChoices(
+            "DATABASE_PASSWORD", "DB_PASSWORD", "POSTGRES_PASSWORD"
+        ),
     )
     redis_url: str = "redis://localhost:6379/0"
     redis_state_enabled: bool = False
@@ -157,6 +182,9 @@ class Settings(BaseSettings):
             "CRAWLER_CSV_UPLOAD_MAX_BYTES", "csv_upload_max_bytes"
         ),
     )
+    request_body_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    public_api_request_body_max_bytes: int = Field(default=256 * 1024, gt=0)
+    multipart_overhead_max_bytes: int = Field(default=64 * 1024, ge=0)
 
     @field_validator(
         "artifacts_dir",
@@ -166,6 +194,19 @@ class Settings(BaseSettings):
     @classmethod
     def _resolve_repo_relative_paths(cls, value: str | Path) -> Path:
         return _resolve_project_path(value, anchor=PROJECT_ROOT)
+
+    @model_validator(mode="after")
+    def _compose_database_url(self) -> "Settings":
+        self.database_url = build_database_url(
+            complete_url=self.database_url,
+            host=self.database_host,
+            port=self.database_port,
+            name=self.database_name,
+            user=self.database_user,
+            password=self.database_password,
+        )
+        self.database_password = ""
+        return self
 
 
 def _load_settings() -> Settings:
@@ -264,6 +305,8 @@ def _secret_default_issues() -> tuple[list[str], list[str]]:
         issues.append("jwt_secret_key is set to a default value")
     if settings.encryption_key in _INSECURE_DEFAULTS:
         issues.append("encryption_key is set to a default value")
+    if _is_non_dev_environment(runtime_app_env()):
+        issues.extend(_production_runtime_issues())
     default_admin_password = str(settings.default_admin_password or "").strip()
     default_admin_email = str(settings.default_admin_email or "").strip().lower()
     if default_admin_password in _INSECURE_ADMIN_PASSWORD_DEFAULTS:
@@ -282,6 +325,20 @@ def _secret_default_issues() -> tuple[list[str], list[str]]:
     ):
         issues.append("bootstrap_admin_once requires a non-default default_admin_email")
     return issues, warnings
+
+
+def _production_runtime_issues() -> list[str]:
+    issues = production_database_issues(settings.database_url)
+    if not str(settings.redis_url or "").lower().startswith("rediss://"):
+        issues.append("redis_url must use rediss:// outside dev/test")
+    frontend_origins = [
+        origin.strip()
+        for origin in str(settings.frontend_origins or "").split(",")
+        if origin.strip()
+    ] or [str(settings.frontend_url or "").strip()]
+    if any(not origin.lower().startswith("https://") for origin in frontend_origins):
+        issues.append("frontend origins must use https:// outside dev/test")
+    return issues
 
 
 _check_secret_defaults()

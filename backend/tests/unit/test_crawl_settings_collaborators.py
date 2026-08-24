@@ -3,6 +3,7 @@ call surface behavior-identical."""
 
 from __future__ import annotations
 
+import json
 import pytest
 
 from app.models.crawl_settings import CrawlRunSettings
@@ -117,3 +118,46 @@ def test_acquisition_plan_surface_validation_and_defaults() -> None:
     assert override.max_records == 1
     with pytest.raises(ValueError, match="surface must be one of"):
         settings_view.acquisition_plan(surface="bogus")
+
+
+def test_proxy_credentials_are_sealed_for_storage_and_restored_for_execution() -> None:
+    sentinel = "proxy-password-sentinel"
+    raw_proxy = f"http://proxy-user:{sentinel}@proxy.example:8080"
+
+    stored = _settings(
+        {"proxy_enabled": True, "proxy_list": [raw_proxy]}
+    ).normalized_for_storage()
+
+    assert sentinel not in json.dumps(stored)
+    assert stored["proxy_list"] == ["http://proxy.example:8080"]
+    assert stored["proxy_profile"]["proxy_list"] == ["http://proxy.example:8080"]
+    assert stored["proxy_secret_refs"][0]["ciphertext"]
+    assert CrawlRunSettings.from_value(stored).proxy_list() == [raw_proxy]
+
+
+def test_proxy_profile_plaintext_secret_fields_are_not_stored() -> None:
+    stored = _settings(
+        {
+            "proxy_username": "top-user",
+            "proxy_password": "top-secret",
+            "proxy_profile": {
+                "enabled": True,
+                "rotation": "session",
+                "username": "nested-user",
+                "password": "nested-secret",
+                "token": "nested-token",
+            },
+        }
+    ).normalized_for_storage()
+
+    serialized = json.dumps(stored)
+    assert "top-user" not in serialized
+    assert "top-secret" not in serialized
+    assert "nested-user" not in serialized
+    assert "nested-secret" not in serialized
+    assert "nested-token" not in serialized
+    assert stored["proxy_profile"] == {
+        "enabled": True,
+        "rotation": "session",
+        "proxy_list": [],
+    }

@@ -11,6 +11,7 @@ from .public_api_test_support import (
     _seed_public_api_key,
 )
 from app.core.api_key_service import revoke_api_key
+from app.main import _crawler_app_state
 
 
 @pytest.mark.asyncio
@@ -22,6 +23,40 @@ async def test_public_api_requires_api_key(public_api_client: AsyncClient) -> No
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error"]["code"] == PUBLIC_API_ERROR_API_KEY_REQUIRED
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_invalid_api_key_flood_is_limited_before_database_authentication(
+    public_api_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    crawler_state = _crawler_app_state()
+    crawler_state.public_preauth_rate_limit_buckets.clear()
+    original_authenticate = authenticate_public_api_key
+    auth_calls = 0
+
+    async def _counting_authenticate(session, authorization, *, touch=True):
+        nonlocal auth_calls
+        auth_calls += 1
+        return await original_authenticate(session, authorization, touch=touch)
+
+    monkeypatch.setattr("app.main.authenticate_public_api_key", _counting_authenticate)
+    monkeypatch.setattr("app.main.PUBLIC_API_PREAUTH_IP_RATE_LIMIT", 2)
+    monkeypatch.setattr("app.main.PUBLIC_API_PREAUTH_GLOBAL_RATE_LIMIT", 100)
+    try:
+        responses = [
+            await public_api_client.get(
+                "/api/v1/capabilities",
+                headers={"Authorization": f"Bearer unique-invalid-{index}"},
+            )
+            for index in range(3)
+        ]
+    finally:
+        crawler_state.public_preauth_rate_limit_buckets.clear()
+
+    assert [response.status_code for response in responses] == [401, 401, 429]
+    assert auth_calls == 2
 
 
 @pytest.mark.asyncio

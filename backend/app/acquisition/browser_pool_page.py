@@ -59,6 +59,7 @@ async def runtime_page(
 
     context = None
     context_release_deferred = False
+    storage_owner_user_id: int | None = None
 
     def _release_context_capacity_when_closed(task: asyncio.Task[Any]) -> None:
         nonlocal context_release_deferred
@@ -80,6 +81,7 @@ async def runtime_page(
             )
         )
         if allow_storage_state:
+            storage_owner_user_id = await cookie_store.user_id_for_run(run_id)
             await _load_storage_state(
                 context_options,
                 run_id=run_id,
@@ -87,6 +89,7 @@ async def runtime_page(
                 browser_engine=runtime.browser_engine,
                 allow_domain_storage_state=allow_domain_storage_state,
                 phase_timings_ms=phase_timings_ms,
+                user_id=storage_owner_user_id,
             )
         context_open_started_at = time.perf_counter()
         try:
@@ -109,6 +112,7 @@ async def runtime_page(
                     allow_domain_storage_state=allow_domain_storage_state,
                     phase_timings_ms=phase_timings_ms,
                     on_pending_done=_release_context_capacity_when_closed,
+                    user_id=storage_owner_user_id,
                 )
         finally:
             if not context_release_deferred:
@@ -123,16 +127,19 @@ async def _load_storage_state(
     browser_engine: str,
     allow_domain_storage_state: bool,
     phase_timings_ms: dict[str, int] | None,
+    user_id: int | None,
 ) -> None:
     started_at = time.perf_counter()
     storage_state = await cookie_store.load_storage_state_for_run(
         run_id,
         browser_engine=browser_engine,
+        user_id=user_id,
     )
     if not storage_state and allow_domain_storage_state:
         storage_state = await cookie_store.load_storage_state_for_domain(
             domain,
             browser_engine=browser_engine,
+            user_id=user_id,
         )
     if storage_state:
         context_options["storage_state"] = storage_state
@@ -150,6 +157,7 @@ async def _persist_and_close_context(
     allow_domain_storage_state: bool,
     phase_timings_ms: dict[str, int] | None,
     on_pending_done,
+    user_id: int | None,
 ) -> None:
     try:
         started_at = time.perf_counter()
@@ -167,6 +175,7 @@ async def _persist_and_close_context(
                     and bool(getattr(context, DOMAIN_STORAGE_PERSIST_ATTR, True))
                 ),
                 timeout_seconds=_browser_pool()._browser_context_timeout_seconds(),
+                user_id=user_id,
             )
         finally:
             _browser_pool()._record_timing(

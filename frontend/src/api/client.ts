@@ -65,6 +65,24 @@ type InternalRequestOptions = ApiRequestOptions & {
   body?: BodyInit;
 };
 
+const CSRF_COOKIE_NAME = 'csrf_token';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+
+function cookieValue(name: string) {
+  if (typeof document === 'undefined') return undefined;
+  const prefix = `${encodeURIComponent(name)}=`;
+  const entry = document.cookie
+    .split(';')
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix));
+  if (!entry) return undefined;
+  try {
+    return decodeURIComponent(entry.slice(prefix.length));
+  } catch {
+    return undefined;
+  }
+}
+
 function createRequestId() {
   return (
     globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -75,6 +93,10 @@ function buildHeaders(options: InternalRequestOptions, requestId: string) {
   const headers = new Headers(options.headers);
   if (options.method !== 'GET' || options.requestId) {
     headers.set('X-Request-ID', requestId);
+  }
+  if (options.method !== 'GET' && !headers.has('Authorization')) {
+    const csrfToken = cookieValue(CSRF_COOKIE_NAME);
+    if (csrfToken) headers.set(CSRF_HEADER_NAME, csrfToken);
   }
   if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {

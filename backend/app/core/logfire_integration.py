@@ -12,6 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.core.proxy_secrets import redact_secret_text, strip_url_userinfo
 
 logger = logging.getLogger("app.core.logfire")
 _MAX_ATTRIBUTE_LENGTH = 500
@@ -149,7 +150,7 @@ def logfire_span(name: str, **attributes: object) -> Iterator[Any]:
             yield span
         return
 
-    safe_attributes = cast(dict[str, Any], _safe_logfire_attributes(attributes))
+    safe_attributes = cast(dict[str, Any], safe_logfire_attributes(attributes))
     with logfire.span(
         str(name),
         **safe_attributes,
@@ -157,7 +158,7 @@ def logfire_span(name: str, **attributes: object) -> Iterator[Any]:
         yield span
 
 
-def _safe_logfire_attributes(attributes: dict[str, object]) -> dict[str, object]:
+def safe_logfire_attributes(attributes: dict[str, object]) -> dict[str, object]:
     safe: dict[str, object] = {}
     for key, value in attributes.items():
         normalized_key = str(key or "").strip()
@@ -186,22 +187,24 @@ def _safe_logfire_value(value: object, *, key: str = "") -> object | None:
             for item in (_safe_logfire_value(member, key=key) for member in value)
             if item is not None
         ][:_MAX_ATTRIBUTE_LENGTH]
-    return str(value)[:_MAX_ATTRIBUTE_LENGTH]
+    return redact_secret_text(value)[:_MAX_ATTRIBUTE_LENGTH]
 
 
 def _redact_logfire_url_value(key: str, value: str) -> str:
+    value = redact_secret_text(value)
     if "url" not in key.casefold():
         return value
-    parsed = urlsplit(value)
+    redacted = strip_url_userinfo(value, masked=True)
+    parsed = urlsplit(redacted)
     if not parsed.scheme or not parsed.netloc:
-        return value
+        return redacted
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
 def set_logfire_attributes(span: Any, **attributes: object) -> None:
     if span is None or not hasattr(span, "set_attributes"):
         return
-    safe_attributes = _safe_logfire_attributes(attributes)
+    safe_attributes = safe_logfire_attributes(attributes)
     if not safe_attributes:
         return
     span.set_attributes(safe_attributes)
@@ -219,5 +222,6 @@ __all__ = [
     "instrument_fastapi",
     "logfire_span",
     "reset_logfire_state_for_tests",
+    "safe_logfire_attributes",
     "set_logfire_attributes",
 ]

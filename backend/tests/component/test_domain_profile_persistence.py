@@ -14,6 +14,48 @@ from tests.component.crawl_service_test_support import (
     save_domain_run_profile,
     select,
 )
+from app.core.security import hash_password
+from app.models.crawl_run import CrawlRun
+from app.models.user import User
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_ordinary_user_run_cannot_persist_global_profile(
+    db_session: AsyncSession,
+) -> None:
+    ordinary = User(
+        email="ordinary-profile@example.com",
+        hashed_password=hash_password("password123"),
+        role="user",
+    )
+    db_session.add(ordinary)
+    await db_session.flush()
+    run = CrawlRun(
+        user_id=ordinary.id,
+        run_type="crawl",
+        url="https://ordinary.example/products/1",
+        status="running",
+        surface="ecommerce_detail",
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    returned = await save_domain_run_profile(
+        db_session,
+        domain="ordinary.example",
+        surface="ecommerce_detail",
+        profile={"fetch_profile": {"fetch_mode": "browser_only"}},
+        source_run_id=run.id,
+    )
+    persisted = await load_domain_run_profile(
+        db_session,
+        domain="ordinary.example",
+        surface="ecommerce_detail",
+    )
+
+    assert returned["fetch_profile"]["fetch_mode"] == "browser_only"
+    assert persisted is None
 
 
 @pytest.mark.parametrize(
@@ -62,6 +104,7 @@ async def test_save_domain_run_profile_propagates_programming_error_from_profile
             surface="ecommerce_detail",
             profile={},
             source_run_id=91,
+            allow_global_promotion=True,
         )
 
 
@@ -101,6 +144,7 @@ async def test_save_domain_run_profile_commit_persists_changes(
         },
         source_run_id=91,
         commit=True,
+        allow_global_promotion=True,
     )
 
     assert saved["fetch_profile"]["fetch_mode"] == "browser_only"
@@ -155,6 +199,7 @@ async def test_save_domain_run_profile_recovers_from_concurrent_create(
                 profile={"fetch_profile": {"fetch_mode": "auto"}},
                 source_run_id=source_run_id,
                 commit=True,
+                allow_global_promotion=True,
             )
 
     async with asyncio.timeout(5):

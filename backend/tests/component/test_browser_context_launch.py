@@ -285,7 +285,7 @@ async def test_shared_browser_runtime_uses_socks5_auth_bridge_and_keeps_context_
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_shared_browser_runtime_launches_http_proxy_directly(
+async def test_shared_browser_runtime_rejects_http_proxy_without_pinned_connect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_launch_kwargs: list[dict[str, object]] = []
@@ -345,31 +345,11 @@ async def test_shared_browser_runtime_launches_http_proxy_directly(
         ),
     )
 
-    async with runtime.page():
-        pass
+    with pytest.raises(RuntimeError, match="must use socks5"):
+        async with runtime.page():
+            pass
 
-    assert captured_launch_kwargs == [
-        {
-            "headless": False,
-            "args": [
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-                "--window-size=1920,1080",
-                "--disable-search-engine-choice-screen",
-                "--disable-background-networking",
-                "--disable-client-side-phishing-detection",
-                "--disable-domain-reliability",
-                "--disable-sync",
-                "--no-first-run",
-                "--headless=new",
-            ],
-            "proxy": {
-                "server": "http://31.58.9.4:6077",
-                "username": "user-name",
-                **_secret_mapping("pass-word"),
-            },
-        }
-    ]
+    assert captured_launch_kwargs == []
 
 
 @pytest.mark.asyncio
@@ -433,6 +413,18 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
         "REAL_CHROME_IGNORE_DEFAULT_ARGS",
         ("--enable-automation", "--remote-debugging-pipe"),
     )
+
+    class FakeBridge:
+        def __init__(self, upstream=None) -> None:
+            assert upstream is None
+
+        async def start(self) -> str:
+            return "socks5://127.0.0.1:8899"
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(acquisition_browser_pool, "Socks5AuthBridge", FakeBridge)
     monkeypatch.setattr(
         "patchright.async_api.async_playwright",
         lambda: FakePlaywrightManager(),
@@ -465,6 +457,7 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
                 "--enable-automation",
                 "--remote-debugging-pipe",
             ],
+            "proxy": {"server": "socks5://127.0.0.1:8899"},
         }
     ]
 

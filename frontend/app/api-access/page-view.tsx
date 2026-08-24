@@ -181,6 +181,14 @@ export default function ApiAccessPage() {
             queued workloads.
           </p>
         </div>
+        <div className="mt-3 flex items-start gap-3 rounded-md border border-border bg-panel px-4 py-3">
+          <PlugZap className="mt-0.5 size-4 shrink-0 text-muted" />
+          <p className="type-body m-0">
+            MCP is local-only in this release: use stdio by default, or bind SSE to a literal
+            loopback address. Public hosted MCP is blocked until every caller has independent
+            inbound authentication.
+          </p>
+        </div>
       </SectionCard>
 
       <ConfirmDialog

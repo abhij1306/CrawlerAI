@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from app.core.config import (
     admin_password_strength_issues,
     load_admin_bootstrap_settings,
+    settings,
 )
 from app.core.security import (
     create_access_token,
@@ -14,7 +16,9 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
+from app.models.bootstrap import BootstrapRecord
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -54,31 +58,54 @@ async def create_user(
     return user
 
 
-async def _ensure_admin_user_state(session: AsyncSession, user: User) -> User:
-    changed = False
-    if user.role != "admin":
-        user.role = "admin"
-        changed = True
-    if not user.is_active:
-        user.is_active = True
-        changed = True
-    if changed:
-        await session.commit()
-        await session.refresh(user)
-    return user
+_ADMIN_BOOTSTRAP_RECORD = "initial-admin"
+
+
+def _clear_bootstrap_password() -> None:
+    os.environ.pop(DEFAULT_ADMIN_PASSWORD, None)
+    os.environ.pop(DEFAULT_ADMIN_PASSWORD.lower(), None)
+    settings.default_admin_password = None
 
 
 async def bootstrap_admin_user(session: AsyncSession) -> User | None:
+    """Create the initial admin exactly once from an explicit command.
+
+    The marker insert is flushed first. On PostgreSQL its primary key provides
+    serialization between concurrent bootstrap commands. Existing identities
+    are never promoted or reactivated.
+    """
     admin_settings = load_admin_bootstrap_settings()
     if not admin_settings.bootstrap_admin_once:
         return None
 
+    consumed = await session.get(BootstrapRecord, _ADMIN_BOOTSTRAP_RECORD)
+    if consumed is not None:
+        return None
     email, password = _load_default_admin_credentials()
-    result = await session.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-    if user is None:
-        return await create_user(session, email, password, role="admin")
-    return await _ensure_admin_user_state(session, user)
+    session.add(BootstrapRecord(name=_ADMIN_BOOTSTRAP_RECORD))
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        return None
+
+    existing = await session.scalar(select(User).where(User.email == email))
+    if existing is not None:
+        await session.rollback()
+        raise RuntimeError("Admin bootstrap email already exists; refusing promotion.")
+
+    user = User(email=email, hashed_password=hash_password(password), role="admin")
+    session.add(user)
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise RuntimeError(
+            "Admin bootstrap identity conflicted; no existing account was changed."
+        ) from exc
+    _clear_bootstrap_password()
+    await session.refresh(user)
+    return user
 
 
 async def authenticate_user(

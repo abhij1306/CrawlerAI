@@ -12,8 +12,32 @@ from tests.component.crawl_fetch_runtime_test_support import (
     httpx,
     pytest,
     should_capture_network_payload,
-    sys,
 )
+
+
+def _patch_curl_session(monkeypatch: pytest.MonkeyPatch, fake_get) -> None:
+    import curl_cffi
+    from curl_cffi import requests as curl_requests
+
+    class _Curl:
+        def setopt(self, *_args) -> None:
+            return None
+
+    class _Session:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def get(self, url: str, **kwargs):
+            return fake_get(url, **kwargs)
+
+    monkeypatch.setattr(curl_cffi, "Curl", _Curl)
+    monkeypatch.setattr(curl_requests, "Session", _Session)
 
 
 @pytest.mark.component
@@ -221,11 +245,7 @@ async def test_curl_fetch_uses_runtime_owned_default_request_headers(
             url="https://example.com/products/widget",
         )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "curl_cffi",
-        SimpleNamespace(requests=SimpleNamespace(get=_fake_get)),
-    )
+    _patch_curl_session(monkeypatch, _fake_get)
     result = await acquisition_runtime.curl_fetch(
         "https://example.com/products/widget",
         5.0,
@@ -257,11 +277,7 @@ async def test_curl_fetch_coerces_blank_impersonate_target_to_none(
             url="https://example.com/products/widget",
         )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "curl_cffi",
-        SimpleNamespace(requests=SimpleNamespace(get=_fake_get)),
-    )
+    _patch_curl_session(monkeypatch, _fake_get)
     patch_settings(curl_impersonate_target="   ")
     await acquisition_runtime.curl_fetch(
         "https://example.com/products/widget",

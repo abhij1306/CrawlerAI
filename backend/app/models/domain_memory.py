@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,13 +33,17 @@ class DomainCookieMemory(UpdatedAtMixin, Base):
     __tablename__ = "domain_cookie_memory"
     __table_args__ = (
         Index(
-            "uq_domain_cookie_memory_domain",
+            "uq_domain_cookie_memory_user_domain",
+            "user_id",
             "domain",
             unique=True,
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     domain: Mapped[str] = mapped_column(String(255))
     storage_state: Mapped[dict] = mapped_column(JSONB, default=dict)
     state_fingerprint: Mapped[str] = mapped_column(String(128), default="")

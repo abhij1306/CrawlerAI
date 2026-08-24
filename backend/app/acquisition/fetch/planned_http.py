@@ -33,6 +33,7 @@ from app.core.config.pipeline_reasons import (
     BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.proxy_secrets import redact_secret_text
 
 AsyncDependency = Callable[..., Awaitable[Any]]
 SyncDependency = Callable[..., Any]
@@ -219,7 +220,7 @@ async def _execute_planned_http_attempt(
                 "timeout_seconds": timeout_seconds,
             },
             error=(
-                f"{type(error).__name__}: {error}"
+                redact_secret_text(f"{type(error).__name__}: {error}")
                 if error is not None
                 else "transport_attempt_failed"
             ),
@@ -253,7 +254,7 @@ async def _execute_planned_http_attempt(
                 "vendor_block_confirmed": bool(vendor),
                 "browser_escalation_failed": True,
             },
-            error=f"{type(exc).__name__}: {exc}",
+            error=redact_secret_text(f"{type(exc).__name__}: {exc}"),
         )
     if not isinstance(handled_result, PageFetchResult):
         return AttemptResult(
@@ -332,7 +333,7 @@ async def _attempt_http_fetch(
             "Fetch failure for %s via %s (%s)",
             context.url,
             fetcher.__name__,
-            proxy or "direct",
+            display_proxy(proxy),
             exc_info=True,
         )
         await deps.emit_fetch_event(
@@ -492,6 +493,7 @@ async def _handoff_cookie_header(
         return await deps.export_cookie_header_for_domain(
             context.url,
             browser_engine=engine,
+            run_id=context.run_id,
         )
     except Exception:
         logger.warning(

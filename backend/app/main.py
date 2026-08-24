@@ -55,10 +55,12 @@ from app.core.metrics import (
 from app.core.rate_limit import (
     client_identifier_from_request,
     consume_sliding_window_limit,
+    is_trusted_proxy_address,
 )
 from app.core.redis import close_redis
 from app.core.database import SessionLocal, dispose_engine
 from app.core.public_auth import authenticate_public_api_key
+from app.core.request_body_limit import RequestBodyLimitMiddleware
 from app.core.telemetry import (
     configure_logging,
     generate_correlation_id,
@@ -71,7 +73,6 @@ from app.acquisition.cookie_store import validate_cookie_policy_config
 from app.acquisition.runtime import (
     close_shared_http_client as close_runtime_http_client,
 )
-from app.core.auth_service import bootstrap_admin_user
 from app.core.config.auth_security import (
     API_ALLOWED_CORS_METHODS,
     SECURITY_HEADER_CONTENT_TYPE_OPTIONS,
@@ -91,6 +92,10 @@ from app.api.public.rate_limit import consume_public_rate_limit, public_rate_sco
 from app.core.config.public_api import (
     PUBLIC_API_ERROR_INVALID_API_KEY,
     PUBLIC_API_ERROR_RATE_LIMITED,
+    PUBLIC_API_PREAUTH_GLOBAL_RATE_LIMIT,
+    PUBLIC_API_PREAUTH_IP_RATE_LIMIT,
+    PUBLIC_API_PREAUTH_MAX_BUCKETS,
+    PUBLIC_API_PREAUTH_WINDOW_SECONDS,
 )
 from app.observability.run_report import ensure_run_report_registered
 
@@ -112,8 +117,10 @@ class CrawlerAppState:
         default_factory=OrderedDict
     )
     auth_rate_limit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    trusted_proxy_cache_key: tuple[str, ...] = ()
-    trusted_proxy_cache_set: frozenset[str] = frozenset()
+    public_preauth_rate_limit_buckets: OrderedDict[str, deque[float]] = field(
+        default_factory=OrderedDict
+    )
+    public_preauth_rate_limit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 @asynccontextmanager
@@ -125,7 +132,6 @@ async def lifespan(_fastapi_app: FastAPI):
         logger.debug("Asyncio exception filter not installed; no running loop")
     validate_cookie_policy_config()
     async with SessionLocal() as session:
-        await bootstrap_admin_user(session)
         recovered = await recover_stale_local_runs(session)
         if recovered:
             logger.warning(
@@ -160,6 +166,7 @@ app = FastAPI(
     lifespan=lifespan,
     **_api_docs_urls(runtime_app_env()),  # type: ignore[arg-type]
 )
+app.add_middleware(RequestBodyLimitMiddleware)
 app.state.crawler = CrawlerAppState()
 instrument_fastapi(app)
 app.add_middleware(
@@ -183,6 +190,15 @@ async def public_api_middleware(request: Request, call_next) -> Response:
         "X-RateLimit-Remaining": "0",
         "X-RateLimit-Reset": "0",
     }
+    preauth_allowed, preauth_retry_after = await _consume_public_preauth_limits(request)
+    if not preauth_allowed:
+        return public_error_response(
+            request,
+            code=PUBLIC_API_ERROR_RATE_LIMITED,
+            message="Rate limit exceeded.",
+            status_code=429,
+            headers={"Retry-After": str(preauth_retry_after)},
+        )
     try:
         async with _public_auth_session(request) as session:
             principal = await authenticate_public_api_key(
@@ -219,6 +235,29 @@ async def public_api_middleware(request: Request, call_next) -> Response:
     for name, value in decision.headers().items():
         response.headers[name] = value
     return response
+
+
+async def _consume_public_preauth_limits(request: Request) -> tuple[bool, int]:
+    crawler_state = _crawler_app_state(request.app)
+    client_identifier = client_identifier_from_request(
+        request,
+        trusted_proxies=tuple(crawler_runtime_settings.api_rate_limit_trusted_proxies),
+    )
+    for identifier, max_requests in (
+        (f"public-preauth:ip:{client_identifier}", PUBLIC_API_PREAUTH_IP_RATE_LIMIT),
+        ("public-preauth:global", PUBLIC_API_PREAUTH_GLOBAL_RATE_LIMIT),
+    ):
+        allowed, retry_after = await consume_sliding_window_limit(
+            crawler_state.public_preauth_rate_limit_buckets,
+            crawler_state.public_preauth_rate_limit_lock,
+            identifier=identifier,
+            window_seconds=PUBLIC_API_PREAUTH_WINDOW_SECONDS,
+            max_requests=max_requests,
+            max_clients=PUBLIC_API_PREAUTH_MAX_BUCKETS,
+        )
+        if not allowed:
+            return False, retry_after
+    return True, 0
 
 
 def _crawler_app_state(fastapi_app: FastAPI | None = None) -> CrawlerAppState:
@@ -348,7 +387,7 @@ def _rate_limit_exempt_path(path: str) -> bool:
 def _client_rate_limit_key(request: Request) -> str:
     return client_identifier_from_request(
         request,
-        trusted_proxies=tuple(_trusted_proxy_set()),
+        trusted_proxies=tuple(crawler_runtime_settings.api_rate_limit_trusted_proxies),
     )
 
 
@@ -417,24 +456,11 @@ def restore_public_rate_limit_buckets_for_testing(
     )
 
 
-def _trusted_proxy_set() -> frozenset[str]:
-    crawler_state = _crawler_app_state()
-    values = tuple(
-        normalized
-        for normalized in (
-            str(value).strip()
-            for value in crawler_runtime_settings.api_rate_limit_trusted_proxies
-        )
-        if normalized
-    )
-    if values != crawler_state.trusted_proxy_cache_key:
-        crawler_state.trusted_proxy_cache_key = values
-        crawler_state.trusted_proxy_cache_set = frozenset(values)
-    return crawler_state.trusted_proxy_cache_set
-
-
 def _is_trusted_proxy(proxy_ip: str) -> bool:
-    return proxy_ip in _trusted_proxy_set()
+    return is_trusted_proxy_address(
+        proxy_ip,
+        trusted_proxies=tuple(crawler_runtime_settings.api_rate_limit_trusted_proxies),
+    )
 
 
 async def _consume_rate_limit(
@@ -478,7 +504,7 @@ def _request_is_https(request: Request) -> bool:
     peer_host = request.client.host if request.client and request.client.host else ""
     if _is_trusted_proxy(peer_host):
         forwarded_proto = request.headers.get("x-forwarded-proto", "")
-        if forwarded_proto.split(",", maxsplit=1)[0].strip().lower() == "https":
+        if forwarded_proto.rsplit(",", maxsplit=1)[-1].strip().lower() == "https":
             return True
     return False
 

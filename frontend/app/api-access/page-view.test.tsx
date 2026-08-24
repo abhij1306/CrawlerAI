@@ -5,7 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { TopBarProvider } from '../../components/layout/top-bar-context';
 import type { ApiKeyCreated, ApiKeyRecord } from '../../lib/api/api-access';
-import { mcpLaunchCommand, restRequestCommand } from './api-access-setup';
+import {
+  mcpLaunchCommand,
+  mcpLoopbackCommand,
+  restExtractCommand,
+  restRequestCommand,
+} from './api-access-setup';
 import ApiAccessPage from './page-view';
 
 const apiMock = vi.hoisted(() => ({
@@ -63,7 +68,8 @@ beforeEach(() => {
     surfaces: ['ecommerce'],
     tools: ['extract_product', 'check_domain', 'list_capabilities'],
     deferred: ['extract_batch'],
-    deployment: 'railway-ready',
+    deployment: 'self-hosted',
+    mcp: { default_transport: 'stdio', network_scope: 'loopback-only', hosted: false },
   });
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -82,8 +88,17 @@ describe('API & MCP access page', () => {
     expect(mcpLaunchCommand(apiBaseUrl, apiKey, 'bash')).toContain(
       `export CRAWLERAI_API_KEY='test'"'"'value'`,
     );
+    expect(mcpLaunchCommand(apiBaseUrl, apiKey, 'bash')).toContain(
+      `export CRAWLERAI_MCP_TRANSPORT='stdio'`,
+    );
+    expect(mcpLoopbackCommand(apiBaseUrl, apiKey, 'bash')).toContain(
+      `export CRAWLERAI_MCP_HOST='127.0.0.1'`,
+    );
     expect(restRequestCommand(apiBaseUrl, apiKey, 'bash')).toBe(
       `curl -H 'Authorization: Bearer test'"'"'value' 'https://api.example.test/o'"'"'hare/api/v1/capabilities'`,
+    );
+    expect(restExtractCommand(apiBaseUrl, apiKey, 'bash')).toContain(
+      `--data-raw '{"url":"https://example.com/product","surface":"ecommerce","fields":["title","price"]}'`,
     );
   });
 
@@ -99,10 +114,11 @@ describe('API & MCP access page', () => {
     await waitFor(() => expect(apiMock.getCapabilities).toHaveBeenCalledWith(CREATED_KEY.api_key));
     expect(await screen.findByText(/API verified.*extract_product/)).toBeInTheDocument();
     expect(screen.getByText(/curl\.exe -H/)).toBeInTheDocument();
+    expect(screen.getByText(/Public hosted MCP is not supported/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Bash' }));
     expect(screen.getByText(/curl -H/)).toBeInTheDocument();
-    expect(screen.getByText(/export CRAWLERAI_API_KEY/)).toBeInTheDocument();
+    expect(screen.getAllByText(/export CRAWLERAI_API_KEY/)).toHaveLength(2);
 
     const setup = screen.getByText('Save this key now').closest('div.space-y-4');
     expect(setup).not.toBeNull();

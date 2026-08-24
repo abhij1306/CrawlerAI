@@ -13,7 +13,7 @@ import httpx
 from app.core.config import settings
 from app.core.config.block_signatures import MAX_VALIDATED_REDIRECTS
 from app.core.config.runtime_settings import crawler_runtime_settings
-from app.core.url_safety import get_with_validated_redirects
+from app.core.url_safety import PublicTargetAsyncTransport, get_with_validated_redirects
 
 ROBOTS_ALLOWED = "allowed"
 ROBOTS_DISALLOWED = "disallowed"
@@ -88,6 +88,7 @@ def _get_robots_client() -> httpx.AsyncClient:
                     headers={
                         "User-Agent": crawler_runtime_settings.robots_fetch_user_agent
                     },
+                    transport=PublicTargetAsyncTransport(httpx.AsyncHTTPTransport()),
                 )
     return _ROBOTS_CLIENT
 
@@ -183,6 +184,7 @@ async def _fetch_robots_snapshot(base_url: str) -> _RobotsSnapshot:
             _get_robots_client(),
             robots_url,
             max_redirects=MAX_VALIDATED_REDIRECTS,
+            max_response_bytes=crawler_runtime_settings.robots_response_max_bytes,
         )
     except httpx.RequestError as exc:
         return _error_snapshot(robots_url, str(exc))

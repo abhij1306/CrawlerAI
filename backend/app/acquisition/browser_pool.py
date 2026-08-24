@@ -381,6 +381,10 @@ async def shutdown_browser_runtime() -> None:
                 "Browser runtime close failed during shutdown: %s",
                 result,
             )
+    # Runtime.close() can register bounded close operations after the initial
+    # drain. Join them before the caller is allowed to tear down its event loop.
+    await drain_browser_background_tasks()
+    await asyncio.sleep(0)
     clear_browser_identity_cache()
 
 

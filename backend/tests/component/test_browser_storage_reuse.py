@@ -15,6 +15,14 @@ from tests.component.browser_context_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_storage_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _owner(run_id: int | None) -> int | None:
+        return 1 if run_id is not None else None
+
+    monkeypatch.setattr(cookie_store, "user_id_for_run", _owner)
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_shared_browser_runtime_reuses_run_storage_state(
@@ -585,7 +593,7 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_shared_browser_runtime_close_bounds_hung_shutdown(
+async def test_shared_browser_runtime_close_bounds_without_cancelling_shutdown(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -645,6 +653,9 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
         "Timed out closing SOCKS5 auth bridge" in record.message
         for record in caplog.records
     )
+    assert cancelled == []
+    blocker.set()
+    await browser_background_tasks.drain_browser_background_tasks()
     assert cancelled == []
 
 

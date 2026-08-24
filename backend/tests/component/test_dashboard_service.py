@@ -236,6 +236,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     )
     db_session.add(
         DomainCookieMemory(
+            user_id=test_user.id,
             domain="example.com",
             storage_state={
                 "cookies": [{"name": "session", "value": "1"}],

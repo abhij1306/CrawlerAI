@@ -11,7 +11,7 @@ from app.api.run_access import (
     get_accessible_run_or_404 as _get_accessible_run_or_404,
     raise_http_from_exception as _raise_http_from_exception,
 )
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, require_admin
 from app.models.user import User
 from app.schemas.crawl import (
     DomainCookieMemoryRecordResponse,
@@ -132,10 +132,14 @@ async def _list_domain_run_profile_responses(
 @router.get("/domain-memory/cookies")
 async def crawls_domain_memory_cookies(
     session: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     domain: str = "",
 ) -> list[DomainCookieMemoryRecordResponse]:
-    rows = await list_domain_cookie_memory(domain, session=session)
+    rows = await list_domain_cookie_memory(
+        domain,
+        session=session,
+        user_id=user.id,
+    )
     return [DomainCookieMemoryRecordResponse.model_validate(row) for row in rows]
 
 
@@ -174,7 +178,7 @@ async def crawls_save_domain_run_profile(
     run_id: int,
     payload: DomainRecipeSaveRunProfileRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_admin)],
 ) -> dict[str, object]:
     run = await _get_accessible_run_or_404(session, run_id=run_id, user=user)
     return await save_domain_recipe_run_profile(
@@ -189,7 +193,7 @@ async def crawls_save_grounded_correction(
     run_id: int,
     payload: GroundedCorrectionRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_admin)],
 ) -> GroundedCorrectionResponse:
     run = await _get_accessible_run_or_404(session, run_id=run_id, user=user)
     try:

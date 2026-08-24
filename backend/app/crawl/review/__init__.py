@@ -347,7 +347,11 @@ async def build_domain_recipe_payload(
     saved_profile_record = await load_domain_run_profile(
         session, domain=domain, surface=run.surface
     )
-    cookie_memory_exists = await _domain_cookie_memory_exists(session, domain=domain)
+    cookie_memory_exists = await _domain_cookie_memory_exists(
+        session,
+        domain=domain,
+        user_id=run.user_id,
+    )
     return _assemble_recipe_payload(
         run=run,
         domain=domain,
@@ -485,6 +489,7 @@ async def save_domain_recipe_run_profile(
         profile=profile,
         source_run_id=run.id,
         commit=True,
+        allow_global_promotion=True,
     )
 
 
@@ -515,10 +520,14 @@ async def _domain_cookie_memory_exists(
     session: AsyncSession,
     *,
     domain: str,
+    user_id: int,
 ) -> bool:
     result = await session.execute(
         select(DomainCookieMemory.id)
-        .where(DomainCookieMemory.domain == domain)
+        .where(
+            DomainCookieMemory.user_id == user_id,
+            DomainCookieMemory.domain == domain,
+        )
         .limit(1)
     )
     return result.scalar_one_or_none() is not None

@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from app.acquisition import runtime as acquisition_runtime
+from app.acquisition import browser_fetch_runner
 from app.acquisition.browser_page_flow import _ensure_public_landed_url
 from app.acquisition.browser_route_blocking import block_unneeded_route
 from app.core.url_safety import (
@@ -245,6 +246,40 @@ async def test_browser_route_aborts_internal_hostname_subresource() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_browser_route_does_not_continue_private_target_when_abort_fails() -> (
+    None
+):
+    route = _FakeRoute("http://169.254.169.254/latest/meta-data")
+
+    async def fail_abort() -> None:
+        raise RuntimeError("abort failed")
+
+    route.abort = fail_abort
+
+    await block_unneeded_route(route)
+
+    assert route.continued is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_browser_route_aborts_hostname_with_mixed_dns_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _mixed_answers(*_args, **_kwargs) -> list[str]:
+        return ["93.184.216.34", "10.0.0.5"]
+
+    monkeypatch.setattr("app.core.url_safety._resolve_host_ips", _mixed_answers)
+    route = _FakeRoute("https://cdn.example/app.js", resource_type="script")
+
+    await block_unneeded_route(route)
+
+    assert route.aborted is True
+    assert route.continued is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_browser_route_continues_public_document_request() -> None:
     route = _FakeRoute("https://example.com/products/shoe")
 
@@ -353,9 +388,15 @@ async def test_curl_fetch_blocks_redirect_to_private_ip(
     requested_urls: list[str] = []
 
     def _fake_curl_get_once(
-        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
     ):
-        del curl_requests, timeout_seconds, proxy, cookie_header
+        del curl_requests, timeout_seconds, proxy, cookie_header, validated_target
         requested_urls.append(url)
         return SimpleNamespace(
             text="",
@@ -399,9 +440,15 @@ async def test_curl_fetch_follows_redirect_to_public_url(
     }
 
     def _fake_curl_get_once(
-        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
     ):
-        del curl_requests, timeout_seconds, proxy, cookie_header
+        del curl_requests, timeout_seconds, proxy, cookie_header, validated_target
         requested_urls.append(url)
         return responses[url]
 
@@ -425,9 +472,15 @@ async def test_curl_fetch_redirect_chain_is_capped(
     requested_urls: list[str] = []
 
     def _fake_curl_get_once(
-        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
     ):
-        del curl_requests, timeout_seconds, proxy, cookie_header
+        del curl_requests, timeout_seconds, proxy, cookie_header, validated_target
         requested_urls.append(url)
         next_url = f"https://example.com/hop-{len(requested_urls)}"
         return SimpleNamespace(
@@ -475,9 +528,15 @@ async def test_curl_fetch_forwards_redirect_cookies_to_next_hop(
     }
 
     def _fake_curl_get_once(
-        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
     ):
-        del curl_requests, timeout_seconds, proxy
+        del curl_requests, timeout_seconds, proxy, validated_target
         seen_cookie_headers.append(str(cookie_header or ""))
         return responses[url]
 
@@ -505,3 +564,163 @@ def test_shared_http_client_does_not_auto_follow_redirects() -> None:
     source = _inspect.getsource(acquisition_runtime.get_shared_http_client)
     assert "follow_redirects=False" in source
     assert "follow_redirects=True" not in source
+
+
+@pytest.mark.component
+def test_curl_resolve_entry_pins_validated_ipv4_and_ipv6_targets() -> None:
+    assert (
+        acquisition_runtime._curl_resolve_entry(
+            SimpleNamespace(
+                hostname="shop.example",
+                port=443,
+                resolved_ips=("93.184.216.34",),
+            )
+        )
+        == "shop.example:443:93.184.216.34"
+    )
+    assert (
+        acquisition_runtime._curl_resolve_entry(
+            SimpleNamespace(
+                hostname="shop.example",
+                port=443,
+                resolved_ips=("2606:2800:220:1:248:1893:25c8:1946",),
+            )
+        )
+        == "shop.example:443:[2606:2800:220:1:248:1893:25c8:1946]"
+    )
+
+
+@pytest.mark.component
+def test_curl_body_writer_stops_before_oversize_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        acquisition_runtime.crawler_runtime_settings,
+        "http_response_max_bytes",
+        5,
+    )
+    body = bytearray()
+    writer = acquisition_runtime._bounded_curl_body_writer(body)
+
+    writer(b"abc")
+    with pytest.raises(ValueError, match="exceeds 5 bytes"):
+        writer(b"def")
+
+    assert body == b"abc"
+
+
+@pytest.mark.component
+def test_curl_get_restores_body_limit_error_from_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import curl_cffi
+
+    class _Curl:
+        def setopt(self, *_args) -> None:
+            return None
+
+    class _Session:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def get(self, _url, **kwargs):
+            try:
+                kwargs["content_callback"](b"123456")
+            except acquisition_runtime.ResponseBodyTooLarge as exc:
+                raise RuntimeError("curl write failed") from exc
+
+    monkeypatch.setattr(curl_cffi, "Curl", _Curl)
+    monkeypatch.setattr(
+        acquisition_runtime.crawler_runtime_settings,
+        "http_response_max_bytes",
+        5,
+    )
+
+    with pytest.raises(acquisition_runtime.ResponseBodyTooLarge):
+        acquisition_runtime._curl_get_once(
+            SimpleNamespace(Session=_Session),
+            "https://shop.example/",
+            1.0,
+            validated_target=SimpleNamespace(
+                hostname="shop.example",
+                port=443,
+                resolved_ips=("93.184.216.34",),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_screenshot_mode_still_installs_browser_ssrf_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _PayloadCapture:
+        def attach(self, _page: object) -> None:
+            return None
+
+    class _Page:
+        def __init__(self) -> None:
+            self.routes: list[tuple[str, object]] = []
+
+        async def route(self, pattern: str, handler: object) -> None:
+            self.routes.append((pattern, handler))
+
+    monkeypatch.setattr(
+        browser_fetch_runner,
+        "_build_payload_capture",
+        lambda _surface: _PayloadCapture(),
+    )
+    monkeypatch.setattr(
+        browser_fetch_runner,
+        "resolve_browser_fetch_policy",
+        lambda **_kwargs: (False, {}, None),
+    )
+    page = _Page()
+    state = SimpleNamespace(
+        request=SimpleNamespace(
+            capture_screenshot=True,
+            url="https://example.com",
+            traversal_mode=None,
+        ),
+        normalized_surface="test",
+    )
+
+    await browser_fetch_runner._configure_page(page, state)
+
+    assert page.routes == [("**/*", block_unneeded_route)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_browser_fetch_aborts_when_ssrf_route_installation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _PayloadCapture:
+        def attach(self, _page: object) -> None:
+            return None
+
+    class _Page:
+        async def route(self, _pattern: str, _handler: object) -> None:
+            raise RuntimeError("route install failed")
+
+    monkeypatch.setattr(
+        browser_fetch_runner,
+        "_build_payload_capture",
+        lambda _surface: _PayloadCapture(),
+    )
+    state = SimpleNamespace(
+        request=SimpleNamespace(
+            url="https://example.com",
+            traversal_mode=None,
+        ),
+        normalized_surface="test",
+    )
+
+    with pytest.raises(RuntimeError, match="route install failed"):
+        await browser_fetch_runner._configure_page(_Page(), state)

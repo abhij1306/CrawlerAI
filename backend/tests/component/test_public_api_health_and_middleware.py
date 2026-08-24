@@ -278,6 +278,44 @@ def test_client_rate_limit_key_honors_forwarded_for_from_trusted_peer(
 
 
 @pytest.mark.component
+def test_client_rate_limit_key_honors_dynamic_trusted_proxy_cidr(monkeypatch) -> None:
+    monkeypatch.setattr(
+        crawler_runtime_settings, "api_rate_limit_trusted_proxies", ("10.0.0.0/8",)
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/not-found",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("10.42.7.9", 1234),
+        }
+    )
+
+    assert client_rate_limit_key(request) == "203.0.113.10"
+
+
+@pytest.mark.component
+def test_client_rate_limit_key_stops_at_first_untrusted_right_hand_hop(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        crawler_runtime_settings, "api_rate_limit_trusted_proxies", ("10.0.0.0/8",)
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/not-found",
+            "headers": [(b"x-forwarded-for", b"192.0.2.66, 198.51.100.20, 10.1.1.4")],
+            "client": ("10.42.7.9", 1234),
+        }
+    )
+
+    assert client_rate_limit_key(request) == "198.51.100.20"
+
+
+@pytest.mark.component
 def test_rate_limit_buckets_view_tracks_replaced_app_state() -> None:
     previous_state = app.state.crawler
     try:

@@ -22,6 +22,8 @@ from app.core.config.extraction_memory import (
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.main import app
 from app.models.crawl_run import CrawlRun
+from app.models.user import User
+from app.core.security import hash_password
 from app.persistence.extraction_memory import ensure_template, upsert_recipe
 from app.persistence.extraction_memory_knowledge import (
     find_contract_location,
@@ -30,6 +32,32 @@ from app.persistence.extraction_memory_knowledge import (
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.component]
+
+
+async def test_ordinary_user_cannot_promote_global_contract(
+    db_session: AsyncSession,
+    knowledge_client: AsyncClient,
+) -> None:
+    ordinary = User(
+        email=f"ordinary-{uuid.uuid4().hex}@example.com",
+        hashed_password=hash_password("password123"),
+        role="user",
+    )
+    db_session.add(ordinary)
+    await db_session.commit()
+
+    async def _ordinary_user():
+        return ordinary
+
+    app.dependency_overrides[get_current_user] = _ordinary_user
+    app.dependency_overrides.pop(require_admin, None)
+
+    response = await knowledge_client.put(
+        f"/api/knowledge/contracts/{uuid.uuid4()}/selection",
+        json={"selected_source": "dom:h1"},
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.fixture

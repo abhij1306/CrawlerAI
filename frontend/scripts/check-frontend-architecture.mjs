@@ -12,9 +12,9 @@ const checks = [
 // Default per-file LOC cap over app/, components/, lib/, src/ (non-test .ts/.tsx).
 const DEFAULT_MAX_LINES = 400;
 const scannedRoots = ['app', 'components', 'lib', 'src'];
-// 2026-08-23: API/MCP coverage adds create/probe/copy, confirmation-gated
-// revoke, and cross-shell command-generation tests for the authenticated surface.
-const TEST_LOC_BUDGET = 4753;
+// 2026-08-24: API client owns CSRF proof tests; API Access owns self-hosted MCP
+// command contracts. The 51-line increase stays in those existing test owners.
+const TEST_LOC_BUDGET = 4804;
 
 // Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
 const lineBudgetExceptions = new Map([

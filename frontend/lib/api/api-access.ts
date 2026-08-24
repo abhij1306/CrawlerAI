@@ -17,6 +17,11 @@ export type PublicApiCapabilities = {
   tools: string[];
   deferred: string[];
   deployment: string;
+  mcp: {
+    default_transport: string;
+    network_scope: string;
+    hosted: boolean;
+  };
 };
 
 type PublicApiCapabilitiesResponse = {
