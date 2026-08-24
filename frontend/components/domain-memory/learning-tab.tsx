@@ -20,17 +20,19 @@ export function LearningTab({ selectedWorkspace }: LearningTabProps) {
           <DetailRow key={row.id}>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={row.action === 'reject' ? 'warning' : 'success'}>{row.action}</Badge>
-              <span className="text-sm font-normal text-foreground">{row.field_name}</span>
+              <span className="text-base font-normal text-foreground">{row.field_name}</span>
               <Badge tone="neutral">{surfaceLabel(row.surface)}</Badge>
             </div>
-            <div className="mt-2 text-sm text-secondary">
+            <div className="mt-2 text-base text-secondary">
               Source: {row.source_kind}
               {row.source_value ? ` · Value: ${row.source_value}` : ''}
             </div>
             {row.selector_value ? (
-              <code className="mt-2 block text-sm break-all text-muted">{row.selector_value}</code>
+              <code className="mt-2 block text-base break-all text-muted">
+                {row.selector_value}
+              </code>
             ) : null}
-            <div className="mt-2 text-sm text-muted">{formatTimestamp(row.created_at)}</div>
+            <div className="mt-2 text-base text-muted">{formatTimestamp(row.created_at)}</div>
           </DetailRow>
         ))
       ) : (

@@ -188,7 +188,7 @@ const EnrichedProductSidebarRow = memo(function EnrichedProductSidebarRow({
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-sm opacity-75">
+        <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-base opacity-75">
           #{product.source_record_id}
         </Badge>
         {isProcessing ? (
@@ -238,7 +238,7 @@ export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetai
         <div className="border-b border-divider pb-4">
           <div className="flex items-center gap-2">
             <span className="type-heading-3">Enriched Record Details</span>
-            <Badge tone="neutral" className="font-mono text-sm">
+            <Badge tone="neutral" className="font-mono text-base">
               Record #{product.source_record_id}
             </Badge>
           </div>
@@ -311,7 +311,7 @@ export function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetai
                       {product.seo_keywords.map((kw) => (
                         <span
                           key={kw}
-                          className="rounded-full border border-border bg-background-elevated px-2 py-0.5 text-sm text-secondary"
+                          className="rounded-full border border-border bg-background-elevated px-2 py-0.5 text-base text-secondary"
                         >
                           {kw}
                         </span>
@@ -346,7 +346,7 @@ function TagTile({
         values?.length ? (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {values.map((value) => (
-              <Badge key={value} tone={tone} className="text-sm font-normal">
+              <Badge key={value} tone={tone} className="text-base font-normal">
                 {value}
               </Badge>
             ))}

@@ -1,16 +1,17 @@
-import { DatabaseZap, FileChartColumn, KeyRound, Trash2, WandSparkles } from 'lucide-react';
+import { Menu, Trash2 } from 'lucide-react';
 import { Outlet, useLocation } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+
+import { useIsMobile } from '../../lib/ui/use-media-query';
 
 import { routeMetadataForPath } from '../../src/app/route-registry';
 import { useSession } from '../../src/app/session';
 import { Button } from '../ui/button';
-import { ConfirmDialog } from '../ui/dialog';
+import { AppDrawer, ConfirmDialog } from '../ui/dialog';
 import type { TopBarState } from './top-bar-context';
 import { TopBarProvider, useTopBarHeader } from './top-bar-context';
 import { ThemeToggle } from '../ui/theme-toggle';
 import { useWorkspaceReset } from './use-workspace-reset';
-import { LogoMark } from './logo-mark';
 import { Sidebar } from './sidebar';
 
 const resetDialogCopy = {
@@ -23,22 +24,54 @@ const resetDialogCopy = {
 export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
   const { pathname } = useLocation();
   const session = useSession();
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Navigating from inside the drawer should close it.
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+
+  const sidebar = (
+    <Sidebar
+      pathname={pathname}
+      isAdmin={session.role === 'admin'}
+      accountEmail={session.email}
+      // Inside the drawer there is nothing to collapse into.
+      collapsible={!isMobile}
+    />
+  );
 
   return (
     <TopBarProvider>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground">
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:text-accent-fg"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-base focus:text-accent-fg"
         >
           Skip to main content
         </a>
-        <Sidebar
+        {/* Desktop takes the identical code path it always has; only the
+            mobile branch is new. */}
+        {isMobile ? (
+          <AppDrawer
+            open={navOpen}
+            onOpenChange={setNavOpen}
+            side="left"
+            title="Navigation"
+            className="w-[264px]"
+          >
+            {sidebar}
+          </AppDrawer>
+        ) : (
+          sidebar
+        )}
+        <ShellContent
           pathname={pathname}
-          isAdmin={session.role === 'admin'}
-          accountEmail={session.email}
-        />
-        <ShellContent pathname={pathname} canResetWorkspace={session.role === 'admin'}>
+          canResetWorkspace={session.role === 'admin'}
+          isMobile={isMobile}
+          onOpenNav={() => setNavOpen(true)}
+        >
           {children ?? <Outlet />}
         </ShellContent>
       </div>
@@ -46,87 +79,19 @@ export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
   );
 }
 
-/**
- * Capabilities named after what the app actually ships, using the same icons
- * the nav uses for those routes — so the panel cannot drift into marketing
- * that the product does not back up.
- */
-const authHighlights = [
-  {
-    icon: WandSparkles,
-    title: 'Crawl Studio',
-    body: 'Configure, launch, and watch runs live with per-site logs.',
-  },
-  {
-    icon: DatabaseZap,
-    title: 'Domain memory',
-    body: 'Learned selectors, cookies, and profiles retained per domain.',
-  },
-  {
-    icon: FileChartColumn,
-    title: 'Data enrichment',
-    body: 'Fill gaps in an existing catalog straight from source pages.',
-  },
-  {
-    icon: KeyRound,
-    title: 'REST + MCP access',
-    body: 'Drive the same pipeline from your own tools with an API key.',
-  },
-] as const;
-
-export function AuthShell({ children }: Readonly<{ children?: ReactNode }>) {
-  return (
-    <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)]">
-      {/* Below lg this panel is hidden, leaving the original single centred
-          card — so phones and tablets are unaffected by the split. */}
-      <aside className="relative hidden flex-col justify-between border-r border-border bg-background-alt p-10 lg:flex">
-        <LogoMark auth />
-
-        <div className="max-w-[440px]">
-          <h2 className="type-auth-title m-0">Structured product data from any storefront.</h2>
-          <ul className="mt-8 flex list-none flex-col gap-5 p-0">
-            {authHighlights.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="flex items-start gap-3">
-                {/* Panel-white, not accent-subtle: on the tinted aside the two
-                    are nearly the same value and the chip disappears. */}
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-panel shadow-xs">
-                  <Icon className="size-4 text-accent-text" strokeWidth={1.75} />
-                </span>
-                <div className="min-w-0">
-                  <p className="type-subheading m-0">{title}</p>
-                  <p className="type-body-sm m-0 mt-0.5">{body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="type-caption m-0">Self-hosted. Your crawl data stays in your workspace.</p>
-      </aside>
-
-      <div className="grid place-items-center p-8">
-        <div className="w-full max-w-[420px] rounded-xl border border-border bg-panel px-7 pt-6 pb-7 shadow-card">
-          <div className="flex items-center justify-between lg:justify-end">
-            {/* The mark stays in the card below lg, where the brand panel that
-                would otherwise carry it is hidden. */}
-            <span className="lg:hidden">
-              <LogoMark auth />
-            </span>
-            <ThemeToggle />
-          </div>
-          <div className="-mx-7 mt-5 mb-6 border-t border-border-subtle" />
-          {children ?? <Outlet />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ShellContent({
   children,
   pathname,
   canResetWorkspace,
-}: Readonly<{ children: ReactNode; pathname: string; canResetWorkspace: boolean }>) {
+  isMobile,
+  onOpenNav,
+}: Readonly<{
+  children: ReactNode;
+  pathname: string;
+  canResetWorkspace: boolean;
+  isMobile: boolean;
+  onOpenNav: () => void;
+}>) {
   const header = useTopBarHeader();
   const topBar = header?.pathKey === pathname ? header : getFallbackHeader(pathname);
   const {
@@ -144,10 +109,28 @@ function ShellContent({
   return (
     <div className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-panel px-4">
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-medium text-foreground">{topBar.title}</h1>
+        <div className="flex min-w-0 shrink items-center gap-2">
+          {isMobile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onOpenNav}
+              aria-label="Open navigation"
+              data-testid="app-nav-open"
+              className="-ml-1 size-8 shrink-0 rounded-md"
+            >
+              <Menu className="size-4" />
+            </Button>
+          ) : null}
+          {/* Hidden on phones: the 48px bar cannot hold the title and the
+              page's own actions, and the open drawer already marks the
+              current page. */}
+          <h1 className="truncate text-base font-medium text-foreground max-md:hidden">
+            {topBar.title}
+          </h1>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex min-w-0 shrink items-center gap-1.5 max-md:overflow-x-auto">
           {topBar.actions ? (
             <div className="flex items-center gap-1.5">{topBar.actions}</div>
           ) : null}
@@ -159,18 +142,26 @@ function ShellContent({
               disabled={resetPending}
               variant="destructive"
               size="sm"
-              className="h-7 gap-1.5 px-2.5 text-sm font-semibold"
+              className="h-7 gap-1.5 px-2.5 text-base font-semibold max-md:px-2"
+              aria-label={resetLabel}
             >
               <Trash2 className="size-3.5" />
-              {resetLabel}
+              {/* Label drops on phones so the 48px bar does not crowd. */}
+              <span className="max-md:hidden">{resetLabel}</span>
             </Button>
           ) : null}
           <ThemeToggle />
         </div>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1440px] p-[var(--content-gutter)]">{children}</div>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="min-h-0 flex-1 overflow-y-auto max-md:overflow-x-auto"
+      >
+        <div className="mx-auto w-full max-w-[1440px] p-[var(--content-gutter)] pb-[max(var(--content-gutter),env(safe-area-inset-bottom))]">
+          {children}
+        </div>
       </main>
 
       {canResetWorkspace ? (

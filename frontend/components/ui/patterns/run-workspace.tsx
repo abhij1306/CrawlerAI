@@ -89,7 +89,7 @@ export function RunSummaryChips({
             )}
           >
             <Icon className="size-3 shrink-0" aria-hidden="true" />
-            <span className="text-sm font-medium tabular-nums">{chip.value}</span>
+            <span className="text-base font-medium tabular-nums">{chip.value}</span>
           </div>
         );
       })}

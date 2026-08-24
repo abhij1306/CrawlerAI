@@ -145,9 +145,11 @@ export default function ApiAccessPage() {
                 {keys.map((key) => (
                   <TableRow key={key.id}>
                     <TableCell className="font-medium text-foreground">{key.name}</TableCell>
-                    <TableCell className="font-mono text-sm">{key.key_prefix}…</TableCell>
-                    <TableCell className="text-sm">{formatAdminUserDate(key.created_at)}</TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="font-mono text-base">{key.key_prefix}…</TableCell>
+                    <TableCell className="text-base">
+                      {formatAdminUserDate(key.created_at)}
+                    </TableCell>
+                    <TableCell className="text-base">
                       {key.last_used_at ? formatAdminUserDate(key.last_used_at) : 'Never'}
                     </TableCell>
                     <TableCell className="text-right">

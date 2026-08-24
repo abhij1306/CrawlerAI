@@ -30,7 +30,7 @@ export function RequireSession() {
       <div className="app-shell-feedback" role="alert">
         <div className="card-gradient max-w-sm rounded-lg border border-border p-6 text-center">
           <p className="type-subheading">Unable to load session</p>
-          <p className="mt-1.5 text-sm leading-relaxed text-secondary">
+          <p className="mt-1.5 text-base leading-relaxed text-secondary">
             Refresh to retry, or sign in again if the session expired.
           </p>
           <div className="mt-4 flex justify-center">

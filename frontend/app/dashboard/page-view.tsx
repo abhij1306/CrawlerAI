@@ -36,7 +36,10 @@ function DomainBar({
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3 border-b border-divider py-2 last:border-b-0">
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={domain}>
+      <span
+        className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
+        title={domain}
+      >
         {domain}
       </span>
       <div className="h-1 w-28 overflow-hidden rounded-full bg-background-alt">
@@ -45,7 +48,7 @@ function DomainBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="w-8 text-right font-mono text-sm text-muted tabular-nums">{count}</span>
+      <span className="w-8 text-right font-mono text-base text-muted tabular-nums">{count}</span>
     </div>
   );
 }
@@ -79,10 +82,10 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
       className="group flex items-center gap-3 rounded-lg p-2 no-underline transition-colors hover:bg-background-alt"
     >
       <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+      <span className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
         {domain || `Run #${run.id}`}
       </span>
-      <span className="w-24 text-right text-sm whitespace-nowrap text-muted tabular-nums">
+      <span className="w-24 text-right text-base whitespace-nowrap text-muted tabular-nums">
         {recordCount.toLocaleString()} rec
       </span>
       <div className="flex w-28 justify-start">
@@ -221,7 +224,7 @@ function RunStatusDistribution({
             <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
               {statusLabel(status)}
             </Badge>
-            <span className="font-mono text-sm text-foreground tabular-nums">{count}</span>
+            <span className="font-mono text-base text-foreground tabular-nums">{count}</span>
           </div>
         ))}
       </div>

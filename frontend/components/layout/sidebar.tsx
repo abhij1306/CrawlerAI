@@ -21,20 +21,29 @@ export function Sidebar({
   pathname,
   isAdmin,
   accountEmail,
-}: Readonly<{ pathname: string; isAdmin: boolean; accountEmail: string }>) {
+  collapsible = true,
+}: Readonly<{
+  pathname: string;
+  isAdmin: boolean;
+  accountEmail: string;
+  /** False inside the mobile drawer, where there is nothing to collapse into. */
+  collapsible?: boolean;
+}>) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutPending, setLogoutPending] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
+  const [storedCollapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
     if (stored === 'true' || stored === 'false') return stored === 'true';
     return window.matchMedia('(max-width: 1279px)').matches;
   });
+  const collapsed = collapsible && storedCollapsed;
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(collapsed));
-  }, [collapsed]);
+    if (!collapsible) return;
+    window.localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(storedCollapsed));
+  }, [collapsible, storedCollapsed]);
 
   async function handleLogout() {
     if (logoutPending) return;
@@ -68,12 +77,16 @@ export function Sidebar({
       className={cn(
         'flex shrink-0 flex-col gap-4 border-r border-border bg-sidebar p-4 transition-all duration-150 ease-in-out',
         collapsed ? 'w-[58px] p-2 items-center' : 'w-[232px]',
+        // In the drawer the aside fills it, and the drawer owns the edge.
+        !collapsible && 'h-full w-full border-r-0',
       )}
     >
       <div
         className={cn(
           'flex h-[38px] shrink-0 items-center justify-between gap-2 w-full',
           collapsed && 'justify-center',
+          // The drawer supplies its own header with the close control.
+          !collapsible && 'hidden',
         )}
       >
         <LogoMark collapsed={collapsed} />
@@ -95,7 +108,7 @@ export function Sidebar({
         )}
       </div>
 
-      {collapsed && (
+      {collapsed && collapsible && (
         <Button
           id="app-sidebar-toggle-collapsed"
           variant="ghost"
@@ -134,7 +147,7 @@ export function Sidebar({
                       key={item.path}
                       to={item.path}
                       className={cn(
-                        'flex h-7 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors w-full',
+                        'flex h-7 items-center gap-2.5 rounded-md px-2.5 text-base transition-colors w-full',
                         active
                           ? 'bg-panel-strong text-foreground font-medium'
                           : 'text-secondary hover:bg-background-alt hover:text-foreground',
@@ -172,7 +185,7 @@ export function Sidebar({
               <div className="text-sm font-semibold tracking-wide text-muted uppercase">
                 Account
               </div>
-              <div className="truncate text-sm text-secondary" title={accountEmail}>
+              <div className="truncate text-base text-secondary" title={accountEmail}>
                 {accountEmail}
               </div>
             </div>

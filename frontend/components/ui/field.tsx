@@ -46,12 +46,12 @@ export function Field({
           'aria-describedby': describedBy,
         })}
         {hint && !error ? (
-          <span id={hintId} className="text-sm text-muted">
+          <span id={hintId} className="text-base text-muted">
             {hint}
           </span>
         ) : null}
         {error ? (
-          <span id={errorId} role="alert" className="text-sm text-danger-text">
+          <span id={errorId} role="alert" className="text-base text-danger-text">
             {error}
           </span>
         ) : null}
@@ -67,9 +67,9 @@ export function Field({
         {required ? <span className="ml-0.5 text-danger">*</span> : null}
       </span>
       {children}
-      {hint && !error ? <span className="text-sm text-muted">{hint}</span> : null}
+      {hint && !error ? <span className="text-base text-muted">{hint}</span> : null}
       {error ? (
-        <span role="alert" className="text-sm text-danger-text">
+        <span role="alert" className="text-base text-danger-text">
           {error}
         </span>
       ) : null}

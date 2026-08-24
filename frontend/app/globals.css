@@ -254,9 +254,15 @@
 
   /* Type ladder — even sizes on a 14px baseline, even leading on the 4px grid.
      Six steps, no 10px tier, no odd values, nothing hardcoded downstream.
-     Leading companions live in the @theme bridge above. */
-  --text-sm: 0.75rem; /* 12px — labels, captions, table text, secondary body */
-  --text-base: 0.875rem; /* 14px — BASELINE: body, controls, nav               */
+     Leading companions live in the @theme bridge above.
+
+     14px is the baseline and carries essentially all content: body copy,
+     secondary text, captions, controls, nav and table data. 12px is a
+     deliberately RARE tier — uppercase micro-labels, table headers and dense
+     code only. If you reach for 12px on a sentence, use 14px and demote it
+     with --text-muted instead. */
+  --text-sm: 0.75rem; /* 12px — uppercase micro-labels + table headers ONLY */
+  --text-base: 0.875rem; /* 14px — BASELINE: nearly all content                */
   --text-lg: 1rem; /* 16px — section headings                            */
   --text-xl: 1.25rem; /* 20px — page headings                               */
   --text-2xl: 1.5rem; /* 24px — card + auth titles                          */
@@ -301,7 +307,7 @@
   --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Table */
-  --table-font-size: var(--text-sm); /* 12px — table body   */
+  --table-font-size: var(--text-base); /* 14px — table body   */
   --table-header-font-size: var(--text-sm); /* 12px — table header */
   --table-header-font-family: var(--font-primary-family);
   /* Header and body now share a size, so weight + tracking + uppercase carry
@@ -310,7 +316,7 @@
   --table-header-tracking: 0.07em;
   --table-header-height: 32px;
   --table-row-height: 38px;
-  --activity-stream-font-size: var(--text-sm); /* 12px — activity log */
+  --activity-stream-font-size: var(--text-base); /* 14px — activity log */
 
   /* Buttons — only --btn-primary-fg survives (consumed by .ui-on-accent-surface) */
   --btn-primary-fg: var(--accent-fg);
@@ -714,7 +720,7 @@ textarea:disabled {
 }
 
 .type-body-sm {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--weight-normal);
   line-height: 1.55;
   color: var(--text-secondary);
@@ -765,17 +771,17 @@ textarea:disabled {
 }
 
 .type-caption {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--weight-normal);
-  line-height: 1.3333;
+  line-height: 1.4286;
   color: var(--text-muted);
 }
 
 .type-caption-mono {
   font-family: var(--font-mono-family);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--weight-normal);
-  line-height: 1.3333;
+  line-height: 1.4286;
   color: var(--text-muted);
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
@@ -931,7 +937,7 @@ a.bg-success,
 }
 
 .table-footer-rail {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--text-muted);
   background: var(--bg-alt);
   border-top: 1px solid var(--border);
@@ -966,7 +972,7 @@ a.bg-success,
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   box-shadow: none;
 }
 
@@ -1265,12 +1271,36 @@ html:not([data-theme='dark']) .compact-data-table {
 /* ═══════════════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════════════ */
+/* Mobile token overrides.
+   Scoped inside a media query, so desktop resolves exactly the same values it
+   did before — the "no desktop diff" rule is structural here, not a promise. */
+@media (max-width: 767px) {
+  :root {
+    --content-gutter: var(--space-4);
+
+    /* Tap targets. 28/32/36px controls are comfortable with a mouse and
+       fiddly with a thumb; these clear the ~44px guidance where it matters. */
+    --control-height-sm: 32px;
+    --control-height: 38px;
+    --control-height-lg: 44px;
+  }
+
+  /* iOS Safari zooms the viewport when a focused input is under 16px. The
+     ladder puts controls at 14px, so bump only the rendered control text.
+     --text-lg is exactly 16px, so this stays on the ladder. */
+  input,
+  textarea,
+  select {
+    font-size: var(--text-lg);
+  }
+}
+
 @media (max-width: 480px) {
   :root {
     /* Type sizes are no longer scaled down here: the ladder's own top end
        (20/24/32) is already narrow enough for a phone, and the old override
-       targeted tiers that nothing rendered. Revisit alongside mobile work. */
-    --content-gutter: var(--space-4);
+       targeted tiers that nothing rendered. */
+    --content-gutter: var(--space-3);
   }
 }
 

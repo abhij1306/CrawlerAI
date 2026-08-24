@@ -88,7 +88,7 @@ export function JsonModal({
       }
     >
       <div className="p-4">
-        <pre className="crawl-terminal crawl-terminal-json text-sm leading-relaxed">
+        <pre className="crawl-terminal crawl-terminal-json text-base leading-relaxed">
           {syntaxHighlightJsonNodes(text)}
         </pre>
       </div>
@@ -107,7 +107,7 @@ export function DiscoveryStatus({
 }>) {
   const providerLabel = searchProviderLabel(provider);
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-sm text-foreground">
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-base text-foreground">
       <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-medium">{providerLabel} discovery running</div>
@@ -117,10 +117,10 @@ export function DiscoveryStatus({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <Badge tone="info" className="h-5 px-1.5 text-sm">
+        <Badge tone="info" className="h-5 px-1.5 text-base">
           {providerLabel}
         </Badge>
-        <Badge tone="neutral" className="h-5 px-1.5 text-sm">
+        <Badge tone="neutral" className="h-5 px-1.5 text-base">
           Max {maxCandidates}/product
         </Badge>
       </div>
@@ -140,10 +140,10 @@ export function DiscoveryTableLoading({ provider }: Readonly<{ provider: string 
         />
       </div>
       <div>
-        <div className="text-sm font-medium text-foreground">
+        <div className="text-base font-medium text-foreground">
           {providerLabel} is searching product candidates
         </div>
-        <div className="mt-1 max-w-[520px] text-sm leading-5 text-muted">
+        <div className="mt-1 max-w-[520px] text-base leading-5 text-muted">
           Querying Shopping, store links, and organic fallback, removing blocked/source domains,
           classifying domains, and scoring each result from title, brand, identifiers, price, and
           source authority.
@@ -161,11 +161,11 @@ export function DiscoveryTableLoading({ provider }: Readonly<{ provider: string 
 function DiscoveryLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
     <div className="rounded-md border border-divider bg-background-alt px-3 py-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+      <div className="flex items-center gap-2 text-base font-medium text-foreground">
         <span className="size-1.5 rounded-full bg-accent" />
         {label}
       </div>
-      <div className="mt-1 text-sm text-muted">{detail}</div>
+      <div className="mt-1 text-base text-muted">{detail}</div>
     </div>
   );
 }

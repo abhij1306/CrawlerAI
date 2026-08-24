@@ -11,7 +11,7 @@ export function EnrichmentStatus({
   llmEnabled: boolean;
 }>) {
   return (
-    <div className="animate-in fade-in flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-sm text-foreground duration-300">
+    <div className="animate-in fade-in flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-base text-foreground duration-300">
       <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-normal">Enrichment running</div>
@@ -46,10 +46,10 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
         />
       </div>
       <div>
-        <div className="text-sm font-normal text-foreground">
+        <div className="text-base font-normal text-foreground">
           Analyzing and enriching product records
         </div>
-        <div className="mt-1 max-w-[520px] text-sm leading-5 text-muted">
+        <div className="mt-1 max-w-[520px] text-base leading-5 text-muted">
           Executing deterministic attribute matching, category taxonomy alignment, and{' '}
           {llmEnabled ? 'LLM-driven semantic expansion.' : 'rule-based field normalization.'}
         </div>
@@ -74,7 +74,7 @@ function EnrichmentLoadingStep({ label, detail }: Readonly<{ label: string; deta
         <span className="size-1.5 animate-pulse rounded-full bg-accent" />
         {label}
       </div>
-      <div className="mt-1 text-sm leading-tight text-muted">{detail}</div>
+      <div className="mt-1 text-base leading-tight text-muted">{detail}</div>
     </div>
   );
 }

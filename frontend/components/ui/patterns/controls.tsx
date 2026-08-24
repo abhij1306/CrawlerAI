@@ -88,7 +88,7 @@ export function TabBar<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'type-control relative z-10 inline-flex h-full min-w-[72px] shrink-0 items-center justify-center rounded-md font-sans text-sm tracking-normal whitespace-nowrap transition-[background-color,color,border-color,box-shadow] duration-150 ease-out select-none',
+            'type-control relative z-10 inline-flex h-full min-w-[72px] shrink-0 items-center justify-center rounded-md font-sans text-base tracking-normal whitespace-nowrap transition-[background-color,color,border-color,box-shadow] duration-150 ease-out select-none',
             fullWidth && 'flex-1',
             padX,
             value === option.value

@@ -73,7 +73,7 @@ export function ApiAccessSetup({
         value={mcpLoopbackCommand(apiBaseUrl, created.api_key, shell)}
       />
 
-      <div className="flex items-start gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm text-secondary">
+      <div className="flex items-start gap-2 rounded-md border border-border bg-panel px-3 py-2 text-base text-secondary">
         <TerminalSquare className="mt-0.5 size-4 shrink-0 text-muted" />
         <div>
           Prefer one local stdio process per MCP client from the backend directory. Each process

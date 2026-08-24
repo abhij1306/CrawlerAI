@@ -103,7 +103,7 @@ export function SettingsDrawer({
         </Field>
         <Field label="LLM Cleanup">
           <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
-            <span className="text-sm font-normal text-muted">Enable Enrichment</span>
+            <span className="text-base font-normal text-muted">Enable Enrichment</span>
             <input
               type="checkbox"
               aria-label="Enable LLM enrichment"
@@ -119,7 +119,7 @@ export function SettingsDrawer({
           <Textarea
             value={allowedDomainsText}
             onChange={(event) => onAllowedDomainsTextChange(event.target.value)}
-            className="min-h-[76px] text-sm"
+            className="min-h-[76px] text-base"
             placeholder="ralphlauren.com"
           />
         </Field>
@@ -127,7 +127,7 @@ export function SettingsDrawer({
           <Textarea
             value={excludedDomainsText}
             onChange={(event) => onExcludedDomainsTextChange(event.target.value)}
-            className="min-h-[76px] text-sm"
+            className="min-h-[76px] text-base"
             placeholder="amazon.com"
           />
         </Field>
@@ -153,7 +153,7 @@ function ProviderField({
             onClick={() => onOptionsChange({ search_provider: option.value })}
             aria-pressed={options.search_provider === option.value}
             className={cn(
-              'flex-1 rounded-md border px-3 py-1.5 text-center text-sm font-medium transition-[background-color,border-color]',
+              'flex-1 rounded-md border px-3 py-1.5 text-center text-base font-medium transition-[background-color,border-color]',
               options.search_provider === option.value
                 ? 'border-accent bg-accent-subtle text-accent'
                 : 'border-border-strong bg-background-elevated text-foreground hover:bg-background-alt',

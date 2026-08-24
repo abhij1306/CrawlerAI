@@ -124,15 +124,18 @@ export default function JobsPage() {
               <TableBody>
                 {jobs.map((job) => (
                   <TableRow key={job.run_id}>
-                    <TableCell className="font-mono text-sm">{job.run_id}</TableCell>
-                    <TableCell className="text-sm">{formatJobType(job.type)}</TableCell>
-                    <TableCell className="max-w-[320px] truncate font-mono text-sm" title={job.url}>
+                    <TableCell className="font-mono text-base">{job.run_id}</TableCell>
+                    <TableCell className="text-base">{formatJobType(job.type)}</TableCell>
+                    <TableCell
+                      className="max-w-[320px] truncate font-mono text-base"
+                      title={job.url}
+                    >
                       {job.url}
                     </TableCell>
                     <TableCell>
                       <ProgressBar percent={job.progress} />
                     </TableCell>
-                    <TableCell className="text-sm text-secondary">
+                    <TableCell className="text-base text-secondary">
                       {formatTimestamp(job.started_at)}
                     </TableCell>
                     <TableCell style={{ overflow: 'visible', textOverflow: 'clip' }}>

@@ -134,7 +134,7 @@ export function inferDomainFromSurface(surface: string | null | undefined): Craw
 /** The one approved tint chip in the refined-minimal sample (mockup .chip/.cdot). */
 export function StudioChip({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-sm font-medium text-accent-text">
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-accent-border bg-accent-soft px-2 text-base font-medium text-accent-text">
       <span className="size-[5px] rounded-full bg-accent" aria-hidden="true" />
       {children}
     </span>

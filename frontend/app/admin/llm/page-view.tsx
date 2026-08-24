@@ -90,7 +90,7 @@ function ActiveConfigsCard({ configs, onDelete }: Readonly<ActiveConfigsCardProp
                       {config.task_type}
                     </span>
                     {config.is_active ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-sm leading-none font-normal text-success">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-base leading-none font-normal text-success">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         active
                       </span>

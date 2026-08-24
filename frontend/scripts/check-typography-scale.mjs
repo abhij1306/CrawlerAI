@@ -36,6 +36,14 @@ const RULES = [
     pattern: /text-\[length:(?!var\(--table-(?:font-size|header-font-size)\)\])/,
     message: 'arbitrary length font size — use a --text-* ladder step',
   },
+  {
+    // 14px is the baseline and carries essentially all content. 12px is a
+    // deliberately rare tier for uppercase micro-labels, so text-sm is only
+    // allowed alongside `uppercase`. Demote prose with --text-muted, not size.
+    pattern: /\btext-sm\b/,
+    allowIf: /\buppercase\b/,
+    message: 'text-sm (12px) is for uppercase micro-labels only — use text-base (14px)',
+  },
 ];
 
 const STYLESHEET_RULES = [
@@ -63,9 +71,9 @@ function inspect(file, rules) {
   const lines = readFileSync(file, 'utf8').split('\n');
   lines.forEach((line, index) => {
     for (const rule of rules) {
-      if (rule.pattern.test(line)) {
-        violations.push(`${normalized}:${index + 1} — ${rule.message}`);
-      }
+      if (!rule.pattern.test(line)) continue;
+      if (rule.allowIf?.test(line)) continue;
+      violations.push(`${normalized}:${index + 1} — ${rule.message}`);
     }
   });
 }

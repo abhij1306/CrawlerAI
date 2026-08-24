@@ -38,7 +38,7 @@ export function CodeBlock({
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 font-mono text-sm leading-relaxed whitespace-pre-wrap text-secondary">
+      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 font-mono text-base leading-relaxed whitespace-pre-wrap text-secondary">
         {value}
       </pre>
       {copyError ? <InlineAlert tone="warning" message={copyError} /> : null}

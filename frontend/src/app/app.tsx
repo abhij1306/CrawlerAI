@@ -1,7 +1,8 @@
 import type { RouteObject } from 'react-router-dom';
 import { Navigate, RouterProvider, createBrowserRouter, useParams } from 'react-router-dom';
 
-import { AppShell, AuthShell } from '../../components/layout/app-shell';
+import { AppShell } from '../../components/layout/app-shell';
+import { AuthShell } from '../../components/layout/auth-shell';
 import { QueryProvider } from '../../components/ui/query-provider';
 import { RequireAdmin, RequireSession } from './auth-guards';
 import { RouteErrorBoundary } from './error-boundary';
