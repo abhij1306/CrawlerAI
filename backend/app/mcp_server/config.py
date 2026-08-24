@@ -10,7 +10,9 @@ from app.core.config.public_api import (
     PUBLIC_API_MCP_BASE_URL_ENV,
     PUBLIC_API_MCP_DEFAULT_BASE_URL,
     PUBLIC_API_MCP_DEFAULT_HOST,
+    PUBLIC_API_MCP_DEFAULT_PORT,
     PUBLIC_API_MCP_HOST_ENV,
+    PUBLIC_API_MCP_PORT_ENV,
     PUBLIC_API_MCP_ALLOWED_TRANSPORTS,
     PUBLIC_API_MCP_DEFAULT_TRANSPORT,
     PUBLIC_API_MCP_TRANSPORT_ENV,
@@ -23,6 +25,7 @@ class McpRuntimeConfig:
     api_base_url: str
     transport: str
     host: str
+    port: int
 
 
 def api_key() -> str:
@@ -45,6 +48,20 @@ def transport() -> str:
         .strip()
         .lower()
     )
+
+
+def port() -> int:
+    raw_port = os.environ.get(
+        PUBLIC_API_MCP_PORT_ENV,
+        str(PUBLIC_API_MCP_DEFAULT_PORT),
+    ).strip()
+    try:
+        configured_port = int(raw_port)
+    except ValueError as exc:
+        raise RuntimeError(f"{PUBLIC_API_MCP_PORT_ENV} must be an integer") from exc
+    if not 1 <= configured_port <= 65535:
+        raise RuntimeError(f"{PUBLIC_API_MCP_PORT_ENV} must be between 1 and 65535")
+    return configured_port
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -76,6 +93,9 @@ def runtime_config() -> McpRuntimeConfig:
         api_base_url=api_base_url(),
         transport=configured_transport,
         host=configured_host,
+        port=(
+            port() if configured_transport != "stdio" else PUBLIC_API_MCP_DEFAULT_PORT
+        ),
     )
 
 

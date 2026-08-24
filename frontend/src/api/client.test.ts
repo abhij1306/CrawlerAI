@@ -231,16 +231,21 @@ describe('apiClient', () => {
   it('adds the double-submit CSRF token to cookie-authenticated mutations', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(
-        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      .mockImplementation(
+        async () =>
+          new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
       );
     vi.stubGlobal('fetch', fetchMock);
-    document.cookie = 'csrf_token=nonce.signature; path=/';
+    document.cookie = 'csrf_token=%E0%A4%A; path=/';
 
     const { apiClient } = await import('./client');
     await apiClient.post('/api/crawls', { url: 'https://example.com' });
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('X-CSRF-Token')).toBeNull();
+    document.cookie = 'csrf_token=nonce.signature; path=/';
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    await apiClient.post('/api/crawls', { url: 'https://example.com' });
+
+    const init = fetchMock.mock.calls[1]?.[1] as RequestInit;
     expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('nonce.signature');
   });
 

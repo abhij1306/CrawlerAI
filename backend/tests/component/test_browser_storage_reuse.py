@@ -15,6 +15,14 @@ from tests.component.browser_context_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_storage_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _owner(run_id: int | None) -> int | None:
+        return 1 if run_id is not None else None
+
+    monkeypatch.setattr(cookie_store, "user_id_for_run", _owner)
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_shared_browser_runtime_reuses_run_storage_state(

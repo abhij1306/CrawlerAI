@@ -56,7 +56,7 @@ def build_async_http_client(
     transport_wrapper: Callable[[httpx.AsyncBaseTransport], httpx.AsyncBaseTransport]
     | None = None,
 ) -> httpx.AsyncClient:
-    transport = _build_async_http_transport(
+    transport: httpx.AsyncBaseTransport | None = _build_async_http_transport(
         proxy=proxy,
         limits=limits,
         force_ipv4=force_ipv4,

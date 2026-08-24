@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping, Sequence
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
@@ -17,8 +16,10 @@ from app.core.config.proxy_secrets import (
 )
 from app.core.security import decrypt_secret, encrypt_secret
 
-_URL_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+")
-_URL_USERINFO_PATTERN = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@")
+_SCHEME_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-"
+)
+_URL_TERMINATORS = frozenset(" \t\r\n<>\"'")
 
 
 def _host_port(parsed) -> str:
@@ -58,15 +59,31 @@ def strip_url_userinfo(value: object, *, masked: bool = False) -> str:
 def redact_secret_text(value: object) -> str:
     """Remove URL userinfo from arbitrary log, exception, and diagnostic text."""
     text = str(value or "")
-
-    def _redact_url(match: re.Match[str]) -> str:
-        url = match.group(0)
-        return strip_url_userinfo(url, masked=True) if "@" in url else url
-
-    return _URL_USERINFO_PATTERN.sub(
-        r"\g<scheme>***:***@",
-        _URL_PATTERN.sub(_redact_url, text),
-    )
+    cursor = 0
+    redacted: list[str] = []
+    while (separator := text.find("://", cursor)) >= 0:
+        start = separator - 1
+        while start >= cursor and text[start] in _SCHEME_CHARS:
+            start -= 1
+        start += 1
+        scheme = text[start:separator]
+        if not scheme or not scheme[0].isalpha():
+            redacted.append(text[cursor : separator + 3])
+            cursor = separator + 3
+            continue
+        end = separator + 3
+        while end < len(text) and text[end] not in _URL_TERMINATORS:
+            end += 1
+        candidate = text[start:end]
+        redacted.append(text[cursor:start])
+        redacted.append(
+            strip_url_userinfo(candidate, masked=True)
+            if "@" in candidate
+            else candidate
+        )
+        cursor = end
+    redacted.append(text[cursor:])
+    return "".join(redacted)
 
 
 def seal_proxy_urls(
@@ -106,7 +123,7 @@ def seal_proxy_urls(
 def resolve_proxy_urls(endpoints: Sequence[object], references: object) -> list[str]:
     reference_by_index = (
         {
-            int(row.get(PROXY_SECRET_REF_INDEX_KEY)): row
+            int(str(row.get(PROXY_SECRET_REF_INDEX_KEY))): row
             for row in references
             if isinstance(row, Mapping)
             and str(row.get(PROXY_SECRET_REF_INDEX_KEY, "")).isdigit()

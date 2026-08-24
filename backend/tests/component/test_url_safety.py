@@ -178,16 +178,38 @@ async def test_public_target_transport_pins_ip_and_preserves_host_and_sni(
 
     monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_answer)
     inner = _CaptureTransport()
-    transport = url_safety.PublicTargetAsyncTransport(inner)
+    transport = url_safety.PublicTargetAsyncTransport(inner, pin_direct=False)
     request = httpx.Request("GET", "https://shop.example:8443/products/1")
 
     response = await transport.handle_async_request(request)
 
     assert response.status_code == 200
     assert inner.request is not None
-    assert inner.request.url.host == "93.184.216.34"
+    assert inner.request.url.host == "shop.example"
     assert inner.request.headers["host"] == "shop.example:8443"
     assert inner.request.extensions["sni_hostname"] == "shop.example"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_target_network_backend_connects_to_validated_ip() -> None:
+    class _CaptureBackend:
+        host = ""
+
+        async def connect_tcp(self, host, port, **kwargs):
+            del port, kwargs
+            self.host = host
+            return object()
+
+    inner = _CaptureBackend()
+    backend = url_safety._PinnedAsyncNetworkBackend(inner)
+    token = url_safety._PINNED_TARGET.set(("shop.example", "93.184.216.34"))
+    try:
+        await backend.connect_tcp("shop.example", 443)
+    finally:
+        url_safety._PINNED_TARGET.reset(token)
+
+    assert inner.host == "93.184.216.34"
 
 
 class _ChunkStream(httpx.AsyncByteStream):

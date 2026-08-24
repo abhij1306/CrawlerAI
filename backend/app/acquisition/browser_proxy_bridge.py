@@ -157,7 +157,7 @@ class Socks5AuthBridge:
                 )
                 return
             upstream_target = await validate_proxy_endpoint(
-                f"{self.upstream.scheme}://{self.upstream.host}:{self.upstream.port}"
+                _upstream_url(self.upstream)
             )
             opened_reader, opened_writer = await asyncio.wait_for(
                 asyncio.open_connection(
@@ -341,6 +341,13 @@ def _encode_request_host(host: str) -> tuple[int, bytes]:
     if isinstance(ip_value, ipaddress.IPv4Address):
         return _SOCKS_ATYP_IPV4, ip_value.packed
     return _SOCKS_ATYP_IPV6, ip_value.packed
+
+
+def _upstream_url(upstream: Socks5UpstreamProxy) -> str:
+    host = upstream.host
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"{upstream.scheme}://{host}:{upstream.port}"
 
 
 def _success_response() -> bytes:

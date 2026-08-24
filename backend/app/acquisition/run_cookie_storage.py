@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -29,6 +30,7 @@ from app.core.shared.coerce_primitives import positive_int
 
 _RUN_STORAGE_STATE_CACHE: dict[str, dict[str, object]] = {}
 _RUN_STORAGE_STATE_LOCK = asyncio.Lock()
+_RUN_STORAGE_STATE_GENERATION = 0
 
 
 def _normalized_browser_engine(value: object) -> str | None:
@@ -59,8 +61,10 @@ def storage_state_candidate_paths(
 
 
 async def clear_run_storage_state_cache() -> None:
+    global _RUN_STORAGE_STATE_GENERATION
     async with _RUN_STORAGE_STATE_LOCK:
         _RUN_STORAGE_STATE_CACHE.clear()
+        _RUN_STORAGE_STATE_GENERATION += 1
 
 
 async def load_run_storage_state(
@@ -74,15 +78,23 @@ async def load_run_storage_state(
         cache_key = f"{path}:{user_id}"
         async with _RUN_STORAGE_STATE_LOCK:
             state = _RUN_STORAGE_STATE_CACHE.get(cache_key)
-            if state is None:
-                state = await asyncio.to_thread(
-                    _read_storage_state_file,
-                    path,
-                    run_id=run_id,
-                    user_id=user_id,
-                    browser_engine=normalized_engine,
-                )
-                if state is not None:
+            generation = _RUN_STORAGE_STATE_GENERATION
+        if state is None:
+            loaded_state = await asyncio.to_thread(
+                _read_storage_state_file,
+                path,
+                run_id=run_id,
+                user_id=user_id,
+                browser_engine=normalized_engine,
+            )
+            async with _RUN_STORAGE_STATE_LOCK:
+                state = _RUN_STORAGE_STATE_CACHE.get(cache_key)
+                if (
+                    state is None
+                    and loaded_state is not None
+                    and generation == _RUN_STORAGE_STATE_GENERATION
+                ):
+                    state = loaded_state
                     _RUN_STORAGE_STATE_CACHE[cache_key] = state
         if state is not None:
             return dict(state)
@@ -190,14 +202,13 @@ def _write_storage_state_file(path: Path, storage_state: Mapping[str, object]) -
             raise last_error
         path.chmod(0o600)
     except OSError:
-        try:
+        with contextlib.suppress(OSError):
             tmp_path.unlink()
-        except OSError:
-            pass
         raise
 
 
 async def delete_run_storage_states(run_id: int | None) -> int:
+    global _RUN_STORAGE_STATE_GENERATION
     normalized_run_id = positive_int(run_id)
     if normalized_run_id is None or not settings.cookie_store_dir.is_dir():
         return 0
@@ -219,6 +230,7 @@ async def delete_run_storage_states(run_id: int | None) -> int:
         )
     ]
     async with _RUN_STORAGE_STATE_LOCK:
+        _RUN_STORAGE_STATE_GENERATION += 1
         deleted = 0
         for path in paths:
             try:

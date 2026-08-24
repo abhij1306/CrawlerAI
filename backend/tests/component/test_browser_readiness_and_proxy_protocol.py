@@ -330,6 +330,19 @@ def test_socks5_proxy_without_credentials_still_uses_safety_bridge() -> None:
     assert upstream.username == ""
 
 
+@pytest.mark.component
+def test_socks5_upstream_url_brackets_ipv6() -> None:
+    upstream = browser_proxy_bridge.Socks5UpstreamProxy(
+        scheme="socks5",
+        host="2001:db8::1",
+        port=1080,
+        username="",
+        password="",
+    )
+
+    assert browser_proxy_bridge._upstream_url(upstream) == "socks5://[2001:db8::1]:1080"
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_direct_socks_bridge_rejects_private_target_before_connect(

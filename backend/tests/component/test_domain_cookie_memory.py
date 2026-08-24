@@ -479,6 +479,20 @@ def test_http_cookie_export_does_not_send_secure_cookie_over_http() -> None:
     ]
 
 
+def test_http_cookie_export_preserves_case_distinct_names() -> None:
+    state = {
+        "cookies": [
+            {"name": "Session", "value": "upper", "domain": "example.com"},
+            {"name": "session", "value": "lower", "domain": "example.com"},
+        ]
+    }
+
+    assert cookie_store.http_cookie_pairs_for_url("https://example.com/", state) == [
+        ("Session", "upper"),
+        ("session", "lower"),
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_persist_storage_state_for_domain_keeps_patchright_isolated(

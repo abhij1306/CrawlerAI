@@ -182,9 +182,9 @@ class Settings(BaseSettings):
             "CRAWLER_CSV_UPLOAD_MAX_BYTES", "csv_upload_max_bytes"
         ),
     )
-    request_body_max_bytes: int = 5 * 1024 * 1024
-    public_api_request_body_max_bytes: int = 256 * 1024
-    multipart_overhead_max_bytes: int = 64 * 1024
+    request_body_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    public_api_request_body_max_bytes: int = Field(default=256 * 1024, gt=0)
+    multipart_overhead_max_bytes: int = Field(default=64 * 1024, ge=0)
 
     @field_validator(
         "artifacts_dir",

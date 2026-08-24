@@ -31,7 +31,7 @@ def _trusted_proxy_networks(
         try:
             networks.append(ipaddress.ip_network(normalized, strict=False))
         except ValueError:
-            logger.warning("Ignoring invalid trusted proxy CIDR: %s", normalized)
+            logger.warning("Ignoring invalid trusted proxy CIDR configuration")
     return tuple(networks)
 
 

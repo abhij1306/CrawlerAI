@@ -49,7 +49,7 @@ def _select_http_cookie_pairs(
 ) -> list[tuple[str, str]]:
     selected: dict[str, tuple[int, int, str, str]] = {}
     for domain_score, path_score, name, value in candidates:
-        key = name.lower()
+        key = name
         existing = selected.get(key)
         if existing is None or (domain_score, path_score) >= (
             existing[0],

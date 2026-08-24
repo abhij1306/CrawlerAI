@@ -604,10 +604,10 @@ async def test_await_without_cancelling_registers_task_when_caller_is_cancelled(
     with pytest.raises(asyncio.CancelledError):
         _ = await caller
 
-    assert browser_background_tasks._eviction_cleanup_tasks
+    assert browser_background_tasks._bounded_cleanup_tasks
     release.set()
     await browser_background_tasks.drain_browser_background_tasks()
-    assert not browser_background_tasks._eviction_cleanup_tasks
+    assert not browser_background_tasks._bounded_cleanup_tasks
 
 
 @pytest.mark.component

@@ -18,7 +18,10 @@ IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # 2026-08-24 remediation plan (SSRF, byte limits, tenant isolation, bootstrap,
 # CSRF, forwarding-chain trust, pre-auth abuse limits, MCP exposure, proxy
 # secret lifecycle, encrypted run-cookie retention, and startup contracts).
-TEST_LOC_BUDGET = 56_989
+# CI reconciliation adds owner-aware browser/profile fixtures and curl Session
+# coverage to the focused security suites. Final review adds bounded-body,
+# cache-invalidation, and non-admin profile-promotion regressions.
+TEST_LOC_BUDGET = 57_141
 # Explicit bootstrap and ECR enhanced-scan policy commands are measured tools.
 TOOL_LOC_BUDGET = 3_951
 TEST_TOOL_COMPLEXITY_LIMIT = 15
@@ -218,13 +221,16 @@ PACKAGE_LOC_BUDGETS = {
     # Services/tooling simplification adds explicit owner seams and type-safe
     # helpers while shrinking the five named root owners by 2,870 lines.
     # Slices 6-8 isolate run-cookie/proxy owners, centralize deployment config,
-    # and await bounded browser subprocess teardown. Ratchets are exact.
-    "acquisition": 17_925,
+    # and await bounded browser subprocess teardown. Review follow-up keeps the
+    # logical HTTP origin while pinning sockets and bounds shutdown drains.
+    "acquisition": 17_991,
     "crawl": 9_834,
     # Identity/security slice: signed cookie-CSRF boundary, trusted-CIDR chain
     # parser, pre-auth limiter, and create-only bootstrap transaction.
     # MCP slice adds only centralized transport/exposure config tokens here.
-    "core": 21_768,
+    # Review follow-up adds pre-dispatch body buffering and deterministic
+    # secret redaction; both stay in their canonical security owners.
+    "core": 21_917,
     "enrichment": 2_361,
     "connectors": 2_427,
     "intelligence": 3_576,
@@ -286,8 +292,11 @@ PACKAGE_LOC_BUDGETS = {
 # oversized owners. MCP adds a bounded local transport validator and focused
 # server wiring; this is not an exclusion.
 # Slices 6-8 add measured secret/cookie owners, centralized deployment config,
-# and a bounded stdlib legacy-password verifier. No file ceiling was relaxed.
-TOTAL_APP_LOC_BUDGET = 87_544
+# and a bounded stdlib legacy-password verifier. Review follow-up adds pinned
+# HTTP sockets, bounded shutdown, and request-body enforcement in those owners.
+# Final review adds generation-safe cookie cache invalidation and bounded
+# aggregate request buffering. No per-file ceiling was relaxed.
+TOTAL_APP_LOC_BUDGET = 87_782
 
 
 def test_production_package_loc_budgets() -> None:

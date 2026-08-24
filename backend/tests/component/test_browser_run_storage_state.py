@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import threading
 
 from tests.component.browser_context_test_support import (
     Path,
@@ -289,6 +291,45 @@ async def test_delete_run_storage_states_respects_run_id_boundary(
     assert deleted == len(own_paths)
     assert all(not path.exists() for path in own_paths)
     assert other_path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_cache_clear_does_not_restore_an_inflight_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await run_cookie_storage.clear_run_storage_state_cache()
+    read_started = threading.Event()
+    release_read = threading.Event()
+    loaded_state = {"cookies": [], "origins": []}
+
+    def _read(*_args, **_kwargs):
+        read_started.set()
+        release_read.wait(timeout=2)
+        return loaded_state
+
+    monkeypatch.setattr(run_cookie_storage, "_read_storage_state_file", _read)
+    load_task = asyncio.create_task(
+        run_cookie_storage.load_run_storage_state(
+            1,
+            user_id=11,
+            browser_engine="firefox",
+        )
+    )
+    assert await asyncio.to_thread(read_started.wait, 1)
+
+    await run_cookie_storage.clear_run_storage_state_cache()
+    release_read.set()
+
+    assert await load_task is None
+    assert (
+        await run_cookie_storage.load_run_storage_state(
+            1,
+            user_id=11,
+            browser_engine="firefox",
+        )
+        == loaded_state
+    )
 
 
 @pytest.mark.component

@@ -85,6 +85,41 @@ async def test_allows_body_at_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_replays_chunked_body_as_one_bounded_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(request_body_limit.settings, "request_body_max_bytes", 5)
+    received: list[dict[str, object]] = []
+
+    async def capture_app(scope, receive, send) -> None:
+        del scope
+        received.append(await receive())
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = request_body_limit.RequestBodyLimitMiddleware(capture_app)
+    messages = [
+        {"type": "http.request", "body": b"abc", "more_body": True},
+        {"type": "http.request", "body": b"de", "more_body": False},
+    ]
+
+    async def receive():
+        return messages.pop(0)
+
+    async def send(_message):
+        return None
+
+    await middleware(
+        {"type": "http", "method": "POST", "path": "/api/crawls", "headers": []},
+        receive,
+        send,
+    )
+
+    assert received == [{"type": "http.request", "body": b"abcde", "more_body": False}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_does_not_send_second_response_after_downstream_started(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -97,8 +132,8 @@ async def test_does_not_send_second_response_after_downstream_started(
         await receive()
 
     messages = [
-        {"type": "http.request", "body": b"abc", "more_body": True},
-        {"type": "http.request", "body": b"de", "more_body": False},
+        {"type": "http.request", "body": b"abcd", "more_body": False},
+        {"type": "http.request", "body": b"e", "more_body": False},
     ]
 
     async def receive():
@@ -116,7 +151,10 @@ async def test_does_not_send_second_response_after_downstream_started(
         send,
     )
 
-    assert sent == [{"type": "http.response.start", "status": 204, "headers": []}]
+    assert sent == [
+        {"type": "http.response.start", "status": 204, "headers": []},
+        {"type": "http.response.body", "body": b"", "more_body": False},
+    ]
 
 
 @pytest.mark.unit

@@ -29,6 +29,14 @@ from app.persistence.extraction_memory import reset_release_payload_cache
 pytestmark = [pytest.mark.asyncio, pytest.mark.component]
 
 
+@pytest.fixture
+def _allow_test_profile_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _allowed(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(profile_repository, "_source_run_is_admin_owned", _allowed)
+
+
 def _context(session: AsyncSession, run) -> URLProcessingContext:
     return URLProcessingContext(
         session=session,
@@ -157,7 +165,9 @@ def _success_outcome(**overrides) -> dict:
 
 
 async def test_contract_outcome_upsert_debounced_when_unchanged(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    _allow_test_profile_promotion: None,
 ) -> None:
     save_calls = _counting_save(monkeypatch)
 
@@ -188,7 +198,9 @@ async def test_contract_outcome_upsert_debounced_when_unchanged(
 
 
 async def test_learned_endpoints_merge_into_single_profile_upsert(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    _allow_test_profile_promotion: None,
 ) -> None:
     save_calls = _counting_save(monkeypatch)
 
@@ -229,6 +241,36 @@ async def test_learned_endpoints_merge_into_single_profile_upsert(
         "https://api.example.com/products/1"
     ]
     assert profile.profile["acquisition_contract"]["last_quality_success"] is not None
+
+
+async def test_non_admin_source_run_cannot_persist_global_profile(
+    db_session: AsyncSession,
+    create_test_run,
+    test_user,
+) -> None:
+    test_user.role = "user"
+    await db_session.commit()
+    run = await create_test_run(
+        url="https://untrusted.example.com/product/1",
+        surface="ecommerce_detail",
+    )
+
+    await profile_repository.save_domain_run_profile(
+        db_session,
+        domain="untrusted.example.com",
+        surface="ecommerce_detail",
+        profile={"fetch_profile": {"fetch_mode": "browser_only"}},
+        source_run_id=run.id,
+    )
+
+    assert (
+        await profile_repository.load_domain_run_profile(
+            db_session,
+            domain="untrusted.example.com",
+            surface="ecommerce_detail",
+        )
+        is None
+    )
 
 
 async def test_log_pipeline_event_batches_rows_until_url_commit(

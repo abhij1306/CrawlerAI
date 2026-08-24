@@ -220,7 +220,7 @@ async def _execute_planned_http_attempt(
                 "timeout_seconds": timeout_seconds,
             },
             error=(
-                f"{type(error).__name__}: {error}"
+                redact_secret_text(f"{type(error).__name__}: {error}")
                 if error is not None
                 else "transport_attempt_failed"
             ),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -41,11 +42,40 @@ class RequestBodyLimitMiddleware:
         if content_length is not None and content_length > limit:
             await _too_large_response(scope, receive, send)
             return
+        buffered_messages: deque[dict[str, Any]] = deque()
+        buffered_body = bytearray()
+        request_buffered = False
         consumed = 0
+        while True:
+            message = await receive()
+            if message.get("type") != "http.request":
+                buffered_messages.append(message)
+                break
+            request_buffered = True
+            chunk = message.get("body", b"")
+            consumed += len(chunk)
+            if consumed > limit:
+                await _too_large_response(scope, receive, send)
+                return
+            buffered_body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        if request_buffered:
+            buffered_messages.appendleft(
+                {
+                    "type": "http.request",
+                    "body": bytes(buffered_body),
+                    "more_body": False,
+                }
+            )
+
         response_started = False
 
         async def limited_receive():
             nonlocal consumed
+            if buffered_messages:
+                return buffered_messages.popleft()
             message = await receive()
             if message.get("type") == "http.request":
                 consumed += len(message.get("body", b""))
@@ -64,6 +94,14 @@ class RequestBodyLimitMiddleware:
         except RequestBodyTooLarge:
             if not response_started:
                 await _too_large_response(scope, receive, send)
+            else:
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b"",
+                        "more_body": False,
+                    }
+                )
 
 
 def request_body_limit_bytes(path: str) -> int:

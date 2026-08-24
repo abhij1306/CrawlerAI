@@ -75,7 +75,12 @@ function cookieValue(name: string) {
     .split(';')
     .map((value) => value.trim())
     .find((value) => value.startsWith(prefix));
-  return entry ? decodeURIComponent(entry.slice(prefix.length)) : undefined;
+  if (!entry) return undefined;
+  try {
+    return decodeURIComponent(entry.slice(prefix.length));
+  } catch {
+    return undefined;
+  }
 }
 
 function createRequestId() {

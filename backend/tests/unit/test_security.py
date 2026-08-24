@@ -36,8 +36,8 @@ def test_password_needs_rehash_returns_true_for_legacy_pbkdf2_hash() -> None:
 @pytest.mark.parametrize(
     "malicious_hash",
     [
-        "$pbkdf2-sha256$1000001$Y3Jhd2xlcmFpLWxlZ2FjeQ$"
-        "FKzppnMcKRAdi0/C4oWT1eO0ojNLGaL4Y.vTbT8Zxrk",
+        "$pbkdf2-sha256$1000001$Y3Jhd2xlcmFpLWxlZ2FjeQ$FKzppnMcKRAdi0/"
+        + "C4oWT1eO0ojNLGaL4Y.vTbT8Zxrk",
         "$pbkdf2-sha256$29000$c2hvcnQ$FKzppnMcKRAdi0/C4oWT1eO0ojNLGaL4Y.vTbT8Zxrk",
         "$pbkdf2-sha256$29000$not_valid*$also_invalid*",
     ],

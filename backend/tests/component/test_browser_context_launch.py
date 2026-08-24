@@ -350,30 +350,6 @@ async def test_shared_browser_runtime_rejects_http_proxy_without_pinned_connect(
             pass
 
     assert captured_launch_kwargs == []
-    return
-
-    assert captured_launch_kwargs == [
-        {
-            "headless": False,
-            "args": [
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-                "--window-size=1920,1080",
-                "--disable-search-engine-choice-screen",
-                "--disable-background-networking",
-                "--disable-client-side-phishing-detection",
-                "--disable-domain-reliability",
-                "--disable-sync",
-                "--no-first-run",
-                "--headless=new",
-            ],
-            "proxy": {
-                "server": "http://31.58.9.4:6077",
-                "username": "user-name",
-                **_secret_mapping("pass-word"),
-            },
-        }
-    ]
 
 
 @pytest.mark.asyncio

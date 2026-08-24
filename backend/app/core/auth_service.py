@@ -82,16 +82,17 @@ async def bootstrap_admin_user(session: AsyncSession) -> User | None:
     if consumed is not None:
         return None
     email, password = _load_default_admin_credentials()
-    existing = await session.scalar(select(User).where(User.email == email))
-    if existing is not None:
-        raise RuntimeError("Admin bootstrap email already exists; refusing promotion.")
-
     session.add(BootstrapRecord(name=_ADMIN_BOOTSTRAP_RECORD))
     try:
         await session.flush()
     except IntegrityError:
         await session.rollback()
         return None
+
+    existing = await session.scalar(select(User).where(User.email == email))
+    if existing is not None:
+        await session.rollback()
+        raise RuntimeError("Admin bootstrap email already exists; refusing promotion.")
 
     user = User(email=email, hashed_password=hash_password(password), role="admin")
     session.add(user)
@@ -102,8 +103,8 @@ async def bootstrap_admin_user(session: AsyncSession) -> User | None:
         raise RuntimeError(
             "Admin bootstrap identity conflicted; no existing account was changed."
         ) from exc
-    await session.refresh(user)
     _clear_bootstrap_password()
+    await session.refresh(user)
     return user
 
 

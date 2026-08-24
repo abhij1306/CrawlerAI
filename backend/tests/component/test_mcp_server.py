@@ -7,6 +7,7 @@ from fastmcp import Client
 from app.core.config.public_api import (
     PUBLIC_API_MCP_API_KEY_ENV,
     PUBLIC_API_MCP_HOST_ENV,
+    PUBLIC_API_MCP_PORT_ENV,
     PUBLIC_API_MCP_TRANSPORT_ENV,
 )
 from app.mcp_server.client import PublicApiClient
@@ -53,7 +54,14 @@ async def test_mcp_server_registers_only_supported_tools() -> None:
 
 
 @pytest.mark.component
-@pytest.mark.parametrize("host", ["0.0.0.0", "localhost", "mcp.example.com"])
+@pytest.mark.parametrize(
+    "host",
+    [
+        "0.0.0.0",  # nosec B104 - negative test for fail-closed bind validation
+        "localhost",
+        "mcp.example.com",
+    ],
+)
 def test_non_loopback_network_mcp_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
     host: str,
@@ -73,11 +81,24 @@ def test_loopback_network_mcp_is_explicitly_allowed(
     monkeypatch.setenv(PUBLIC_API_MCP_API_KEY_ENV, "principal-a")
     monkeypatch.setenv(PUBLIC_API_MCP_TRANSPORT_ENV, "sse")
     monkeypatch.setenv(PUBLIC_API_MCP_HOST_ENV, "127.0.0.1")
+    monkeypatch.delenv(PUBLIC_API_MCP_PORT_ENV, raising=False)
 
     config = runtime_config()
 
     assert config.transport == "sse"
     assert config.host == "127.0.0.1"
+    assert config.port == 8001
+
+
+@pytest.mark.component
+def test_network_mcp_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(PUBLIC_API_MCP_API_KEY_ENV, "principal-a")
+    monkeypatch.setenv(PUBLIC_API_MCP_TRANSPORT_ENV, "sse")
+    monkeypatch.setenv(PUBLIC_API_MCP_HOST_ENV, "127.0.0.1")
+    monkeypatch.setenv(PUBLIC_API_MCP_PORT_ENV, "invalid")
+
+    with pytest.raises(RuntimeError, match="PORT must be an integer"):
+        runtime_config()
 
 
 @pytest.mark.component

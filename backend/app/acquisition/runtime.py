@@ -292,7 +292,10 @@ async def get_shared_http_client(
                     max_keepalive_connections=settings.http_max_keepalive_connections,
                 ),
                 proxy=key[0],
-                transport_wrapper=wrap_public_target_transport,
+                transport_wrapper=lambda transport: wrap_public_target_transport(
+                    transport,
+                    pin_direct=key[0] is None,
+                ),
             )
             _SHARED_HTTP_CLIENTS[key] = client
         return client
@@ -498,19 +501,28 @@ def _curl_get_once(
     # trusted proxy owns origin DNS and egress, so this pin does not apply.
     curl.setopt(CurlOpt.RESOLVE, [_curl_resolve_entry(validated_target)])
     response_body = bytearray()
-    with curl_requests.Session(
-        curl=curl,
-        use_thread_local_curl=False,
-    ) as session:
-        response = session.get(
-            url,
-            impersonate=impersonate_target,
-            allow_redirects=False,
-            timeout=timeout_seconds,
-            proxy=proxy,
-            headers=request_headers,
-            content_callback=_bounded_curl_body_writer(response_body),
-        )
+    body_limit_errors: list[ResponseBodyTooLarge] = []
+    try:
+        with curl_requests.Session(
+            curl=curl,
+            use_thread_local_curl=False,
+        ) as session:
+            response = session.get(
+                url,
+                impersonate=impersonate_target,
+                allow_redirects=False,
+                timeout=timeout_seconds,
+                proxy=proxy,
+                headers=request_headers,
+                content_callback=_bounded_curl_body_writer(
+                    response_body,
+                    errors=body_limit_errors,
+                ),
+            )
+    except Exception as exc:
+        if body_limit_errors:
+            raise body_limit_errors[0] from exc
+        raise
     response.content = bytes(response_body)
     return response
 
@@ -522,12 +534,19 @@ def _curl_resolve_entry(target: ValidatedTarget) -> str:
     return f"{target.hostname}:{target.port}:{pinned_ip}"
 
 
-def _bounded_curl_body_writer(buffer: bytearray):
+def _bounded_curl_body_writer(
+    buffer: bytearray,
+    *,
+    errors: list[ResponseBodyTooLarge] | None = None,
+):
     limit = max(1, int(crawler_runtime_settings.http_response_max_bytes))
 
     def _write(chunk: bytes) -> None:
         if len(buffer) + len(chunk) > limit:
-            raise ResponseBodyTooLarge(f"Upstream response exceeds {limit} bytes")
+            error = ResponseBodyTooLarge(f"Upstream response exceeds {limit} bytes")
+            if errors is not None:
+                errors.append(error)
+            raise error
         buffer.extend(chunk)
 
     return _write

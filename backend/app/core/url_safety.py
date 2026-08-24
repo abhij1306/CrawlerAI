@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import socket
 from collections.abc import Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import ParseResult, urljoin, urlparse
@@ -47,11 +48,69 @@ class ValidatedTarget:
     dns_resolved: bool = True
 
 
+_PINNED_TARGET: ContextVar[tuple[str, str] | None] = ContextVar(
+    "public_target_pin",
+    default=None,
+)
+
+
+class _PinnedAsyncNetworkBackend:
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> Any:
+        pin = _PINNED_TARGET.get()
+        connect_host = pin[1] if pin is not None and host == pin[0] else host
+        return await self._backend.connect_tcp(
+            host=connect_host,
+            port=port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Any = None,
+    ) -> Any:
+        return await self._backend.connect_unix_socket(
+            path=path,
+            timeout=timeout,
+            socket_options=socket_options,
+        )
+
+    async def sleep(self, seconds: float) -> None:
+        await self._backend.sleep(seconds)
+
+
 class PublicTargetAsyncTransport(httpx.AsyncBaseTransport):
     """Bind an HTTPX connection to the IP approved by URL validation."""
 
-    def __init__(self, transport: httpx.AsyncBaseTransport) -> None:
+    def __init__(
+        self,
+        transport: httpx.AsyncBaseTransport,
+        *,
+        pin_direct: bool = True,
+    ) -> None:
         self._transport = transport
+        self._pin_direct = pin_direct
+        if pin_direct:
+            pool: Any = getattr(transport, "_pool", None)
+            backend = getattr(pool, "_network_backend", None)
+            if not callable(getattr(backend, "connect_tcp", None)):
+                raise TypeError(
+                    "Public target pinning requires an HTTPX network backend"
+                )
+            pool._network_backend = _PinnedAsyncNetworkBackend(backend)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         target = await validate_public_target(str(request.url))
@@ -61,12 +120,20 @@ class PublicTargetAsyncTransport(httpx.AsyncBaseTransport):
         extensions["sni_hostname"] = target.hostname
         pinned_request = httpx.Request(
             method=request.method,
-            url=request.url.copy_with(host=target.resolved_ips[0]),
+            url=request.url,
             headers=headers,
             stream=request.stream,
             extensions=extensions,
         )
-        return await self._transport.handle_async_request(pinned_request)
+        if not self._pin_direct:
+            return await self._transport.handle_async_request(pinned_request)
+        token = _PINNED_TARGET.set(
+            (request.url.raw_host.decode("ascii"), target.resolved_ips[0])
+        )
+        try:
+            return await self._transport.handle_async_request(pinned_request)
+        finally:
+            _PINNED_TARGET.reset(token)
 
     async def aclose(self) -> None:
         await self._transport.aclose()
@@ -74,8 +141,10 @@ class PublicTargetAsyncTransport(httpx.AsyncBaseTransport):
 
 def wrap_public_target_transport(
     transport: httpx.AsyncBaseTransport,
+    *,
+    pin_direct: bool = True,
 ) -> httpx.AsyncBaseTransport:
-    return PublicTargetAsyncTransport(transport)
+    return PublicTargetAsyncTransport(transport, pin_direct=pin_direct)
 
 
 async def ensure_public_crawl_targets(urls: Iterable[str]) -> list[str]:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from app.mcp_server.client import PublicApiClient
@@ -48,8 +47,7 @@ def main() -> None:
     if config.transport == "stdio":
         server.run(transport="stdio")
         return
-    port = int(os.environ.get("PORT", "8001"))
-    server.run(transport="sse", host=config.host, port=port)
+    server.run(transport="sse", host=config.host, port=config.port)
 
 
 if __name__ == "__main__":

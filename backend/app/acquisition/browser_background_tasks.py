@@ -5,6 +5,8 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from app.core.config.runtime_settings import crawler_runtime_settings
+
 logger = logging.getLogger(__name__)
 
 _popup_guard_tasks: set[asyncio.Task[Any]] = set()
@@ -56,9 +58,30 @@ async def drain_browser_background_tasks() -> None:
     runtime_close_tasks = list(_runtime_close_tasks)
     _runtime_close_tasks.clear()
     if runtime_close_tasks:
-        # Browser/driver/bridge close tasks own protocol shutdown. Keep them
-        # observed and active until complete before the worker loop exits.
-        await asyncio.gather(*runtime_close_tasks, return_exceptions=True)
+        timeout_seconds = max(
+            0.001,
+            float(crawler_runtime_settings.browser_close_timeout_ms) / 1000.0,
+        )
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        _done, pending = await asyncio.wait(
+            runtime_close_tasks,
+            timeout=timeout_seconds,
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+            if remaining:
+                _done, pending = await asyncio.wait(pending, timeout=remaining)
+            else:
+                await asyncio.sleep(0)
+                pending = {task for task in pending if not task.done()}
+        if pending:
+            _runtime_close_tasks.update(pending)
+            logger.warning(
+                "%d browser runtime close task(s) ignored cancellation",
+                len(pending),
+            )
 
 
 def consume_task_exception(task: asyncio.Task[Any]) -> None:

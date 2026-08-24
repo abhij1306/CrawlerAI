@@ -609,6 +609,52 @@ def test_curl_body_writer_stops_before_oversize_buffer(
     assert body == b"abc"
 
 
+@pytest.mark.component
+def test_curl_get_restores_body_limit_error_from_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import curl_cffi
+
+    class _Curl:
+        def setopt(self, *_args) -> None:
+            return None
+
+    class _Session:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def get(self, _url, **kwargs):
+            try:
+                kwargs["content_callback"](b"123456")
+            except acquisition_runtime.ResponseBodyTooLarge as exc:
+                raise RuntimeError("curl write failed") from exc
+
+    monkeypatch.setattr(curl_cffi, "Curl", _Curl)
+    monkeypatch.setattr(
+        acquisition_runtime.crawler_runtime_settings,
+        "http_response_max_bytes",
+        5,
+    )
+
+    with pytest.raises(acquisition_runtime.ResponseBodyTooLarge):
+        acquisition_runtime._curl_get_once(
+            SimpleNamespace(Session=_Session),
+            "https://shop.example/",
+            1.0,
+            validated_target=SimpleNamespace(
+                hostname="shop.example",
+                port=443,
+                resolved_ips=("93.184.216.34",),
+            ),
+        )
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_screenshot_mode_still_installs_browser_ssrf_route(
