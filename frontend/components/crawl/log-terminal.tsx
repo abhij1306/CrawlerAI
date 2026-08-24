@@ -610,7 +610,7 @@ export const LogTerminal = memo(function LogTerminal({
                       severityTone(group, stableGroupIndex),
                     )}
                   >
-                    <div className="font-mono text-sm text-subtle">
+                    <div className="font-mono text-sm text-muted">
                       {displayedGroupOrdinal(
                         group,
                         siteOrdinalByKey.get(group.key),

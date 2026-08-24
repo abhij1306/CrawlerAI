@@ -127,11 +127,46 @@
   --duration-180: 180ms;
 }
 
+/* ─── COLOUR CONTRACT (both themes) ───────────────────────────────────
+   Enforced by scripts/check-contrast.mjs — change values there-first.
+
+   TEXT TIERS
+     --text-primary / --text-secondary / --text-muted  ≥ 4.5:1 on every
+     surface they appear on. --text-subtle is placeholder-and-disabled
+     ONLY (WCAG-exempt) and holds ≥ 3:1 for legibility. A visible label
+     never uses --text-subtle.
+
+   BORDERS ARE FROZEN
+     No component gains a border it does not already have, and no
+     existing border is strengthened. The gate asserts the three border
+     tokens have not drifted. Separation is carried by fill and shadow.
+
+   SEPARATION — fill first, shadow second
+     Colour elevation: a surface that must read as distinct gets a
+     distinct fill. Form controls sit on the recessed --bg-well, so an
+     input is identified by being inset in its card, not by a hairline.
+     Shadow elevation: anything that floats (dialog, dropdown, tooltip)
+     is separated by --shadow-elevated / --shadow-modal, never an edge.
+
+   ELEVATION LADDER
+     --bg-base (canvas) → --bg-panel (card) → --bg-elevated (floating),
+     with --bg-well as a RECESSED step below panel (inputs, code,
+     terminal). Light theme keeps panel and elevated both white and
+     separates them purely with shadow; dark theme separates by fill.
+
+   KNOWN GAP
+     With borders frozen, control boundaries do not reach the WCAG
+     1.4.11 non-text threshold of 3:1 — that would need roughly a
+     #9c9ca6 hairline on white, i.e. exactly the heavier border the
+     constraint rules out. The recessed fill carries the boundary
+     instead. Every text target above is met in full.
+──────────────────────────────────────────────────────────────────────── */
+
 /* ─── LIGHT THEME — Refined Minimal ──────────────────────────────────
-   Surface hierarchy (lowest → highest elevation):
-   bg-base #fafafa  →  bg-alt #f4f4f5  →  bg-panel #ffffff
-   →  bg-elevated #ffffff  →  bg-well #ececef
-   Accent: Linear indigo #5e6ad2. All text contrast ≥ 4.5:1 verified.
+   Surface hierarchy (recessed → floating):
+   bg-well #e9e9ed  ←  bg-base #f7f7f8  →  bg-alt #f1f1f3
+   →  bg-panel #ffffff  →  bg-elevated #ffffff (+ shadow)
+   Accent: Linear indigo #5e6ad2 — white on it is 4.70:1, passes AA.
 ──────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
@@ -143,26 +178,27 @@
   --font-display-family: 'Geist Variable', system-ui, sans-serif;
   --font-mono-family: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
 
-  /* Surfaces */
-  --bg-base: #fafafa;
-  --bg-alt: #f4f4f5;
+  /* Surfaces — deepened so a white panel lifts off the canvas on its own */
+  --bg-base: #f7f7f8;
+  --bg-alt: #f1f1f3;
   --bg-panel: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-well: #ececef;
+  --bg-well: #e9e9ed;
   --bg-sidebar: #ffffff;
   --surface-overlay: rgba(255, 255, 255, 0.88);
 
-  /* Borders */
+  /* Borders — FROZEN. See the colour contract above; do not strengthen. */
   --border-subtle: #f0f0f1;
   --border: #e7e7e9;
   --border-strong: #d9d9dc;
   --border-focus: var(--accent);
 
-  /* Typography */
+  /* Typography — muted darkened for headroom on the recessed --bg-well,
+     subtle raised to clear 3:1 now that it is the placeholder tier. */
   --text-primary: #18181b;
   --text-secondary: #3f3f46;
-  --text-muted: #6d6f77;
-  --text-subtle: #a1a1aa;
+  --text-muted: #5f6168;
+  --text-subtle: #83848b;
 
   /* Accent — blue-violet */
   --accent: #5e6ad2;
@@ -206,7 +242,11 @@
   /* Shadows — neutral, shallow */
   --shadow-xs-value: 0 1px 0 rgba(24, 24, 27, 0.03);
   --shadow-card-value: 0 1px 0 rgba(24, 24, 27, 0.03), 0 1px 2px rgba(24, 24, 27, 0.04);
-  --shadow-elevated-value: 0 4px 12px rgba(24, 24, 27, 0.07), 0 0 0 1px rgba(24, 24, 27, 0.03);
+  /* Elevated is the only thing separating a dialog or dropdown from a white
+     page now that borders are frozen — carry real weight. */
+  --shadow-elevated-value:
+    0 8px 24px rgba(24, 24, 27, 0.12), 0 2px 6px rgba(24, 24, 27, 0.08),
+    0 0 0 1px rgba(24, 24, 27, 0.04);
   --shadow-lg-value: 0 12px 28px rgba(24, 24, 27, 0.1), 0 0 0 1px rgba(24, 24, 27, 0.04);
   --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.14);
   --focus-ring: 0 0 0 3px rgba(94, 106, 210, 0.16);
@@ -321,33 +361,35 @@
 }
 
 /* ─── DARK THEME — Refined Minimal Console ─────────────────────────────────────
-   Neutral surface hierarchy with a cool cast.
-   bg-base #0e0f12 → bg-alt #131418 → bg-panel #16171c
-   →  bg-elevated #1b1d23 → bg-well #22242b
-   Accent fill stays #5e6ad2 for AA (white text 4.43:1).
+   Neutral surface hierarchy with a cool cast. Steps widened so fill alone
+   carries the elevation ladder — dark gets the better end of frozen borders.
+   bg-base #0d0e11 → bg-alt #131519 → bg-panel #17191f
+   →  bg-elevated #1d1f26 → bg-well #24272f (recessed)
+   Accent fill stays #5e6ad2 — white on it is 4.70:1, passes AA.
 ──────────────────────────────────────────────────────────────────────── */
 html[data-theme='dark'] {
   color-scheme: dark;
 
   /* Surfaces — pure neutral gray, no blue/purple cast */
-  --bg-base: #0e0f12;
-  --bg-alt: #131418;
-  --bg-panel: #16171c;
-  --bg-elevated: #1b1d23;
-  --bg-well: #22242b;
-  --bg-sidebar: #131418;
-  --surface-overlay: rgba(14, 15, 18, 0.9);
+  --bg-base: #0d0e11;
+  --bg-alt: #131519;
+  --bg-panel: #17191f;
+  --bg-elevated: #1d1f26;
+  --bg-well: #24272f;
+  --bg-sidebar: #131519;
+  --surface-overlay: rgba(13, 14, 17, 0.9);
 
-  /* Borders — neutral gray */
+  /* Borders — FROZEN. See the colour contract above; do not strengthen. */
   --border-subtle: #1c1e24;
   --border: #23262d;
   --border-strong: #2f323b;
 
-  /* Typography — neutral, no cool/blue cast */
+  /* Typography — neutral, no cool/blue cast.
+     subtle raised to clear 3:1 as the placeholder/disabled tier. */
   --text-primary: #ececf1;
   --text-secondary: #b7b9c2;
-  --text-muted: #878b97;
-  --text-subtle: #5b5f6b;
+  --text-muted: #8d919d;
+  --text-subtle: #7d818d;
 
   /* Accent — blue-violet, brightened for dark backgrounds */
   --accent: #5e6ad2;

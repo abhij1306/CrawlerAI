@@ -94,7 +94,7 @@ function DropdownListbox<T extends string>({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       className={cn(
-        'border-border bg-background-elevated z-[300] max-h-[320px] w-max overflow-y-auto rounded-lg border py-1',
+        'border-border bg-background-elevated shadow-elevated z-[300] max-h-[320px] w-max overflow-y-auto rounded-lg border py-1',
         portal ? 'fixed' : 'absolute',
         position.side === 'bottom'
           ? 'animate-[dropdown-in_150ms_cubic-bezier(0.16,1,0.3,1)]'
@@ -115,7 +115,7 @@ function DropdownListbox<T extends string>({
           }}
           onMouseDown={(event) => event.preventDefault()}
           className={cn(
-            'text-sm flex w-full items-center py-2 leading-snug transition-colors',
+            'text-base flex w-full items-center py-2 leading-snug transition-colors',
             align === 'center' ? 'justify-center px-8' : 'justify-start px-3',
             option.value === value
               ? 'bg-accent-subtle text-accent font-medium'
@@ -304,7 +304,7 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-sm border px-3 text-sm leading-snug font-normal transition-[background-color,border-color]',
+          'focus-ring border-border bg-panel-strong text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-sm border px-3 text-base leading-snug font-normal transition-[background-color,border-color]',
           size === 'sm' ? 'h-8' : 'h-[var(--control-height)]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
           className,

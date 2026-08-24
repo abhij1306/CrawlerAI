@@ -60,6 +60,7 @@ jobs:
           vp check
           node scripts/check-token-escapes.mjs
           node scripts/check-typography-scale.mjs
+          node scripts/check-contrast.mjs
           node scripts/check-crawl-architecture.mjs
           node scripts/check-frontend-architecture.mjs
 

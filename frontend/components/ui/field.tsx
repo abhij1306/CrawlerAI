@@ -36,7 +36,7 @@ export function Field({
   if (isRenderProp) {
     return (
       <div className={cn('grid gap-1.5', className)}>
-        <label htmlFor={id} className="text-sm font-medium text-secondary">
+        <label htmlFor={id} className="text-base font-medium text-secondary">
           {label}
           {required ? <span className="ml-0.5 text-danger">*</span> : null}
         </label>
@@ -62,7 +62,7 @@ export function Field({
   // Backwards compatibility fallback with native implicit labeling
   return (
     <label className={cn('grid gap-1.5 cursor-text', className)}>
-      <span className="text-sm font-medium text-secondary">
+      <span className="text-base font-medium text-secondary">
         {label}
         {required ? <span className="ml-0.5 text-danger">*</span> : null}
       </span>

@@ -46,7 +46,7 @@ export const STAGE_CONFIG: Record<LogStage, LogStageConfig> = {
   },
   system: {
     label: 'Run',
-    textClass: 'text-subtle',
+    textClass: 'text-muted',
   },
 };
 

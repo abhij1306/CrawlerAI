@@ -30,7 +30,7 @@ export const buttonVariants = cva(
       },
       size: {
         sm: 'h-[var(--control-height-sm)] px-2.5 text-sm',
-        md: 'h-[var(--control-height)] px-3.5 text-sm',
+        md: 'h-[var(--control-height)] px-3.5 text-base',
         lg: 'h-[var(--control-height-lg)] px-4 text-base',
         icon: 'size-[var(--control-height)] px-0',
       },
