@@ -15,5 +15,5 @@ export function Title({
 }
 
 export function Subtitle({ children }: Readonly<{ children: ReactNode }>) {
-  return <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">{children}</p>;
+  return <p className="mt-1.5 max-w-2xl text-base leading-relaxed text-muted">{children}</p>;
 }

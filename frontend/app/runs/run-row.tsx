@@ -79,7 +79,7 @@ export function RunRow({
       </TableCell>
 
       <TableCell className="text-right">
-        <span className={cn('tabular-nums', recordCount > 0 ? 'text-foreground' : 'text-subtle')}>
+        <span className={cn('tabular-nums', recordCount > 0 ? 'text-foreground' : 'text-muted')}>
           {recordCount > 0 ? recordCount.toLocaleString() : '—'}
         </span>
       </TableCell>

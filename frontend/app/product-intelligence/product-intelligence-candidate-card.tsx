@@ -71,7 +71,7 @@ export function CandidateGroupSection({
               <span className="size-1 rounded-full bg-divider" />
             ) : null}
             {group.sourcePrice ? (
-              <span className="type-caption-mono text-sm text-foreground">
+              <span className="type-caption-mono text-base text-foreground">
                 {formatPrice(group.sourcePrice, group.sourceCurrency)}
               </span>
             ) : null}

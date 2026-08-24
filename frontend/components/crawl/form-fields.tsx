@@ -493,7 +493,7 @@ export function ManualFieldEditor({
 }
 
 const FIELD_EDITOR_COLUMN_HEADER_CLASS =
-  'text-2xs font-semibold uppercase tracking-[0.07em] text-muted';
+  'text-sm font-semibold uppercase tracking-[0.07em] text-muted';
 
 export function FieldEditorHeader() {
   return (

@@ -47,7 +47,7 @@ export function HistoryDrawer({
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center p-8 text-center text-muted">
             <History className="mb-3 size-8 opacity-20" />
-            <p className="text-xs">No history found.</p>
+            <p className="text-base">No history found.</p>
           </div>
         ) : (
           <div className="divide-y divide-divider">

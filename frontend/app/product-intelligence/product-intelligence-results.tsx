@@ -247,7 +247,7 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
                 ) : null}
               </div>
             </div>
-            <Badge tone="neutral" className="h-5 shrink-0 px-1.5 text-xs">
+            <Badge tone="neutral" className="h-5 shrink-0 px-1.5 text-base">
               Source
             </Badge>
           </div>

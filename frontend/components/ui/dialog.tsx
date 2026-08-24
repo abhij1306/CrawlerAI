@@ -38,7 +38,7 @@ export function AppDialog({
             <div>
               <DialogPrimitive.Title className="type-subheading">{title}</DialogPrimitive.Title>
               {description ? (
-                <DialogPrimitive.Description className="mt-1 text-sm text-muted">
+                <DialogPrimitive.Description className="mt-1 text-base text-muted">
                   {description}
                 </DialogPrimitive.Description>
               ) : null}
@@ -68,6 +68,8 @@ type AppDrawerProps = Readonly<{
   icon?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Defaults to 'right' so existing drawers are unaffected. */
+  side?: 'left' | 'right';
 }>;
 
 export function AppDrawer({
@@ -77,6 +79,7 @@ export function AppDrawer({
   icon,
   children,
   className,
+  side = 'right',
 }: AppDrawerProps) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -84,7 +87,10 @@ export function AppDrawer({
         <DialogPrimitive.Overlay className="fixed inset-0 z-[100] bg-black/20" />
         <DialogPrimitive.Content
           className={cn(
-            'animate-in slide-in-from-right-4 fixed top-0 right-0 z-[101] flex h-full w-[380px] max-w-full flex-col overflow-hidden border-l border-divider bg-background-elevated shadow-xl duration-200 focus:outline-none',
+            'animate-in fixed top-0 z-[101] flex h-full w-[380px] max-w-full flex-col overflow-hidden bg-background-elevated shadow-xl duration-200 focus:outline-none',
+            side === 'right'
+              ? 'slide-in-from-right-4 right-0 border-l border-divider'
+              : 'slide-in-from-left-4 left-0 border-r border-divider',
             className,
           )}
         >
@@ -154,7 +160,7 @@ export function ConfirmDialog({
               <DialogPrimitive.Title className="m-0 text-base leading-snug font-semibold text-foreground">
                 {title}
               </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="mt-2 text-sm leading-relaxed text-secondary">
+              <DialogPrimitive.Description className="mt-2 text-base leading-relaxed text-secondary">
                 {description}
               </DialogPrimitive.Description>
             </div>
@@ -173,7 +179,7 @@ export function ConfirmDialog({
           {error ? (
             <div
               role="alert"
-              className="mt-4 rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-sm leading-normal text-danger"
+              className="mt-4 rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-base leading-normal text-danger"
             >
               {error}
             </div>

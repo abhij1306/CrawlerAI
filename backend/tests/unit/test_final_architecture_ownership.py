@@ -21,7 +21,10 @@ IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # CI reconciliation adds owner-aware browser/profile fixtures and curl Session
 # coverage to the focused security suites. Final review adds bounded-body,
 # cache/profile regressions plus measured deployment contract tests.
-TEST_LOC_BUDGET = 57_344
+# Design enhancements: API key revoke became a hard delete, so the service
+# and HTTP tests now assert the row is gone and that user scoping is checked
+# while it still exists (the old order passed on mere absence).
+TEST_LOC_BUDGET = 57_364
 # Explicit bootstrap and fail-closed ECR scan-policy commands are measured tools.
 TOOL_LOC_BUDGET = 3_957
 TEST_TOOL_COMPLEXITY_LIMIT = 15
@@ -230,7 +233,7 @@ PACKAGE_LOC_BUDGETS = {
     # MCP slice adds only centralized transport/exposure config tokens here.
     # Review follow-up adds pre-dispatch body buffering and deterministic
     # secret redaction; both stay in their canonical security owners.
-    "core": 21_917,
+    "core": 21_925,
     "enrichment": 2_361,
     "connectors": 2_427,
     "intelligence": 3_576,
@@ -296,7 +299,10 @@ PACKAGE_LOC_BUDGETS = {
 # HTTP sockets, bounded shutdown, and request-body enforcement in those owners.
 # Final review adds generation-safe cookie cache invalidation and bounded
 # aggregate request buffering. No per-file ceiling was relaxed.
-TOTAL_APP_LOC_BUDGET = 87_782
+# Design enhancements: delete_api_key documents why the auth guard and cache
+# invalidation are still required around a delete, and the route documents
+# its 204. Comment-only growth in the existing owners.
+TOTAL_APP_LOC_BUDGET = 87_790
 
 
 def test_production_package_loc_budgets() -> None:

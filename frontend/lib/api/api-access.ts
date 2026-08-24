@@ -32,7 +32,8 @@ type PublicApiCapabilitiesResponse = {
 export const apiAccessApi = {
   listKeys: () => apiClient.get<ApiKeyRecord[]>('/api/api-keys'),
   createKey: (name: string) => apiClient.post<ApiKeyCreated>('/api/api-keys', { name }),
-  revokeKey: (keyId: number) => apiClient.delete<ApiKeyRecord>(`/api/api-keys/${keyId}`),
+  // Deletes the key outright — the server responds 204 with no body.
+  deleteKey: (keyId: number) => apiClient.delete<void>(`/api/api-keys/${keyId}`),
   getCapabilities: async (apiKey: string) => {
     const response = await apiClient.get<PublicApiCapabilitiesResponse>('/api/v1/capabilities', {
       headers: { Authorization: `Bearer ${apiKey}` },

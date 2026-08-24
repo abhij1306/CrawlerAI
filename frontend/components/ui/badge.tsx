@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 
 /** Shared typography for the badge (dot + text, no pill anatomy). */
 const badgeBase =
-  'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium capitalize';
+  'inline-flex items-center gap-1.5 whitespace-nowrap text-base font-medium capitalize';
 
 const toneText = {
   neutral: 'text-muted',

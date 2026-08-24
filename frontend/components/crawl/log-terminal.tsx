@@ -185,9 +185,9 @@ function StageChip({ stage, showIcon = true }: { stage: LogStage; showIcon?: boo
     <span
       className={cn(
         'inline-flex items-center gap-1 font-medium uppercase',
-        // Exactly one font-size class per stage: twMerge doesn't know text-2xs,
+        // Exactly one font-size class per stage: twMerge doesn't know text-base,
         // so a base size + override would both survive the merge.
-        stage === 'system' ? 'font-mono text-2xs tracking-[0.1em]' : 'text-xs tracking-wide',
+        stage === 'system' ? 'font-mono text-base tracking-[0.1em]' : 'text-base tracking-wide',
         config.textClass,
       )}
     >
@@ -265,7 +265,7 @@ function GroupIdentity({ group, runEvent }: { group: LogSiteGroup; runEvent: boo
     <div className="flex min-w-0 items-center gap-2">
       {!runEvent ? <Globe className="size-3.5 shrink-0 text-muted" /> : null}
       {runEvent ? (
-        <span className="block truncate text-xs font-medium text-secondary" title={group.label}>
+        <span className="block truncate text-base font-medium text-secondary" title={group.label}>
           {group.label}
         </span>
       ) : (
@@ -274,7 +274,7 @@ function GroupIdentity({ group, runEvent }: { group: LogSiteGroup; runEvent: boo
           target="_blank"
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
-          className="block truncate text-xs font-normal text-info-text underline-offset-4 hover:underline"
+          className="block truncate text-base font-normal text-info-text underline-offset-4 hover:underline"
           title={group.url}
         >
           {formatShortUrlLabel(group.url)}
@@ -299,7 +299,7 @@ function GroupMetrics({
   return (
     <>
       <div
-        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-base font-medium whitespace-nowrap text-secondary tabular-nums"
         title="Fields Extracted"
       >
         <Database className="size-3 shrink-0 text-muted" />
@@ -308,7 +308,7 @@ function GroupMetrics({
         </span>
       </div>
       <div
-        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-base font-medium whitespace-nowrap text-secondary tabular-nums"
         title="Confidence Score"
       >
         <CheckCircle2 className={cn('size-3 shrink-0', confidenceTone)} />
@@ -317,7 +317,7 @@ function GroupMetrics({
         </span>
       </div>
       <div
-        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-secondary tabular-nums"
+        className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-base font-medium whitespace-nowrap text-secondary tabular-nums"
         title="Duration"
       >
         <Clock className="size-3 shrink-0 text-muted" />
@@ -353,7 +353,7 @@ function GroupToggle({
     >
       <span
         className={cn(
-          'font-mono text-xs text-muted uppercase',
+          'font-mono text-sm text-muted uppercase',
           active && 'flex items-center gap-1.5 font-semibold text-accent',
         )}
       >
@@ -392,7 +392,7 @@ function ExpandedGroupRows({
 }) {
   const rows = buildExpandedRows(group, coverage, confidence, durationMs);
   if (!rows.length)
-    return <div className="px-3 py-2 text-xs opacity-40">{TERMINAL_STRINGS.NO_LOGS}</div>;
+    return <div className="px-3 py-2 text-base opacity-40">{TERMINAL_STRINGS.NO_LOGS}</div>;
   return rows.map((row, index) => {
     const IconComponent = getLogIcon(row.level, row.message);
     const iconStyle = getLogIconStyle(row.level, row.message);
@@ -400,13 +400,13 @@ function ExpandedGroupRows({
       <div
         key={row.key}
         className={cn(
-          'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-xs',
+          'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-base',
           index % 2 === 0
             ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
             : 'bg-transparent',
         )}
       >
-        <span className="font-mono text-xs font-normal text-muted tabular-nums">
+        <span className="font-mono text-base font-normal text-muted tabular-nums">
           {row.createdAt ? formatTimeHms(row.createdAt) : '--'}
         </span>
         <div className="flex justify-center">
@@ -415,7 +415,7 @@ function ExpandedGroupRows({
         <div className="flex">
           <StageChip stage={row.stage} showIcon={false} />
         </div>
-        <span className="min-w-0 text-xs font-medium break-words text-secondary">
+        <span className="min-w-0 text-base font-medium break-words text-secondary">
           {row.createdAt ? renderLogContent(row.message, row.stage === 'system') : row.message}
         </span>
         <span className="flex items-center gap-2">
@@ -521,7 +521,7 @@ export const LogTerminal = memo(function LogTerminal({
               )}
             ></span>
           </span>
-          <span className="type-label-mono text-xs tracking-[0.25em] uppercase">
+          <span className="type-label-mono text-sm tracking-[0.25em] uppercase">
             activity_stream.log
           </span>
         </div>
@@ -603,14 +603,14 @@ export const LogTerminal = memo(function LogTerminal({
                 <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                   <div
                     className={cn(
-                      'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs text-inherit transition-colors',
+                      'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-base text-inherit transition-colors',
                       isRunEventGroup
                         ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
                         : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
                       severityTone(group, stableGroupIndex),
                     )}
                   >
-                    <div className="font-mono text-xs text-subtle">
+                    <div className="font-mono text-base text-muted">
                       {displayedGroupOrdinal(
                         group,
                         siteOrdinalByKey.get(group.key),
@@ -630,14 +630,14 @@ export const LogTerminal = memo(function LogTerminal({
                     ) : null}
                     <div className="flex items-center justify-center">
                       {isRunEventGroup ? (
-                        <div className="type-label-mono text-xs uppercase">Run</div>
+                        <div className="type-label-mono text-sm uppercase">Run</div>
                       ) : group.lastStage !== 'system' ? (
                         <StageChip stage={group.lastStage} />
                       ) : null}
                     </div>
                     <div className="min-w-0">
                       <div
-                        className="truncate text-xs text-secondary"
+                        className="truncate text-base text-secondary"
                         title={summaryLog?.message || ''}
                       >
                         {groupSummaryMessage(group, coverage, summaryLog)}
@@ -659,7 +659,7 @@ export const LogTerminal = memo(function LogTerminal({
                             Peek
                           </Button>
                         ) : (
-                          <span className="type-caption text-xs opacity-25">--</span>
+                          <span className="type-caption text-base opacity-25">--</span>
                         )}
                       </div>
                     ) : null}
@@ -692,7 +692,7 @@ export const LogTerminal = memo(function LogTerminal({
             })}
           </>
         ) : (
-          <div className="px-6 py-8 text-center text-xs italic opacity-55">
+          <div className="px-6 py-8 text-center text-base italic opacity-55">
             {live ? 'Waiting for log stream...' : 'No log activity recorded'}
           </div>
         )}
@@ -720,7 +720,7 @@ export const LogTerminal = memo(function LogTerminal({
               <div className="min-w-0 flex-1">
                 <div className="type-label-mono text-accent">{TERMINAL_STRINGS.PAYLOAD_PEEK}</div>
                 <div
-                  className="mt-0.5 truncate pr-4 text-xs font-medium tabular-nums"
+                  className="mt-0.5 truncate pr-4 text-base font-medium tabular-nums"
                   style={{ color: 'var(--text-muted)' }}
                   title={peekedGroup?.label ?? ''}
                 >

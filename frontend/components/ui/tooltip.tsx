@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 
 /**
  * Tooltip — Portal-based positioning to prevent clipping.
- * Styled with the dense panel-strong surface, text-xs, and border-strong tokens.
+ * Styled with the floating background-elevated surface, text-base, and border-strong tokens.
  */
 export function Tooltip({
   children,
@@ -94,14 +94,14 @@ export function Tooltip({
               role="tooltip"
               className={cn(
                 'pointer-events-none fixed w-max max-w-[min(320px,calc(100vw-24px))]',
-                'bg-panel-strong border border-border-strong rounded-md px-2 py-1 shadow-sm',
-                'text-foreground z-[200] text-xs leading-normal font-medium break-words',
+                'bg-background-elevated border border-border-strong rounded-md px-2 py-1 shadow-elevated',
+                'text-foreground z-[200] text-base leading-normal font-medium break-words',
               )}
               style={{ left: `${position.left}px`, top: `${position.top}px` }}
             >
               {content}
               <div
-                className="absolute -bottom-[5px] size-2.5 border-r border-b border-border-strong bg-panel-strong"
+                className="absolute -bottom-[5px] size-2.5 border-r border-b border-border-strong bg-background-elevated"
                 style={{
                   left: align === 'start' ? '12px' : '50%',
                   transform: align === 'start' ? 'rotate(45deg)' : 'translateX(-50%) rotate(45deg)',

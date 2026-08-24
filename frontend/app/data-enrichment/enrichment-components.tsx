@@ -11,7 +11,7 @@ export function EnrichmentStatus({
   llmEnabled: boolean;
 }>) {
   return (
-    <div className="animate-in fade-in flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-xs text-foreground duration-300">
+    <div className="animate-in fade-in flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-base text-foreground duration-300">
       <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-normal">Enrichment running</div>
@@ -23,11 +23,11 @@ export function EnrichmentStatus({
       <div className="flex items-center gap-2">
         <Badge
           tone={llmEnabled ? 'accent' : 'neutral'}
-          className="h-5 px-1.5 text-xs font-normal tracking-tight uppercase"
+          className="h-5 px-1.5 text-sm font-normal tracking-tight uppercase"
         >
           {llmEnabled ? 'LLM ENABLED' : 'RULES ONLY'}
         </Badge>
-        <Badge tone="info" className="h-5 px-1.5 text-xs font-normal tracking-tight uppercase">
+        <Badge tone="info" className="h-5 px-1.5 text-sm font-normal tracking-tight uppercase">
           {sourceCount} RECORDS
         </Badge>
       </div>
@@ -46,10 +46,10 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
         />
       </div>
       <div>
-        <div className="text-sm font-normal text-foreground">
+        <div className="text-base font-normal text-foreground">
           Analyzing and enriching product records
         </div>
-        <div className="mt-1 max-w-[520px] text-xs leading-5 text-muted">
+        <div className="mt-1 max-w-[520px] text-base leading-5 text-muted">
           Executing deterministic attribute matching, category taxonomy alignment, and{' '}
           {llmEnabled ? 'LLM-driven semantic expansion.' : 'rule-based field normalization.'}
         </div>
@@ -70,11 +70,11 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
 function EnrichmentLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
     <div className="rounded-md border border-divider bg-background-alt/50 px-3 py-2 transition-colors hover:bg-background-alt">
-      <div className="flex items-center gap-2 text-xs font-normal tracking-tight text-foreground uppercase">
+      <div className="flex items-center gap-2 text-sm font-normal tracking-tight text-foreground uppercase">
         <span className="size-1.5 animate-pulse rounded-full bg-accent" />
         {label}
       </div>
-      <div className="mt-1 text-xs leading-tight text-muted">{detail}</div>
+      <div className="mt-1 text-base leading-tight text-muted">{detail}</div>
     </div>
   );
 }

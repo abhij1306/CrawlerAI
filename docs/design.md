@@ -1,259 +1,137 @@
----
-version: "3.0"
-name: "CrawlerAI Design System v3"
-description: >
-  Canonical frontend design system aligned with the Searchify Reference model.
-  Warm stone light theme, warm charcoal dark theme, blue-violet brand accent,
-  dense spacing scale, CVA-driven atoms, slot-based layouts, and fully
-  accessible input fields.
-themes:
-  light:
-    background-base: "#f2f0ec"
-    background-alt: "#e7e4de"
-    background-panel: "#faf8f4"
-    background-elevated: "#ffffff"
-    background-well: "#dad6cf"
-    border-subtle: "#e2dfd8"
-    border: "#cdc8c0"
-    border-strong: "#b0a89f"
-    text-primary: "#1a1815"
-    text-secondary: "#443d36"
-    text-muted: "#68614f"
-    text-subtle: "#948d7e"
-    accent: "#3557f6"
-    accent-hover: "#5575ff"
-    accent-subtle: "rgba(53, 87, 246, 0.08)"
-    accent-text: "#3557f6"
-  dark:
-    background-base: "#0d0c0a"
-    background-alt: "#131110"
-    background-panel: "#1a1714"
-    background-elevated: "#222019"
-    background-well: "#2b2822"
-    border-subtle: "#201d18"
-    border: "#2c2820"
-    border-strong: "#413b32"
-    text-primary: "#f0ebe0"
-    text-secondary: "#c0b6ab"
-    text-muted: "#a5998a"
-    text-subtle: "#78706a"
-    accent: "#5575ff"
-    accent-hover: "#3557f6"
-    accent-subtle: "rgba(85, 117, 255, 0.12)"
-    accent-text: "#5575ff"
-semantic:
-  success:
-    light: "#059669 on #ecfdf5"
-    dark: "#34d399"
-  warning:
-    light: "#d97706 on #fffbeb"
-    dark: "#fbbf24"
-  danger:
-    light: "#dc2626 on #fef2f2"
-    dark: "#f87171"
-  info:
-    light: "#2563eb on #eff6ff"
-    dark: "#60a5fa"
-fonts:
-  primary: "Public Sans"
-  display: "Bricolage Grotesque"
-  mono: "JetBrains Mono"
-typography:
-  scale:
-    "2xs": "11px"
-    xs: "12px"
-    sm: "14px"
-    base: "15px"
-    lg: "18px"
-    xl: "22px"
-    "2xl": "30px"
-  display:
-    family: "display"
-    size: "30px"
-    weight: "700"
-    line-height: "1"
-    letter-spacing: "-0.03em"
-  heading-1:
-    family: "display"
-    size: "30px"
-    weight: "700"
-    line-height: "1.1"
-  heading-2:
-    family: "display"
-    size: "22px"
-    weight: "600"
-    line-height: "1.2"
-  heading-3:
-    family: "display"
-    size: "18px"
-    weight: "600"
-    line-height: "1.3"
-  body:
-    family: "primary"
-    size: "15px"
-    weight: "400"
-    line-height: "1.55"
-  body-sm:
-    family: "primary"
-    size: "14px"
-    weight: "400"
-    line-height: "1.55"
-  label:
-    family: "primary"
-    size: "11px"
-    weight: "600"
-    line-height: "1.35"
-    letter-spacing: "0.06em"
-    casing: "uppercase"
-  metric:
-    family: "mono"
-    weight: "700"
-    line-height: "1"
-    letter-spacing: "-0.025em"
-spacing:
-  base: "4px"
-  steps:
-    1: "4px"
-    2: "8px"
-    3: "12px"
-    4: "16px"
-    5: "20px"
-    6: "24px"
-    7: "28px"
-    8: "32px"
-    10: "40px"
-    12: "48px"
-    14: "56px"
-    16: "64px"
-    20: "80px"
-  content-gutter: "32px desktop, 16px at <=480px"
-  card-padding: "20px"
-  control-height-sm: "30px"
-  control-height: "34px"
-  control-height-lg: "38px"
-  table-header-height: "32px"
-  table-row-height: "40px"
-radius:
-  xs: "3px"
-  sm: "5px"
-  md: "7px"
-  lg: "10px"
-  xl: "14px"
-  "2xl": "20px"
-  full: "9999px"
-components:
-  buttons:
-    base: "CVA-driven inline-flex, 1.5px gap, rounded-md, control height scaling, focus-ring"
-    primary: "Solid accent fill with accent-fg text and hover state adjustments"
-    secondary: "Strong border with panel bg and background-alt hover"
-    neutral: "Standard border with background-alt bg and well hover"
-    ghost: "Transparent background with background-alt hover and text-secondary foreground"
-    destructive: "Solid danger fill with accent-fg text"
-    underline: "Inline accent-text link with active underline highlight"
-  badges:
-    base: "Type-safe discriminated union styling on status, sentiment, run-status, and citations"
-    status: "Mapped to success, warning, danger, and info semantic border sets"
-    sentiment: "Border-free chip mapped to positive, neutral, and negative metrics"
-    classification: "Citation classification chips mapped to owned, competitor, and third-party sources"
-    run-status: "Draft, queued, running, analyzing, completed, partial, failed, or cancelled runs"
-  cards:
-    base: "Compounded slots utilizing header, title, description, content, and footer parts"
-    styling: "10px rounded borders, border-border base, bg-panel container, shadow-card"
-  inputs:
-    base: "Consolidated input and textarea structures utilizing self-contained styles"
-    paddings: "34px control height for input, min-96px for resizable textarea"
-  fields:
-    base: "Dual layout architecture resolving implicit vs explicit form associations"
-    render-prop: "Provides accessible ID links and ARIA attributes for inputs"
-    nested: "Implicit label element wrapping, enabling backward compatibility and test queries"
-  tables:
-    dense: "32px sticky header heights, 40px row heights, and right-aligned numeric column support"
-  tooltips:
-    base: "Custom portal-based coordinate placement formatted onto dense bg-well and text-xs metrics"
-  skeletons:
-    base: "Animate-pulse with bg-background-alt shimmer mapping"
-accessibility:
-  focus: "2.5px focus outline and tokenized .focus-ring utility"
-  reduced-motion: "Collapses transition and animation timings to 1ms"
-  forced-colors: "Enforces strong outlines and explicit border visibility in high contrast modes"
-compatibility:
-  tailwind: "Bridged via CSS variables mapping directly to Tailwind v4 @theme declarations"
-  react-router: "Navigation layouts utilize react-router-dom Link primitives rather than Next.js imports"
+# CrawlerAI Design System
+
+**`frontend/app/globals.css` is the only source of truth.** This document explains the
+rules behind it; when the two disagree, the stylesheet wins and this file is the bug.
+
+Two scripts enforce the parts that can be checked mechanically. Both run in
+`npm run check:policy` and in CI:
+
+| Script | Enforces |
+|---|---|
+| `frontend/scripts/check-typography-scale.mjs` | No off-ladder font sizes anywhere |
+| `frontend/scripts/check-contrast.mjs` | The contrast contract, and that borders have not drifted |
+| `frontend/scripts/check-token-escapes.mjs` | No raw `bg-[var(--…)]`-style token escapes |
+
+Stack: React 19 + Vite, Tailwind CSS v4 (no config file — the theme lives in
+`@theme inline` inside `globals.css`), Radix primitives, CVA, Geist / Geist Mono.
+Dark mode is a `data-theme` attribute on `<html>`, set pre-paint by
+`frontend/public/theme-init.js` and toggled by `components/ui/theme-toggle.tsx`.
+
 ---
 
-# Overview
+## Typography
 
-`frontend/app/globals.css` is the canonical design system source of truth. Version 3.0 aligns CrawlerAI directly with the modern **Searchify Reference design model**. All components, spacing metrics, density parameters, and typography sizes conform to a highly optimized, high-density dashboard system while fully preserving CrawlerAI's specific warm-stone/charcoal branding and blue-violet accent values.
+An even six-step ladder on a **14px baseline**. Every size and every leading sits on
+the 4px grid. There is no 10px or 11px tier — `text-xs` and `text-2xs` were removed
+from the theme outright, so referencing them produces no utility at all.
 
-# Theme Model
+| Token | Size | Leading | Used for |
+|---|---|---|---|
+| `--text-sm` | 12px | 16px | Uppercase micro-labels, table headers, dense code |
+| `--text-base` | 14px | 20px | **Baseline** — body, controls, nav |
+| `--text-lg` | 16px | 24px | Section headings |
+| `--text-xl` | 20px | 28px | Page headings |
+| `--text-2xl` | 24px | 32px | Card and auth titles |
+| `--text-3xl` | 32px | 40px | Hero metrics |
 
-Light theme is warm stone:
+The leading companions are declared inside `@theme` as `--text-*--line-height`. This
+matters: without them Tailwind keeps its own defaults, and the `.text-*` utilities and
+the `.type-*` classes drift to different line-heights for the same size.
 
-- `bg-base`: `#f2f0ec`
-- `bg-alt`: `#e7e4de`
-- `bg-panel`: `#faf8f4`
-- `bg-elevated`: `#ffffff`
-- `bg-well`: `#dad6cf`
+**14px is the baseline and carries nearly all content.** Buttons, inputs, dropdowns,
+nav, field labels, body copy, captions, and table cells are all 14px. 12px is a
+deliberately rare tier — uppercase micro-labels, table headers, and dense code. Tables
+follow that split: body text is 14px (`--table-font-size`), the header 12px
+(`--table-header-font-size`), and weight, tracking, and uppercase reinforce the
+distinction rather than carrying it alone.
 
-Dark theme is warm charcoal:
+Semantic classes (`.type-body`, `.type-caption`, `.type-label`, `.type-control`,
+`.type-metric`, …) are defined once in `globals.css` and are preferred over raw
+utilities in feature code.
 
-- `bg-base`: `#0d0c0a`
-- `bg-alt`: `#131110`
-- `bg-panel`: `#1a1714`
-- `bg-elevated`: `#222019`
-- `bg-well`: `#2b2822`
+---
 
-The brand accent is blue-violet:
+## Colour
 
-- Light theme accent: `#3557f6` (hover: `#5575ff`)
-- Dark theme accent: `#5575ff` (hover: `#3557f6`)
+### The contract
 
-Use the accent for active statuses, primary button actions, active nav states, selections, and primary focus indicators. Do not hardcode raw hex values in individual page files; always refer to the semantic bridged variable names.
+- **Text tiers.** `--text-primary`, `--text-secondary`, and `--text-muted` clear
+  **4.5:1 on every surface they appear on**. `--text-subtle` is
+  **placeholder-and-disabled only** — WCAG-exempt, held to 3:1 for legibility. A
+  visible label never uses `--text-subtle`; if you reach for it on real text, use
+  `--text-muted`.
+- **Borders are frozen.** No component gains a border it does not already have, and no
+  existing border is strengthened. The contrast gate asserts the three border tokens
+  still hold their exact values, so this is enforced rather than merely agreed.
+- **Separation is fill first, shadow second.**
+  - *Colour elevation* — a surface that must read as distinct gets a distinct fill.
+    Form controls sit on the recessed `--bg-well`, so an input is identified by being
+    inset in its card rather than by a hairline.
+  - *Shadow elevation* — anything that floats (dialog, dropdown, tooltip) is separated
+    by `--shadow-elevated` / `--shadow-modal`, never by an edge.
 
-# Typography
+### Elevation ladder
 
-The font system utilizes three active families:
+```
+--bg-well  (recessed: inputs, code, terminal)
+   ↓
+--bg-base  (page canvas)  →  --bg-alt  →  --bg-panel  (card)  →  --bg-elevated (floating)
+```
 
-- `Public Sans` for standard operator controls, layouts, and body copy.
-- `Bricolage Grotesque` for display and heading hierarchies.
-- `JetBrains Mono` for metrics, table figures, crawl run identifiers, log files, URLs, and code blocks.
+Light theme keeps `--bg-panel` and `--bg-elevated` both white and separates them purely
+with shadow. Dark theme separates them by fill, which is why its surface steps are wider.
 
-Use mono with tabular numerals for numeric data. Headings and subheadings use the display face.
+### Values
 
-# Spacing And Shape
+| Token | Light | Dark |
+|---|---|---|
+| `--bg-base` | `#f7f7f8` | `#0d0e11` |
+| `--bg-alt` | `#f1f1f3` | `#131519` |
+| `--bg-panel` | `#ffffff` | `#17191f` |
+| `--bg-elevated` | `#ffffff` | `#1d1f26` |
+| `--bg-well` | `#e9e9ed` | `#24272f` |
+| `--border-subtle` | `#f0f0f1` | `#1c1e24` |
+| `--border` | `#e7e7e9` | `#23262d` |
+| `--border-strong` | `#d9d9dc` | `#2f323b` |
+| `--text-primary` | `#18181b` | `#ececf1` |
+| `--text-secondary` | `#3f3f46` | `#b7b9c2` |
+| `--text-muted` | `#5f6168` | `#8d919d` |
+| `--text-subtle` | `#83848b` | `#7d818d` |
+| `--accent` | `#5e6ad2` | `#5e6ad2` |
 
-The layout aligns on a strict 4px grid. Standard space steps are `4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80`.
+The accent is unchanged in both themes: white on `#5e6ad2` is **4.70:1**, which clears
+AA for normal text. (An older comment in the stylesheet claimed 4.43:1 and was wrong.)
 
-Core dimensions:
+### Known gap
 
-- Content gutter: `32px` desktop, shrinking dynamically on smaller viewports.
-- Card padding: `20px` (`--card-padding`).
-- Control heights: Small `30px`, Standard `34px`, Large `38px`.
-- Table header height: `32px` (`--table-header-height`).
-- Table row height: `40px` (`--table-row-height`).
+With borders frozen, control boundaries do not reach the WCAG 1.4.11 non-text threshold
+of 3:1. Meeting it would take roughly a `#9c9ca6` hairline on white — exactly the
+heavier border the constraint rules out. The recessed `--bg-well` fill carries the
+boundary instead, well beyond the 1.19:1 a bare border gave. Every text contrast target
+is met in full. This is a deliberate, documented trade-off, not an oversight.
 
-Borders and Radii:
+---
 
-- Standard Card: `10px` (`--radius-lg`).
-- Standard Button / Input: `6px` (`--radius-md`).
+## Spacing, radii, controls
 
-# Component Primitives
+- **Spacing** is a 4px grid: `--space-1` (4px) through `--space-20` (80px).
+  `--content-gutter` is `--space-6`, dropping to `--space-4` under 480px.
+- **Radii**: `--radius-xs` 4px, `sm` 6px, `md` 8px, `lg` 10px, `xl`/`2xl` 12px,
+  `--radius-full` 9999px.
+- **Control heights**: `--control-height-sm` 28px, `--control-height` 32px,
+  `--control-height-lg` 36px.
+- **Table**: 14px body, 12px header, `--table-header-height` 32px,
+  `--table-row-height` 38px. `records-table.tsx` mirrors these in TS constants and a
+  unit test keeps the two in sync — change both together.
 
-Component primitives are self-contained, type-safe structures built inside `components/ui`:
+---
 
-- **Button**: Powered by CVA in `button-variants.ts` and exported in `button.tsx`. Provides aliases for deprecated variants (`accent`, `action`, `download`, `quiet`) to prevent breaks during layout refactors.
-- **Badge**: Uses discriminated unions matching specific metadata contexts (status, sentiment, classification, run-status) with fallbacks for legacy `tone` and `flat` parameters.
-- **Card**: Slot-based compound elements (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`) with `animate` parameters.
-- **Input**: Consolidated, self-contained elements with direct ref-forwarding.
-- **Field**: Multi-style wrapper supporting modern render props (passing IDs and ARIA tags to children) and implicit nested label fallback structures.
-- **Table**: Dense analytical table featuring sticky headers and built-in numerical right-alignments.
-- **Tooltip**: Stable custom SPA portals styled using dense `bg-well` and `text-xs` parameters.
-- **Skeleton**: Simple, high-performance Tailwind-pulse divs.
+## Components
 
-# Motion And Accessibility
+Shared primitives live in `frontend/components/ui/` (hand-rolled CVA + Radix, not
+shadcn CLI scaffolding), composed patterns in `frontend/components/ui/patterns/`, and
+the app shell in `frontend/components/layout/`.
 
-Motion transitions are optimized for snappy desktop feedback:
-
-- Focus states utilize the unified `.focus-ring` utility.
-- Reduced-motion flags scale transition durations down to `1ms` dynamically.
-- Print media rules completely bypass skeletons and loading animations to ensure clear output.
+Use the bridged semantic utilities — `bg-panel`, `text-muted`, `border-border`,
+`shadow-card` — rather than `bg-[var(--bg-panel)]`. The token-escape gate rejects the
+latter.

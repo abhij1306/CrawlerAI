@@ -59,6 +59,8 @@ jobs:
         run: |
           vp check
           node scripts/check-token-escapes.mjs
+          node scripts/check-typography-scale.mjs
+          node scripts/check-contrast.mjs
           node scripts/check-crawl-architecture.mjs
           node scripts/check-frontend-architecture.mjs
 
@@ -140,4 +142,4 @@ jobs:
         env:
           CI: true
           VITE_API_BASE_URL: http://127.0.0.1:8001
-        run: vp exec playwright test --config playwright.config.ts smoke.spec.ts
+        run: vp exec playwright test --config playwright.config.ts

@@ -14,7 +14,12 @@ const DEFAULT_MAX_LINES = 400;
 const scannedRoots = ['app', 'components', 'lib', 'src'];
 // 2026-08-24: API client owns CSRF proof tests; API Access owns self-hosted MCP
 // command contracts. The 51-line increase stays in those existing test owners.
-const TEST_LOC_BUDGET = 4804;
+// 2026-08-24 (design enhancements): +26 for lib/ui/detect-shell.test.ts, which
+// owns the platform→shell mapping now that the setup tabs auto-select Windows
+// vs macOS/Linux. It is a new pure owner rather than growth in an existing
+// suite, and it replaces assertions that were previously coupled to a
+// hardcoded PowerShell default in the API Access page test.
+const TEST_LOC_BUDGET = 4830;
 
 // Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
 const lineBudgetExceptions = new Map([

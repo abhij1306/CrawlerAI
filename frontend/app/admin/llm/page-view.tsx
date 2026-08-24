@@ -90,7 +90,7 @@ function ActiveConfigsCard({ configs, onDelete }: Readonly<ActiveConfigsCardProp
                       {config.task_type}
                     </span>
                     {config.is_active ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs leading-none font-normal text-success">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-base leading-none font-normal text-success">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         active
                       </span>
@@ -141,13 +141,11 @@ function CostLogCard({ costLog, nowMs }: Readonly<CostLogCardProps>) {
             <Table className="table-auto">
               <TableHeader>
                 <TableRow className="border-divider/50">
-                  <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">Usage</TableHead>
-                  <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">Task</TableHead>
-                  <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">Target</TableHead>
-                  <TableHead className="text-[10px] tracking-[0.08em]">Provider</TableHead>
-                  <TableHead className="w-[110px] text-right text-[10px] tracking-[0.08em]">
-                    Time
-                  </TableHead>
+                  <TableHead className="w-[118px]">Usage</TableHead>
+                  <TableHead className="w-[170px]">Task</TableHead>
+                  <TableHead className="w-[160px]">Target</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="w-[110px] text-right">Time</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

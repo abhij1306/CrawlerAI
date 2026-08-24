@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
@@ -7,6 +7,19 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3001',
     trace: 'on-first-retry',
   },
+  projects: [
+    {
+      // Desktop: the existing default viewport, unchanged.
+      name: 'desktop',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /mobile\.spec\.ts/,
+    },
+    {
+      name: 'mobile',
+      use: { ...devices['Pixel 7'] },
+      testMatch: /mobile\.spec\.ts/,
+    },
+  ],
   webServer: {
     command: 'vp dev',
     url: 'http://127.0.0.1:3001',

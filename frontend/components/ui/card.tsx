@@ -71,7 +71,7 @@ export function CardDescription({
   ...props
 }: Readonly<ComponentPropsWithoutRef<'p'>>) {
   return (
-    <p {...props} className={cn('text-sm text-secondary', className)}>
+    <p {...props} className={cn('text-base text-secondary', className)}>
       {children}
     </p>
   );
