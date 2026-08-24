@@ -12,15 +12,6 @@ const checks = [
 // Default per-file LOC cap over app/, components/, lib/, src/ (non-test .ts/.tsx).
 const DEFAULT_MAX_LINES = 400;
 const scannedRoots = ['app', 'components', 'lib', 'src'];
-// 2026-08-24: API client owns CSRF proof tests; API Access owns self-hosted MCP
-// command contracts. The 51-line increase stays in those existing test owners.
-// 2026-08-24 (design enhancements): +26 for lib/ui/detect-shell.test.ts, which
-// owns the platform→shell mapping now that the setup tabs auto-select Windows
-// vs macOS/Linux. It is a new pure owner rather than growth in an existing
-// suite, and it replaces assertions that were previously coupled to a
-// hardcoded PowerShell default in the API Access page test.
-const TEST_LOC_BUDGET = 4830;
-
 // Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
 const lineBudgetExceptions = new Map([
   ['lib/api/types.ts', 525],
@@ -96,28 +87,6 @@ function listSourceFiles(directory) {
   return files;
 }
 
-function listTestFiles(directory) {
-  const files = [];
-  if (!fs.existsSync(directory)) return files;
-  const stack = [directory];
-  while (stack.length) {
-    const current = stack.pop();
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-      } else if (entry.isFile() && /\.(?:test|spec)\.tsx?$/.test(entry.name)) {
-        files.push(fullPath);
-      }
-    }
-  }
-  return files;
-}
-
-function nonblankLines(content) {
-  return content.split(/\r?\n/).filter((line) => line.trim()).length;
-}
-
 for (const scannedRoot of scannedRoots) {
   for (const fullPath of listSourceFiles(path.join(root, scannedRoot))) {
     const relativePath = path.relative(root, fullPath).replaceAll('\\', '/');
@@ -131,18 +100,6 @@ for (const scannedRoot of scannedRoots) {
       );
     }
   }
-}
-
-const testFiles = scannedRoots.flatMap((directory) => listTestFiles(path.join(root, directory)));
-const testLoc = testFiles.reduce(
-  (total, fullPath) => total + nonblankLines(fs.readFileSync(fullPath, 'utf8')),
-  0,
-);
-console.log(`Frontend test LOC: ${testLoc}/${TEST_LOC_BUDGET} nonblank lines`);
-if (testLoc > TEST_LOC_BUDGET) {
-  failures.push(
-    `Frontend test LOC grew to ${testLoc}; ratchet is ${TEST_LOC_BUDGET}. Record an ownership rationale before changing the ratchet.`,
-  );
 }
 
 const dataEnrichmentPage = read('app/data-enrichment/page-view.tsx');

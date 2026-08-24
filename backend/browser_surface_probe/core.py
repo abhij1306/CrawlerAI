@@ -53,7 +53,6 @@ from browser_surface_probe.value_coercion import (
     normalize_space as _normalize_space,
     object_dict,
     object_list,
-    string_list,
 )
 
 load_baseline_probe_script = _signal_extractor.load_baseline_probe_script
@@ -76,7 +75,6 @@ def _coerce_proxy_profile(value: object) -> dict[str, object]:
 
 _object_dict = object_dict
 _object_list = object_list
-_string_list = string_list
 
 
 def _dict_rows(value: object) -> list[dict[str, object]]:

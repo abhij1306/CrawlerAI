@@ -7,7 +7,6 @@ from .public_api_test_support import *
 from .public_api_test_support import (
     _count_commits,
     _password_field_name,
-    _public_auth_session,
     _seed_public_api_key,
 )
 from app.core.api_key_service import delete_api_key
