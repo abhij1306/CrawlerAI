@@ -1,0 +1,74 @@
+name: Container Supply Chain
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/supply-chain.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/supply-chain.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image-security:
+    name: Scan ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            dockerfile: backend/Dockerfile
+            tag: crawlerai/backend:ci
+          - image: frontend
+            dockerfile: frontend/Dockerfile
+            tag: crawlerai/frontend:ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build locked image
+        run: docker build --file "${{ matrix.dockerfile }}" --tag "${{ matrix.tag }}" .
+
+      - name: Generate SPDX JSON SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ matrix.tag }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/${{ matrix.image }}.spdx.json
+          upload-artifact: false
+
+      - name: Block fixable High and Critical image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.tag }}
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          vuln-type: os,library
+
+      - name: Publish SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.image }}-spdx-sbom
+          path: ${{ runner.temp }}/${{ matrix.image }}.spdx.json
+          if-no-files-found: error
+          retention-days: 30

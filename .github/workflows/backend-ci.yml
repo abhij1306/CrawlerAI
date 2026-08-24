@@ -68,6 +68,9 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --frozen --extra dev
 
+      - name: Verify backend lockfile
+        run: uv lock --check
+
       - name: Dependency vulnerability scan
         run: uv run --frozen --extra dev python -m pip_audit --vulnerability-service osv
 

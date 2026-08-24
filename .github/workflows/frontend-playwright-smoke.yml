@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: vp install
+        run: vp install --frozen-lockfile
 
       - name: Dependency vulnerability scan
         working-directory: frontend

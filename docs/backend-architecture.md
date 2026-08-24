@@ -65,7 +65,7 @@ Important route groups:
 
 External routes with special console ownership (do not delete as "dead"):
 
-- `POST + GET /api/api-keys`, `DELETE /api/api-keys/{key_id}` (`api/api_keys.py`) — authenticated `/api-access` console surface for one-time key creation, listing, and revocation; keys back the public `/api/v1` API and hosted MCP
+- `POST + GET /api/api-keys`, `DELETE /api/api-keys/{key_id}` (`api/api_keys.py`) — authenticated `/api-access` console surface for one-time key creation, listing, and revocation; keys back the public `/api/v1` API and local MCP processes
 - `GET /api/crawls/{run_id}/export/discoverist` (`api/records.py`) — documented external partner contract, no console caller by design
 
 Domain-recipe routes live under `api/crawl_domain.py`:
@@ -145,7 +145,7 @@ Primary files:
 
 - `app/main.py`
 - `app/api/*`
-- `app/core/config.py`
+- `app/core/config/`
 - `app/core/database.py`
 - `app/core/redis.py`
 - `app/core/security.py`
@@ -155,7 +155,7 @@ Primary files:
 Responsibilities:
 
 - app startup/shutdown
-- migrations on startup
+- startup recovery without schema or identity mutation
 - route registration
 - auth/dependencies
 - correlation IDs
@@ -169,16 +169,45 @@ Security posture notes:
   (constant-time compare; 404 when the token is unset, 401 otherwise). The
   `/health` + `/api/health` probes stay open because orchestrators scrape them
   unauthenticated.
-- Password hashing is argon2id. `passlib` stays in the dependency tree solely
-  to verify legacy pbkdf2_sha256 hashes at login; successful legacy logins are
-  rehashed to argon2 transparently, so passlib must not be used for new hashes.
+- Password hashing is Argon2id. A narrow standard-library verifier accepts only
+  bounded historical Passlib PBKDF2-SHA256 strings; successful legacy logins
+  rehash to Argon2id. Passlib and Python's deprecated `crypt` path are absent.
+- API lifespan never creates or promotes users. After migrations, operators run
+  `python bootstrap_admin.py` as a one-off task. It inserts the durable
+  `BootstrapRecord` first, creates only a new email, fails on an existing
+  identity, and clears the process copy of the bootstrap password after commit.
+- Browser sessions use an HttpOnly access cookie plus a signed double-submit
+  CSRF cookie. Unsafe cookie-authenticated requests require an allowed exact
+  Origin (or Referer fallback) and matching `X-CSRF-Token`; explicit bearer
+  requests do not use the cookie CSRF contract.
+- Client identity trusts forwarding data only when the application peer is in
+  a configured IP/CIDR range. `X-Forwarded-For` is walked right-to-left until
+  the first untrusted hop. Public API requests consume Redis-first IP and global
+  pre-auth windows before API-key lookup, then the existing per-key window.
+- Database startup accepts a complete DSN or centrally composes one from
+  `DATABASE_*`/`DB_*`/`POSTGRES_*` components with URL-encoded credentials.
+  Non-dev startup rejects localhost/placeholder PostgreSQL, non-`rediss://`
+  Redis, and non-HTTPS frontend origins.
+- Container process roles are distinct: one-off migration, one-off create-only
+  bootstrap, API, one solo Celery worker per task, and beat. Commands use the
+  image virtual environment explicitly. `/health/live` is process liveness;
+  backend and frontend images pin every base by digest. The backend runtime is
+  a non-root final stage containing browser libraries but no compiler, curl,
+  libpq headers, or dependency installer.
+  `/health/ready` is dependency readiness; worker deploy checks use Celery ping.
 - The backend image builds with `uv sync --locked --no-dev --extra prod`: the
-  lockfile is the only dependency source, dev extras never ship, and the prod
-  extra keeps `psycopg2` install-time compilation isolated to the image build.
+  lockfile is the only dependency source, dev extras and tests never ship, and
+  the pinned base-image digest owns the reproducible distro package set. Broad
+  mutable OS upgrade commands do not run during the image build.
 - Backend CI installs the committed environment with
   `uv sync --frozen --extra dev`. The locked `pip-audit`, Ruff, Mypy, and Pytest
   commands run through `uv run --frozen --extra dev`; audit has no advisory
   ignores, and both Ruff lint and format checks block the build.
+- Container supply-chain CI builds both final images, emits SPDX JSON SBOMs,
+  and blocks fixable High/Critical Trivy findings. The reusable production ECR
+  gate uses OIDC and the credential helper, requires enhanced findings, blocks
+  fixable or unclassified High/Critical findings, and defaults no-fix exceptions
+  to false unless a reviewed reference is supplied.
 
 ### 6.2 Crawl ingestion and orchestration
 
@@ -228,8 +257,8 @@ Current live behavior:
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
 - Product monitoring, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted surfaces. There are no monitor scheduler loops, alert routes, public alert routes, notification models, or monitor-owned run callbacks.
-- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey` and managed from `/api-access`; plaintext is returned only on creation. Public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl orchestration internals.
-- Alembic is reset for a fresh-start project: `backend/alembic/versions/` intentionally contains one clean baseline migration.
+- Public API v1 is a lightweight FastAPI surface under `/api/v1`. API keys are dashboard-owned rows in `ApiKey` and managed from `/api-access`; plaintext is returned only on creation. IP/global pre-auth windows bound invalid-key database work, then authenticated traffic is limited by API key. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1`; it defaults to one stdio process per client/principal, permits SSE only on a literal loopback IP, and rejects non-loopback network startup while inbound per-client auth is absent.
+- Alembic starts from the clean `20260703_0001` baseline. Security migrations `20260824_0002` through `20260824_0004` add mandatory tenant cookie ownership, durable one-shot bootstrap consumption, and destructive removal of legacy plaintext proxy settings.
 
 ### 6.3 Acquisition and browser runtime
 
@@ -249,6 +278,8 @@ Primary files:
 - `acquisition/http_client.py` (thin adapter over `runtime.get_shared_http_client`)
 - `acquisition/browser_identity.py`
 - `acquisition/cookie_store.py`
+- `acquisition/cookie_http_export.py`
+- `acquisition/run_cookie_storage.py`
 - `acquisition/pacing.py`
 - `acquisition/traversal.py`
 - `acquisition/traversal_helpers.py`
@@ -271,6 +302,7 @@ Responsibilities:
 - detail-page expansion with candidate admission isolated from click orchestration
 - listing traversal
 - cookie policy enforcement
+- encrypted, tenant/run/engine-bound run-cookie file lifecycle
 - robots handling when enabled
 
 Current live behavior:
@@ -285,7 +317,10 @@ Current live behavior:
 - browser contexts now reload engine-scoped per-run Playwright storage state first and then fall back to engine-scoped domain cookie memory, so `chromium`, `patchright`, and `real_chrome` do not replay each other's cookies/localStorage while still reusing learned state inside the same lane
 - domain cookie memory is intentionally filtered acquisition memory, not a verbatim storage-state cache: challenge-only bot-defense state (for example PerimeterX `_px*`, `pxcts`, PX localStorage) is dropped on load/save, and blocked browser runs do not persist domain memory
 - blocked browser runs also do not rewrite per-run Playwright storage snapshots, so one challenged detail page does not poison later URLs in the same batch run
+- per-run Playwright storage snapshots are encrypted files bound to the owning user, run, and browser engine. Plaintext/incorrectly-bound files fail closed; deletion and retention cleanup remove every engine/temp variant. Proxy settings similarly persist only credential-free endpoints plus encrypted references, and the canonical redactor protects API, diagnostics, logs, telemetry tracebacks, and exceptions.
 - browser-to-HTTP handoff is guarded: only sanitized engine-scoped session state is exported, direct-lane reuse is allowed, proxy-scoped replay is skipped unless proxy affinity is explicit, and drift/challenge re-entry falls back to browser
+- outbound acquisition binds DNS policy to the socket: HTTPX wraps its transport with approved-IP routing plus original Host/TLS SNI, curl supplies per-hop resolve entries, and every browser runtime launches through a local SOCKS bridge that validates and connects the approved IP before relaying browser TLS. Mixed/private answers fail closed. Browser upstream proxies are SOCKS-only until pinned HTTP CONNECT support exists.
+- request ingress is capped by `core/request_body_limit.py`, a pure ASGI receive wrapper that rejects advertised or chunked oversize bodies before FastAPI parsing and multipart spooling. General, public API, and CSV multipart budgets are config-owned. HTTP acquisition, robots, sitemap, and curl reads also stop at config-owned compressed/decoded byte ceilings before `.text` or XML parsing.
 - shared HTTP acquisition is intentionally shallow: one `curl_cffi` attempt, one `httpx` fallback attempt when curl transport fails, then browser escalation when policy/evidence and remaining budget allow it; there is no hidden multi-attempt HTTP backoff loop inside `fetch_context.py`
 - successful acquisition paths can autosave an editable `DomainRunProfile.acquisition_contract`; future runs may reuse a proven browser engine, mark whether curl-cookie handoff is actually eligible, and record whether rendering, traversal, or network payloads were required. Host memory no longer owns the durable success path; it only biases short-lived protection/backoff choices.
 - browser diagnostics now persist explicit lane identity (`browser_engine`, `browser_profile`, launch mode, native-context flag, stealth-enabled flag) so metrics and audits can distinguish shaped Chromium from native real Chrome without inferring from free-form logs
@@ -299,6 +334,10 @@ Current live behavior:
 - browser stages (`navigation`, `settle`, `serialize`, `finalize`) now run in cancellation-aware tasks; if a stage times out or the run is killed mid-flight, the runtime force-closes the page/context before unwinding so local hard-kill does not wait forever on a stuck Playwright DOM call
 - acquisition timeout budget is staged: HTTP/curl attempts are capped at `http_timeout_seconds` (10s) per attempt, and browser fallback starts only when at least `browser_retry_min_remaining_seconds` remains for launch/navigation/settling. If the remaining budget is too small, the HTTP observation is returned with `browser_escalation_skipped=insufficient_budget` instead of failing in a predictable browser stage timeout. `browser_only` mode skips the HTTP tier and allocates the full budget to the browser path. The default outer URL-processing ceiling is the processing allowance plus acquisition-attempt allowance plus configured buffer, capped by `max_url_process_timeout_seconds` (default `90 + 90 + 15 = 195s`); an explicit run-level `url_timeout_seconds` remains an exact user control
 - shared browser runtimes now recycle once when the driver disconnects during `new_context` / page bootstrap, so a dead browser process does not poison later URLs in the same run
+- browser shutdown joins bounded browser/driver/bridge close tasks. Timeout
+  cancellation, when used, applies only to a non-owning wrapper; Patchright and
+  Playwright driver close tasks remain observed and active until completion.
+  Shutdown drains those closures before a Celery worker closes its event loop.
 - browser rendering probes extractability at `domcontentloaded`, caps primary `networkidle` navigation to a configured budget slice, uses a short-circuit readiness wait instead of fixed optimistic sleep, reuses settled HTML/analysis for serialization, and limits detail expansion with bounded DOM-first then accessibility-assisted fallback
 - browser rendering behavior:
   - checks extractability at `domcontentloaded`
@@ -482,7 +521,7 @@ Current storage/runtime model:
 - reusable run defaults and learned acquisition contracts are persisted separately in `DomainRunProfile`, keyed by the same normalized `(domain, surface)` scope but never mixed into extraction-memory selector recipes
 - successful DOM-only extraction can auto-save revalidated final-field selectors as `dom_observed` rules; structured, adapter, network, and JS-state winners are intentionally not promoted to selector memory
 - ecommerce-detail setup repair uses the union of explicit user fields and limited defaults (`price`, `title`, `image_url`) for selector self-heal, LLM gap fill, and acquisition field-coverage metadata. Missing default fields no longer trigger low-quality HTTP-to-browser retry by themselves; browser retry is reserved for empty extraction with retryable evidence, blocked/shell evidence, explicit browser mode, traversal/listing recovery, and listing-integrity escalation. Static not-found pages and static homepage/category shells that do not match the requested detail slug are terminal HTTP observations, not browser retries. Optional deep fields are not forced unless requested
-- reusable browser cookie/local-storage state is persisted separately in `DomainCookieMemory`, keyed by normalized domain only, because acquisition reuse is host-level rather than surface-level
+- reusable browser cookie/local-storage state is persisted separately in `DomainCookieMemory`, keyed by `(user_id, normalized domain[, engine])`; browser and curl handoff resolve the owner from the run and never fall back to global state
 - completed-run field keep/reject actions are persisted separately in `DomainFieldFeedback`, keyed by normalized `(domain, surface)` and the field/source that was accepted or rejected
 - runtime can layer surface-specific and generic rules
 - `GET /api/selectors` can now list all selector records for a domain across surfaces when `surface` is omitted, which is what the frontend uses for domain-memory management and crawl-config prefill
@@ -547,7 +586,10 @@ Primary files:
 - `core/extraction_memory/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
 - `core/extraction_memory/contract_runtime.py` — frozen-release preference lookup; Resolve owns final eligibility and ranking.
 - `api/knowledge.py` — compatibility read/refine API backed only by extraction memory.
-- `alembic/versions/20260703_0001_greenfield_schema.py` — sole clean-start schema baseline, including extraction memory.
+- `alembic/versions/20260703_0001_greenfield_schema.py` — clean-start schema baseline, including extraction memory.
+- `alembic/versions/20260824_0002_tenant_cookie_memory.py` — fail-closed tenant-cookie migration and legacy learned-state deletion.
+- `alembic/versions/20260824_0003_bootstrap_records.py` — durable one-shot bootstrap consumption and replay protection.
+- `alembic/versions/20260824_0004_purge_legacy_proxy_secrets.py` — destructive cleanup of legacy plaintext proxy secrets.
 
 Extraction memory is PostgreSQL-authoritative. Run creation freezes one relational release and each URL result gets a relational execution manifest. Contracts rank eligible evidence only; extraction never imports mutable memory storage. Observation failure is logged without changing crawl verdicts. See `docs/INVARIANTS.md` §17.
 
@@ -572,16 +614,18 @@ Primary models:
 - `DataEnrichmentJob`
 - `EnrichedProduct`
 
-`DomainCookieMemory.storage_state` is encrypted at rest (audit 1.6): rows hold
-an envelope `{"v": 1, "ct": <fernet ciphertext of the normalized storage
-state>}` keyed by `ENCRYPTION_KEY`, written by
-`acquisition/cookie_store.py`; the encrypted column shape is part of the sole
-`alembic/versions/20260703_0001_greenfield_schema.py` baseline. The memory
-stays deliberately shared across users keyed by `(domain[, engine])` — it is
-the cross-run learning substrate (`docs/INVARIANTS.md` §9), so scoping it per
-user would fragment learning; encryption removes the DB-dump exposure instead.
-Readers decrypt envelopes, pass legacy plaintext rows through unchanged, and
-skip (log + re-learn) rows that no longer decrypt.
+`DomainCookieMemory.storage_state` is encrypted at rest: rows hold an envelope
+`{"v": 1, "ct": <fernet ciphertext>}` keyed by `ENCRYPTION_KEY`. Rows are
+uniquely scoped by `(user_id, domain[, engine])`. Missing ownership fails
+closed. Migration `20260824_0002` deletes legacy rows because their owner
+cannot be proven; `20260824_0003` adds durable bootstrap replay protection;
+`20260824_0004` purges legacy plaintext proxy settings. Global
+`DomainRunProfile` and extraction-contract promotion is admin-only; ordinary
+runs may consume curated memory but cannot persist it.
+Readers load only successfully decrypted envelopes whose user ownership and
+browser-engine binding match the request. Legacy plaintext, unowned,
+wrong-engine, and undecryptable rows are skipped with a warning so state can be
+re-learned safely.
 - `ApiKey`
 - `LLMConfig`
 - `LLMCostLog`

@@ -41,8 +41,13 @@ services:
     env_file:
       - .env
     environment: &backend_env
-      APP_ENV: development
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-crawlerai} # skipcq: SCT-A000 - password is required from environment, not hardcoded.
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ""
+      DATABASE_HOST: db
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-crawlerai}
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       REDIS_URL: redis://redis:6379/1
       REDIS_STATE_ENABLED: "true"
       CELERY_DISPATCH_ENABLED: "true"
@@ -51,10 +56,27 @@ services:
       FRONTEND_URL: http://127.0.0.1:3001
       FRONTEND_ORIGINS: http://127.0.0.1:3001,http://localhost:3001
       CRAWLER_RUNTIME_BROWSER_REAL_CHROME_ENABLED: "false"
+      BOOTSTRAP_ADMIN_ONCE: "false"
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "init_db.py"]
+    command: [".venv/bin/python", "init_db.py"]
+
+  bootstrap:
+    profiles: ["bootstrap"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      <<: *backend_env
+      BOOTSTRAP_ADMIN_ONCE: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: [".venv/bin/python", "bootstrap_admin.py"]
 
   api:
     build:
@@ -63,7 +85,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment: *backend_env
+    environment:
+      <<: *backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
     depends_on:
       db:
         condition: service_healthy
@@ -71,14 +95,14 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: [".venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
     ports:
       - "8001:8001"
     volumes:
       - backend_artifacts:/app/backend/artifacts
       - backend_cookie_store:/app/backend/cookie_store
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/health/live || exit 1"]
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -91,7 +115,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment: *backend_env
+    environment:
+      <<: *backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
+      BROWSER_POOL_SIZE: "1"
     depends_on:
       db:
         condition: service_healthy
@@ -101,16 +128,24 @@ services:
         condition: service_completed_successfully
     command:
       [
-        "celery",
+        ".venv/bin/celery",
         "-A",
         "app.core.celery_app.celery_app",
         "worker",
         "--loglevel=INFO",
-        "--concurrency=2"
+        "--pool=solo",
+        "--concurrency=1",
+        "--hostname=worker@%h"
       ]
     volumes:
       - backend_artifacts:/app/backend/artifacts
       - backend_cookie_store:/app/backend/cookie_store
+    healthcheck:
+      test: ["CMD-SHELL", ".venv/bin/celery -A app.core.celery_app.celery_app inspect ping --destination worker@$$HOSTNAME --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   beat:
     build:
@@ -119,7 +154,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment: *backend_env
+    environment:
+      <<: *backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
     depends_on:
       db:
         condition: service_healthy
@@ -129,15 +166,31 @@ services:
         condition: service_completed_successfully
     command:
       [
-        "celery",
+        ".venv/bin/celery",
         "-A",
         "app.core.celery_app.celery_app",
         "beat",
         "--loglevel=INFO"
       ]
-    volumes:
-      - backend_artifacts:/app/backend/artifacts
-      - backend_cookie_store:/app/backend/cookie_store
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8001}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3001:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pg_data:
