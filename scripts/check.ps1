@@ -112,11 +112,11 @@ function Invoke-AffectedTests {
     }
     else {
         foreach ($rule in $config.rules) {
-            $matches = $false
+            $ruleMatched = $false
             foreach ($sourcePattern in $rule.sources) {
-                if ($changedPaths | Where-Object { $_ -like $sourcePattern }) { $matches = $true; break }
+                if ($changedPaths | Where-Object { $_ -like $sourcePattern }) { $ruleMatched = $true; break }
             }
-            if (-not $matches) { continue }
+            if (-not $ruleMatched) { continue }
             if ($rule.backendTests) { $rule.backendTests | ForEach-Object { [void] $backendPatterns.Add($_) } }
             if ($rule.frontendTests) { $rule.frontendTests | ForEach-Object { [void] $frontendPatterns.Add($_) } }
             if ($rule.frontendE2E) { $rule.frontendE2E | ForEach-Object { [void] $e2ePatterns.Add($_) } }
