@@ -30,9 +30,12 @@ from app.core.records.network_resolution import (
     default_request_headers,
 )
 from app.core.url_safety import (
+    ResponseBodyTooLarge,
+    ValidatedTarget,
     get_redirect_location,
     get_with_validated_redirects,
     validate_public_target,
+    wrap_public_target_transport,
 )
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
@@ -289,6 +292,7 @@ async def get_shared_http_client(
                     max_keepalive_connections=settings.http_max_keepalive_connections,
                 ),
                 proxy=key[0],
+                transport_wrapper=wrap_public_target_transport,
             )
             _SHARED_HTTP_CLIENTS[key] = client
         return client
@@ -321,6 +325,7 @@ async def http_fetch(
         client,
         url,
         max_redirects=MAX_VALIDATED_REDIRECTS,
+        max_response_bytes=crawler_runtime_settings.http_response_max_bytes,
         timeout=timeout_seconds,
     )
     html = response.text or ""
@@ -377,7 +382,7 @@ async def curl_fetch(
     merged_cookie_header = str(cookie_header or "").strip()
     redirect_count = 0
     while True:
-        await validate_public_target(current_url)
+        validated_target = await validate_public_target(current_url)
         remaining_seconds = deadline - time.monotonic()
         if remaining_seconds <= 0:
             raise TimeoutError(f"curl fetch timed out following redirects for {url}")
@@ -388,6 +393,7 @@ async def curl_fetch(
             remaining_seconds,
             proxy=proxy,
             cookie_header=merged_cookie_header,
+            validated_target=validated_target,
         )
         location = get_redirect_location(response)
         if location is None:
@@ -470,6 +476,7 @@ def _curl_get_once(
     *,
     proxy: str | None = None,
     cookie_header: str | None = None,
+    validated_target: ValidatedTarget | None = None,
 ) -> Any:
     raw_impersonate_target = str(
         ""
@@ -481,14 +488,49 @@ def _curl_get_once(
     normalized_cookie_header = str(cookie_header or "").strip()
     if normalized_cookie_header:
         request_headers["Cookie"] = normalized_cookie_header
-    return curl_requests.get(
-        url,
-        impersonate=impersonate_target,
-        allow_redirects=False,
-        timeout=timeout_seconds,
-        proxy=proxy,
-        headers=request_headers,
-    )
+    if validated_target is None:
+        raise ValueError("curl target must be validated before connection")
+    from curl_cffi import Curl
+    from curl_cffi.const import CurlOpt
+
+    curl = Curl()
+    # RESOLVE pins direct connections. With an explicit HTTP(S) proxy, the
+    # trusted proxy owns origin DNS and egress, so this pin does not apply.
+    curl.setopt(CurlOpt.RESOLVE, [_curl_resolve_entry(validated_target)])
+    response_body = bytearray()
+    with curl_requests.Session(
+        curl=curl,
+        use_thread_local_curl=False,
+    ) as session:
+        response = session.get(
+            url,
+            impersonate=impersonate_target,
+            allow_redirects=False,
+            timeout=timeout_seconds,
+            proxy=proxy,
+            headers=request_headers,
+            content_callback=_bounded_curl_body_writer(response_body),
+        )
+    response.content = bytes(response_body)
+    return response
+
+
+def _curl_resolve_entry(target: ValidatedTarget) -> str:
+    pinned_ip = str(target.resolved_ips[0])
+    if ":" in pinned_ip and not pinned_ip.startswith("["):
+        pinned_ip = f"[{pinned_ip}]"
+    return f"{target.hostname}:{target.port}:{pinned_ip}"
+
+
+def _bounded_curl_body_writer(buffer: bytearray):
+    limit = max(1, int(crawler_runtime_settings.http_response_max_bytes))
+
+    def _write(chunk: bytes) -> None:
+        if len(buffer) + len(chunk) > limit:
+            raise ResponseBodyTooLarge(f"Upstream response exceeds {limit} bytes")
+        buffer.extend(chunk)
+
+    return _write
 
 
 def _curl_response_to_fetch_result(url: str, response: Any) -> PageFetchResult:

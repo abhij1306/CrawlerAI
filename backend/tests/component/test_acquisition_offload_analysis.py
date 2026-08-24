@@ -96,9 +96,15 @@ async def test_curl_fetch_offloads_request_and_analysis_off_event_loop(
     )
 
     def _fake_curl_get_once(
-        curl_requests, url, timeout_seconds, *, proxy=None, cookie_header=None
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
     ):
-        del curl_requests, timeout_seconds, proxy, cookie_header
+        del curl_requests, timeout_seconds, proxy, cookie_header, validated_target
         return SimpleNamespace(
             text="<html><body>ok</body></html>",
             headers={"content-type": "text/html"},

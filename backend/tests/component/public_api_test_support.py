@@ -13,8 +13,6 @@ from fastapi import FastAPI, HTTPException
 
 from httpx import ASGITransport, AsyncClient
 
-from passlib.hash import pbkdf2_sha256
-
 from sqlalchemy import select
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -79,6 +77,11 @@ from app.core.config.public_api import (
 )
 
 from app.core.config.runtime_settings import crawler_runtime_settings
+
+LEGACY_PASSWORD123_HASH = (
+    "$pbkdf2-sha256$29000$Y3Jhd2xlcmFpLWxlZ2FjeQ$"
+    "F7j4hPy493QxNr/jRcYlrrBPTfVKMk2RGskTbjrUnL8"
+)
 
 
 @pytest.fixture
@@ -174,7 +177,7 @@ __all__ = [
     "hash_api_key",
     "logging",
     "metrics_module",
-    "pbkdf2_sha256",
+    "LEGACY_PASSWORD123_HASH",
     "public_api_client",
     "public_auth",
     "public_rate_limit_buckets_snapshot",

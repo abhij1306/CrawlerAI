@@ -216,6 +216,15 @@ def test_logfire_span_strips_url_query_attributes(monkeypatch) -> None:
 
 
 @pytest.mark.component
+def test_logfire_span_redacts_proxy_userinfo_in_non_url_attribute(monkeypatch) -> None:
+    safe = logfire_integration.safe_logfire_attributes(
+        {"message": "proxy failed: http://user:secret@proxy.example:8080/path"}
+    )
+
+    assert safe == {"message": "proxy failed: http://***:***@proxy.example:8080/path"}
+
+
+@pytest.mark.component
 def test_logfire_disabled_under_pytest_by_default(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_enabled", True)
     monkeypatch.setattr(settings, "logfire_enabled_in_tests", False)

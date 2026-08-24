@@ -85,7 +85,7 @@ async def test_login_rehashes_legacy_pbkdf2_hash_on_success(
 ) -> None:
     user = User(
         email="legacy@example.com",
-        hashed_password=pbkdf2_sha256.hash("password123"),
+        hashed_password=LEGACY_PASSWORD123_HASH,
         role="user",
     )
     db_session.add(user)

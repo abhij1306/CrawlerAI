@@ -164,6 +164,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_vendor_block_probe_timeout_seconds: float = 12.0
     browser_capture_max_network_payloads: int = 25
     browser_capture_max_network_payload_bytes: int = 3000000
+    http_response_max_bytes: int = 10 * 1024 * 1024
+    robots_response_max_bytes: int = 512 * 1024
+    sitemap_response_max_bytes: int = 5 * 1024 * 1024
     browser_capture_total_network_payload_bytes: int = 12000000
     browser_capture_workers: int = 4
     browser_capture_read_timeout_seconds: float = 5.0

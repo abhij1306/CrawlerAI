@@ -41,7 +41,13 @@ async def test_logout_revokes_session_and_clears_cookie(
     me = await auth_client.get("/api/auth/me")
     assert me.status_code == 200
 
-    logout = await auth_client.post("/api/auth/logout")
+    logout = await auth_client.post(
+        "/api/auth/logout",
+        headers={
+            "Origin": "http://127.0.0.1:3001",
+            "X-CSRF-Token": auth_client.cookies.get("csrf_token"),
+        },
+    )
     assert logout.status_code == 204
     set_cookie = logout.headers["set-cookie"]
     assert "access_token" in set_cookie
@@ -82,9 +88,13 @@ async def test_logout_with_revoked_token_still_clears_cookie(
     )
     assert login.status_code == 200
 
-    first = await auth_client.post("/api/auth/logout")
+    headers = {
+        "Origin": "http://127.0.0.1:3001",
+        "X-CSRF-Token": auth_client.cookies.get("csrf_token"),
+    }
+    first = await auth_client.post("/api/auth/logout", headers=headers)
     assert first.status_code == 204
 
     # Second logout with the already-revoked session stays a 204 no-op.
-    second = await auth_client.post("/api/auth/logout")
+    second = await auth_client.post("/api/auth/logout", headers=headers)
     assert second.status_code == 204

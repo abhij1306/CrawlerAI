@@ -585,7 +585,7 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_shared_browser_runtime_close_bounds_hung_shutdown(
+async def test_shared_browser_runtime_close_bounds_without_cancelling_shutdown(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -645,6 +645,9 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
         "Timed out closing SOCKS5 auth bridge" in record.message
         for record in caplog.records
     )
+    assert cancelled == []
+    blocker.set()
+    await browser_background_tasks.drain_browser_background_tasks()
     assert cancelled == []
 
 

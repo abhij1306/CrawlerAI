@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import ParseResult, urljoin, urlparse
 
+import httpx
+
 from app.core.config.block_signatures import (
     MAX_VALIDATED_REDIRECTS,
     REDIRECT_FOLLOW_STATUS_CODES,
@@ -32,6 +34,10 @@ class SecurityError(ValueError):
     rejections from generic input-validation failures."""
 
 
+class ResponseBodyTooLarge(ValueError):
+    """Raised before an untrusted upstream body exceeds its byte budget."""
+
+
 @dataclass(frozen=True)
 class ValidatedTarget:
     hostname: str
@@ -39,6 +45,37 @@ class ValidatedTarget:
     port: int
     resolved_ips: tuple[str, ...]
     dns_resolved: bool = True
+
+
+class PublicTargetAsyncTransport(httpx.AsyncBaseTransport):
+    """Bind an HTTPX connection to the IP approved by URL validation."""
+
+    def __init__(self, transport: httpx.AsyncBaseTransport) -> None:
+        self._transport = transport
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        target = await validate_public_target(str(request.url))
+        headers = httpx.Headers(request.headers)
+        headers["Host"] = _http_host_header(target)
+        extensions = dict(request.extensions)
+        extensions["sni_hostname"] = target.hostname
+        pinned_request = httpx.Request(
+            method=request.method,
+            url=request.url.copy_with(host=target.resolved_ips[0]),
+            headers=headers,
+            stream=request.stream,
+            extensions=extensions,
+        )
+        return await self._transport.handle_async_request(pinned_request)
+
+    async def aclose(self) -> None:
+        await self._transport.aclose()
+
+
+def wrap_public_target_transport(
+    transport: httpx.AsyncBaseTransport,
+) -> httpx.AsyncBaseTransport:
+    return PublicTargetAsyncTransport(transport)
 
 
 async def ensure_public_crawl_targets(urls: Iterable[str]) -> list[str]:
@@ -163,6 +200,7 @@ async def get_with_validated_redirects(
     url: str,
     *,
     max_redirects: int = MAX_VALIDATED_REDIRECTS,
+    max_response_bytes: int | None = None,
     **request_kwargs: Any,
 ) -> Any:
     """Issue a GET against ``client`` following redirects manually.
@@ -171,13 +209,9 @@ async def get_with_validated_redirects(
     validated with :func:`validate_public_target` immediately BEFORE the
     request is issued, so a validated public URL cannot bounce the fetcher
     into loopback / link-local / RFC1918 / metadata address space via a
-    redirect. Re-validating (with fresh DNS resolution) right before each
-    request is also the chosen DNS-rebinding TOCTOU mitigation: the window
-    between guard resolution and connect-time resolution shrinks to the
-    request issue path. Pinning validated IPs at connect time (custom httpx
-    transport / curl ``--resolve``) is not exposed by the installed
-    curl_cffi/httpx APIs without rewriting TLS/SNI handling, so pre-request
-    re-validation is the feasible enforcement point.
+    redirect. The production HTTPX client also uses
+    :class:`PublicTargetAsyncTransport`, which binds the connection to the
+    approved IP while retaining the original Host header and TLS SNI.
 
     ``client`` must be built with ``follow_redirects=False``; each hop is a
     plain ``client.get(current_url, **request_kwargs)`` call so client cookie
@@ -187,7 +221,12 @@ async def get_with_validated_redirects(
     redirect_count = 0
     while True:
         await validate_public_target(current_url)
-        response = await client.get(current_url, **request_kwargs)
+        response = await _get_limited_response(
+            client,
+            current_url,
+            max_response_bytes=max_response_bytes,
+            request_kwargs=request_kwargs,
+        )
         location = get_redirect_location(response)
         if location is None:
             return response
@@ -198,6 +237,64 @@ async def get_with_validated_redirects(
                 f"(limit {max(0, int(max_redirects))})"
             )
         current_url = urljoin(current_url, location)
+
+
+async def _get_limited_response(
+    client: Any,
+    url: str,
+    *,
+    max_response_bytes: int | None,
+    request_kwargs: dict[str, Any],
+) -> Any:
+    if max_response_bytes is None or not callable(getattr(client, "stream", None)):
+        response = await client.get(url, **request_kwargs)
+        _check_loaded_response_size(response, max_response_bytes)
+        return response
+    limit = max(1, int(max_response_bytes))
+    async with client.stream("GET", url, **request_kwargs) as response:
+        advertised = _advertised_content_length(response)
+        if advertised is not None and advertised > limit:
+            raise ResponseBodyTooLarge(
+                f"Upstream response Content-Length {advertised} exceeds {limit} bytes"
+            )
+        chunks: list[bytes] = []
+        decoded_bytes = 0
+        async for chunk in response.aiter_bytes():
+            decoded_bytes += len(chunk)
+            downloaded = int(getattr(response, "num_bytes_downloaded", 0) or 0)
+            if decoded_bytes > limit or downloaded > limit:
+                raise ResponseBodyTooLarge(f"Upstream response exceeds {limit} bytes")
+            chunks.append(chunk)
+        response._content = b"".join(chunks)
+        return response
+
+
+def _check_loaded_response_size(response: Any, limit: int | None) -> None:
+    if limit is None:
+        return
+    maximum = max(1, int(limit))
+    advertised = _advertised_content_length(response)
+    if advertised is not None and advertised > maximum:
+        raise ResponseBodyTooLarge(
+            f"Upstream response Content-Length {advertised} exceeds {maximum} bytes"
+        )
+    content = bytes(getattr(response, "content", b"") or b"")
+    if len(content) > maximum:
+        raise ResponseBodyTooLarge(f"Upstream response exceeds {maximum} bytes")
+
+
+def _advertised_content_length(response: Any) -> int | None:
+    headers = getattr(response, "headers", None)
+    getter = getattr(headers, "get", None)
+    if not callable(getter):
+        return None
+    raw_value = getter("content-length")
+    if raw_value is None:
+        return None
+    try:
+        return max(0, int(raw_value))
+    except (TypeError, ValueError):
+        return None
 
 
 async def _validate_endpoint_host(
@@ -377,3 +474,12 @@ def _default_port(scheme: str) -> int:
     if normalized in {"socks5", "socks5h"}:
         return 1080
     return 443 if normalized == "https" else 80
+
+
+def _http_host_header(target: ValidatedTarget) -> str:
+    hostname = target.hostname
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    if target.port == _default_port(target.scheme):
+        return hostname
+    return f"{hostname}:{target.port}"

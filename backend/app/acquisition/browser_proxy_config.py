@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from app.core.proxy_secrets import strip_url_userinfo
+
 _SUPPORTED_BROWSER_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
 
 
@@ -56,22 +58,7 @@ def display_proxy(proxy: str | None) -> str:
     raw_proxy = str(proxy or "").strip()
     if not raw_proxy:
         return "direct"
-    if "://" not in raw_proxy and "@" in raw_proxy:
-        userinfo = raw_proxy.split("@", 1)[0]
-        if userinfo or ":" in userinfo:
-            return "REDACTED"
-    parsed = urlparse(raw_proxy)
-    normalized_scheme = str(parsed.scheme or "").strip().lower()
-    host_port = proxy_host_port(parsed)
-    if parsed.username is not None or parsed.password is not None:
-        if normalized_scheme and host_port:
-            return f"{normalized_scheme}://***:***@{host_port}"
-        if normalized_scheme:
-            return f"{normalized_scheme}://***:***"
-        return "REDACTED"
-    if not parsed.scheme or not parsed.hostname:
-        return raw_proxy
-    return raw_proxy
+    return strip_url_userinfo(raw_proxy, masked=True)
 
 
 __all__ = [

@@ -31,11 +31,30 @@ export function mcpLaunchCommand(
 ) {
   const keyAssignment = `CRAWLERAI_API_KEY=${quoteForShell(apiKey, shell)}`;
   const urlAssignment = `CRAWLERAI_API_BASE_URL=${quoteForShell(apiBaseUrl, shell)}`;
+  const transportAssignment = `CRAWLERAI_MCP_TRANSPORT=${quoteForShell('stdio', shell)}`;
   return [
     shell === 'powershell' ? `$env:${keyAssignment}` : `export ${keyAssignment}`,
     shell === 'powershell' ? `$env:${urlAssignment}` : `export ${urlAssignment}`,
+    shell === 'powershell' ? `$env:${transportAssignment}` : `export ${transportAssignment}`,
     'python -m app.mcp_server.server',
   ].join('\n');
+}
+
+export function mcpLoopbackCommand(
+  apiBaseUrl: string,
+  apiKey: string,
+  shell: SetupShell = 'powershell',
+) {
+  const assignments = [
+    ['CRAWLERAI_API_KEY', apiKey],
+    ['CRAWLERAI_API_BASE_URL', apiBaseUrl],
+    ['CRAWLERAI_MCP_TRANSPORT', 'sse'],
+    ['CRAWLERAI_MCP_HOST', '127.0.0.1'],
+  ].map(([name, value]) => {
+    const assignment = `${name}=${quoteForShell(value, shell)}`;
+    return shell === 'powershell' ? `$env:${assignment}` : `export ${assignment}`;
+  });
+  return [...assignments, 'python -m app.mcp_server.server'].join('\n');
 }
 
 export function restRequestCommand(apiBaseUrl: string, apiKey: string, shell: SetupShell) {
@@ -43,6 +62,22 @@ export function restRequestCommand(apiBaseUrl: string, apiKey: string, shell: Se
   const authorization = quoteForShell(`Authorization: Bearer ${apiKey}`, shell);
   const capabilitiesUrl = quoteForShell(`${apiBaseUrl}/capabilities`, shell);
   return `${curl} -H ${authorization} ${capabilitiesUrl}`;
+}
+
+export function restExtractCommand(apiBaseUrl: string, apiKey: string, shell: SetupShell) {
+  const curl = shell === 'powershell' ? 'curl.exe' : 'curl';
+  const authorization = quoteForShell(`Authorization: Bearer ${apiKey}`, shell);
+  const contentType = quoteForShell('Content-Type: application/json', shell);
+  const payload = quoteForShell(
+    JSON.stringify({
+      url: 'https://example.com/product',
+      surface: 'ecommerce',
+      fields: ['title', 'price'],
+    }),
+    shell,
+  );
+  const extractUrl = quoteForShell(`${apiBaseUrl}/extract`, shell);
+  return `${curl} -X POST -H ${authorization} -H ${contentType} --data-raw ${payload} ${extractUrl}`;
 }
 
 function SetupBlock({ label, value }: Readonly<{ label: string; value: string }>) {
@@ -125,15 +160,24 @@ export function ApiAccessSetup({
         value={restRequestCommand(apiBaseUrl, created.api_key, shell)}
       />
       <SetupBlock
-        label={`Launch hosted MCP process · ${shellLabel}`}
+        label={`Extract one product · ${shellLabel}`}
+        value={restExtractCommand(apiBaseUrl, created.api_key, shell)}
+      />
+      <SetupBlock
+        label={`Launch local MCP process · ${shellLabel}`}
         value={mcpLaunchCommand(apiBaseUrl, created.api_key, shell)}
+      />
+      <SetupBlock
+        label={`Optional loopback SSE MCP · ${shellLabel}`}
+        value={mcpLoopbackCommand(apiBaseUrl, created.api_key, shell)}
       />
 
       <div className="flex items-start gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm text-secondary">
         <TerminalSquare className="mt-0.5 size-4 shrink-0 text-muted" />
         <div>
-          Run MCP as the separate <code className="font-mono text-foreground">mcp</code> process
-          from the backend directory. Point your MCP client at that process's SSE URL.
+          Prefer one local stdio process per MCP client from the backend directory. Each process
+          uses that client's own API key. Public hosted MCP is not supported. Optional SSE is
+          restricted to a literal loopback address and shares its key with trusted local clients.
           {capabilities ? (
             <p className="mt-1 text-success-text">
               API verified. Tools: {capabilities.tools.join(', ')}.

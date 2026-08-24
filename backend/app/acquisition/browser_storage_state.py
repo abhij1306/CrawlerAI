@@ -35,6 +35,7 @@ async def persist_context_storage_state(
     persist_run_storage_state: bool = True,
     persist_domain_storage_state: bool = True,
     timeout_seconds: float | None = None,
+    user_id: int | None = None,
 ) -> None:
     normalized_domain = str(domain or "").strip()
     if all((run_id is None, not normalized_domain)):
@@ -77,6 +78,7 @@ async def persist_context_storage_state(
                 run_id,
                 storage_state,
                 browser_engine=browser_engine,
+                user_id=user_id,
             )
         except Exception:
             logger.error(
@@ -90,6 +92,7 @@ async def persist_context_storage_state(
                 normalized_domain,
                 storage_state,
                 browser_engine=browser_engine,
+                user_id=user_id,
             )
         except Exception:
             logger.error(

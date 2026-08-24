@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
 import threading
 from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.url_safety import validate_proxy_endpoint, validate_public_target
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +61,6 @@ def parse_socks5_upstream_proxy(proxy_url: str | None) -> Socks5UpstreamProxy | 
         return None
     username = unquote(str(parsed.username or ""))
     password = unquote(str(parsed.password or ""))
-    if not username and not password:
-        return None
     return Socks5UpstreamProxy(
         scheme=scheme,
         host=str(parsed.hostname),
@@ -71,7 +71,7 @@ def parse_socks5_upstream_proxy(proxy_url: str | None) -> Socks5UpstreamProxy | 
 
 
 class Socks5AuthBridge:
-    def __init__(self, upstream: Socks5UpstreamProxy) -> None:
+    def __init__(self, upstream: Socks5UpstreamProxy | None = None) -> None:
         self.upstream = upstream
         self._server: asyncio.AbstractServer | None = None
         self._server_url: str | None = None
@@ -113,6 +113,18 @@ class Socks5AuthBridge:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _open_direct(
+        self,
+        host: str,
+        port: int,
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        return await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=float(
+                crawler_runtime_settings.browser_proxy_bridge_connect_timeout_seconds
+            ),
+        )
+
     async def _handle_client(
         self,
         reader: asyncio.StreamReader,
@@ -129,9 +141,27 @@ class Socks5AuthBridge:
                     crawler_runtime_settings.browser_proxy_bridge_first_byte_timeout_seconds
                 ),
             )
+            target = await validate_public_target(request.validation_url())
+            pinned_ip = target.resolved_ips[0]
+            if self.upstream is None:
+                opened_reader, opened_writer = await self._open_direct(
+                    pinned_ip,
+                    request.port_number,
+                )
+                upstream_writer = opened_writer
+                writer.write(_success_response())
+                await writer.drain()
+                await asyncio.gather(
+                    _relay_stream(reader, opened_writer),
+                    _relay_stream(opened_reader, writer),
+                )
+                return
+            upstream_target = await validate_proxy_endpoint(
+                f"{self.upstream.scheme}://{self.upstream.host}:{self.upstream.port}"
+            )
             opened_reader, opened_writer = await asyncio.wait_for(
                 asyncio.open_connection(
-                    self.upstream.host,
+                    upstream_target.resolved_ips[0],
                     self.upstream.port,
                 ),
                 timeout=float(
@@ -149,7 +179,7 @@ class Socks5AuthBridge:
                     crawler_runtime_settings.browser_proxy_bridge_auth_timeout_seconds
                 ),
             )
-            opened_writer.write(request.to_upstream_bytes())
+            opened_writer.write(request.to_upstream_bytes(host=pinned_ip))
             await opened_writer.drain()
             response = await asyncio.wait_for(
                 _read_socks5_response(opened_reader),
@@ -192,8 +222,22 @@ class _Socks5ConnectRequest:
     address: bytes
     port: bytes
 
-    def to_upstream_bytes(self) -> bytes:
-        return self.header + self.address + self.port
+    @property
+    def port_number(self) -> int:
+        return int.from_bytes(self.port, "big")
+
+    def validation_url(self) -> str:
+        host = _decode_request_host(self.header[3], self.address)
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{self.port_number}/"
+
+    def to_upstream_bytes(self, *, host: str | None = None) -> bytes:
+        if host is None:
+            return self.header + self.address + self.port
+        address_type, address = _encode_request_host(host)
+        header = bytes([self.header[0], self.header[1], self.header[2], address_type])
+        return header + address + self.port
 
 
 async def _read_client_request(
@@ -272,6 +316,48 @@ async def _read_socks5_response(reader: asyncio.StreamReader) -> bytes:
     address_bytes = await _read_address_bytes(reader, address_type)
     port_bytes = await reader.readexactly(2)
     return header + address_bytes + port_bytes
+
+
+def _decode_request_host(address_type: int, address: bytes) -> str:
+    if address_type == _SOCKS_ATYP_IPV4:
+        return str(ipaddress.IPv4Address(address))
+    if address_type == _SOCKS_ATYP_IPV6:
+        return str(ipaddress.IPv6Address(address))
+    if address_type == _SOCKS_ATYP_DOMAIN:
+        if not address or address[0] != len(address) - 1:
+            raise ValueError("Invalid SOCKS5 domain address")
+        return address[1:].decode("idna")
+    raise ValueError(f"Unsupported SOCKS address type: {address_type}")
+
+
+def _encode_request_host(host: str) -> tuple[int, bytes]:
+    try:
+        ip_value = ipaddress.ip_address(host)
+    except ValueError:
+        encoded = host.encode("idna")
+        if len(encoded) > 255:
+            raise ValueError("SOCKS5 target hostname too long")
+        return _SOCKS_ATYP_DOMAIN, bytes([len(encoded)]) + encoded
+    if isinstance(ip_value, ipaddress.IPv4Address):
+        return _SOCKS_ATYP_IPV4, ip_value.packed
+    return _SOCKS_ATYP_IPV6, ip_value.packed
+
+
+def _success_response() -> bytes:
+    return bytes(
+        [
+            _SOCKS_VERSION,
+            0,
+            0,
+            _SOCKS_ATYP_IPV4,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]
+    )
 
 
 async def _read_address_bytes(

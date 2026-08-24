@@ -200,7 +200,7 @@ def test_install_asyncio_exception_filter_preserves_original_context_for_previou
 
 
 @pytest.mark.component
-async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
+async def test_lifespan_recovers_runs_without_bootstrap_mutation(monkeypatch) -> None:
     calls: list[str] = []
 
     class SessionContext:
@@ -211,9 +211,6 @@ async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
         async def __aexit__(self, exc_type, exc, tb):
             return None
 
-    async def _bootstrap(_session) -> None:
-        calls.append("bootstrap")
-
     async def _recover(_session) -> int:
         calls.append("recover")
         return 0
@@ -222,7 +219,6 @@ async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
         return None
 
     monkeypatch.setattr("app.main.SessionLocal", lambda: SessionContext())
-    monkeypatch.setattr("app.main.bootstrap_admin_user", _bootstrap)
     monkeypatch.setattr("app.main.recover_stale_local_runs", _recover)
     monkeypatch.setattr(
         "app.main.ensure_run_report_registered", lambda: calls.append("report")
@@ -237,7 +233,7 @@ async def test_lifespan_bootstraps_without_schema_mutation(monkeypatch) -> None:
     async with lifespan(None):
         calls.append("yield")
 
-    assert calls[:4] == ["session", "bootstrap", "recover", "report"]
+    assert calls[:3] == ["session", "recover", "report"]
     assert "yield" in calls
 
 

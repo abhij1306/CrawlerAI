@@ -16,6 +16,17 @@ from tests.component.crawl_service_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_test_profile_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _allowed(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "app.crawl.profile.repository._source_run_is_admin_owned",
+        _allowed,
+    )
+
+
 @pytest.mark.component
 def test_get_run_dispatcher_reuses_dispatch_mode_singletons(
     monkeypatch: pytest.MonkeyPatch,

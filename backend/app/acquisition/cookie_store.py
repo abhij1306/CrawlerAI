@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
-import os
 import time
 from collections.abc import Collection, Iterable, Mapping
-from pathlib import Path
-from urllib.parse import urlparse
 
 from cryptography.fernet import InvalidToken
 
 from app.core.database import SessionLocal
 from app.core.config import settings
 from app.models.domain_memory import DomainCookieMemory
+from app.models.crawl_run import CrawlRun
 from app.core.config.block_signatures import BLOCK_SIGNATURES
 from app.core.config.cookie_settings import (
     COOKIE_FIELDS,
@@ -26,14 +23,18 @@ from app.core.config.cookie_settings import (
     STORAGE_STATE_ENVELOPE_VERSION,
     STORAGE_STATE_ENVELOPE_VERSION_KEY,
     STORAGE_STATE_META_KEY,
-    STORAGE_STATE_REPLACE_ATTEMPTS,
-    STORAGE_STATE_REPLACE_RETRY_SECONDS,
     SUPPORTED_STORAGE_STATE_ENGINES,
 )
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.domain_utils import normalize_domain
 from app.core.shared.field_coerce import object_list as _object_list
 from app.core.shared.coerce_primitives import positive_int
+from app.acquisition.cookie_http_export import http_cookie_pairs_for_url
+from app.acquisition.run_cookie_storage import (
+    clear_run_storage_state_cache,
+    load_run_storage_state,
+    persist_run_storage_state,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,10 +52,9 @@ def validate_cookie_policy_config() -> None:
         raise ValueError(
             f"cookie_store_dir must be a directory: {settings.cookie_store_dir}"
         )
+    settings.cookie_store_dir.chmod(0o700)
 
 
-_RUN_STORAGE_STATE_CACHE: dict[str, dict[str, object]] = {}
-_RUN_STORAGE_STATE_LOCK = asyncio.Lock()
 _CHALLENGE_ELEMENT_CONFIG = BLOCK_SIGNATURES.get("challenge_elements")
 if not isinstance(_CHALLENGE_ELEMENT_CONFIG, Mapping):
     _CHALLENGE_ELEMENT_CONFIG = {}
@@ -79,8 +79,7 @@ _CHALLENGE_COOKIE_VALUE_TOKENS = tuple(
 
 
 async def clear_cookie_store_cache() -> None:
-    async with _RUN_STORAGE_STATE_LOCK:
-        _RUN_STORAGE_STATE_CACHE.clear()
+    await clear_run_storage_state_cache()
 
 
 def _encrypt_storage_state(storage_state: Mapping[str, object]) -> dict[str, object]:
@@ -98,16 +97,15 @@ def _decrypt_storage_state(
     *,
     domain: str = "",
 ) -> dict[str, object] | None:
-    """Return the plaintext storage state for a persisted row value.
-
-    Envelope rows decrypt; legacy plaintext rows pass through unchanged.
-    An undecryptable envelope (wrong key, corrupted payload) logs and returns
-    None so acquisition simply re-learns the domain instead of crashing.
-    """
+    """Decrypt a valid envelope; skip invalid or legacy rows for re-learning."""
     if not isinstance(storage_state, Mapping):
         return None
     if STORAGE_STATE_ENVELOPE_CIPHERTEXT_KEY not in storage_state:
-        return dict(storage_state)
+        logger.warning(
+            "Skipping plaintext domain cookie memory row",
+            extra={"domain": domain},
+        )
+        return None
     if storage_state.get(STORAGE_STATE_ENVELOPE_VERSION_KEY) != (
         STORAGE_STATE_ENVELOPE_VERSION
     ):
@@ -135,35 +133,35 @@ async def load_storage_state_for_run(
     run_id: int | None,
     *,
     browser_engine: str | None = None,
+    user_id: int | None = None,
 ) -> dict[str, object] | None:
     normalized_run_id = positive_int(run_id)
     if normalized_run_id is None:
         return None
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        normalized_user_id = await user_id_for_run(normalized_run_id)
+    if normalized_user_id is None:
+        return None
     validate_cookie_policy_config()
     normalized_engine = _normalized_browser_engine(browser_engine)
-    for path in _storage_state_candidate_paths(
+    state = await load_run_storage_state(
         normalized_run_id,
+        user_id=normalized_user_id,
+        browser_engine=normalized_engine,
+    )
+    if state is None:
+        return None
+    normalized_state = _normalize_storage_state_payload(
+        state,
+        browser_engine=_storage_state_browser_engine(state),
+    )
+    if not _storage_state_matches_browser_engine(
+        normalized_state,
         browser_engine=normalized_engine,
     ):
-        cache_key = str(path)
-        async with _RUN_STORAGE_STATE_LOCK:
-            state = _RUN_STORAGE_STATE_CACHE.get(cache_key)
-            if state is None:
-                state = await asyncio.to_thread(
-                    _read_storage_state_file,
-                    path,
-                )
-                if state is not None:
-                    _RUN_STORAGE_STATE_CACHE[cache_key] = state
-        if state is None:
-            continue
-        if not _storage_state_matches_browser_engine(
-            state,
-            browser_engine=normalized_engine,
-        ):
-            continue
-        return _clone_storage_state(_normalize_storage_state(state))
-    return None
+        return None
+    return _clone_storage_state(normalized_state)
 
 
 async def load_storage_state_for_domain(
@@ -171,7 +169,11 @@ async def load_storage_state_for_domain(
     *,
     session: AsyncSession | None = None,
     browser_engine: str | None = None,
+    user_id: int | None = None,
 ) -> dict[str, object] | None:
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        return None
     normalized_domain = normalize_domain(domain or "")
     if not normalized_domain:
         return None
@@ -182,16 +184,18 @@ async def load_storage_state_for_domain(
                 normalized_domain,
                 session=owned_session,
                 browser_engine=normalized_engine,
+                user_id=normalized_user_id,
             )
     result = await session.execute(
         select(DomainCookieMemory)
         .where(
+            DomainCookieMemory.user_id == normalized_user_id,
             DomainCookieMemory.domain.in_(
                 _domain_storage_lookup_keys(
                     normalized_domain,
                     browser_engine=normalized_engine,
                 )
-            )
+            ),
         )
         .order_by(DomainCookieMemory.updated_at.desc(), DomainCookieMemory.id.desc())
     )
@@ -217,15 +221,21 @@ async def export_cookie_header_for_domain(
     *,
     browser_engine: str | None = None,
     session: AsyncSession | None = None,
+    run_id: int | None = None,
+    user_id: int | None = None,
 ) -> str | None:
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        normalized_user_id = await user_id_for_run(run_id, session=session)
     state = await load_storage_state_for_domain(
         url,
         browser_engine=browser_engine,
         session=session,
+        user_id=normalized_user_id,
     )
     if not state:
         return None
-    cookie_pairs = _http_cookie_pairs_for_url(url, state)
+    cookie_pairs = http_cookie_pairs_for_url(url, state)
     if not cookie_pairs:
         return None
     return "; ".join(f"{name}={value}" for name, value in cookie_pairs)
@@ -236,9 +246,15 @@ async def persist_storage_state_for_run(
     storage_state: Mapping[str, object] | object,
     *,
     browser_engine: str | None = None,
+    user_id: int | None = None,
 ) -> None:
     normalized_run_id = positive_int(run_id)
     if normalized_run_id is None or not isinstance(storage_state, Mapping):
+        return
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        normalized_user_id = await user_id_for_run(normalized_run_id)
+    if normalized_user_id is None:
         return
     validate_cookie_policy_config()
     normalized_engine = _normalized_browser_engine(browser_engine)
@@ -248,14 +264,12 @@ async def persist_storage_state_for_run(
     )
     if not _has_reusable_storage_state(normalized_state):
         return
-    path = _storage_state_path(normalized_run_id, browser_engine=normalized_engine)
-    async with _RUN_STORAGE_STATE_LOCK:
-        await asyncio.to_thread(
-            _write_storage_state_file,
-            path,
-            normalized_state,
-        )
-        _RUN_STORAGE_STATE_CACHE[str(path)] = normalized_state
+    await persist_run_storage_state(
+        normalized_run_id,
+        normalized_state,
+        user_id=normalized_user_id,
+        browser_engine=normalized_engine,
+    )
 
 
 async def persist_storage_state_for_domain(
@@ -264,7 +278,11 @@ async def persist_storage_state_for_domain(
     *,
     session: AsyncSession | None = None,
     browser_engine: str | None = None,
+    user_id: int | None = None,
 ) -> bool:
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        return False
     normalized_domain = normalize_domain(domain or "")
     if not normalized_domain or not isinstance(storage_state, Mapping):
         return False
@@ -290,6 +308,7 @@ async def persist_storage_state_for_domain(
                 storage_key=storage_key,
                 normalized_state=normalized_state,
                 fingerprint=fingerprint,
+                user_id=normalized_user_id,
             )
             if not changed:
                 return False
@@ -300,6 +319,7 @@ async def persist_storage_state_for_domain(
         storage_key=storage_key,
         normalized_state=normalized_state,
         fingerprint=fingerprint,
+        user_id=normalized_user_id,
     )
     if not changed:
         return False
@@ -313,10 +333,14 @@ async def _upsert_domain_storage_state(
     storage_key: str,
     normalized_state: dict[str, object],
     fingerprint: str,
+    user_id: int,
 ) -> bool:
     result = await session.execute(
         select(DomainCookieMemory)
-        .where(DomainCookieMemory.domain == storage_key)
+        .where(
+            DomainCookieMemory.user_id == user_id,
+            DomainCookieMemory.domain == storage_key,
+        )
         .order_by(DomainCookieMemory.updated_at.desc(), DomainCookieMemory.id.desc())
         .limit(1)
     )
@@ -326,6 +350,7 @@ async def _upsert_domain_storage_state(
     encrypted_state = _encrypt_storage_state(normalized_state)
     if row is None:
         row = DomainCookieMemory(
+            user_id=user_id,
             domain=storage_key,
             storage_state=encrypted_state,
             state_fingerprint=fingerprint,
@@ -341,18 +366,27 @@ async def list_domain_cookie_memory(
     domain: str | None = None,
     *,
     session: AsyncSession | None = None,
+    user_id: int | None = None,
 ) -> list[dict[str, object]]:
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        return []
     normalized_domain = normalize_domain(domain or "") if domain else ""
     if session is None:
         async with SessionLocal() as owned_session:
             return await list_domain_cookie_memory(
                 domain,
                 session=owned_session,
+                user_id=normalized_user_id,
             )
-    statement = select(DomainCookieMemory).order_by(
-        DomainCookieMemory.domain.asc(),
-        DomainCookieMemory.updated_at.desc(),
-        DomainCookieMemory.id.desc(),
+    statement = (
+        select(DomainCookieMemory)
+        .where(DomainCookieMemory.user_id == normalized_user_id)
+        .order_by(
+            DomainCookieMemory.domain.asc(),
+            DomainCookieMemory.updated_at.desc(),
+            DomainCookieMemory.id.desc(),
+        )
     )
     if normalized_domain:
         statement = statement.where(
@@ -364,6 +398,8 @@ async def list_domain_cookie_memory(
     payload: list[dict[str, object]] = []
     for row in rows:
         storage_state = _decrypt_storage_state(row.storage_state, domain=row.domain)
+        if storage_state is None:
+            continue
         payload.append(
             {
                 "id": row.id,
@@ -381,6 +417,24 @@ async def list_domain_cookie_memory(
     return payload
 
 
+async def user_id_for_run(
+    run_id: int | None,
+    *,
+    session: AsyncSession | None = None,
+) -> int | None:
+    normalized_run_id = positive_int(run_id)
+    if normalized_run_id is None:
+        return None
+    if session is None:
+        async with SessionLocal() as owned_session:
+            return await user_id_for_run(normalized_run_id, session=owned_session)
+    return positive_int(
+        await session.scalar(
+            select(CrawlRun.user_id).where(CrawlRun.id == normalized_run_id)
+        )
+    )
+
+
 def _storage_state_fingerprint(
     storage_state: Mapping[str, object],
     *,
@@ -396,17 +450,6 @@ def _storage_state_fingerprint(
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _storage_state_path(
-    run_id: int,
-    *,
-    browser_engine: str | None = None,
-) -> Path:
-    normalized_engine = _normalized_browser_engine(browser_engine)
-    if normalized_engine:
-        return settings.cookie_store_dir / f"run_{run_id}__{normalized_engine}.json"
-    return settings.cookie_store_dir / f"run_{run_id}.json"
 
 
 def _domain_storage_key(
@@ -446,68 +489,6 @@ def _domain_storage_lookup_keys(
             if engine != DEFAULT_STORAGE_STATE_ENGINE
         ),
     )
-
-
-def _storage_state_candidate_paths(
-    run_id: int,
-    *,
-    browser_engine: str | None = None,
-) -> tuple[Path, ...]:
-    normalized_engine = _normalized_browser_engine(browser_engine)
-    if normalized_engine == DEFAULT_STORAGE_STATE_ENGINE:
-        return (
-            _storage_state_path(run_id, browser_engine=normalized_engine),
-            _storage_state_path(run_id),
-        )
-    if normalized_engine:
-        return (_storage_state_path(run_id, browser_engine=normalized_engine),)
-    return (_storage_state_path(run_id),)
-
-
-def _read_storage_state_file(path: Path) -> dict[str, object] | None:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return _normalize_storage_state_payload(
-        payload,
-        browser_engine=_storage_state_browser_engine(payload),
-    )
-
-
-def _write_storage_state_file(path: Path, storage_state: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
-    payload = json.dumps(storage_state, ensure_ascii=True, indent=2, sort_keys=True)
-    try:
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        last_error: OSError | None = None
-        for attempt in range(STORAGE_STATE_REPLACE_ATTEMPTS):
-            try:
-                tmp_path.replace(path)
-                last_error = None
-                break
-            except PermissionError as exc:
-                last_error = exc
-                if attempt + 1 >= STORAGE_STATE_REPLACE_ATTEMPTS:
-                    raise
-                time.sleep(STORAGE_STATE_REPLACE_RETRY_SECONDS)
-        if last_error is not None:
-            raise last_error
-    except OSError:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            # Temp file already gone or not removable; the original error is re-raised below.
-            pass
-        raise
 
 
 def _normalize_storage_state(storage_state: Mapping[str, object]) -> dict[str, object]:
@@ -699,84 +680,3 @@ def _clone_storage_state(
             if isinstance(origin, Mapping)
         ],
     }
-
-
-def _http_cookie_pairs_for_url(
-    url: str | None,
-    storage_state: Mapping[str, object],
-) -> list[tuple[str, str]]:
-    host, path = _cookie_target(url)
-    candidates: list[tuple[int, int, str, str]] = []
-    for cookie in _object_list(storage_state.get("cookies")):
-        candidate = _http_cookie_candidate(cookie, host=host, path=path)
-        if candidate is not None:
-            candidates.append(candidate)
-    return _select_http_cookie_pairs(candidates)
-
-
-def _http_cookie_candidate(
-    cookie: object, *, host: str, path: str
-) -> tuple[int, int, str, str] | None:
-    if not isinstance(cookie, Mapping):
-        return None
-    name = str(cookie.get("name") or "").strip()
-    value = str(cookie.get("value") or "").strip()
-    if not name or value == "":
-        return None
-    domain = str(cookie.get("domain") or "").strip().lower()
-    cookie_path = str(cookie.get("path") or "/").strip() or "/"
-    if host and domain and not _cookie_domain_matches(host, domain):
-        return None
-    if path and not _cookie_path_matches(path, cookie_path):
-        return None
-    return len(domain.lstrip(".")), len(cookie_path), name, value
-
-
-def _select_http_cookie_pairs(
-    candidates: list[tuple[int, int, str, str]],
-) -> list[tuple[str, str]]:
-    selected: dict[str, tuple[int, int, str, str]] = {}
-    for domain_score, path_score, name, value in candidates:
-        key = name.lower()
-        existing = selected.get(key)
-        if existing is None or (domain_score, path_score) >= (
-            existing[0],
-            existing[1],
-        ):
-            selected[key] = (domain_score, path_score, name, value)
-    return [
-        (name, value)
-        for _key, (_domain_score, _path_score, name, value) in selected.items()
-    ]
-
-
-def _cookie_target(url: str | None) -> tuple[str, str]:
-    normalized = str(url or "").strip()
-    if not normalized:
-        return "", "/"
-    parsed = urlparse(normalized if "://" in normalized else f"//{normalized}")
-    return (
-        str(parsed.hostname or "").strip().lower(),
-        str(parsed.path or "/").strip() or "/",
-    )
-
-
-def _cookie_domain_matches(host: str, domain: str) -> bool:
-    normalized_domain = domain.lstrip(".")
-    return host == normalized_domain or host.endswith(f".{normalized_domain}")
-
-
-def _cookie_path_matches(request_path: str, cookie_path: str) -> bool:
-    normalized_request_path = str(request_path or "/").strip() or "/"
-    normalized_cookie_path = str(cookie_path or "/").strip() or "/"
-    if normalized_request_path == normalized_cookie_path:
-        return True
-    if not normalized_request_path.startswith(normalized_cookie_path):
-        return False
-    return (
-        normalized_cookie_path.endswith("/")
-        or normalized_request_path[
-            len(normalized_cookie_path) : len(normalized_cookie_path) + 1
-        ]
-        == "/"
-    )

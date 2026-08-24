@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import os
+
 from tests.component.browser_context_test_support import (
     Path,
     acquisition_browser_runtime,
     cookie_store,
     pytest,
 )
+from app.acquisition import run_cookie_storage
+
+
+@pytest.fixture(autouse=True)
+def _run_storage_owner(monkeypatch: pytest.MonkeyPatch):
+    async def _owner(_run_id, **_kwargs):
+        return 11
+
+    monkeypatch.setattr(cookie_store, "user_id_for_run", _owner)
 
 
 @pytest.mark.component
@@ -173,6 +185,56 @@ async def test_persist_storage_state_for_run_replaces_existing_state(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_run_storage_state_file_is_encrypted_and_owner_bound(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(cookie_store.settings, "cookie_store_dir", tmp_path)
+    await cookie_store.clear_cookie_store_cache()
+    sentinel = "cookie-secret-sentinel"
+
+    await cookie_store.persist_storage_state_for_run(
+        77,
+        {
+            "cookies": [
+                {
+                    "name": "session",
+                    "value": sentinel,
+                    "domain": ".example.com",
+                    "path": "/",
+                }
+            ],
+            "origins": [],
+        },
+        browser_engine="chromium",
+        user_id=11,
+    )
+
+    path = tmp_path / "run_77__chromium.json"
+    raw = path.read_text(encoding="utf-8")
+    envelope = json.loads(raw)
+    assert sentinel not in raw
+    assert envelope["run_id"] == 77
+    assert envelope["user_id"] == 11
+    assert envelope["browser_engine"] == "chromium"
+    assert envelope["ct"]
+    assert (
+        await cookie_store.load_storage_state_for_run(
+            77, browser_engine="chromium", user_id=12
+        )
+        is None
+    )
+    loaded = await cookie_store.load_storage_state_for_run(
+        77, browser_engine="chromium", user_id=11
+    )
+    assert loaded is not None
+    assert loaded["cookies"][0]["value"] == sentinel
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_persist_storage_state_for_run_keeps_cache_clean_when_write_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -184,7 +246,7 @@ async def test_persist_storage_state_for_run_keeps_cache_clean_when_write_fails(
         del path, storage_state
         raise OSError("write failed")
 
-    monkeypatch.setattr(cookie_store, "_write_storage_state_file", _raise_write)
+    monkeypatch.setattr(run_cookie_storage, "_write_storage_state_file", _raise_write)
 
     with pytest.raises(OSError, match="write failed"):
         await cookie_store.persist_storage_state_for_run(
@@ -205,6 +267,30 @@ async def test_persist_storage_state_for_run_keeps_cache_clean_when_write_fails(
     assert await cookie_store.load_storage_state_for_run(77) is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_delete_run_storage_states_respects_run_id_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(cookie_store.settings, "cookie_store_dir", tmp_path)
+    own_paths = [
+        tmp_path / "run_1.json",
+        tmp_path / "run_1__chromium.json",
+        tmp_path / ".run_1.json.10.20.tmp",
+        tmp_path / ".run_1__chromium.json.10.20.tmp",
+    ]
+    other_path = tmp_path / ".run_12__chromium.json.10.20.tmp"
+    for path in [*own_paths, other_path]:
+        path.write_text("state", encoding="utf-8")
+
+    deleted = await run_cookie_storage.delete_run_storage_states(1)
+
+    assert deleted == len(own_paths)
+    assert all(not path.exists() for path in own_paths)
+    assert other_path.exists()
+
+
 @pytest.mark.component
 def test_write_storage_state_file_retries_permission_error(
     monkeypatch: pytest.MonkeyPatch,
@@ -221,9 +307,9 @@ def test_write_storage_state_file_retries_permission_error(
         return original_replace(self, target)
 
     monkeypatch.setattr(Path, "replace", _flaky_replace)
-    monkeypatch.setattr(cookie_store.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(run_cookie_storage.time, "sleep", lambda _seconds: None)
 
-    cookie_store._write_storage_state_file(
+    run_cookie_storage._write_storage_state_file(
         path,
         {"cookies": [], "origins": []},
     )

@@ -4,7 +4,6 @@ import asyncio
 import inspect
 import logging
 import time
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -256,9 +255,11 @@ async def _configure_page(
     request = state.request
     payload_capture = _build_payload_capture(state.normalized_surface)
     payload_capture.attach(page)
-    if not request.capture_screenshot:
-        with suppress(Exception):
-            await page.route("**/*", block_unneeded_route)
+    try:
+        await page.route("**/*", block_unneeded_route)
+    except Exception:
+        logger.exception("Failed to install browser SSRF route guard")
+        raise
     traversal_active, readiness_policy, readiness_override = (
         resolve_browser_fetch_policy(
             url=request.url,

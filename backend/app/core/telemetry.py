@@ -4,12 +4,15 @@ import asyncio
 import errno
 import logging
 import sys
+import traceback
 import weakref
 from collections.abc import MutableMapping
 from contextvars import ContextVar, Token
 from functools import lru_cache
 from typing import Any, cast
 from uuid import uuid4
+
+from app.core.proxy_secrets import redact_secret_text
 
 structlog: Any | None = None
 try:
@@ -32,6 +35,31 @@ _correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", defau
 _ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, object]" = weakref.WeakKeyDictionary()
 
 
+def _redact_log_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_secret_text(value)
+    if isinstance(value, tuple):
+        return tuple(_redact_log_value(item) for item in value)
+    if isinstance(value, list):
+        return [_redact_log_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_log_value(item) for key, item in value.items()}
+    return value
+
+
+class _SecretRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _redact_log_value(record.msg)
+        record.args = _redact_log_value(record.args)
+        if record.exc_info:
+            rendered = "".join(traceback.format_exception(*record.exc_info))
+            record.exc_text = redact_secret_text(rendered)
+            record.exc_info = None
+        if record.stack_info:
+            record.stack_info = redact_secret_text(record.stack_info)
+        return True
+
+
 def _add_correlation_id(
     logger: object,
     method_name: str,
@@ -47,11 +75,14 @@ def _add_correlation_id(
 @lru_cache(maxsize=1)
 def configure_logging() -> None:
     if structlog is None:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-            stream=sys.stdout,
+        handler = logging.StreamHandler(sys.stdout)
+        handler.addFilter(_SecretRedactionFilter())
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
         )
+        root_logger = logging.getLogger()
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.INFO)
         return
 
     shared_processors = cast(
@@ -71,6 +102,7 @@ def configure_logging() -> None:
         ],
     )
     handler = logging.StreamHandler(sys.stdout)
+    handler.addFilter(_SecretRedactionFilter())
     handler.setFormatter(formatter)
     root_logger = logging.getLogger()
     if not any(

@@ -13,6 +13,23 @@ from app.crawl.domain_memory_service import load_domain_memory, save_domain_memo
 from app.models.domain_memory import DomainCookieMemory
 
 
+@pytest.fixture(autouse=True)
+async def _default_cookie_owner(monkeypatch: pytest.MonkeyPatch, test_user):
+    for name in (
+        "persist_storage_state_for_domain",
+        "load_storage_state_for_domain",
+        "list_domain_cookie_memory",
+    ):
+        original = globals()[name]
+
+        async def _owned(*args, __original=original, **kwargs):
+            kwargs.setdefault("user_id", test_user.id)
+            return await __original(*args, **kwargs)
+
+        monkeypatch.setitem(globals(), name, _owned)
+    return test_user.id
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_domain_memory_round_trip(db_session) -> None:
@@ -74,9 +91,13 @@ async def test_domain_cookie_memory_encrypts_storage_state_at_rest(db_session) -
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_domain_cookie_memory_reads_legacy_plaintext_rows(db_session) -> None:
+async def test_domain_cookie_memory_rejects_legacy_plaintext_rows(
+    db_session,
+    _default_cookie_owner,
+) -> None:
     db_session.add(
         DomainCookieMemory(
+            user_id=_default_cookie_owner,
             domain="legacy.example",
             storage_state={
                 "cookies": [
@@ -96,8 +117,7 @@ async def test_domain_cookie_memory_reads_legacy_plaintext_rows(db_session) -> N
 
     loaded = await load_storage_state_for_domain("legacy.example", session=db_session)
 
-    assert loaded is not None
-    assert loaded["cookies"][0]["name"] == "legacy"
+    assert loaded is None
 
 
 @pytest.mark.asyncio

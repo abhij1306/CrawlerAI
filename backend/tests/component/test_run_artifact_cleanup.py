@@ -17,7 +17,11 @@ from app.crawl.crud import create_crawl_run
 from app.crawl.state import CrawlStatus, update_run_status
 from app.main import app
 from app.models.crawl_run import CrawlRun
-from app.tasks import _sweep_run_artifacts, sweep_run_artifacts_task
+from app.tasks import (
+    _sweep_run_artifacts,
+    _sweep_run_cookie_states,
+    sweep_run_artifacts_task,
+)
 
 
 def _write_run_tree(root: Path, run_id: int) -> Path:
@@ -69,6 +73,16 @@ async def test_delete_run_removes_artifact_tree(
     monkeypatch.setattr(settings, "artifacts_dir", tmp_path)
     run = await _make_run(db_session, test_user, CrawlStatus.COMPLETED)
     tree = _write_run_tree(tmp_path, run.id)
+    cookie_dir = tmp_path / "cookies"
+    cookie_dir.mkdir()
+    monkeypatch.setattr(settings, "cookie_store_dir", cookie_dir)
+    cookie_files = [
+        cookie_dir / f"run_{run.id}.json",
+        cookie_dir / f"run_{run.id}__chromium.json",
+        cookie_dir / f"run_{run.id}__real_chrome.json",
+    ]
+    for path in cookie_files:
+        path.write_text("encrypted", encoding="utf-8")
 
     async def _override_db():
         yield db_session
@@ -89,6 +103,7 @@ async def test_delete_run_removes_artifact_tree(
     assert response.status_code == 204
     assert await db_session.get(CrawlRun, run.id) is None
     assert not tree.exists()
+    assert not any(path.exists() for path in cookie_files)
 
 
 @pytest.mark.asyncio
@@ -142,6 +157,38 @@ async def test_sweep_run_artifacts_disabled_at_zero_retention(
     await _sweep_run_artifacts()
 
     assert missing_tree.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_sweep_run_cookie_states_deletes_missing_and_old_terminal_files(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cookie_dir = tmp_path / "cookies"
+    cookie_dir.mkdir()
+    monkeypatch.setattr(settings, "cookie_store_dir", cookie_dir)
+    monkeypatch.setattr(settings, "run_artifacts_retention_days", 30)
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    monkeypatch.setattr(app_tasks, "SessionLocal", session_factory)
+
+    missing = cookie_dir / "run_999001__chromium.json"
+    missing.write_text("encrypted", encoding="utf-8")
+    old_terminal = await _make_run(db_session, test_user, CrawlStatus.COMPLETED)
+    await _backdate_updated_at(db_session, old_terminal.id, 45)
+    old_file = cookie_dir / f"run_{old_terminal.id}__chromium.json"
+    old_file.write_text("encrypted", encoding="utf-8")
+    active = await _make_run(db_session, test_user, CrawlStatus.RUNNING)
+    active_file = cookie_dir / f"run_{active.id}__chromium.json"
+    active_file.write_text("encrypted", encoding="utf-8")
+
+    await _sweep_run_cookie_states()
+
+    assert not missing.exists()
+    assert not old_file.exists()
+    assert active_file.exists()
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,74 @@ from tests.component.browser_context_test_support import (
     pytest,
     uuid4,
 )
+from app.core.security import hash_password
+from app.models.user import User
+
+
+@pytest.fixture(autouse=True)
+async def _default_cookie_owner(monkeypatch: pytest.MonkeyPatch, test_user):
+    for name in (
+        "persist_storage_state_for_domain",
+        "load_storage_state_for_domain",
+        "list_domain_cookie_memory",
+        "export_cookie_header_for_domain",
+    ):
+        original = getattr(cookie_store, name)
+
+        async def _owned(*args, __original=original, **kwargs):
+            kwargs.setdefault("user_id", test_user.id)
+            return await __original(*args, **kwargs)
+
+        monkeypatch.setattr(cookie_store, name, _owned)
+    return test_user.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_domain_cookie_memory_isolated_between_users(
+    db_session,
+    test_user,
+) -> None:
+    second_user = User(
+        email=f"cookie-isolation-{uuid4().hex}@example.com",
+        hashed_password=hash_password("password123"),
+        role="user",
+    )
+    db_session.add(second_user)
+    await db_session.flush()
+    domain = f"shared-{uuid4().hex}.example.com"
+
+    for user, value in ((test_user, "first-secret"), (second_user, "second-secret")):
+        assert await cookie_store.persist_storage_state_for_domain(
+            domain,
+            {
+                "cookies": [
+                    {
+                        "name": "session",
+                        "value": value,
+                        "domain": domain,
+                        "path": "/",
+                    }
+                ],
+                "origins": [],
+            },
+            session=db_session,
+            user_id=user.id,
+        )
+
+    first = await cookie_store.load_storage_state_for_domain(
+        domain,
+        session=db_session,
+        user_id=test_user.id,
+    )
+    second = await cookie_store.load_storage_state_for_domain(
+        domain,
+        session=db_session,
+        user_id=second_user.id,
+    )
+
+    assert first is not None and first["cookies"][0]["value"] == "first-secret"
+    assert second is not None and second["cookies"][0]["value"] == "second-secret"
 
 
 @pytest.mark.asyncio
@@ -383,6 +451,34 @@ async def test_export_cookie_header_for_domain_does_not_match_path_prefixes(
     assert header is None
 
 
+def test_http_cookie_export_does_not_send_secure_cookie_over_http() -> None:
+    state = {
+        "cookies": [
+            {
+                "name": "secure-session",
+                "value": "secret",
+                "domain": ".example.com",
+                "path": "/",
+                "secure": True,
+            },
+            {
+                "name": "preference",
+                "value": "dark",
+                "domain": ".example.com",
+                "path": "/",
+            },
+        ]
+    }
+
+    assert cookie_store.http_cookie_pairs_for_url("http://example.com/", state) == [
+        ("preference", "dark")
+    ]
+    assert cookie_store.http_cookie_pairs_for_url("https://example.com/", state) == [
+        ("secure-session", "secret"),
+        ("preference", "dark"),
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_persist_storage_state_for_domain_keeps_patchright_isolated(
@@ -509,61 +605,65 @@ async def test_load_host_protection_policy_maps_legacy_browser_block_to_patchrig
 @pytest.mark.component
 async def test_load_storage_state_for_domain_filters_existing_challenge_state(
     db_session,
+    _default_cookie_owner,
 ) -> None:
     domain = f"poisoned-{uuid4().hex}.example.com"
     db_session.add(
         DomainCookieMemory(
+            user_id=_default_cookie_owner,
             domain=domain,
-            storage_state={
-                "cookies": [
-                    {
-                        "name": "_pxvid",
-                        "value": "challenge",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    {
-                        "name": "session",
-                        "value": "safe",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    {
-                        "name": "datadome",
-                        "value": "challenge-token",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    {
-                        "name": "_abck",
-                        "value": "akamai-token",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    {
-                        "name": "__cf_bm",
-                        "value": "cloudflare-token",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    {
-                        "name": "analytics",
-                        "value": "bot_management:captcha",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                ],
-                "origins": [
-                    {
-                        "origin": f"https://{domain}",
-                        "localStorage": [
-                            {"name": "PXapp_px_hvd", "value": "challenge"},
-                            {"name": "safe-key", "value": "datadome blocked"},
-                            {"name": "consent", "value": "accepted"},
-                        ],
-                    }
-                ],
-            },
+            storage_state=cookie_store._encrypt_storage_state(
+                {
+                    "cookies": [
+                        {
+                            "name": "_pxvid",
+                            "value": "challenge",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        {
+                            "name": "session",
+                            "value": "safe",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        {
+                            "name": "datadome",
+                            "value": "challenge-token",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        {
+                            "name": "_abck",
+                            "value": "akamai-token",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        {
+                            "name": "__cf_bm",
+                            "value": "cloudflare-token",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        {
+                            "name": "analytics",
+                            "value": "bot_management:captcha",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [
+                        {
+                            "origin": f"https://{domain}",
+                            "localStorage": [
+                                {"name": "PXapp_px_hvd", "value": "challenge"},
+                                {"name": "safe-key", "value": "datadome blocked"},
+                                {"name": "consent", "value": "accepted"},
+                            ],
+                        }
+                    ],
+                }
+            ),
             state_fingerprint="poisoned",
         )
     )
@@ -588,26 +688,32 @@ async def test_load_storage_state_for_domain_filters_existing_challenge_state(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_list_domain_cookie_memory_counts_stored_entries(db_session) -> None:
+async def test_list_domain_cookie_memory_counts_stored_entries(
+    db_session,
+    _default_cookie_owner,
+) -> None:
     domain = f"stored-count-{uuid4().hex}.example.com"
     db_session.add(
         DomainCookieMemory(
+            user_id=_default_cookie_owner,
             domain=domain,
-            storage_state={
-                "cookies": [
-                    {
-                        "name": "session",
-                        "value": "safe",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    },
-                    "legacy-cookie-row",
-                ],
-                "origins": [
-                    {"origin": f"https://{domain}", "localStorage": []},
-                    "legacy-origin-row",
-                ],
-            },
+            storage_state=cookie_store._encrypt_storage_state(
+                {
+                    "cookies": [
+                        {
+                            "name": "session",
+                            "value": "safe",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        },
+                        "legacy-cookie-row",
+                    ],
+                    "origins": [
+                        {"origin": f"https://{domain}", "localStorage": []},
+                        "legacy-origin-row",
+                    ],
+                }
+            ),
             state_fingerprint="stored-count",
         )
     )
@@ -676,29 +782,33 @@ async def test_persist_storage_state_for_domain_rejects_challenge_only_state(
 @pytest.mark.component
 async def test_load_storage_state_for_domain_drops_origin_shell_when_local_storage_filters_empty(
     db_session,
+    _default_cookie_owner,
 ) -> None:
     domain = f"origin-shell-{uuid4().hex}.example.com"
     db_session.add(
         DomainCookieMemory(
+            user_id=_default_cookie_owner,
             domain=domain,
-            storage_state={
-                "cookies": [
-                    {
-                        "name": "session",
-                        "value": "safe",
-                        "domain": f".{domain}",
-                        "path": "/",
-                    }
-                ],
-                "origins": [
-                    {
-                        "origin": f"https://{domain}",
-                        "localStorage": [
-                            {"name": "PXapp_px_fp", "value": "challenge"},
-                        ],
-                    }
-                ],
-            },
+            storage_state=cookie_store._encrypt_storage_state(
+                {
+                    "cookies": [
+                        {
+                            "name": "session",
+                            "value": "safe",
+                            "domain": f".{domain}",
+                            "path": "/",
+                        }
+                    ],
+                    "origins": [
+                        {
+                            "origin": f"https://{domain}",
+                            "localStorage": [
+                                {"name": "PXapp_px_fp", "value": "challenge"},
+                            ],
+                        }
+                    ],
+                }
+            ),
             state_fingerprint="origin-shell",
         )
     )

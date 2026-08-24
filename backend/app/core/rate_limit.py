@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import uuid
 from collections import OrderedDict, deque
@@ -17,6 +18,33 @@ from app.core.redis import RedisUnavailableError, redis_execute
 logger = logging.getLogger(__name__)
 
 _REDIS_KEY_PREFIX = "ratelimit"
+
+
+def _trusted_proxy_networks(
+    configured: tuple[str, ...],
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for value in configured:
+        normalized = str(value).strip()
+        if not normalized:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(normalized, strict=False))
+        except ValueError:
+            logger.warning("Ignoring invalid trusted proxy CIDR: %s", normalized)
+    return tuple(networks)
+
+
+def is_trusted_proxy_address(address: str, *, trusted_proxies: tuple[str, ...]) -> bool:
+    try:
+        candidate = ipaddress.ip_address(str(address).strip())
+    except ValueError:
+        return False
+    return any(
+        candidate in network for network in _trusted_proxy_networks(trusted_proxies)
+    )
+
+
 # One ZSET key per identifier+window; members are unique request tokens scored
 # by arrival time (Redis server clock, so all app processes share one window).
 # Returns {allowed, retry_after_ms, remaining, reset_ms}.
@@ -54,22 +82,25 @@ def client_identifier_from_request(
     trusted_proxies: tuple[str, ...] = (),
 ) -> str:
     peer_host = request.client.host if request.client and request.client.host else ""
-    trusted_proxy_set = frozenset(
-        normalized
-        for normalized in (str(value).strip() for value in trusted_proxies)
-        if normalized
-    )
-    forwarded_for = (
-        request.headers.get("x-forwarded-for")
-        if peer_host in trusted_proxy_set
-        else None
-    )
-    if forwarded_for:
-        first = forwarded_for.split(",", maxsplit=1)[0].strip()
-        if first:
-            return first
+    try:
+        current = ipaddress.ip_address(peer_host)
+    except ValueError:
+        return peer_host or "unknown"
+
+    if not is_trusted_proxy_address(peer_host, trusted_proxies=trusted_proxies):
+        return str(current)
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    for raw_hop in reversed(forwarded_for.split(",")):
+        if not raw_hop.strip():
+            continue
+        if not is_trusted_proxy_address(str(current), trusted_proxies=trusted_proxies):
+            break
+        try:
+            current = ipaddress.ip_address(raw_hop.strip())
+        except ValueError:
+            return str(ipaddress.ip_address(peer_host))
     if peer_host:
-        return peer_host
+        return str(current)
     return "unknown"
 
 

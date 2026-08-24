@@ -14,8 +14,13 @@ APP_ROOT = BACKEND_ROOT / "app"
 IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # Exact inventory. API/MCP launch adds focused key-lifecycle, protocol, and
 # authentication-cache regressions; both ratchets remain measured.
-TEST_LOC_BUDGET = 55_653
-TOOL_LOC_BUDGET = 3_813
+# Raised only for the focused security regression coverage added by the
+# 2026-08-24 remediation plan (SSRF, byte limits, tenant isolation, bootstrap,
+# CSRF, forwarding-chain trust, pre-auth abuse limits, MCP exposure, proxy
+# secret lifecycle, encrypted run-cookie retention, and startup contracts).
+TEST_LOC_BUDGET = 56_989
+# Explicit bootstrap and ECR enhanced-scan policy commands are measured tools.
+TOOL_LOC_BUDGET = 3_951
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
 # cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,
@@ -212,9 +217,14 @@ PACKAGE_LOC_BUDGETS = {
     # all touched production callables at CC<=15.
     # Services/tooling simplification adds explicit owner seams and type-safe
     # helpers while shrinking the five named root owners by 2,870 lines.
-    "acquisition": 17_637,
-    "crawl": 9_790,
-    "core": 21_133,
+    # Slices 6-8 isolate run-cookie/proxy owners, centralize deployment config,
+    # and await bounded browser subprocess teardown. Ratchets are exact.
+    "acquisition": 17_925,
+    "crawl": 9_834,
+    # Identity/security slice: signed cookie-CSRF boundary, trusted-CIDR chain
+    # parser, pre-auth limiter, and create-only bootstrap transaction.
+    # MCP slice adds only centralized transport/exposure config tokens here.
+    "core": 21_768,
     "enrichment": 2_361,
     "connectors": 2_427,
     "intelligence": 3_576,
@@ -270,7 +280,14 @@ PACKAGE_LOC_BUDGETS = {
 # Core/acquisition simplification added +448; PR #53 review follow-up adds +8.
 # Services/tooling owner seams add 667 lines while shrinking the named root
 # owners by 2,870 lines; reconciled to the live package inventory.
-TOTAL_APP_LOC_BUDGET = 86_433
+# Raised for the security boundaries added by the 2026-08-24 remediation plan.
+# Identity/security slice adds the durable marker model and the shared auth,
+# CSRF, forwarding, and pre-auth controls. Per-file ceilings still reject
+# oversized owners. MCP adds a bounded local transport validator and focused
+# server wiring; this is not an exclusion.
+# Slices 6-8 add measured secret/cookie owners, centralized deployment config,
+# and a bounded stdlib legacy-password verifier. No file ceiling was relaxed.
+TOTAL_APP_LOC_BUDGET = 87_544
 
 
 def test_production_package_loc_budgets() -> None:

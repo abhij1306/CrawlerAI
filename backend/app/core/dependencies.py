@@ -2,15 +2,24 @@
 from __future__ import annotations
 
 import inspect
+import hashlib
+import hmac
 import logging
+import secrets
 import threading
+from urllib.parse import urlsplit
 
-from app.core.config import settings
+from app.core.config import get_frontend_origins, settings
+from app.core.config.auth_security import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    CSRF_UNSAFE_METHODS,
+)
 from app.core.database import get_session
 from app.core.security import TokenDecodeError, decode_access_token
 from app.models.user import User
 from app.workers.base import RunDispatcher
-from fastapi import Cookie, Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,12 +38,81 @@ def get_db(
 def _access_token_from_headers(
     access_token: str | None, authorization: str | None
 ) -> str | None:
-    token = access_token
-    if not token and authorization:
+    token = None
+    if authorization:
         scheme, _, credentials = authorization.partition(" ")
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
-    return token
+    return token or access_token
+
+
+def _token_source(access_token: str | None, authorization: str | None) -> str | None:
+    if authorization:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.lower() == "bearer" and credentials.strip():
+            return "bearer"
+    return "cookie" if access_token else None
+
+
+def _origin(value: str) -> str | None:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _csrf_signature(nonce: str) -> str:
+    return hmac.new(
+        settings.jwt_secret_key.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def csrf_token_is_valid(value: str) -> bool:
+    nonce, separator, signature = str(value or "").partition(".")
+    return bool(
+        separator
+        and nonce
+        and signature
+        and hmac.compare_digest(signature, _csrf_signature(nonce))
+    )
+
+
+def create_csrf_token() -> str:
+    nonce = secrets.token_urlsafe(32)
+    return f"{nonce}.{_csrf_signature(nonce)}"
+
+
+def enforce_cookie_csrf(request: Request) -> None:
+    if request.method.upper() not in CSRF_UNSAFE_METHODS:
+        return
+    supplied_origin = _origin(request.headers.get("origin", ""))
+    if supplied_origin is None:
+        supplied_origin = _origin(request.headers.get("referer", ""))
+    request_origin = _origin(str(request.base_url))
+    allowed_origins = {
+        origin
+        for origin in (_origin(value) for value in get_frontend_origins())
+        if origin is not None
+    }
+    if request_origin is not None:
+        allowed_origins.add(request_origin)
+    if supplied_origin not in allowed_origins:
+        raise HTTPException(status_code=403, detail="CSRF origin rejected")
+
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    header_token = request.headers.get(CSRF_HEADER_NAME, "")
+    if (
+        not cookie_token
+        or not header_token
+        or not hmac.compare_digest(cookie_token, header_token)
+        or not csrf_token_is_valid(cookie_token)
+    ):
+        raise HTTPException(status_code=403, detail="CSRF token rejected")
 
 
 async def _resolve_token_user(
@@ -58,10 +136,13 @@ async def _resolve_token_user(
 
 
 async def get_current_user(
+    request: Request,
     access_token: str | None = Cookie(default=None),
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
 ) -> User:
+    if _token_source(access_token, authorization) == "cookie":
+        enforce_cookie_csrf(request)
     token = _access_token_from_headers(access_token, authorization)
     if not token:
         raise HTTPException(
@@ -74,11 +155,14 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
+    request: Request,
     access_token: str | None = Cookie(default=None),
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
 ) -> User | None:
     """Same resolution as get_current_user but anonymous-friendly (no 401)."""
+    if _token_source(access_token, authorization) == "cookie":
+        enforce_cookie_csrf(request)
     token = _access_token_from_headers(access_token, authorization)
     if not token:
         return None

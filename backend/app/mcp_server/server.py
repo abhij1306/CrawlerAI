@@ -4,17 +4,17 @@ import os
 from typing import Any
 
 from app.mcp_server.client import PublicApiClient
-from app.mcp_server.config import api_base_url, api_key, bind_host
+from app.mcp_server.config import api_base_url, api_key, runtime_config
 from app.mcp_server.tools import check_domain as _check_domain
 from app.mcp_server.tools import extract_product as _extract_product
 from app.mcp_server.tools import list_capabilities as _list_capabilities
 
 
-def build_server():
+def build_server(client: PublicApiClient | None = None):
     from fastmcp import FastMCP  # type: ignore[import-untyped]
 
     mcp = FastMCP("crawlerai")
-    client = PublicApiClient(api_key=api_key(), base_url=api_base_url())
+    api_client = client or PublicApiClient(api_key=api_key(), base_url=api_base_url())
 
     @mcp.tool
     async def extract_product(
@@ -23,7 +23,7 @@ def build_server():
         use_cache: bool = False,
     ) -> dict[str, Any]:
         return await _extract_product(
-            client,
+            api_client,
             url=url,
             fields=fields,
             use_cache=use_cache,
@@ -31,7 +31,7 @@ def build_server():
 
     @mcp.tool
     async def check_domain(domain: str) -> dict[str, Any]:
-        return await _check_domain(client, domain=domain)
+        return await _check_domain(api_client, domain=domain)
 
     @mcp.tool
     async def list_capabilities() -> dict[str, Any]:
@@ -41,9 +41,15 @@ def build_server():
 
 
 def main() -> None:
-    server = build_server()
+    config = runtime_config()
+    server = build_server(
+        PublicApiClient(api_key=config.api_key, base_url=config.api_base_url)
+    )
+    if config.transport == "stdio":
+        server.run(transport="stdio")
+        return
     port = int(os.environ.get("PORT", "8001"))
-    server.run(transport="sse", host=bind_host(), port=port)
+    server.run(transport="sse", host=config.host, port=port)
 
 
 if __name__ == "__main__":

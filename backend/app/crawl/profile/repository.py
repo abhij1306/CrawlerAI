@@ -8,6 +8,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain_memory import DomainRunProfile
+from app.models.crawl_run import CrawlRun
+from app.models.user import User
 from app.core.domain_utils import normalize_domain
 
 from .normalization import normalize_domain_run_profile
@@ -100,6 +102,7 @@ async def save_domain_run_profile(
     source_run_id: int,
     commit: bool = False,
     existing_record: DomainRunProfile | None = None,
+    allow_global_promotion: bool = False,
 ) -> dict[str, object]:
     normalized_domain = normalize_domain(domain or "")
     normalized_surface = str(surface or "").strip().lower()
@@ -116,6 +119,11 @@ async def save_domain_run_profile(
         source_run_id=source_run_id,
         saved_at=saved_at,
     )
+    if not allow_global_promotion and not await _source_run_is_admin_owned(
+        session,
+        source_run_id,
+    ):
+        return normalized_profile
     if existing is None:
         statement = (
             insert(DomainRunProfile)
@@ -149,3 +157,15 @@ async def save_domain_run_profile(
     else:
         await session.flush()
     return dict(existing.profile or {})
+
+
+async def _source_run_is_admin_owned(
+    session: AsyncSession,
+    source_run_id: int,
+) -> bool:
+    role = await session.scalar(
+        select(User.role)
+        .join(CrawlRun, CrawlRun.user_id == User.id)
+        .where(CrawlRun.id == source_run_id)
+    )
+    return str(role or "").strip().lower() == "admin"

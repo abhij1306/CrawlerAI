@@ -174,10 +174,13 @@ def add_real_chrome_launch_kwargs(
 async def launch_proxy_config_for_browser(
     runtime: browser_pool.SharedBrowserRuntime,
 ) -> dict[str, str] | None:
-    if runtime.launch_proxy_config is None:
-        return None
-    if runtime._authenticated_socks5_proxy is None:
-        return dict(runtime.launch_proxy_config)
+    if (
+        runtime.launch_proxy_config is not None
+        and runtime._authenticated_socks5_proxy is None
+    ):
+        raise RuntimeError(
+            "Browser proxy must use socks5:// or socks5h:// for connect-time SSRF enforcement"
+        )
     if runtime._socks5_auth_bridge is None:
         bridge_cls = _browser_pool().Socks5AuthBridge
         runtime._socks5_auth_bridge = bridge_cls(runtime._authenticated_socks5_proxy)
@@ -203,6 +206,7 @@ async def close_browser_runtime_locked(
             closed = await await_without_cancelling(
                 getattr(component, close_method)(),
                 timeout_seconds=_browser_pool()._browser_close_timeout_seconds(),
+                preserve_pending=True,
             )
             if not closed:
                 logger.warning(

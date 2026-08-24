@@ -8,7 +8,11 @@ from app.core.config.network_capture import (
     BLOCKED_BROWSER_ROUTE_TOKENS,
     PROTECTED_CHALLENGE_ROUTE_TOKENS,
 )
-from app.core.url_safety import SecurityError, validate_public_url_host
+from app.core.url_safety import (
+    SecurityError,
+    validate_public_target,
+    validate_public_url_host,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,23 +24,23 @@ async def block_unneeded_route(route: Any) -> None:
     request_url = raw_url.lower()
     # SSRF guard FIRST: abort requests (document navigations incl. redirect
     # hops, and subresources) targeting literal non-public IPs or
-    # internal/blocked hostnames. This must run before the protected-challenge
+    # internal/blocked hostnames, then resolve every HTTP(S) hostname before
+    # Chromium continues it. This must run before the protected-challenge
     # early-return below — challenge tokens are substring matches, so a URL
     # like http://169.254.169.254/latest/meta-data/?akamai=1 would otherwise
-    # bypass the guard. Hostname targets that need DNS are validated at the
-    # fetch / post-navigation boundary instead (see validate_public_url_host).
+    # bypass the guard. The landed URL is validated again after navigation.
     try:
         validate_public_url_host(raw_url)
-    except SecurityError as exc:
+        if raw_url.lower().startswith(("http://", "https://")):
+            await validate_public_target(raw_url)
+    except (SecurityError, ValueError) as exc:
         logger.warning(
             "Aborting browser request to non-public target resource_type=%s url=%s: %s",
             resource_type,
             request_url,
             exc,
         )
-        await _abort_or_continue(
-            route, resource_type=resource_type, request_url=request_url
-        )
+        await _abort_route(route, resource_type=resource_type, request_url=request_url)
         return
     if any(token in request_url for token in PROTECTED_CHALLENGE_ROUTE_TOKENS):
         await _continue_route(route, request_url=request_url, protected=True)
@@ -44,9 +48,7 @@ async def block_unneeded_route(route: Any) -> None:
     if resource_type in BLOCKED_BROWSER_RESOURCE_TYPES or any(
         token in request_url for token in BLOCKED_BROWSER_ROUTE_TOKENS
     ):
-        await _abort_or_continue(
-            route, resource_type=resource_type, request_url=request_url
-        )
+        await _abort_route(route, resource_type=resource_type, request_url=request_url)
         return
     await _continue_route(route, request_url=request_url, protected=False)
 
@@ -71,24 +73,13 @@ async def _continue_route(route: Any, *, request_url: str, protected: bool) -> N
             )
 
 
-async def _abort_or_continue(
-    route: Any, *, resource_type: str, request_url: str
-) -> None:
+async def _abort_route(route: Any, *, resource_type: str, request_url: str) -> None:
     try:
         await route.abort()
         return
     except Exception:
         logger.debug(
-            "Browser request abort failed for resource_type=%s url=%s; attempting continue",
-            resource_type,
-            request_url,
-            exc_info=True,
-        )
-    try:
-        await route.continue_()
-    except Exception:
-        logger.debug(
-            "Browser request continue failed after abort failure for resource_type=%s url=%s",
+            "Browser request abort failed for resource_type=%s url=%s",
             resource_type,
             request_url,
             exc_info=True,

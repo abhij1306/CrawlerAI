@@ -26,6 +26,7 @@ from app.core.config.sitemap import (
     SITEMAP_THIN_RESULT_THRESHOLD,
     SITEMAP_USER_AGENT,
 )
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.sitemap_nav import (
     _anchor_label,
     _build_nav_tree,
@@ -39,7 +40,11 @@ from app.crawl.sitemap_nav import (
 )
 from app.crawl.utils import normalize_target_url
 from app.core.shared.url_utils import absolute_url
-from app.core.url_safety import get_with_validated_redirects, validate_public_target
+from app.core.url_safety import (
+    PublicTargetAsyncTransport,
+    get_with_validated_redirects,
+    validate_public_target,
+)
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 logger = logging.getLogger(__name__)
@@ -251,6 +256,7 @@ async def resolve_category_urls_from_sitemap_result(
     async with httpx.AsyncClient(
         follow_redirects=False,
         timeout=SITEMAP_FETCH_TIMEOUT_SECONDS,
+        transport=PublicTargetAsyncTransport(httpx.AsyncHTTPTransport()),
     ) as client:
         sitemap_result: SitemapResolutionResult | None = None
         for root_url in _candidate_sitemap_urls(domain):
@@ -447,6 +453,7 @@ async def _resolve_child_sitemap_urls(
     async with httpx.AsyncClient(
         follow_redirects=False,
         timeout=SITEMAP_FETCH_TIMEOUT_SECONDS,
+        transport=PublicTargetAsyncTransport(httpx.AsyncHTTPTransport()),
     ) as client:
         for child_url in child_urls:
             try:
@@ -552,6 +559,7 @@ async def _fetch_response(client: httpx.AsyncClient, url: str) -> httpx.Response
             client,
             url,
             max_redirects=SITEMAP_FETCH_MAX_REDIRECTS,
+            max_response_bytes=crawler_runtime_settings.sitemap_response_max_bytes,
             headers={"User-Agent": SITEMAP_USER_AGENT},
         )
         await _validate_response_redirect_chain(response)

@@ -12,7 +12,12 @@ from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.core.config.proxy_secrets import (
+    PROXY_PLAINTEXT_SECRET_KEYS,
+    PROXY_SECRET_REFS_KEY,
+)
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.proxy_secrets import resolve_proxy_urls, seal_proxy_urls
 from app.core.shared.text_coerce import clean_str as _clean_str
 from app.crawl.utils import normalize_target_url, resolve_traversal_mode
 
@@ -257,7 +262,7 @@ class ProxySettingsView:
             text = str(value or "").strip()
             if text:
                 values.append(text)
-        return values
+        return resolve_proxy_urls(values, self.data.get(PROXY_SECRET_REFS_KEY))
 
     def proxy_profile(self, *, infer_rotation: bool = True) -> dict[str, object]:
         stored = _mapping(self.data.get("proxy_profile"))
@@ -473,9 +478,21 @@ class RunProfileView:
         normalized["sleep_ms"] = execution.sleep_ms()
         normalized["request_delay_ms"] = execution.sleep_ms()
         normalized["traversal_mode"] = execution.traversal_mode()
+        raw_proxy_list = proxy.proxy_list()
+        stored_proxy_list, secret_refs = seal_proxy_urls(raw_proxy_list)
         normalized["proxy_enabled"] = bool(proxy.proxy_profile()["enabled"])
-        normalized["proxy_list"] = proxy.proxy_list()
-        normalized["proxy_profile"] = proxy.proxy_profile(infer_rotation=False)
+        normalized["proxy_list"] = stored_proxy_list
+        normalized_proxy_profile = proxy.proxy_profile(infer_rotation=False)
+        for key in PROXY_PLAINTEXT_SECRET_KEYS:
+            normalized_proxy_profile.pop(key, None)
+        normalized_proxy_profile["proxy_list"] = stored_proxy_list
+        normalized["proxy_profile"] = normalized_proxy_profile
+        for key in PROXY_PLAINTEXT_SECRET_KEYS:
+            normalized.pop(key, None)
+        if secret_refs:
+            normalized[PROXY_SECRET_REFS_KEY] = secret_refs
+        else:
+            normalized.pop(PROXY_SECRET_REFS_KEY, None)
         if execution.advanced_enabled():
             normalized["advanced_mode"] = self.data.get("advanced_mode")
         elif "advanced_mode" in normalized:

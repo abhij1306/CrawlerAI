@@ -5,7 +5,6 @@ import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Iterable, Literal
-from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from pydantic import (
     AliasChoices,
@@ -16,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 from app.core.config import settings
+from app.core.config.proxy_secrets import PROXY_SECRET_REFS_KEY
+from app.core.proxy_secrets import strip_url_userinfo
 from app.schemas.selectors import SelectorRecordResponse
 from app.extraction.surfaces import parse_surface
 from app.persistence.publish.verdict import run_health_verdict
@@ -521,6 +522,7 @@ _SENSITIVE_SETTING_KEYS = {
     "proxy_password",
     "secret",
     "token",
+    PROXY_SECRET_REFS_KEY,
 }
 _SENSITIVE_PROXY_KEYS = {
     "api_key",
@@ -581,27 +583,7 @@ def _sanitize_proxy_item(value: object) -> object:
 
 
 def _mask_proxy_url(value: object) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    try:
-        parsed = urlsplit(raw)
-    except ValueError:
-        return raw
-    if not parsed.username and not parsed.password:
-        return raw
-    host = parsed.hostname or ""
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    masked_netloc = f"***:***@{host}" if host else "***:***"
-    rebuilt = SplitResult(
-        scheme=parsed.scheme,
-        netloc=masked_netloc,
-        path=parsed.path,
-        query=parsed.query,
-        fragment=parsed.fragment,
-    )
-    return urlunsplit(rebuilt)
+    return strip_url_userinfo(value, masked=True)
 
 
 _LEGACY_MANIFEST_KEYS = {

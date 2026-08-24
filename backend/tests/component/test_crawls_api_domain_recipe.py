@@ -14,6 +14,8 @@ from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run
 from app.crawl.domain_memory_service import save_domain_memory
 from app.evaluation.grounded_corrections import GroundedCorrectionScopeMismatch
+from app.core.security import hash_password
+from app.models.user import User
 
 
 def _authenticated_proxy_url() -> str:
@@ -49,6 +51,37 @@ async def test_crawls_logs_query_params_are_validated(
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_ordinary_user_cannot_promote_global_run_memory(
+    crawls_api_client: AsyncClient,
+    db_session,
+) -> None:
+    ordinary = User(
+        email="ordinary-memory@example.com",
+        hashed_password=hash_password("password123"),
+        role="user",
+    )
+    db_session.add(ordinary)
+    await db_session.commit()
+
+    async def _ordinary_user():
+        return ordinary
+
+    app.dependency_overrides[get_current_user] = _ordinary_user
+    save_response = await crawls_api_client.post(
+        "/api/crawls/1/domain-recipe/save-run-profile",
+        json={"profile": {}},
+    )
+    correction_response = await crawls_api_client.post(
+        "/api/crawls/1/corrections",
+        json={"labels": []},
+    )
+
+    assert save_response.status_code == 403
+    assert correction_response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -328,6 +361,7 @@ async def test_crawls_domain_recipe_routes_round_trip(
             "origins": [],
         },
         session=db_session,
+        user_id=test_user.id,
     )
     cookies_response = await crawls_api_client.get(
         "/api/crawls/domain-memory/cookies",

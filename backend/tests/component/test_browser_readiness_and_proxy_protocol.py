@@ -313,6 +313,58 @@ async def test_read_client_request_rebuilds_validated_connect_request() -> None:
     request = await browser_proxy_bridge._read_client_request(reader, _Writer())
 
     assert request.to_upstream_bytes() == raw_request[3:]
+    assert request.validation_url() == "http://example.com:443/"
+    assert request.to_upstream_bytes(host="93.184.216.34") == (
+        bytes([5, 1, 0, 1, 93, 184, 216, 34, 1, 187])
+    )
+
+
+@pytest.mark.component
+def test_socks5_proxy_without_credentials_still_uses_safety_bridge() -> None:
+    upstream = browser_proxy_bridge.parse_socks5_upstream_proxy(
+        "socks5://proxy.example:1080"
+    )
+
+    assert upstream is not None
+    assert upstream.host == "proxy.example"
+    assert upstream.username == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_direct_socks_bridge_rejects_private_target_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.data = bytearray()
+
+        def write(self, data: bytes) -> None:
+            self.data.extend(data)
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        async def wait_closed(self) -> None:
+            return None
+
+    async def _must_not_connect(*_args, **_kwargs):
+        raise AssertionError("private target reached connect")
+
+    reader = asyncio.StreamReader()
+    reader.feed_data(bytes([5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 80]))
+    reader.feed_eof()
+    writer = _Writer()
+    bridge = browser_proxy_bridge.Socks5AuthBridge()
+    monkeypatch.setattr(bridge, "_open_direct", _must_not_connect)
+
+    await bridge._handle_client(reader, writer)
+
+    assert bytes(writer.data[:2]) == bytes([5, 0])
+    assert bytes(writer.data[-10:]) == browser_proxy_bridge._failure_response(1)
 
 
 @pytest.mark.asyncio

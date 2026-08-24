@@ -10,7 +10,7 @@ export default function RegisterPage() {
         <Title kicker="Auth">Register</Title>
         <Subtitle>Account creation is turned off in this development build.</Subtitle>
       </div>
-      <InlineAlert message="Use the bootstrap admin account from your backend environment (BOOTSTRAP_ADMIN_ONCE, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD). Public registration will be re-enabled for production multi-tenant deployments." />
+      <InlineAlert message="Ask an operator to create the initial admin with the explicit backend bootstrap command. Public registration will be re-enabled for production multi-tenant deployments." />
       <div>
         <Link className="link-accent text-sm" to="/login">
           {' '}

@@ -237,7 +237,7 @@ async def record_attempt_exception(
     logger.debug(
         "Browser fetch failed for %s via %s engine=%s",
         runner.context.url,
-        proxy or "direct",
+        display_proxy(proxy),
         engine,
         exc_info=True,
     )

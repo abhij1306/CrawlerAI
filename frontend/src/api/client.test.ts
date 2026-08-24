@@ -13,6 +13,7 @@ describe('apiClient', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    document.cookie = 'csrf_token=; Max-Age=0; path=/';
     if (originalViteApiBaseUrl) {
       vi.stubEnv('VITE_API_BASE_URL', originalViteApiBaseUrl);
     }
@@ -225,6 +226,42 @@ describe('apiClient', () => {
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(new Headers(init.headers).get('X-Request-ID')).toBeTruthy();
+  });
+
+  it('adds the double-submit CSRF token to cookie-authenticated mutations', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    document.cookie = 'csrf_token=nonce.signature; path=/';
+
+    const { apiClient } = await import('./client');
+    await apiClient.post('/api/crawls', { url: 'https://example.com' });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('nonce.signature');
+  });
+
+  it('does not mix cookie CSRF proof into bearer mutations', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    document.cookie = 'csrf_token=nonce.signature; path=/';
+
+    const { apiClient } = await import('./client');
+    await apiClient.post(
+      '/api/crawls',
+      { url: 'https://example.com' },
+      { headers: { Authorization: 'Bearer token' } },
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('X-CSRF-Token')).toBeNull();
   });
 
   it('httpErrorStatus reads status from ApiError and duck-typed errors', async () => {

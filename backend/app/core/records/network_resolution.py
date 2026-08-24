@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import socket
+from collections.abc import Callable
 from typing import Literal
 
 import httpx
@@ -52,6 +53,8 @@ def build_async_http_client(
     limits: httpx.Limits | None = None,
     force_ipv4: bool = False,
     headers: dict[str, str] | None = None,
+    transport_wrapper: Callable[[httpx.AsyncBaseTransport], httpx.AsyncBaseTransport]
+    | None = None,
 ) -> httpx.AsyncClient:
     transport = _build_async_http_transport(
         proxy=proxy,
@@ -59,6 +62,8 @@ def build_async_http_client(
         force_ipv4=force_ipv4,
     )
     merged_headers = default_request_headers(headers=headers)
+    if transport_wrapper is not None:
+        transport = transport_wrapper(transport or httpx.AsyncHTTPTransport())
     if transport is not None:
         return httpx.AsyncClient(
             follow_redirects=follow_redirects,

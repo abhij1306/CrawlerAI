@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import gzip
 import socket
 
+import httpx
 import pytest
 
 from app.core import url_safety
@@ -142,3 +144,140 @@ async def test_validate_public_target_rejects_private_and_metadata_ranges(
 ) -> None:
     with pytest.raises(url_safety.SecurityError):
         await url_safety.validate_public_target(url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_validate_public_target_rejects_mixed_public_private_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _mixed_answers(*_args, **_kwargs) -> list[str]:
+        return ["93.184.216.34", "10.0.0.5"]
+
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _mixed_answers)
+
+    with pytest.raises(url_safety.SecurityError, match="non-public"):
+        await url_safety.validate_public_target("https://mixed.example/path")
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_public_target_transport_pins_ip_and_preserves_host_and_sni(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CaptureTransport(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self.request: httpx.Request | None = None
+
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            self.request = request
+            return httpx.Response(200, content=b"ok")
+
+    async def _public_answer(*_args, **_kwargs) -> list[str]:
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_answer)
+    inner = _CaptureTransport()
+    transport = url_safety.PublicTargetAsyncTransport(inner)
+    request = httpx.Request("GET", "https://shop.example:8443/products/1")
+
+    response = await transport.handle_async_request(request)
+
+    assert response.status_code == 200
+    assert inner.request is not None
+    assert inner.request.url.host == "93.184.216.34"
+    assert inner.request.headers["host"] == "shop.example:8443"
+    assert inner.request.extensions["sni_hostname"] == "shop.example"
+
+
+class _ChunkStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
+async def _public_dns(*_args, **_kwargs) -> list[str]:
+    return ["93.184.216.34"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_limited_response_rejects_advertised_oversize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_dns)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-length": "101"},
+            stream=_ChunkStream([b"ok"]),
+            request=request,
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(url_safety.ResponseBodyTooLarge, match="Content-Length"):
+            await url_safety.get_with_validated_redirects(
+                client, "https://example.com", max_response_bytes=100
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_limited_response_rejects_chunked_oversize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_dns)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            stream=_ChunkStream([b"abc", b"def"]),
+            request=request,
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(url_safety.ResponseBodyTooLarge):
+            await url_safety.get_with_validated_redirects(
+                client, "https://example.com", max_response_bytes=5
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_limited_response_rejects_compressed_decoded_oversize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_dns)
+    compressed = gzip.compress(b"x" * 1000)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-encoding": "gzip"},
+            stream=_ChunkStream([compressed]),
+            request=request,
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(url_safety.ResponseBodyTooLarge):
+            await url_safety.get_with_validated_redirects(
+                client, "https://example.com", max_response_bytes=100
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_limited_response_preserves_legitimate_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(url_safety, "_resolve_host_ips", _public_dns)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b"hello", request=request)
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        response = await url_safety.get_with_validated_redirects(
+            client, "https://example.com", max_response_bytes=5
+        )
+
+    assert response.text == "hello"

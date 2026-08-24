@@ -11,13 +11,19 @@ from app.core.rate_limit import (
     client_identifier_from_request,
     consume_sliding_window_limit,
 )
-from app.core.dependencies import get_current_user, get_current_user_optional, get_db
+from app.core.dependencies import (
+    create_csrf_token,
+    get_current_user,
+    get_current_user_optional,
+    get_db,
+)
 from app.models.user import User
 from app.schemas.user import AuthResponse, UserCreate, UserRegister, UserResponse
 from app.core.user_service import revoke_user_sessions
 from app.core.config.auth_security import (
     AUTH_RATE_LIMIT_MAX_BUCKETS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    CSRF_COOKIE_NAME,
     auth_rate_limit,
     auth_rate_limit_key,
     secure_transport_required,
@@ -138,6 +144,15 @@ async def login(
         path="/",
         max_age=int(settings.jwt_expire_hours * 3600),
     )
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        create_csrf_token(),
+        httponly=False,
+        samesite="lax",
+        secure=secure_cookie,
+        path="/",
+        max_age=int(settings.jwt_expire_hours * 3600),
+    )
     logger.info(
         "auth.login_success",
         extra={"user_id": str(user.id), "client_id_hash": client_id_hash},
@@ -171,4 +186,5 @@ async def logout(
     )
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie("access_token", path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
     return response

@@ -17,6 +17,17 @@ from tests.component.crawl_service_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_test_profile_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _allowed(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "app.crawl.profile.repository._source_run_is_admin_owned",
+        _allowed,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_create_crawl_run_rejects_invalid_traversal_mode(

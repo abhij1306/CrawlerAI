@@ -7,6 +7,7 @@ from types import ModuleType
 from app.core.config import settings
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.proxy_secrets import redact_secret_text
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +223,7 @@ def build_failed_browser_diagnostics(
         "bridge_used": bool(bridge_used),
         "escalation_lane": str(escalation_lane or "").strip().lower() or None,
         "host_policy_snapshot": dict(host_policy_snapshot or {}),
-        "error": f"{type(exc).__name__}: {exc}",
+        "error": redact_secret_text(f"{type(exc).__name__}: {exc}"),
         "navigation_strategy": getattr(exc, "browser_navigation_strategy", None),
     }
     return build_browser_diagnostics_contract(
