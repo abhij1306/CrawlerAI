@@ -8,26 +8,12 @@ If paths moved, update this file after confirming ownership in `docs/CODEBASE_MA
 ## Run Tests
 
 ```powershell
-cd backend
-$env:PYTHONPATH='.'
-
-.\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_pipeline.py -q
-.\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_architecture.py -q
-.\.venv\Scripts\python.exe -m pytest tests/unit/test_final_architecture_ownership.py -q
-
-.\.venv\Scripts\python.exe -m ruff check .
-
-cd ..\frontend
-vp test app/domain-memory/page-view.test.tsx
-vp check --fix
-vp build
+.\scripts\check.ps1 -Mode Affected
+.\scripts\check.ps1
 ```
 
-Use the smallest relevant backend pytest file. Do not run broad `pytest tests -q`
-unless the user explicitly asks for a full-suite sweep.
-
-Frontend uses VitePlus. Use direct `vp` commands: `vp test <test-path>`,
-`vp check --fix`, and `vp build`. Do not use npm wrappers or Jest flags.
+The repository mapping owns completion scope. Running one known failing test directly is allowed
+while debugging; return to the repository script before completion. Full suites are CI-only.
 
 Do not run smoke scripts. Do not add or run fixture/corpus replay gates unless
 the user explicitly asks for corpus, replay, or smoke work.
@@ -38,11 +24,11 @@ the user explicitly asks for corpus, replay, or smoke work.
 
 1. Add a failing test first when practical.
 2. Trace the earliest bad source:
-   - structured: `structured_sources.py`
-   - adapter: `adapters/[platform].py`
-   - JS state: `js_state_mapper.py`
-   - network payload: extraction network mapper + `core/config/network_payload_specs.py`
-   - DOM: `app/extraction/pipeline.py` and extraction collectors
+   - structured: `extraction/collectors/jsonld.py`, `metadata.py`
+   - adapter: `extraction/adapters.py`
+   - JS state: `extraction/collectors/js_state.py`
+   - network payload: extraction collectors + `core/config/network_payload_specs.py`
+   - DOM: `extraction/collectors/dom.py`, `extraction/listing*.py`
    - alias or eligibility: `core/config/field_mappings.py`, `core/records/field_policy.py`
    - normalization: `core/records/*` coercion owners
 3. Fix it there. Do not patch downstream.
@@ -50,7 +36,7 @@ the user explicitly asks for corpus, replay, or smoke work.
 5. Run ruff on touched Python.
 6. Update the active plan slice if one exists.
 
-Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publish/metrics.py`.
+Never fix extraction bugs in crawl persistence, publication, verdict, export, enrichment, or UI.
 
 ---
 
@@ -60,11 +46,11 @@ Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publi
 2. Add aliases in `core/config/field_mappings.py`.
 3. Add eligibility in `core/records/field_policy.py`.
 4. Add extraction at the right owner:
-   - structured: `structured_sources.py`
-   - detail DOM: `detail_extractor.py`
-   - listing DOM: `listing_extractor.py`
-   - platform-specific: `adapters/[platform].py`
-5. Add normalization in `field_value_core.py` if needed.
+   - structured: `extraction/collectors/jsonld.py`, `metadata.py`
+   - detail DOM: `extraction/collectors/dom.py`
+   - listing: `extraction/listing*.py`
+   - platform-specific: `extraction/adapters.py` or declarative platform config
+5. Add normalization in `core/shared/field_coerce*.py` if needed.
 6. Add a focused extraction test.
 7. Update `docs/backend-architecture.md` only if the field is significant and user-facing.
 
@@ -119,9 +105,9 @@ Test: `tests/services/test_selector_pipeline_integration.py`
 
 ## Modify Review or Domain Memory
 
-- Review persistence owner: `review/__init__.py`
+- Review persistence owner: `app/crawl/review/__init__.py`
 - Approved schema source of truth: `ReviewPromotion`
-- Domain memory owner: `domain_memory_service.py`
+- Domain memory owner: `app/crawl/domain_memory_service.py`
 - Scope: normalized `(domain, surface)` only
 
 If review-save behavior changes, verify later loads still read the persisted snapshot.
@@ -160,7 +146,7 @@ Extraction runtime consumes frozen contracts and never calls an LLM.
 | File ownership or moves | `docs/CODEBASE_MAP.md` |
 | Runtime contract | `docs/INVARIANTS.md` |
 | User-visible behavior | `docs/BUSINESS_LOGIC.md` or `docs/backend-architecture.md` |
-| Engineering rule or anti-pattern | `docs/ENGINEERING_STRATEGY.md` |
+| Engineering rule or anti-pattern | `docs/INVARIANTS.md` |
 | Plan progress | active plan file + `docs/plans/ACTIVE.md` |
 
 Do not use docs as changelogs.
@@ -169,12 +155,11 @@ Do not use docs as changelogs.
 
 ## Add a New Surface Type
 
-1. Update `services/field_policy.py`
-2. Update `services/field_value_core.py`
-3. Update `app/schemas/crawl.py`
-4. Update `core/config/field_mappings.py`
-5. Update frontend surface selection
-6. Update `docs/backend-architecture.md`
+1. Update `app/extraction/surfaces.py`.
+2. Update `app/core/config/field_mappings.py` and `app/core/records/field_policy.py`.
+3. Update `app/schemas/crawl.py` and the owning extraction adapter/engine path.
+4. Update frontend surface selection.
+5. Update `docs/backend-architecture.md`.
 
 ---
 
@@ -194,7 +179,7 @@ Do not split status logic across files.
 
 ## Add a New Export Format
 
-1. Add export method in `services/record_export_service.py`
+1. Add export method in `app/persistence/record_export_service.py`
 2. Add route in `app/api/records.py`
 3. Add response content-type handling
 4. Add frontend API method and types

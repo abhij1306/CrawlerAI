@@ -50,18 +50,6 @@ User/API request
 cp .env.example .env
 ```
 
-Minimum local values:
-
-| Variable | Required | Default/example | Notes |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/crawlerai` | Dedicated CrawlerAI PostgreSQL database. |
-| `REDIS_URL` | Yes | `redis://localhost:6379/1` | Queue and cache dependency; DB 1 isolates CrawlerAI state. |
-| `JWT_SECRET_KEY` | Yes | `replace-with-64-byte-random-secret` | Replace for real use. |
-| `ENCRYPTION_KEY` | Yes | `replace-with-32-byte-minimum-secret` | Replace for real use. |
-| `DEFAULT_ADMIN_EMAIL` | Yes | `admin@example.com` | Bootstrap admin identity. |
-| `DEFAULT_ADMIN_PASSWORD` | Yes | `replace-with-strong-admin-password` | Replace before login. |
-| `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `NVIDIA_API_KEY` | No | empty | Only needed for enabled LLM backfill tasks. |
-
 ### Backend
 
 ```powershell
@@ -161,25 +149,24 @@ $env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8001/api/v1'
 
 ## Development
 
-Backend checks:
+During implementation:
 
 ```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests -q
-.\.venv\Scripts\python.exe -m ruff check .
+.\scripts\check.ps1 -Mode Affected
 ```
 
-Frontend checks:
+Before completion or push:
 
 ```powershell
-cd frontend
-vp check
-vp test
-vp exec playwright test --config playwright.config.ts
+.\scripts\check.ps1
 ```
 
-Use the smallest relevant check for local slices. Run broader smoke or acceptance checks when changing shared acquisition, extraction, persistence, or API behavior.
+The local gate fixes and verifies backend and frontend formatting/lint, runs type checks, enforces
+LOC and complexity limits, and runs tests selected from changed paths. The pre-push hook runs the
+same gate in non-mutating check-only mode.
+
+Full suites are CI-only. Do not run the full backend suite locally. GitHub CI remains the exhaustive
+authority for backend, frontend, and full E2E validation.
 
 ## Project Layout
 
@@ -187,11 +174,16 @@ Use the smallest relevant check for local slices. Run broader smoke or acceptanc
 backend/
   app/
     api/              FastAPI route modules
-    core/             app config, auth helpers, database, metrics, telemetry
+    core/             config, auth, database, rate limits, metrics, telemetry
+    acquisition/      HTTP/browser acquisition, traversal, cookie state
+    crawl/            run creation, profiles, orchestration, pipeline
+    extraction/       evidence collection, resolution, publication
+    persistence/      records, artifacts, exports, extraction memory
+    enrichment/       on-demand derived product data
+    intelligence/     product discovery and deterministic matching
     mcp_server/       hosted FastMCP wrapper over public API v1
     models/           SQLAlchemy models
     schemas/          Pydantic request/response schemas
-    services/         acquisition, extraction, crawl, enrichment, Product Intelligence
   alembic/versions/   single clean-start baseline migration
   tests/              unit, integration, smoke, and acceptance tests
 
@@ -213,7 +205,7 @@ docs/
 ## Engineering Rules
 
 - Fix extraction defects upstream, not in publishers or exports.
-- Keep runtime strings, thresholds, tokens, fields, and tunables in `backend/app/services/config/*`.
+- Keep runtime strings, thresholds, tokens, fields, and tunables in `backend/app/core/config/*`.
 - Respect explicit user controls for surface, traversal, proxy, browser, and `llm_enabled`.
 - Use LLMs only when both run settings and active config allow them.
 - Reuse existing owners before adding new files or abstractions.

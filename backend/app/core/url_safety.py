@@ -283,18 +283,28 @@ async def get_with_validated_redirects(
     approved IP while retaining the original Host header and TLS SNI.
 
     ``client`` must be built with ``follow_redirects=False``; each hop is a
-    plain ``client.get(current_url, **request_kwargs)`` call so client cookie
-    jars keep their normal redirect-chain behavior.
+    plain ``client.get(current_url, **request_kwargs)`` call.
+
+    Cookies set during the chain are held in a jar owned by this call and
+    re-matched (domain/path/Secure) against each hop's URL, rather than on
+    the client. The acquisition client is shared across runs and users, so a
+    client-level jar would replay one run's cookies on another run's
+    requests; a per-call jar keeps the normal redirect-chain behavior without
+    that bleed. Callers that manage cookies themselves (a ``cookies`` kwarg
+    or their own ``Cookie`` header) are left untouched.
     """
     current_url = str(url or "").strip()
     redirect_count = 0
+    cookies: httpx.Cookies | None = None
+    if "cookies" not in request_kwargs and not _has_cookie_header(request_kwargs):
+        cookies = httpx.Cookies()
     while True:
         await validate_public_target(current_url)
         response = await _get_limited_response(
             client,
             current_url,
             max_response_bytes=max_response_bytes,
-            request_kwargs=request_kwargs,
+            request_kwargs=_hop_request_kwargs(request_kwargs, cookies, current_url),
         )
         location = get_redirect_location(response)
         if location is None:
@@ -305,7 +315,40 @@ async def get_with_validated_redirects(
                 f"Too many redirects while fetching {url} "
                 f"(limit {max(0, int(max_redirects))})"
             )
+        if cookies is not None and isinstance(response, httpx.Response):
+            cookies.extract_cookies(response)
         current_url = urljoin(current_url, location)
+
+
+def _has_cookie_header(request_kwargs: dict[str, Any]) -> bool:
+    return "cookie" in httpx.Headers(request_kwargs.get("headers"))
+
+
+def _hop_request_kwargs(
+    request_kwargs: dict[str, Any],
+    cookies: httpx.Cookies | None,
+    url: str,
+) -> dict[str, Any]:
+    if cookies is None:
+        return request_kwargs
+    cookie_value = cookie_header_for_url(cookies, url)
+    if not cookie_value:
+        return request_kwargs
+    headers = httpx.Headers(request_kwargs.get("headers"))
+    headers["Cookie"] = cookie_value
+    return {**request_kwargs, "headers": headers}
+
+
+def cookie_header_for_url(cookies: httpx.Cookies, url: str) -> str:
+    """Return the ``Cookie`` header value ``cookies`` allows for ``url``.
+
+    Matching is delegated to the stdlib cookie jar, so domain, path and
+    Secure are all honoured for the specific hop being requested.
+    """
+
+    request = httpx.Request("GET", url)
+    cookies.set_cookie_header(request)
+    return str(request.headers.get("Cookie", "") or "")
 
 
 async def _get_limited_response(

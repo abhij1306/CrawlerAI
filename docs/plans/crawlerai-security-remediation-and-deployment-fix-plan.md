@@ -177,7 +177,7 @@ Do not substitute a full local suite for focused slice evidence. Broad suite and
 - [x] `docs/frontend-architecture.md` — production static container and existing API & MCP UI behavior.
 - [x] `docs/CODEBASE_MAP.md` — new middleware, commands, container/runtime owners.
 - [x] `docs/INVARIANTS.md` — outbound request binding, tenant memory, secret lifecycle, explicit MCP exposure.
-- [x] `docs/ENGINEERING_STRATEGY.md` — record connect-time SSRF enforcement and create-only bootstrap anti-patterns.
+- [x] `docs/INVARIANTS.md` — record connect-time SSRF enforcement and create-only bootstrap anti-patterns.
 - [x] `.env.example` and operator runbook — document names and generation rules only; no values.
 
 ## Notes

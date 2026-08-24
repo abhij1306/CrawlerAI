@@ -329,7 +329,7 @@ Use targeted container/smoke scripts for migration, bootstrap, health, worker, f
 - [ ] `docs/backend-architecture.md` — AWS runtime, worker scheduling, storage, health, secrets.
 - [ ] `docs/frontend-architecture.md` — static production container, host routing, runtime API URL contract.
 - [ ] `docs/INVARIANTS.md` — deployment config, durable storage, MCP non-exposure, SSRF/network boundary.
-- [ ] `docs/ENGINEERING_STRATEGY.md` — infrastructure/state ownership and release gates.
+- [ ] `docs/INVARIANTS.md` — infrastructure/state ownership and release gates.
 - [ ] `docs/plans/CRAWLERAI_AWS_OWNER_RUNBOOK.md` or canonical runbook owner — provision, deploy, output lookup, control, rollback, restore, destroy.
 
 ## Notes

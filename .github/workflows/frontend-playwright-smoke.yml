@@ -1,11 +1,25 @@
 name: Frontend Playwright Smoke
 
 on:
+  push:
+    branches:
+      - main
+      - "release/**"
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "scripts/check.ps1"
+      - "scripts/validation.json"
+      - ".github/workflows/frontend-playwright-smoke.yml"
   pull_request:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "scripts/check.ps1"
+      - "scripts/validation.json"
       - ".github/workflows/frontend-playwright-smoke.yml"
+  schedule:
+    - cron: "37 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -63,6 +77,9 @@ jobs:
           node scripts/check-contrast.mjs
           node scripts/check-crawl-architecture.mjs
           node scripts/check-frontend-architecture.mjs
+
+      - name: Frontend LOC limits
+        run: pwsh ./scripts/check.ps1 -Mode Limits -Scope Frontend
 
       - name: Frontend unit tests
         working-directory: frontend
