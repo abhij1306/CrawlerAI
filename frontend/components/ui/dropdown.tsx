@@ -115,7 +115,7 @@ function DropdownListbox<T extends string>({
           }}
           onMouseDown={(event) => event.preventDefault()}
           className={cn(
-            'text-2xs flex w-full items-center py-2 leading-snug transition-colors',
+            'text-sm flex w-full items-center py-2 leading-snug transition-colors',
             align === 'center' ? 'justify-center px-8' : 'justify-start px-3',
             option.value === value
               ? 'bg-accent-subtle text-accent font-medium'
@@ -304,7 +304,7 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-sm border px-3 text-xs leading-snug font-normal transition-[background-color,border-color]',
+          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-sm border px-3 text-sm leading-snug font-normal transition-[background-color,border-color]',
           size === 'sm' ? 'h-8' : 'h-[var(--control-height)]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
           className,

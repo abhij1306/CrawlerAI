@@ -27,7 +27,7 @@ const IMAGE_COLUMN_WIDTH = 80;
 // --table-row-height in globals.css (guarded by records-table.test.ts). The
 // component derives the live values from the computed CSS vars once at mount;
 // these constants are used only when a var is absent or unparseable.
-export const HEADER_HEIGHT = 30;
+export const HEADER_HEIGHT = 32;
 export const ROW_HEIGHT = 38;
 
 function readCssHeightVar(name: string, fallback: number) {

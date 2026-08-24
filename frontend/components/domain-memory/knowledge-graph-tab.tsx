@@ -104,7 +104,7 @@ function PreferenceScope({
         </Badge>
         {site ? <Badge tone="info">Version {site.current_version}</Badge> : null}
       </div>
-      <p className="mt-2 text-xs text-muted">
+      <p className="mt-2 text-sm text-muted">
         Manual choices apply to every current and future URL on this domain and surface.
       </p>
     </section>
@@ -136,14 +136,14 @@ function ContractPanel({
     <section className="space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-foreground">Field defaults</h3>
-        <p className="mt-1 text-xs text-muted">
+        <p className="mt-1 text-sm text-muted">
           One reusable source choice per field. AI suggestions remain inactive until promoted.
         </p>
       </div>
       {grouped.map(([templateId, templateContracts]) => (
         <section key={templateId} className="overflow-hidden rounded-lg border border-border">
           <header className="flex flex-wrap items-center justify-between gap-3 bg-background-alt px-4 py-3">
-            <div className="text-xs font-medium text-foreground">
+            <div className="text-sm font-medium text-foreground">
               {surfaceLabel(templateContracts[0].surface)}
             </div>
             <Badge tone="neutral">{templateContracts.length} fields</Badge>
@@ -191,12 +191,12 @@ function ContractPreferenceRow({
           <Badge tone="neutral">{field.group}</Badge>
           <Badge tone={origin.tone}>{origin.label}</Badge>
           {saved ? (
-            <span className="flex items-center gap-1 text-xs font-medium text-success">
+            <span className="flex items-center gap-1 text-sm font-medium text-success">
               <CheckCircle2 className="size-3.5" /> Saved for this surface
             </span>
           ) : null}
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
           <span>{contract.success_count} accepted observations</span>
           <span>{contract.rejection_count} rejected observations</span>
           {isProposed && selected ? (
@@ -213,7 +213,7 @@ function ContractPreferenceRow({
         </div>
       </div>
       <div className="min-w-0">
-        <div className="mb-1.5 text-xs font-medium text-secondary">Preferred source</div>
+        <div className="mb-1.5 text-sm font-medium text-secondary">Preferred source</div>
         {sourceOptions.length > 1 && selected ? (
           <Dropdown<string>
             value={selected.value}
@@ -226,14 +226,14 @@ function ContractPreferenceRow({
           />
         ) : selected ? (
           <div className="flex min-h-[var(--control-height)] items-center justify-between gap-3 rounded-md border border-border bg-panel px-3 py-2">
-            <span className="min-w-0 truncate text-xs text-foreground">{selected.label}</span>
-            <span className="shrink-0 text-xs text-muted">Only observed source</span>
+            <span className="min-w-0 truncate text-sm text-foreground">{selected.label}</span>
+            <span className="shrink-0 text-sm text-muted">Only observed source</span>
           </div>
         ) : (
-          <div className="text-xs text-muted">No usable source observed</div>
+          <div className="text-sm text-muted">No usable source observed</div>
         )}
         {selected?.locator ? (
-          <div className="mt-1.5 truncate font-mono text-xs text-muted" title={selected.locator}>
+          <div className="mt-1.5 truncate font-mono text-sm text-muted" title={selected.locator}>
             {selected.locator}
           </div>
         ) : null}

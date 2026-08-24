@@ -121,7 +121,7 @@ export function Sidebar({
           .map((group) => (
             <div key={group.label} className="flex w-full flex-col gap-1">
               {!collapsed && (
-                <p className="px-2.5 text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">
+                <p className="px-2.5 text-sm font-semibold tracking-[0.08em] text-muted uppercase">
                   {group.label}
                 </p>
               )}
@@ -169,10 +169,10 @@ export function Sidebar({
         ) : (
           <div className="flex items-center justify-between gap-2 px-2 py-1">
             <div className="min-w-0">
-              <div className="text-2xs font-semibold tracking-wide text-muted uppercase">
+              <div className="text-sm font-semibold tracking-wide text-muted uppercase">
                 Account
               </div>
-              <div className="truncate text-[11px] text-secondary" title={accountEmail}>
+              <div className="truncate text-sm text-secondary" title={accountEmail}>
                 {accountEmail}
               </div>
             </div>

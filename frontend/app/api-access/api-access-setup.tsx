@@ -98,13 +98,13 @@ function SetupBlock({ label, value }: Readonly<{ label: string; value: string }>
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</span>
+        <span className="text-sm font-semibold tracking-wide text-muted uppercase">{label}</span>
         <Button type="button" variant="quiet" size="sm" onClick={() => void copy()}>
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-secondary">
+      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 font-mono text-sm leading-relaxed whitespace-pre-wrap text-secondary">
         {value}
       </pre>
       {copyError ? <InlineAlert tone="warning" message={copyError} /> : null}
@@ -143,7 +143,7 @@ export function ApiAccessSetup({
 
       <SetupBlock label="API key" value={created.api_key} />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold tracking-wide text-muted uppercase">Shell</span>
+        <span className="text-sm font-semibold tracking-wide text-muted uppercase">Shell</span>
         <TabBar<SetupShell>
           value={shell}
           onChange={setShell}

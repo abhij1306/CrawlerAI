@@ -9,7 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "check": "vp check",
-    "check:policy": "node scripts/check-token-escapes.mjs && node scripts/check-crawl-architecture.mjs && node scripts/check-frontend-architecture.mjs && node scripts/check-bundle-budgets.mjs",
+    "check:policy": "node scripts/check-token-escapes.mjs && node scripts/check-typography-scale.mjs && node scripts/check-crawl-architecture.mjs && node scripts/check-frontend-architecture.mjs && node scripts/check-bundle-budgets.mjs",
     "check:bundle": "node scripts/check-bundle-budgets.mjs --require-dist",
     "lint": "vp lint",
     "fmt": "vp fmt",

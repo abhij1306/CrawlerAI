@@ -70,7 +70,7 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     BROKEN_THUMBNAIL_URLS.has(src) || (host !== '' && BROKEN_THUMBNAIL_HOSTS.has(host));
   const [broken, setBroken] = useState(initiallyBroken);
   if (broken) {
-    return <span className="text-xs text-muted">--</span>;
+    return <span className="text-sm text-muted">--</span>;
   }
   return (
     <div className="relative mx-auto flex size-8 items-center justify-center overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-colors duration-180 group-hover:border-accent/38">

@@ -23,14 +23,14 @@ export function LearningTab({ selectedWorkspace }: LearningTabProps) {
               <span className="text-sm font-normal text-foreground">{row.field_name}</span>
               <Badge tone="neutral">{surfaceLabel(row.surface)}</Badge>
             </div>
-            <div className="mt-2 text-xs text-secondary">
+            <div className="mt-2 text-sm text-secondary">
               Source: {row.source_kind}
               {row.source_value ? ` · Value: ${row.source_value}` : ''}
             </div>
             {row.selector_value ? (
-              <code className="mt-2 block text-xs break-all text-muted">{row.selector_value}</code>
+              <code className="mt-2 block text-sm break-all text-muted">{row.selector_value}</code>
             ) : null}
-            <div className="mt-2 text-xs text-muted">{formatTimestamp(row.created_at)}</div>
+            <div className="mt-2 text-sm text-muted">{formatTimestamp(row.created_at)}</div>
           </DetailRow>
         ))
       ) : (

@@ -160,7 +160,7 @@ export function MetricPulseItem({
 }>) {
   return (
     <div className="relative flex flex-col gap-2 rounded-lg border border-border bg-panel px-4 py-3.5 shadow-card">
-      <div className="flex items-center gap-2 text-xs font-medium tracking-[0.07em] text-muted uppercase">
+      <div className="flex items-center gap-2 text-sm font-medium tracking-[0.07em] text-muted uppercase">
         {Icon && <Icon className="size-3.5 text-subtle" />}
         {label}
         {pulse ? (
@@ -170,7 +170,7 @@ export function MetricPulseItem({
           />
         ) : null}
       </div>
-      <div className="text-[27px] leading-none font-semibold tracking-[-0.03em] text-foreground tabular-nums">
+      <div className="text-3xl leading-none font-semibold tracking-tighter text-foreground tabular-nums">
         {value}
       </div>
       {trend ? <div className="mt-auto">{trend}</div> : null}

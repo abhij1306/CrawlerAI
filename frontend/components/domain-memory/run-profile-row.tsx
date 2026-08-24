@@ -36,7 +36,7 @@ export function RunProfileRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-sm font-medium text-foreground">{surfaceLabel(surface.surface)}</div>
-          <div className="text-xs text-muted">
+          <div className="text-sm text-muted">
             Saved {formatTimestamp(surface.profile?.updated_at ?? null)} · Source run{' '}
             {sourceRunId ?? '—'}
           </div>

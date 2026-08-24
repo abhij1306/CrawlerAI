@@ -29,7 +29,7 @@ export const buttonVariants = cva(
         danger: 'border-transparent bg-transparent text-danger-text hover:bg-danger-bg',
       },
       size: {
-        sm: 'h-[var(--control-height-sm)] px-2.5 text-xs',
+        sm: 'h-[var(--control-height-sm)] px-2.5 text-sm',
         md: 'h-[var(--control-height)] px-3.5 text-sm',
         lg: 'h-[var(--control-height-lg)] px-4 text-base',
         icon: 'size-[var(--control-height)] px-0',

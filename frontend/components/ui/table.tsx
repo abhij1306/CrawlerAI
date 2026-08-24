@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 
 /**
  * Dense analytics table (refined-minimal):
- *  - sticky 30px header (--table-header-height), --text-2xs uppercase, 0.07em tracking
+ *  - sticky 30px header (--table-header-height), --text-sm uppercase, 0.07em tracking
  *  - 38px rows (--table-row-height), --text-sm secondary-text cells
  *  - neutral row hover, tabular numerals for numeric columns (add `numeric`)
  * The wrapper is scroll-capable so the sticky header pins on vertical scroll.
@@ -83,7 +83,7 @@ export function TableHead({
     <th
       {...props}
       className={cn(
-        'sticky top-0 z-10 h-[var(--table-header-height)] border-b border-border bg-background px-3 align-middle text-[length:var(--table-header-font-size)] font-semibold uppercase tracking-[0.07em] text-muted',
+        'sticky top-0 z-10 h-[var(--table-header-height)] border-b border-border bg-background px-3 align-middle text-[length:var(--table-header-font-size)] font-medium uppercase tracking-[0.07em] text-muted',
         numeric ? 'text-right tabular-nums' : 'text-left',
         className,
       )}

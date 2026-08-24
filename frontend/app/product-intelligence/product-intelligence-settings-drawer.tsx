@@ -103,7 +103,7 @@ export function SettingsDrawer({
         </Field>
         <Field label="LLM Cleanup">
           <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
-            <span className="text-xs font-normal text-muted">Enable Enrichment</span>
+            <span className="text-sm font-normal text-muted">Enable Enrichment</span>
             <input
               type="checkbox"
               aria-label="Enable LLM enrichment"
@@ -119,7 +119,7 @@ export function SettingsDrawer({
           <Textarea
             value={allowedDomainsText}
             onChange={(event) => onAllowedDomainsTextChange(event.target.value)}
-            className="min-h-[76px] text-xs"
+            className="min-h-[76px] text-sm"
             placeholder="ralphlauren.com"
           />
         </Field>
@@ -127,7 +127,7 @@ export function SettingsDrawer({
           <Textarea
             value={excludedDomainsText}
             onChange={(event) => onExcludedDomainsTextChange(event.target.value)}
-            className="min-h-[76px] text-xs"
+            className="min-h-[76px] text-sm"
             placeholder="amazon.com"
           />
         </Field>

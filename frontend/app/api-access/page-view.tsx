@@ -142,13 +142,13 @@ export default function ApiAccessPage() {
                 {keys.map((key) => (
                   <TableRow key={key.id}>
                     <TableCell className="font-medium text-foreground">{key.name}</TableCell>
-                    <TableCell className="font-mono text-xs">{key.key_prefix}…</TableCell>
+                    <TableCell className="font-mono text-sm">{key.key_prefix}…</TableCell>
                     <TableCell>
                       <Badge tone={key.is_active ? 'success' : 'neutral'} flat>
                         {key.is_active ? 'active' : 'revoked'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-sm">
                       {key.last_used_at ? formatAdminUserDate(key.last_used_at) : 'Never'}
                     </TableCell>
                     <TableCell className="text-right">

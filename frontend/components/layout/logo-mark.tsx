@@ -30,7 +30,7 @@ export function LogoMark({
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       {mark}
-      <span className="truncate text-[15px] leading-none font-semibold tracking-tight text-foreground">
+      <span className="truncate text-lg leading-none font-semibold tracking-tight text-foreground">
         CrawlerAI
       </span>
     </div>

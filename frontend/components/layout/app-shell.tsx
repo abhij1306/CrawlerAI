@@ -84,7 +84,7 @@ function ShellContent({
     <div className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-panel px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-[13px] font-medium text-foreground">{topBar.title}</h1>
+          <h1 className="truncate text-base font-medium text-foreground">{topBar.title}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {topBar.actions ? (
@@ -98,7 +98,7 @@ function ShellContent({
               disabled={resetPending}
               variant="destructive"
               size="sm"
-              className="h-7 gap-1.5 px-2.5 text-xs font-semibold"
+              className="h-7 gap-1.5 px-2.5 text-sm font-semibold"
             >
               <Trash2 className="size-3.5" />
               {resetLabel}
