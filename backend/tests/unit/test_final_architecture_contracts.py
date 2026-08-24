@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +19,7 @@ from app.extraction.contracts import CapabilityRequest, FailureTaxonomy
 from app.persistence.contracts import ArtifactReference
 
 pytestmark = pytest.mark.unit
+_VALIDATION_CONFIG = Path(__file__).resolve().parents[3] / "scripts" / "validation.json"
 
 
 def _attempt(attempt_id: str = "http-1") -> AttemptSpec:
@@ -26,6 +29,19 @@ def _attempt(attempt_id: str = "http-1") -> AttemptSpec:
         timeout_seconds=3,
         reason="initial_http",
     )
+
+
+def test_validation_tooling_changes_use_targeted_contract_tests() -> None:
+    config = json.loads(_VALIDATION_CONFIG.read_text(encoding="utf-8"))
+    tooling_paths = {"scripts/check.ps1", "scripts/validation.json"}
+    assert tooling_paths.isdisjoint(config["globalTriggers"])
+    tooling_rule = next(
+        rule for rule in config["rules"] if set(rule["sources"]) == tooling_paths
+    )
+    assert tooling_rule["backendTests"] == [
+        "tests/unit/test_final_architecture_contracts.py"
+    ]
+    assert tooling_rule["frontendTests"] == ["lib/check-crawl-architecture.test.ts"]
 
 
 def test_acquisition_plan_rejects_duplicate_attempt_ids() -> None:

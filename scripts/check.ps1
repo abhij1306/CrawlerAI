@@ -54,7 +54,8 @@ function Get-ChangedPaths {
         }
     }
     & git -C $repoRoot rev-parse --verify --quiet $BaseRef *> $null
-    if ($LASTEXITCODE -eq 0) { Add-Paths @("diff", "--name-only", "--diff-filter=ACMR", "$BaseRef...HEAD") }
+    if ($LASTEXITCODE -ne 0) { throw "Base ref '$BaseRef' cannot be resolved." }
+    Add-Paths @("diff", "--name-only", "--diff-filter=ACMR", "$BaseRef...HEAD")
     Add-Paths @("diff", "--name-only", "--diff-filter=ACMR")
     Add-Paths @("diff", "--cached", "--name-only", "--diff-filter=ACMR")
     Add-Paths @("ls-files", "--others", "--exclude-standard")

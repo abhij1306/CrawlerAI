@@ -203,10 +203,10 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
     curl_calls: list[dict[str, object]] = []
 
     @_as_async
-    def _fake_export_cookie_header_for_domain(request_url: str, **kwargs):
+    def _fake_load_cookie_storage_state(request_url: str, **kwargs):
         assert request_url == url
         assert kwargs["browser_engine"] == "real_chrome"
-        return "session=ok"
+        return {"cookies": [{"name": "session", "value": "ok"}]}
 
     @_as_async
     def _handoff_curl(
@@ -214,14 +214,14 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
         timeout: float,
         *,
         proxy: str | None = None,
-        cookie_header: str | None = None,
+        cookie_storage_state: dict[str, object] | None = None,
     ):
         curl_calls.append(
             {
                 "url": request_url,
                 "timeout": timeout,
                 "proxy": proxy,
-                "cookie_header": cookie_header,
+                "cookie_storage_state": cookie_storage_state,
             }
         )
         return PageFetchResult(
@@ -254,8 +254,8 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "export_cookie_header_for_domain",
-        _fake_export_cookie_header_for_domain,
+        "export_cookie_storage_state_for_domain",
+        _fake_load_cookie_storage_state,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _handoff_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
@@ -275,7 +275,7 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
             "url": url,
             "timeout": 3.0,
             "proxy": None,
-            "cookie_header": "session=ok",
+            "cookie_storage_state": {"cookies": [{"name": "session", "value": "ok"}]},
         }
     ]
 
@@ -290,7 +290,7 @@ async def test_explicit_browser_preference_skips_host_handoff(
     browser_engines: list[str] = []
 
     @_as_async
-    def _unexpected_export_cookie_header_for_domain(*_args, **_kwargs):
+    def _unexpected_load_cookie_storage_state(*_args, **_kwargs):
         raise AssertionError("explicit browser run should not export handoff cookies")
 
     @_as_async
@@ -322,8 +322,8 @@ async def test_explicit_browser_preference_skips_host_handoff(
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "export_cookie_header_for_domain",
-        _unexpected_export_cookie_header_for_domain,
+        "export_cookie_storage_state_for_domain",
+        _unexpected_load_cookie_storage_state,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _unexpected_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)

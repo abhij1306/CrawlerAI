@@ -24,12 +24,14 @@ async def test_real_chrome_cookie_contract_tries_curl_cffi_handoff_first(
     calls: list[dict[str, object]] = []
 
     @_as_async
-    def _export_cookie_header_for_domain(request_url, **kwargs):
+    def _load_cookie_storage_state(request_url, **kwargs):
         calls.append({"url": request_url, "engine": kwargs.get("browser_engine")})
-        return "session=ok"
+        return {"cookies": [{"name": "session", "value": "ok"}]}
 
     @_as_async
-    def _curl_fetch(request_url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _curl_fetch(
+        request_url, timeout_seconds, *, proxy=None, cookie_storage_state=None
+    ):
         return PageFetchResult(
             url=request_url,
             final_url=request_url,
@@ -50,8 +52,8 @@ async def test_real_chrome_cookie_contract_tries_curl_cffi_handoff_first(
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "export_cookie_header_for_domain",
-        _export_cookie_header_for_domain,
+        "export_cookie_storage_state_for_domain",
+        _load_cookie_storage_state,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _curl_fetch)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_unexpected)
@@ -84,11 +86,13 @@ async def test_curl_handoff_failure_falls_back_to_real_chrome(
     engines: list[str] = []
 
     @_as_async
-    def _export_cookie_header_for_domain(*_args, **_kwargs):
-        return "session=bad"
+    def _load_cookie_storage_state(*_args, **_kwargs):
+        return {"cookies": [{"name": "session", "value": "bad"}]}
 
     @_as_async
-    def _curl_fetch(request_url, timeout_seconds, *, proxy=None, cookie_header=None):
+    def _curl_fetch(
+        request_url, timeout_seconds, *, proxy=None, cookie_storage_state=None
+    ):
         return PageFetchResult(
             url=request_url,
             final_url=request_url,
@@ -117,8 +121,8 @@ async def test_curl_handoff_failure_falls_back_to_real_chrome(
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "export_cookie_header_for_domain",
-        _export_cookie_header_for_domain,
+        "export_cookie_storage_state_for_domain",
+        _load_cookie_storage_state,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _curl_fetch)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)

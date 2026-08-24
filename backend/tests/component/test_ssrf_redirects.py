@@ -549,7 +549,17 @@ async def test_curl_fetch_forwards_redirect_cookies_to_next_hop(
     result = await acquisition_runtime.curl_fetch(
         start_url,
         5,
-        cookie_header="pref=dark",
+        cookie_storage_state={
+            "cookies": [
+                {
+                    "name": "pref",
+                    "value": "dark",
+                    "domain": "example.com",
+                    "path": "/",
+                    "secure": True,
+                }
+            ]
+        },
     )
 
     assert result.status_code == 200
@@ -617,7 +627,17 @@ async def test_curl_fetch_drops_cookies_on_cross_origin_redirect(
     result = await acquisition_runtime.curl_fetch(
         start_url,
         5,
-        cookie_header="session=SECRET",
+        cookie_storage_state={
+            "cookies": [
+                {
+                    "name": "session",
+                    "value": "SECRET",
+                    "domain": "victim.example",
+                    "path": "/",
+                    "secure": True,
+                }
+            ]
+        },
     )
 
     assert result.status_code == 200
@@ -659,11 +679,84 @@ async def test_curl_fetch_drops_cookies_on_https_to_http_redirect(
     result = await acquisition_runtime.curl_fetch(
         start_url,
         5,
-        cookie_header="session=SECRET",
+        cookie_storage_state={
+            "cookies": [
+                {
+                    "name": "session",
+                    "value": "SECRET",
+                    "domain": "shop.example",
+                    "path": "/",
+                    "secure": True,
+                }
+            ]
+        },
     )
 
     assert result.status_code == 200
     assert seen == [(start_url, "session=SECRET"), (plaintext_url, "")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_curl_handoff_preserves_browser_cookie_domain_and_path_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://www.example.com/account/start"
+    sibling_url = "https://checkout.example.com/account/pay"
+    unrelated_url = "https://checkout.example.com/public"
+    seen: list[tuple[str, str]] = []
+    responses = {
+        start_url: SimpleNamespace(
+            text="",
+            headers={"location": sibling_url},
+            status_code=302,
+            url=start_url,
+        ),
+        sibling_url: SimpleNamespace(
+            text="",
+            headers={"location": unrelated_url},
+            status_code=302,
+            url=sibling_url,
+        ),
+        unrelated_url: SimpleNamespace(
+            text="<html><body>ok</body></html>",
+            headers={"content-type": "text/html"},
+            status_code=200,
+            url=unrelated_url,
+        ),
+    }
+    monkeypatch.setattr(
+        "app.acquisition.runtime._curl_get_once",
+        _curl_cookie_recorder(responses, seen),
+    )
+
+    result = await acquisition_runtime.curl_fetch(
+        start_url,
+        5,
+        cookie_storage_state={
+            "cookies": [
+                {
+                    "name": "parent",
+                    "value": "yes",
+                    "domain": ".example.com",
+                    "path": "/account",
+                    "secure": True,
+                },
+                {
+                    "name": "host_only",
+                    "value": "yes",
+                    "domain": "www.example.com",
+                    "path": "/",
+                    "secure": True,
+                },
+            ]
+        },
+    )
+
+    assert result.status_code == 200
+    assert set(seen[0][1].split("; ")) == {"parent=yes", "host_only=yes"}
+    assert seen[1] == (sibling_url, "parent=yes")
+    assert seen[2] == (unrelated_url, "")
 
 
 @pytest.mark.asyncio
@@ -719,6 +812,27 @@ async def test_validated_redirects_forward_cookies_without_client_state() -> Non
         assert seen_cookie_headers == ["", "session=abc"]
         # ... but nothing is left on the shared client for the next caller.
         assert len(client.cookies) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_validated_redirects_suppress_existing_client_cookies() -> None:
+    seen_cookie_headers: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen_cookie_headers.append(str(request.headers.get("cookie", "") or ""))
+        return httpx.Response(200, text="ok", request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler),
+        cookies={"stale": "cross-run"},
+    ) as client:
+        response = await get_with_validated_redirects(
+            client, "https://example.com/start"
+        )
+
+    assert response.status_code == 200
+    assert seen_cookie_headers == [""]
 
 
 def test_shared_http_client_does_not_auto_follow_redirects() -> None:

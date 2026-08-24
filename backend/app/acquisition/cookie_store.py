@@ -224,14 +224,12 @@ async def export_cookie_header_for_domain(
     run_id: int | None = None,
     user_id: int | None = None,
 ) -> str | None:
-    normalized_user_id = positive_int(user_id)
-    if normalized_user_id is None:
-        normalized_user_id = await user_id_for_run(run_id, session=session)
-    state = await load_storage_state_for_domain(
+    state = await export_cookie_storage_state_for_domain(
         url,
         browser_engine=browser_engine,
         session=session,
-        user_id=normalized_user_id,
+        run_id=run_id,
+        user_id=user_id,
     )
     if not state:
         return None
@@ -239,6 +237,25 @@ async def export_cookie_header_for_domain(
     if not cookie_pairs:
         return None
     return "; ".join(f"{name}={value}" for name, value in cookie_pairs)
+
+
+async def export_cookie_storage_state_for_domain(
+    url: str | None,
+    *,
+    browser_engine: str | None = None,
+    session: AsyncSession | None = None,
+    run_id: int | None = None,
+    user_id: int | None = None,
+) -> dict[str, object] | None:
+    normalized_user_id = positive_int(user_id)
+    if normalized_user_id is None:
+        normalized_user_id = await user_id_for_run(run_id, session=session)
+    return await load_storage_state_for_domain(
+        url,
+        browser_engine=browser_engine,
+        session=session,
+        user_id=normalized_user_id,
+    )
 
 
 async def persist_storage_state_for_run(

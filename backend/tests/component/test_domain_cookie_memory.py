@@ -23,6 +23,7 @@ async def _default_cookie_owner(monkeypatch: pytest.MonkeyPatch, test_user):
         "load_storage_state_for_domain",
         "list_domain_cookie_memory",
         "export_cookie_header_for_domain",
+        "export_cookie_storage_state_for_domain",
     ):
         original = getattr(cookie_store, name)
 
@@ -409,9 +410,20 @@ async def test_export_cookie_header_for_domain_dedupes_cookie_names(
         session=db_session,
         browser_engine="real_chrome",
     )
+    state = await cookie_store.export_cookie_storage_state_for_domain(
+        f"https://{domain}/products/widget",
+        session=db_session,
+        browser_engine="real_chrome",
+    )
 
     assert saved is True
     assert header == "session=product; consent=yes"
+    assert state is not None
+    assert any(
+        cookie.get("path") == "/products"
+        for cookie in state.get("cookies", [])
+        if isinstance(cookie, dict)
+    )
 
 
 @pytest.mark.asyncio

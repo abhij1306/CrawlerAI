@@ -28,7 +28,8 @@ class FakeAsyncClient:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         return False
 
-    async def get(self, url: str):
+    async def get(self, url: str, **kwargs):
+        del kwargs
         return await self._response_factory(url)
 
 
@@ -182,8 +183,8 @@ async def test_fetch_robots_snapshot_reuses_shared_client_across_domains(
             nonlocal constructions
             constructions += 1
 
-        async def get(self, url: str):
-            del url
+        async def get(self, url: str, **kwargs):
+            del url, kwargs
             return FakeTextResponse(200, "User-agent: *\nDisallow:")
 
     monkeypatch.setattr(
@@ -207,7 +208,8 @@ async def test_fetch_robots_snapshot_validates_each_redirect_hop(
     requested: list[str] = []
 
     class _RedirectClient:
-        async def get(self, url: str):
+        async def get(self, url: str, **kwargs):
+            del kwargs
             requested.append(url)
             if url == "https://example.com/robots.txt":
                 return FakeTextResponse(

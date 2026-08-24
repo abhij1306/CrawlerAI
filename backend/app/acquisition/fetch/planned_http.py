@@ -55,7 +55,7 @@ class HttpAttemptDependencies:
     apply_protected_host_backoff: AsyncDependency
     note_host_hard_block: AsyncDependency
     load_host_protection_policy: AsyncDependency
-    export_cookie_header_for_domain: AsyncDependency
+    load_cookie_storage_state: AsyncDependency
 
 
 async def run_planned_http_only(
@@ -436,17 +436,17 @@ async def run_browser_http_handoff(
         if proxy is not None:
             continue
         for engine in engines:
-            cookie_header = await _handoff_cookie_header(
+            cookie_storage_state = await _handoff_cookie_storage_state(
                 context, deps=deps, engine=engine
             )
-            if not cookie_header:
+            if not cookie_storage_state:
                 continue
             result = await _run_handoff_curl(
                 context,
                 deps=deps,
                 proxy=proxy,
                 engine=engine,
-                cookie_header=cookie_header,
+                cookie_storage_state=cookie_storage_state,
             )
             if result is None:
                 continue
@@ -483,14 +483,14 @@ def _browser_http_handoff_allowed(context: Any) -> bool:
     return bool(host_policy.prefer_browser or context.prefer_curl_handoff)
 
 
-async def _handoff_cookie_header(
+async def _handoff_cookie_storage_state(
     context: Any,
     *,
     deps: HttpAttemptDependencies,
     engine: str,
-) -> str | None:
+) -> dict[str, object] | None:
     try:
-        return await deps.export_cookie_header_for_domain(
+        return await deps.load_cookie_storage_state(
             context.url,
             browser_engine=engine,
             run_id=context.run_id,
@@ -511,7 +511,7 @@ async def _run_handoff_curl(
     deps: HttpAttemptDependencies,
     proxy: str | None,
     engine: str,
-    cookie_header: str,
+    cookie_storage_state: dict[str, object],
 ) -> PageFetchResult | None:
     handoff_timeout = min(
         float(crawler_runtime_settings.browser_http_handoff_timeout_seconds),
@@ -522,7 +522,7 @@ async def _run_handoff_curl(
             context.url,
             handoff_timeout,
             proxy=proxy,
-            cookie_header=cookie_header,
+            cookie_storage_state=cookie_storage_state,
         )
     except (httpx.HTTPError, OSError):
         logger.debug(

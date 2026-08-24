@@ -23,7 +23,7 @@ from app.acquisition.host_protection_memory import (
 )
 from app.acquisition.cookie_store import (
     clear_cookie_store_cache,
-    export_cookie_header_for_domain,
+    export_cookie_storage_state_for_domain,
 )
 from app.acquisition.rate_limiter import (
     apply_protected_host_backoff,
@@ -520,7 +520,7 @@ def _http_attempt_dependencies() -> HttpAttemptDependencies:
         apply_protected_host_backoff=apply_protected_host_backoff,
         note_host_hard_block=note_host_hard_block,
         load_host_protection_policy=load_host_protection_policy,
-        export_cookie_header_for_domain=export_cookie_header_for_domain,
+        load_cookie_storage_state=export_cookie_storage_state_for_domain,
     )
 
 

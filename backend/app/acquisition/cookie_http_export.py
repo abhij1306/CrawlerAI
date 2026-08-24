@@ -1,9 +1,72 @@
 from __future__ import annotations
 
+import http.cookiejar
 from collections.abc import Mapping
 from urllib.parse import urlparse
 
+import httpx
+
 from app.core.shared.field_coerce import object_list
+from app.core.url_safety import new_scoped_cookie_jar
+
+
+def http_cookie_jar_from_storage_state(
+    storage_state: Mapping[str, object] | None,
+) -> httpx.Cookies:
+    jar = new_scoped_cookie_jar()
+    if not storage_state:
+        return jar
+    for raw_cookie in object_list(storage_state.get("cookies")):
+        cookie = _storage_cookie(raw_cookie)
+        if cookie is not None:
+            jar.jar.set_cookie(cookie)
+    return jar
+
+
+def _storage_cookie(raw_cookie: object) -> http.cookiejar.Cookie | None:
+    if not isinstance(raw_cookie, Mapping):
+        return None
+    name = str(raw_cookie.get("name") or "").strip()
+    value = str(raw_cookie.get("value") or "")
+    domain = str(raw_cookie.get("domain") or "").strip().lower()
+    if not name or not domain:
+        return None
+    path = str(raw_cookie.get("path") or "/").strip() or "/"
+    domain_initial_dot = domain.startswith(".")
+    expires = _cookie_expiry(raw_cookie.get("expires"))
+    rest: dict[str, str] = {}
+    if bool(raw_cookie.get("httpOnly")):
+        rest["HttpOnly"] = ""
+    same_site = str(raw_cookie.get("sameSite") or "").strip()
+    if same_site:
+        rest["SameSite"] = same_site
+    return http.cookiejar.Cookie(
+        version=0,
+        name=name,
+        value=value,
+        port=None,
+        port_specified=False,
+        domain=domain,
+        domain_specified=domain_initial_dot,
+        domain_initial_dot=domain_initial_dot,
+        path=path,
+        path_specified=True,
+        secure=bool(raw_cookie.get("secure")),
+        expires=expires,
+        discard=expires is None,
+        comment=None,
+        comment_url=None,
+        rest=rest,
+        rfc2109=False,
+    )
+
+
+def _cookie_expiry(value: object) -> int | None:
+    try:
+        expires = int(float(str(value)))
+    except (TypeError, ValueError):
+        return None
+    return expires if expires > 0 else None
 
 
 def http_cookie_pairs_for_url(

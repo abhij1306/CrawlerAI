@@ -27,9 +27,7 @@
     "frontend/package.json",
     "frontend/pnpm-lock.yaml",
     "frontend/vite.config.ts",
-    "frontend/vitest.setup.ts",
-    "scripts/check.ps1",
-    "scripts/validation.json"
+    "frontend/vitest.setup.ts"
   ],
   "backendGlobalTests": ["tests/unit/test_*.py", "tests/component/test_*.py", "tests/regression/test_*.py"],
   "frontendGlobalTests": ["app/**/*.test.ts", "app/**/*.test.tsx", "components/**/*.test.ts", "components/**/*.test.tsx", "lib/**/*.test.ts", "lib/**/*.test.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"],
@@ -41,7 +39,12 @@
   "frontendFallbackTests": ["lib/check-crawl-architecture.test.ts"],
   "rules": [
     {
-      "sources": ["backend/app/acquisition/**", "backend/app/robots_policy.py", "backend/app/url_safety.py"],
+      "sources": ["scripts/check.ps1", "scripts/validation.json"],
+      "backendTests": ["tests/unit/test_final_architecture_contracts.py"],
+      "frontendTests": ["lib/check-crawl-architecture.test.ts"]
+    },
+    {
+      "sources": ["backend/app/acquisition/**", "backend/app/crawl/robots_policy.py", "backend/app/core/url_safety.py"],
       "backendTests": [
         "tests/unit/test_*browser*.py",
         "tests/unit/test_*acquisition*.py",

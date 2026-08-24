@@ -162,8 +162,8 @@ async def test_should_escalate_to_browser_async_uses_thread_offload(
 async def test_http_fetch_populates_platform_family_from_response_url() -> None:
     class _FakeClient:
         @_as_async
-        def get(self, url: str, timeout: float) -> SimpleNamespace:
-            del url, timeout
+        def get(self, url: str, timeout: float, **kwargs) -> SimpleNamespace:
+            del url, timeout, kwargs
             return SimpleNamespace(
                 text="<html><body>Jobs</body></html>",
                 headers={"content-type": "text/html"},
@@ -195,8 +195,8 @@ async def test_http_fetch_populates_platform_family_from_response_url() -> None:
 async def test_http_fetch_accepts_legacy_client_builder_keyword() -> None:
     class _FakeClient:
         @_as_async
-        def get(self, url: str, timeout: float) -> SimpleNamespace:
-            del url, timeout
+        def get(self, url: str, timeout: float, **kwargs) -> SimpleNamespace:
+            del url, timeout, kwargs
             return SimpleNamespace(
                 text="<html><body>ok</body></html>",
                 headers={"content-type": "text/html"},

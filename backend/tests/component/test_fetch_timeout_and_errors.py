@@ -488,7 +488,7 @@ async def test_fetch_page_skips_cookie_handoff_when_proxy_identity_would_drift(
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "export_cookie_header_for_domain",
+        "export_cookie_storage_state_for_domain",
         _unexpected_export,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_ok)
@@ -603,8 +603,8 @@ async def test_http_fetch_surfaces_dns_failure_without_hidden_ipv4_retry(
 ) -> None:
     class _SharedClient:
         @_as_async
-        def get(self, url: str, timeout: float):
-            del url, timeout
+        def get(self, url: str, **kwargs):
+            del url, kwargs
             raise OSError(11001, "getaddrinfo failed")
 
     @_as_async

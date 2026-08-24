@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import http.cookiejar
 import ipaddress
 import socket
 from collections.abc import Iterable
@@ -290,14 +292,12 @@ async def get_with_validated_redirects(
     the client. The acquisition client is shared across runs and users, so a
     client-level jar would replay one run's cookies on another run's
     requests; a per-call jar keeps the normal redirect-chain behavior without
-    that bleed. Callers that manage cookies themselves (a ``cookies`` kwarg
-    or their own ``Cookie`` header) are left untouched.
+    that bleed. A request-level cookie jar is copied into the per-call jar;
+    an explicit ``Cookie`` header remains caller-managed.
     """
     current_url = str(url or "").strip()
     redirect_count = 0
-    cookies: httpx.Cookies | None = None
-    if "cookies" not in request_kwargs and not _has_cookie_header(request_kwargs):
-        cookies = httpx.Cookies()
+    request_kwargs, cookies = _prepare_redirect_cookies(request_kwargs, current_url)
     while True:
         await validate_public_target(current_url)
         response = await _get_limited_response(
@@ -324,18 +324,47 @@ def _has_cookie_header(request_kwargs: dict[str, Any]) -> bool:
     return "cookie" in httpx.Headers(request_kwargs.get("headers"))
 
 
+def new_scoped_cookie_jar() -> httpx.Cookies:
+    cookies = httpx.Cookies()
+    cookies.jar.set_policy(
+        http.cookiejar.DefaultCookiePolicy(
+            strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrictNonDomain
+        )
+    )
+    return cookies
+
+
+def _prepare_redirect_cookies(
+    request_kwargs: dict[str, Any],
+    url: str,
+) -> tuple[dict[str, Any], httpx.Cookies | None]:
+    forwarded = dict(request_kwargs)
+    if _has_cookie_header(forwarded):
+        return forwarded, None
+    supplied = forwarded.pop("cookies", None)
+    cookies = new_scoped_cookie_jar()
+    if supplied is None:
+        return forwarded, cookies
+    host = str(urlparse(url).hostname or "").strip().lower()
+    for source_cookie in httpx.Cookies(supplied).jar:
+        cookie = copy.copy(source_cookie)
+        if not cookie.domain:
+            cookie.domain = host
+            cookie.domain_specified = False
+            cookie.domain_initial_dot = False
+        cookies.jar.set_cookie(cookie)
+    return forwarded, cookies
+
+
 def _hop_request_kwargs(
     request_kwargs: dict[str, Any],
     cookies: httpx.Cookies | None,
     url: str,
 ) -> dict[str, Any]:
-    if cookies is None:
-        return request_kwargs
-    cookie_value = cookie_header_for_url(cookies, url)
-    if not cookie_value:
-        return request_kwargs
     headers = httpx.Headers(request_kwargs.get("headers"))
-    headers["Cookie"] = cookie_value
+    if "cookie" in headers:
+        return request_kwargs
+    headers["Cookie"] = cookie_header_for_url(cookies, url) if cookies else ""
     return {**request_kwargs, "headers": headers}
 
 
