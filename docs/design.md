@@ -27,7 +27,7 @@ from the theme outright, so referencing them produces no utility at all.
 
 | Token | Size | Leading | Used for |
 |---|---|---|---|
-| `--text-sm` | 12px | 16px | Labels, captions, table text, secondary body |
+| `--text-sm` | 12px | 16px | Uppercase micro-labels, table headers, dense code |
 | `--text-base` | 14px | 20px | **Baseline** — body, controls, nav |
 | `--text-lg` | 16px | 24px | Section headings |
 | `--text-xl` | 20px | 28px | Page headings |
@@ -38,10 +38,12 @@ The leading companions are declared inside `@theme` as `--text-*--line-height`. 
 matters: without them Tailwind keeps its own defaults, and the `.text-*` utilities and
 the `.type-*` classes drift to different line-heights for the same size.
 
-**Interactive text sits at the baseline, reading text may go below it.** Buttons,
-inputs, dropdowns, nav, and field labels are 14px; captions, table cells, and secondary
-body are 12px. Table header and body now share 12px, so the header is distinguished by
-weight, tracking, and uppercase rather than by size.
+**14px is the baseline and carries nearly all content.** Buttons, inputs, dropdowns,
+nav, field labels, body copy, captions, and table cells are all 14px. 12px is a
+deliberately rare tier — uppercase micro-labels, table headers, and dense code. Tables
+follow that split: body text is 14px (`--table-font-size`), the header 12px
+(`--table-header-font-size`), and weight, tracking, and uppercase reinforce the
+distinction rather than carrying it alone.
 
 Semantic classes (`.type-body`, `.type-caption`, `.type-label`, `.type-control`,
 `.type-metric`, …) are defined once in `globals.css` and are preferred over raw
@@ -118,7 +120,7 @@ is met in full. This is a deliberate, documented trade-off, not an oversight.
   `--radius-full` 9999px.
 - **Control heights**: `--control-height-sm` 28px, `--control-height` 32px,
   `--control-height-lg` 36px.
-- **Table**: 12px body and header, `--table-header-height` 32px,
+- **Table**: 14px body, 12px header, `--table-header-height` 32px,
   `--table-row-height` 38px. `records-table.tsx` mirrors these in TS constants and a
   unit test keeps the two in sync — change both together.
 

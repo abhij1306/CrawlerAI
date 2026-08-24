@@ -27,10 +27,12 @@ export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
 
-  // Navigating from inside the drawer should close it.
+  // Navigating from inside the drawer should close it. So does leaving mobile:
+  // the drawer unmounts at desktop width, and a stale open flag would spring it
+  // back open the moment the viewport narrows again.
   useEffect(() => {
     setNavOpen(false);
-  }, [pathname]);
+  }, [pathname, isMobile]);
 
   const sidebar = (
     <Sidebar

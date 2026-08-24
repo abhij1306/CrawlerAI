@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, type Location, type To } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 
@@ -7,15 +7,19 @@ import { InlineAlert } from '../../components/ui/patterns';
 import { Button, Field, Input, Subtitle, Title } from '../../components/ui/primitives';
 import { authApi } from '../../lib/api/auth';
 
-type LocationWithFrom = { from?: { pathname?: string } };
+type LocationWithFrom = { from?: Location };
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  // RequireSession stores where the user was heading; without this a deep link
-  // always lands on the dashboard after signing in.
-  const from = (location.state as LocationWithFrom | null)?.from?.pathname;
+  // RequireSession stores the whole location the user was heading for; without
+  // this a deep link always lands on the dashboard after signing in. Keep the
+  // search and hash too — dropping them silently mangles filtered/anchored links.
+  const from = (location.state as LocationWithFrom | null)?.from;
+  const redirectTo: To = from?.pathname
+    ? { pathname: from.pathname, search: from.search, hash: from.hash }
+    : '/dashboard';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,7 +33,7 @@ export default function LoginPage() {
       setError('');
       const response = await authApi.login(email, password);
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, response.user);
-      navigate(from ?? '/dashboard', { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 
 /**
  * Tooltip — Portal-based positioning to prevent clipping.
- * Styled with the dense panel-strong surface, text-base, and border-strong tokens.
+ * Styled with the floating background-elevated surface, text-base, and border-strong tokens.
  */
 export function Tooltip({
   children,
@@ -101,7 +101,7 @@ export function Tooltip({
             >
               {content}
               <div
-                className="absolute -bottom-[5px] size-2.5 border-r border-b border-border-strong bg-panel-strong"
+                className="absolute -bottom-[5px] size-2.5 border-r border-b border-border-strong bg-background-elevated"
                 style={{
                   left: align === 'start' ? '12px' : '50%',
                   transform: align === 'start' ? 'rotate(45deg)' : 'translateX(-50%) rotate(45deg)',

@@ -13,6 +13,12 @@
  *   - accent-fg on accent clears 4.5:1, so 14px button text passes AA.
  *   - each semantic *-text clears 4.5:1 on its own *-bg.
  *
+ * A token the contract names but the stylesheet does not define is a FAILURE,
+ * not a skip: a renamed or deleted token would otherwise quietly remove its own
+ * assertion and leave the gate green. Skips are reserved for the one supported
+ * optional case — a value that resolves but is not a plain colour (color-mix()
+ * and other computed forms this script cannot evaluate).
+ *
  * There is deliberately NO border assertion. Borders are frozen by project
  * constraint — separation is carried by fill and shadow instead — so asserting
  * a threshold they are not allowed to meet would just be a permanently red
@@ -173,26 +179,33 @@ const skips = [];
 for (const [themeName, tokens] of Object.entries(themes)) {
   const colorOf = (name, over = null) => {
     const resolved = resolve(name, tokens);
-    if (resolved === UNRESOLVED) return { error: `${name} is not defined` };
+    // Undefined (or self-referential) means the contract names a token the
+    // stylesheet no longer has — a broken contract, never a skip.
+    if (resolved === UNRESOLVED) return { missing: `${name} is not defined` };
     const parsed = parseColor(resolved);
-    if (!parsed) return { error: `${name} is not a plain colour (${resolved})` };
+    // Resolved but not a plain colour: color-mix() and friends genuinely
+    // cannot be evaluated here. This is the only supported skip.
+    if (!parsed) return { skip: `${name} is not a plain colour (${resolved})` };
     return { color: over ? composite(parsed, over) : parsed };
   };
+
+  const record = (result) => {
+    if (result.missing) failures.push(`${themeName}: ${result.missing}`);
+    else if (result.skip) skips.push(`${themeName}: ${result.skip}`);
+    return result;
+  };
+
+  // Every translucent surface is composited over the page canvas, so the
+  // canvas is required too; white only keeps the rest of the run informative.
+  const canvas = record(colorOf('--bg-base'));
 
   for (const { fg, backgrounds, min } of PAIRS) {
     for (const bgName of backgrounds) {
       // A translucent surface sits on the page canvas.
-      const base = colorOf('--bg-base');
-      const bg = colorOf(bgName, base.color ?? { r: 255, g: 255, b: 255, a: 1 });
-      if (bg.error) {
-        skips.push(`${themeName}: ${bg.error}`);
-        continue;
-      }
-      const fgColor = colorOf(fg, bg.color);
-      if (fgColor.error) {
-        skips.push(`${themeName}: ${fgColor.error}`);
-        continue;
-      }
+      const bg = record(colorOf(bgName, canvas.color ?? { r: 255, g: 255, b: 255, a: 1 }));
+      if (!bg.color) continue;
+      const fgColor = record(colorOf(fg, bg.color));
+      if (!fgColor.color) continue;
       const ratio = contrast(fgColor.color, bg.color);
       if (ratio < min) {
         failures.push(`${themeName}: ${fg} on ${bgName} is ${ratio.toFixed(2)}:1, needs ${min}:1`);
@@ -220,7 +233,7 @@ if (skips.length) {
 
 if (failures.length) {
   console.error('Contrast contract violations:');
-  for (const failure of failures) console.error(`- ${failure}`);
+  for (const failure of [...new Set(failures)]) console.error(`- ${failure}`);
   process.exit(1);
 }
 

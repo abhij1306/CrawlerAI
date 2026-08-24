@@ -310,8 +310,8 @@
   --table-font-size: var(--text-base); /* 14px — table body   */
   --table-header-font-size: var(--text-sm); /* 12px — table header */
   --table-header-font-family: var(--font-primary-family);
-  /* Header and body now share a size, so weight + tracking + uppercase carry
-     the distinction on their own — 600 read too heavy once they matched. */
+  /* Header sits a step below the 14px body; weight + tracking + uppercase
+     reinforce that rather than carry it — 600 read too heavy here. */
   --table-header-weight: var(--weight-medium);
   --table-header-tracking: 0.07em;
   --table-header-height: 32px;
@@ -722,7 +722,7 @@ textarea:disabled {
 .type-body-sm {
   font-size: var(--text-base);
   font-weight: var(--weight-normal);
-  line-height: 1.55;
+  line-height: var(--text-base--line-height);
   color: var(--text-secondary);
 }
 
@@ -731,7 +731,7 @@ textarea:disabled {
 .type-control {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
-  line-height: 1.25;
+  line-height: var(--text-base--line-height);
 }
 
 /* T4 — Labels

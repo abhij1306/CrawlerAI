@@ -55,8 +55,14 @@ export default function ApiAccessPage() {
   });
   const deleteMutation = useMutation({
     mutationFn: apiAccessApi.deleteKey,
-    onSuccess: async () => {
+    onSuccess: async (_result, deletedKeyId) => {
       setDeleteTarget(null);
+      // The one-time secret panel must not outlive the key it belongs to.
+      if (created?.id === deletedKeyId) {
+        setCreated(null);
+        setCapabilities(null);
+        setProbeError('');
+      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiAccess.all });
     },
   });
