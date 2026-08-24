@@ -228,12 +228,12 @@ for (const [themeName, tokens] of Object.entries(themes)) {
 
 if (skips.length) {
   console.warn('Skipped (not resolvable to a plain colour):');
-  for (const skip of [...new Set(skips)]) console.warn(`- ${skip}`);
+  for (const skip of new Set(skips)) console.warn(`- ${skip}`);
 }
 
 if (failures.length) {
   console.error('Contrast contract violations:');
-  for (const failure of [...new Set(failures)]) console.error(`- ${failure}`);
+  for (const failure of new Set(failures)) console.error(`- ${failure}`);
   process.exit(1);
 }
 
