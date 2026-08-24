@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 
@@ -7,9 +7,15 @@ import { InlineAlert } from '../../components/ui/patterns';
 import { Button, Field, Input, Subtitle, Title } from '../../components/ui/primitives';
 import { authApi } from '../../lib/api/auth';
 
+type LocationWithFrom = { from?: { pathname?: string } };
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  // RequireSession stores where the user was heading; without this a deep link
+  // always lands on the dashboard after signing in.
+  const from = (location.state as LocationWithFrom | null)?.from?.pathname;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,7 +29,7 @@ export default function LoginPage() {
       setError('');
       const response = await authApi.login(email, password);
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, response.user);
-      navigate('/dashboard', { replace: true });
+      navigate(from ?? '/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -34,7 +40,7 @@ export default function LoginPage() {
   return (
     <div>
       <div className="space-y-3">
-        <Title kicker="Auth">Sign in</Title>
+        <Title>Sign in</Title>
         <Subtitle>Use your crawler workspace credentials.</Subtitle>
       </div>
       <form className="mt-6 grid gap-3.5" onSubmit={onSubmit}>
@@ -66,7 +72,7 @@ export default function LoginPage() {
         </Field>
         {error ? <InlineAlert message={error} /> : null}
         <div className="pt-2">
-          <Button type="submit" size="lg" className="w-full text-sm" disabled={loading}>
+          <Button type="submit" size="lg" className="w-full" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </div>

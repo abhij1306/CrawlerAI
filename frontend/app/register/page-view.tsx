@@ -13,7 +13,6 @@ export default function RegisterPage() {
       <InlineAlert message="Ask an operator to create the initial admin with the explicit backend bootstrap command. Public registration will be re-enabled for production multi-tenant deployments." />
       <div>
         <Link className="link-accent text-sm" to="/login">
-          {' '}
           Back to sign in
         </Link>
       </div>
