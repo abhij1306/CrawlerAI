@@ -234,6 +234,46 @@ The only maintainability-LOC structural exclusion is `backend/alembic/versions/*
 
 Frontend test callables use ESLint's `complexity` rule at 15. Backend CI runs Ruff over the full backend tree, the architecture gates through pytest, and frontend CI runs VitePlus lint/types plus all architecture policies before build.
 
+### AP-31: Identity mutation during service startup
+
+Creating, promoting, reactivating, or resetting a user from API lifespan makes
+every restart an authorization write and turns a reused email into privilege
+escalation.
+
+**Fix:** Migrations and initial-admin creation are explicit one-off deployment
+commands. Bootstrap is create-only, serialized by a durable consumed marker,
+fails on an existing identity, and never runs from API or worker startup.
+
+### AP-32: Shell-owned deployment configuration
+
+Building DSNs in Compose, workflows, or shell scripts duplicates escaping
+rules and breaks on real credentials. Overriding an image with a bare binary
+also assumes an unowned `PATH`.
+
+**Fix:** Central config accepts a complete URL or composes encoded deployment
+components. Manifests pass components/URLs as values, invoke `.venv/bin/*`,
+and keep migration, bootstrap, API, worker, and scheduler as distinct process
+contracts.
+
+### AP-33: Build toolchains in runtime images
+
+Shipping compilers, headers, curl, or an unlocked dependency resolver increases
+the production attack surface and makes the deployed artifact diverge from its
+lockfile.
+
+**Fix:** Pin every base image by digest. Build dependencies and browser binaries
+in earlier stages. Copy the locked virtual environment into a non-root runtime
+stage containing only application and browser runtime libraries.
+
+### AP-34: Advisory-only release scanning
+
+A scanner that uploads a report but cannot stop promotion is observability, not
+a release gate. Treating missing or incomplete scan data as clean is fail-open.
+
+**Fix:** Gate immutable image digests. Block fixable and unclassified
+High/Critical findings. Keep no-fix risk acceptance false by default and require
+an explicit reviewed reference. Publish sanitized SBOM/scan evidence.
+
 ### AP-25: Parallel artifact layouts
 
 Writing URL diagnostics through more than one publisher creates conflicting forensic records and stale readers.

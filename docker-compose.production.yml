@@ -1,0 +1,51 @@
+services:
+  db:
+    profiles: ["local-only"]
+
+  redis:
+    profiles: ["local-only"]
+
+  migrate:
+    environment: &production_backend_env
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:?FRONTEND_ORIGINS must be set}
+      BOOTSTRAP_ADMIN_ONCE: "false"
+    depends_on: !reset {}
+
+  bootstrap:
+    environment:
+      <<: *production_backend_env
+      BOOTSTRAP_ADMIN_ONCE: "true"
+
+  api:
+    environment:
+      <<: *production_backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      <<: *production_backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
+      BROWSER_POOL_SIZE: "1"
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+
+  beat:
+    environment:
+      <<: *production_backend_env
+      BOOTSTRAP_ADMIN_ONCE: "false"
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL must be set}

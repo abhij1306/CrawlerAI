@@ -294,6 +294,8 @@ Detail extraction must also reject collection/category URLs that expose product-
 - A blocked browser run must not promote its storage state into domain memory or run-scoped browser storage.
 - Run-scoped and domain-scoped browser storage must stay engine-scoped; `chromium`, `patchright`, and `real_chrome` state must not bleed across engines.
 - Browser-to-HTTP handoff may only reuse sanitized engine-scoped session state on the same proxy identity. If proxy affinity cannot be proven, skip handoff and stay browser-first.
+- Outbound URL validation and connection establishment are one security boundary. HTTPX, curl, and browser transports must connect to the exact public IP approved for that hop while retaining the original HTTP Host and TLS server name. Every redirect and browser subresource is revalidated; any mixed/non-public DNS answer fails closed. Browser traffic uses the local enforcing SOCKS bridge. Browser HTTP/HTTPS upstream proxies remain rejected until they have equivalent pinned CONNECT enforcement.
+- Untrusted bodies are bounded before materialization. The ASGI receive wrapper counts request chunks before JSON or multipart parsing/spooling, with config-owned route budgets. Acquisition, robots, and sitemap clients stream responses and stop on oversized advertised, downloaded, or decoded bodies; curl stops in its write callback. Oversize results are errors and are not retried or persisted as successful content.
 - Host browser-first memory is for repeated hard blocks, not one noisy challenge hit.
 - Real Chrome navigates directly to the detail URL; there is no origin warmup on any engine. Reusable engine-scoped `real_chrome` domain state, when it exists, is still applied to the context, but it does not gate a warmup step because none exists.
 - Real Chrome is not challenge-exempt. If the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/core/config/acquisition_policy.py`) before declaring the page blocked.
@@ -469,3 +471,97 @@ apply to every branded ecommerce target. Raw internal retailer identifiers (a co
 - **Grounded publication.** No learned or LLM-produced value reaches publication without a source locator and resolver acceptance.
 
 **VIOLATION signatures:** parallel selector/review/feedback stores; `extraction_runtime_snapshot` in run settings; generic KG entity/edge/claim tables; extraction importing mutable memory; ungrounded learned values; challenger output directly changing records.
+
+---
+
+## 18. Authentication Boundaries Are Explicit and Restart-Safe
+
+**Rule:** API startup does not mutate identity. Initial admin creation runs only
+through the explicit create-only bootstrap command and is durably consumed.
+Existing accounts are never promoted or reactivated by bootstrap.
+
+Unsafe cookie-authenticated HTTP requests require both an exact allowed
+Origin/Referer and signed double-submit CSRF proof. Explicit bearer requests
+remain independent of cookies. Forwarded client identity is accepted only from
+configured trusted IP/CIDR peers and is resolved right-to-left to the first
+untrusted hop. Public API IP/global Redis-first limits run before API-key DB
+lookup; per-key limits run after authentication.
+
+**VIOLATION signatures:** `bootstrap_admin_user` called from lifespan; bootstrap
+updates an existing `User`; unsafe cookie mutation without Origin and CSRF
+header; leftmost `X-Forwarded-For` trust; API-key SELECT before pre-auth limits.
+
+---
+
+## 19. MCP Is Local Until Inbound Principal Authentication Exists
+
+**Rule:** First-release MCP runs as stdio by default, one process and API key per
+client principal. Optional SSE may bind only to a literal loopback IP. A public,
+wildcard, hostname, or non-loopback bind fails before the server starts. MCP
+tools call `/api/v1` with the configured principal key and do not bypass public
+REST authentication or rate limits.
+
+**VIOLATION signatures:** default network listener; `0.0.0.0`/`::`/hostname MCP
+bind; anonymous hosted MCP backed by one shared API key; MCP tool importing
+crawl orchestration instead of calling public REST.
+
+---
+
+## 20. Acquisition Secrets Have One Encrypted Lifecycle
+
+**Rule:** Crawl rows store proxy endpoints without URL userinfo plus encrypted,
+endpoint-bound secret references. Credentials are restored only when building
+an acquisition attempt. The canonical proxy redactor owns API, diagnostic,
+log, telemetry, and exception-text shaping. Celery receives only run IDs.
+
+Per-run browser cookie files are encrypted with the application encryption
+key and bound to `(user_id, run_id, browser_engine)`. Files and their directory
+are owner-only. Legacy plaintext files fail closed. Run deletion removes all
+engine and temporary variants; retention cleanup removes expired and orphaned
+files. Only API/worker services that use the storage mount its volume.
+
+**VIOLATION signatures:** proxy URL userinfo in `CrawlRun.settings`; a second
+redaction implementation; raw proxy URL in logs/task arguments; plaintext run
+cookie JSON; cookie load without owner/binding validation; run deletion that
+leaves an engine variant; cookie/artifact volumes mounted into Celery beat.
+
+---
+
+## 21. Production Startup Is Explicit and Fail-Closed
+
+**Rule:** Database configuration accepts one complete `DATABASE_URL` or all
+deployment components; only centralized config composes and URL-encodes the
+latter. Non-dev startup rejects local/placeholder PostgreSQL, non-TLS Redis,
+and non-HTTPS frontend origins. Images invoke their project virtual
+environment explicitly. Migration and create-only bootstrap are separate
+one-off processes; steady API/worker/beat processes disable bootstrap.
+
+First-release Celery uses one solo worker process per container and scales by
+container count. API liveness uses `/health/live`; readiness uses
+`/health/ready`; deployment verifies workers with Celery ping. Frontend is a
+non-root static server with SPA fallback and response security headers.
+
+**VIOLATION signatures:** DSN concatenation in Compose/workflows; production
+`APP_ENV=development`; bare `python`/`uvicorn`/`celery` overrides; migration in
+API lifespan; bootstrap enabled in steady tasks; prefork browser workers;
+readiness used as liveness; frontend dev server in production.
+
+---
+
+## 22. Release Evidence Fails Closed
+
+**Rule:** Every external Action reference is an immutable commit. Backend and
+frontend dependency audits are lock-based. Final images produce SPDX SBOMs and
+block fixable High/Critical findings before release. Production promotion uses
+ECR enhanced findings by immutable digest: fixable and unclassified
+High/Critical findings always block; no-fix findings block unless an explicit
+review boolean and non-secret risk-acceptance reference are both present.
+
+AWS access uses OIDC. Docker uses a runner-temporary `DOCKER_CONFIG`, the ECR
+credential helper, and disabled helper caching. Scan evidence contains finding
+identifiers and dispositions, never credentials or environment secrets.
+
+**VIOLATION signatures:** tag-only Action reference; unlocked dependency audit;
+SBOM missing; image tag used instead of digest; scan not ready treated as pass;
+unknown fix availability accepted; no-fix exception defaulting true; ECR login
+password piped to Docker; persistent runner Docker credentials.

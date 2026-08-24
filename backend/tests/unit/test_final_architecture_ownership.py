@@ -20,10 +20,10 @@ IMMUTABLE_MIGRATION_ROOT = BACKEND_ROOT / "alembic" / "versions"
 # secret lifecycle, encrypted run-cookie retention, and startup contracts).
 # CI reconciliation adds owner-aware browser/profile fixtures and curl Session
 # coverage to the focused security suites. Final review adds bounded-body,
-# cache-invalidation, and non-admin profile-promotion regressions.
-TEST_LOC_BUDGET = 57_141
-# Explicit bootstrap and ECR enhanced-scan policy commands are measured tools.
-TOOL_LOC_BUDGET = 3_951
+# cache/profile regressions plus measured deployment contract tests.
+TEST_LOC_BUDGET = 57_344
+# Explicit bootstrap and fail-closed ECR scan-policy commands are measured tools.
+TOOL_LOC_BUDGET = 3_957
 TEST_TOOL_COMPLEXITY_LIMIT = 15
 # SLICE-6 closeout reconciliation: measured against the working tree after the
 # cascade refactor/reformat. Net ratchet-DOWN — seven modules (browser_capture,

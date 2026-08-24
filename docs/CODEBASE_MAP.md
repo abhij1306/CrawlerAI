@@ -11,11 +11,15 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
+| `bootstrap_admin.py` | Explicit create-only initial-admin command; never part of API startup |
+| `ecr_scan_gate.py` | Fail-closed ECR enhanced-scan release policy and sanitized evidence report |
 | `harness_support.py`, `harness/support.py` | Stable acceptance entry points plus live-run/review orchestration and result-quality evaluation |
 | `harness/site_sets.py`, `harness/challenge_classifier.py`, `harness/quality_evaluator.py`, `harness/artifact_quality_cases.py` | Site input parsing, failure classification, catalog gates, and artifact replay auditing |
 | `test_site_sets/commerce_browser_heavy.json` | Commerce acceptance manifest and quality expectations |
 | `browser_surface_probe/core.py` | Browser-surface probe orchestration and artifact bundle assembly |
 | `browser_surface_probe/signal_extractor.py`, `target_diagnostics.py`, `report_rendering.py`, `value_coercion.py` | Page-signal collection, target transport/browser diagnosis, report/findings rendering, and shared probe value normalization |
+| `.github/workflows/supply-chain.yml` | Final-image build, SPDX SBOM, and fixable High/Critical scan gate |
+| `.github/workflows/ecr-enhanced-scan-gate.yml` | OIDC-based reusable ECR enhanced-scan production policy gate |
 
 ### `api/` — route handlers only
 
@@ -42,12 +46,16 @@ If a file is not listed, assume it is a helper under a listed owner.
 | File | Purpose |
 |---|---|
 | `config/` | Pydantic settings, policy modules, declarative recipes, and runtime tunables |
+| `config/database_settings.py` | Complete-URL precedence, encoded database-component composition, and production DSN checks |
 | `database.py` | Async SQLAlchemy engine and session factory |
 | `redis.py` | Shared Redis connection |
-| `security.py` | JWT, password hashing, encryption |
-| `dependencies.py` | FastAPI auth dependency helpers |
+| `security.py` | JWT, Argon2id hashing, bounded legacy PBKDF2 verification, encryption |
+| `dependencies.py` | FastAPI auth dependency helpers and cookie-session CSRF enforcement |
 | `public_auth.py` | Public API-key hashing/authentication and `/api/v1` user resolution |
-| `telemetry.py`, `metrics.py` | Observability |
+| `rate_limit.py` | Redis-first sliding windows and trusted-CIDR forwarding-chain resolution |
+| `request_body_limit.py` | Pure ASGI receive-byte enforcement before JSON/multipart parsing and spooling |
+| `proxy_secrets.py` | Proxy URL userinfo sealing, execution-time resolution, and canonical text redaction |
+| `telemetry.py`, `metrics.py` | Observability, including final log/traceback secret redaction |
 
 ### `models/` — ORM entities
 
@@ -55,12 +63,13 @@ If a file is not listed, assume it is a helper under a listed owner.
 |---|---|---|
 | `User` | `user.py` | account, role, token version |
 | `ApiKey` | `api_key.py` | public API bearer-key ownership and validation |
+| `BootstrapRecord` | `bootstrap.py` | durable consumption marker for create-only one-shot bootstrap commands |
 | `CrawlRun` | `crawl_run.py` | run state, surface, settings, summary |
 | `CrawlUrlResult` | `crawl_run.py` | canonical per-URL acquisition/extraction verdict, manifest pointer, and record count |
 | `CrawlRecord` | `crawl_run.py` | extracted record payload and URL-result-linked provenance |
 | `CrawlLog` | `crawl_run.py` | run logs |
 | `DomainRunProfile` | `domain_memory.py` | reusable execution defaults scoped by `(domain, surface)` |
-| `DomainCookieMemory` | `domain_memory.py` | reusable browser state scoped by domain |
+| `DomainCookieMemory` | `domain_memory.py` | encrypted browser state scoped by `(user_id, domain[, engine])` |
 | `HostProtectionMemory` | `domain_memory.py` | per-host block/success tracking |
 | `ExtractionTemplate`, `ExtractionRecipe`, `CompiledExtractionRecipe`, `ExtractionReleaseSnapshot`, `ExtractionManifest`, `ExtractionOperatorLabel`, `ExtractionObservation` | `extraction_memory.py` | single extraction-memory hierarchy |
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
@@ -143,7 +152,9 @@ Flow:
 | `acquisition/traversal_recovery.py` | Listing recovery actions, overlay dismissal, resilient clicks |
 | `acquisition/traversal_card_counting.py` | Card-count and progress-snapshot helpers used by traversal loops |
 | `acquisition/pacing.py` | Host-level rate limiting |
-| `acquisition/cookie_store.py` | Temp storage state plus domain cookie memory helpers |
+| `acquisition/cookie_store.py` | Tenant-owned domain cookie persistence and run-state policy |
+| `acquisition/run_cookie_storage.py` | Encrypted tenant/run/engine-bound run cookie files, permissions, cache, and deletion |
+| `acquisition/cookie_http_export.py` | Domain/path filtering and dedupe for browser-to-HTTP cookie handoff |
 | `fetch/fetch_context.py` | `fetch_page()` owner: HTTP/browser decision, escalation, block detection |
 | `fetch/browser_policy.py` | Proxy shaping, browser escalation policy, engine attempt selection, and diagnostics merge helpers |
 | `fetch/types.py` | Typed fetch request and runtime context containers |
@@ -217,11 +228,11 @@ Canonical config owners:
 | `core/config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
 | `core/config/extraction_memory.py` | extraction-memory statuses, recipe/label kinds, and manifest/compiler versions |
 
-### `mcp_server/` — hosted MCP wrapper
+### `mcp_server/` — local MCP wrapper
 
 | File | Purpose |
 |---|---|
-| `client.py`, `tools.py`, `server.py`, `config.py` | Stateless FastMCP HTTP/SSE server for `extract_product`, `check_domain`, and `list_capabilities`; calls public REST API only |
+| `client.py`, `tools.py`, `server.py`, `config.py` | Stateless FastMCP stdio/default or literal-loopback SSE server; rejects public binds and calls public REST API only |
 
 ---
 
@@ -299,7 +310,10 @@ above replaced them.
 | `core/extraction_memory/templates.py` | Pure route normalization and structural fingerprinting |
 | `core/extraction_memory/contract_runtime.py` | Pure frozen-release preference lookup; Resolve owns eligibility and ranking |
 | `api/knowledge.py` | Compatibility route surface backed only by extraction memory |
-| `alembic/versions/20260703_0001_greenfield_schema.py` | Sole clean-start schema baseline, including extraction memory |
+| `alembic/versions/20260703_0001_greenfield_schema.py` | Clean-start schema baseline, including extraction memory |
+| `alembic/versions/20260824_0002_tenant_cookie_memory.py` | Deletes unowned legacy cookie/profile memory and adds mandatory cookie user ownership |
+| `alembic/versions/20260824_0003_bootstrap_records.py` | Adds durable one-shot bootstrap consumption records |
+| `alembic/versions/20260824_0004_purge_legacy_proxy_secrets.py` | Purges legacy plaintext proxy settings; credentials are intentionally unrecoverable |
 
 Extraction memory is the single owner for learned structural state. Run releases and URL manifests are relational rows, not payloads embedded in run settings. See `docs/INVARIANTS.md` §17.
 
@@ -368,6 +382,7 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 | `lib/crawl/scroll.ts` | Crawl viewport scroll helper |
 | `src/api/client.ts` | auth-aware fetch wrapper |
 | `lib/api/*.ts` | typed domain endpoint owners; `api-access.ts` owns API-key management and capability verification |
+| `Dockerfile`, `nginx.conf`, `security-headers.conf` | Locked frontend build and non-root static SPA runtime with liveness and security headers |
 | `lib/api/types.ts` | frontend API types |
 | `app/api-access/` | authenticated API-key management, one-time secret reveal, REST verification, and MCP setup |
 | `components/selectors/domain-memory/knowledge-graph-tab.tsx` | Domain Memory Knowledge Graph tab: bounded graph, relationships, contracts, source controls |
@@ -384,3 +399,12 @@ Several backend modules share a basename. Resolve ambiguity with this table inst
 - Test public behavior, not private internals
 
 See `docs/ENGINEERING_STRATEGY.md` for the full anti-pattern list.
+
+Deployment manifests: root `docker-compose.yml` is local development;
+`docker-compose.production.yml` overlays fail-closed production inputs and
+disables local database/Redis services. Backend process commands target the
+project virtual environment explicitly.
+
+Production operations evidence: `docs/plans/CRAWLERAI_AWS_OWNER_RUNBOOK.md` owns
+the AWS/Cloudflare closeout checklist, restore and rollback drills, named owners,
+residual-risk expiry, and final GO/NO-GO record. It stores references, never secrets.

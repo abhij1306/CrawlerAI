@@ -1,0 +1,169 @@
+name: ECR Enhanced Scan Gate
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        required: true
+        type: string
+      backend_repository:
+        required: true
+        type: string
+      backend_digest:
+        required: true
+        type: string
+      frontend_repository:
+        required: true
+        type: string
+      frontend_digest:
+        required: true
+        type: string
+      reviewed_no_fix_high_critical:
+        required: false
+        default: false
+        type: boolean
+      risk_acceptance_reference:
+        required: false
+        default: ""
+        type: string
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        required: true
+        type: string
+      backend_repository:
+        required: true
+        type: string
+      backend_digest:
+        required: true
+        type: string
+      frontend_repository:
+        required: true
+        type: string
+      frontend_digest:
+        required: true
+        type: string
+      reviewed_no_fix_high_critical:
+        description: Allow reviewed no-fix High/Critical findings only
+        required: true
+        default: false
+        type: boolean
+      risk_acceptance_reference:
+        description: Required non-secret review ID and expiry when exception is true
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  enhanced-scan-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      BACKEND_REPOSITORY: ${{ inputs.backend_repository }}
+      BACKEND_DIGEST: ${{ inputs.backend_digest }}
+      FRONTEND_REPOSITORY: ${{ inputs.frontend_repository }}
+      FRONTEND_DIGEST: ${{ inputs.frontend_digest }}
+      REVIEWED_NO_FIX_HIGH_CRITICAL: ${{ inputs.reviewed_no_fix_high_critical }}
+      RISK_ACCEPTANCE_REFERENCE: ${{ inputs.risk_acceptance_reference }}
+      AWS_ECR_DISABLE_CACHE: "true"
+
+    steps:
+      - name: Checkout policy owner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure isolated ECR credential helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y amazon-ecr-credential-helper
+          export DOCKER_CONFIG="${RUNNER_TEMP}/docker-ecr"
+          mkdir -p "${DOCKER_CONFIG}"
+          echo '{"credsStore":"ecr-login"}' > "${DOCKER_CONFIG}/config.json"
+          echo "DOCKER_CONFIG=${DOCKER_CONFIG}" >> "${GITHUB_ENV}"
+
+      - name: Validate immutable ECR inputs and helper access
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_pattern='^[a-z0-9]+([._/-][a-z0-9]+)*$'
+          digest_pattern='^sha256:[a-f0-9]{64}$'
+          [[ "${BACKEND_REPOSITORY}" =~ ${repository_pattern} ]]
+          [[ "${FRONTEND_REPOSITORY}" =~ ${repository_pattern} ]]
+          [[ "${BACKEND_DIGEST}" =~ ${digest_pattern} ]]
+          [[ "${FRONTEND_DIGEST}" =~ ${digest_pattern} ]]
+          registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com"
+          docker manifest inspect "${registry}/${BACKEND_REPOSITORY}@${BACKEND_DIGEST}" >/dev/null
+          docker manifest inspect "${registry}/${FRONTEND_REPOSITORY}@${FRONTEND_DIGEST}" >/dev/null
+
+      - name: Wait for enhanced findings and enforce policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          wait_for_scan() {
+            local repository="$1" digest="$2" output="$3"
+            for attempt in {1..60}; do
+              if aws ecr describe-image-scan-findings \
+                --repository-name "${repository}" \
+                --image-id "imageDigest=${digest}" \
+                --output json > "${output}"; then
+                status="$(jq -r '.imageScanStatus.status // "UNKNOWN"' "${output}")"
+                if [[ "${status}" == "ACTIVE" || "${status}" == "COMPLETE" ]] && \
+                  jq -e '.imageScanFindings | has("enhancedFindings")' "${output}" >/dev/null; then
+                  return 0
+                fi
+              fi
+              sleep 15
+            done
+            echo "Enhanced ECR scan did not become available for ${repository}@${digest}" >&2
+            return 1
+          }
+
+          wait_for_scan "${BACKEND_REPOSITORY}" "${BACKEND_DIGEST}" "${RUNNER_TEMP}/backend-scan.json"
+          wait_for_scan "${FRONTEND_REPOSITORY}" "${FRONTEND_DIGEST}" "${RUNNER_TEMP}/frontend-scan.json"
+
+          review_args=()
+          if [[ "${REVIEWED_NO_FIX_HIGH_CRITICAL}" == "true" ]]; then
+            review_args+=(--reviewed-no-fix-high-critical)
+          fi
+          python backend/ecr_scan_gate.py "${RUNNER_TEMP}/backend-scan.json" \
+            --report "${RUNNER_TEMP}/backend-scan-report.json" \
+            --risk-acceptance-reference "${RISK_ACCEPTANCE_REFERENCE}" "${review_args[@]}"
+          python backend/ecr_scan_gate.py "${RUNNER_TEMP}/frontend-scan.json" \
+            --report "${RUNNER_TEMP}/frontend-scan-report.json" \
+            --risk-acceptance-reference "${RISK_ACCEPTANCE_REFERENCE}" "${review_args[@]}"
+
+      - name: Publish sanitized scan evidence
+        if: always()
+        shell: bash
+        run: |
+          for report in "${RUNNER_TEMP}"/*-scan-report.json; do
+            if [[ -f "${report}" ]]; then
+              echo '```json' >> "${GITHUB_STEP_SUMMARY}"
+              jq . "${report}" >> "${GITHUB_STEP_SUMMARY}"
+              echo '```' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+
+      - name: Upload sanitized scan reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ecr-enhanced-scan-reports
+          path: ${{ runner.temp }}/*-scan-report.json
+          if-no-files-found: warn
+          retention-days: 30

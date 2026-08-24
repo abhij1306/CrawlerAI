@@ -235,7 +235,7 @@ Responsibilities:
 - data enrichment record normalization and review
 - product discovery and price comparison
 - domain-memory management across domains and surfaces, including selector operations (the standalone selectors page was removed)
-- per-account public API key creation/listing/revocation, one-time secret reveal, REST verification, and MCP launch setup
+- per-account public API key creation/listing/revocation, one-time secret reveal, copy-safe REST examples, local stdio/loopback MCP setup, and explicit hosted-MCP limitation
 - admin user management
 - LLM provider/config/cost-log management
 
@@ -370,7 +370,14 @@ Policy and CI checks:
 ## 8. Architectural Notes
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
+- Production builds use the locked pnpm workspace in a Node build stage, then
+  serve only `dist/` from an unprivileged Nginx runtime on port 8080. Unknown
+  routes fall back to `index.html`; `/health/live` is static liveness. Nginx
+  emits CSP, frame, MIME, referrer, and permissions headers; hashed assets are
+  immutable while the SPA entry document is no-store.
 - `src/api/client.ts` owns transport; `lib/api/*` domain modules own endpoint grouping; call sites import their domain modules directly (the `lib/api/index.ts` facade was removed in audit 7.8).
+- Cookie-authenticated mutations copy the readable signed `csrf_token` cookie
+  into `X-CSRF-Token`; explicit bearer requests do not mix in cookie proof.
 - Feature components live in top-level `components/<feature>/` directories: `components/domain-memory/` owns the domain-memory surface (moved out of the removed `components/selectors/` parent in audit 7.9).
 - Import aliases: `@/*` → `src/*`, `@lib/*` → `lib/*`, `@ui/*` → `components/ui/*` (tsconfig paths + vite resolve.alias). Deep `../../../+` cross-area imports use the aliases; short intra-feature relative imports stay relative.
 - `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
