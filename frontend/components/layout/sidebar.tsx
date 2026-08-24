@@ -147,7 +147,9 @@ export function Sidebar({
                       key={item.path}
                       to={item.path}
                       className={cn(
-                        'flex h-7 items-center gap-2.5 rounded-md px-2.5 text-base transition-colors w-full',
+                        // 28px is right for a mouse; the drawer is thumb-driven, so
+                        // phones get a 44px target. Desktop is untouched.
+                        'flex h-7 max-md:h-11 items-center gap-2.5 rounded-md px-2.5 text-base transition-colors w-full',
                         active
                           ? 'bg-panel-strong text-foreground font-medium'
                           : 'text-secondary hover:bg-background-alt hover:text-foreground',

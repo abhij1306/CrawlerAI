@@ -35,7 +35,18 @@ const STYLESHEET = join(ROOT, 'app', 'globals.css');
 /* ── Token extraction ─────────────────────────────────────────────────── */
 
 function blockBody(css, selector) {
-  const start = css.indexOf(selector);
+  // Anchor to the selector at the start of its own line, immediately followed
+  // by its brace. globals.css names ":root" inside a comment and again,
+  // indented, inside two media queries; a bare indexOf would land on the
+  // comment and only reach the right block because no brace happens to sit
+  // in between.
+  let start = -1;
+  for (let i = css.indexOf(selector); i !== -1; i = css.indexOf(selector, i + 1)) {
+    if (i !== 0 && css[i - 1] !== '\n') continue;
+    if (!/^[ \t]*\{/.test(css.slice(i + selector.length))) continue;
+    start = i;
+    break;
+  }
   if (start === -1) throw new Error(`Could not find "${selector}" in globals.css`);
   const open = css.indexOf('{', start);
   let depth = 0;
