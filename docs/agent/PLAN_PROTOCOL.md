@@ -58,7 +58,7 @@ Files and modules out of scope — with reason:
 - [ ] `docs/backend-architecture.md` — section/reason
 - [ ] `docs/CODEBASE_MAP.md` — if new files added or moved
 - [ ] `docs/INVARIANTS.md` — if a contract changed
-- [ ] `docs/ENGINEERING_STRATEGY.md` — if a new anti-pattern was discovered
+- [ ] `docs/INVARIANTS.md` — if a new hard rule or anti-pattern was discovered
 
 ## Notes
 
@@ -94,8 +94,7 @@ Before marking a plan `DONE`:
 3. All "Doc Updates Required" items are completed.
 4. Update `docs/plans/ACTIVE.md` to reflect completion (or point to next plan).
 
-Do not require broad `pytest tests -q` as a default close gate. Use it only when
-the user explicitly asks for full-suite verification.
+Do not run broad local suites as a close gate. Full suites are CI-only.
 
 ---
 

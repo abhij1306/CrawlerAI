@@ -45,6 +45,22 @@ def dns_resolution_families() -> tuple[int, ...]:
     return (socket.AF_UNSPEC, socket.AF_INET)
 
 
+class NonPersistentCookies(httpx.Cookies):
+    """Cookie jar that never stores response cookies on the client.
+
+    ``httpx.AsyncClient`` persists ``Set-Cookie`` values on the client jar and
+    replays them on later requests to matching hosts. That is the wrong
+    behavior for a client shared across runs and users: one run's cookies
+    would ride along on another run's requests. Clients built with
+    ``persist_cookies=False`` get this jar instead, and per-request cookie
+    state is kept by the caller (see
+    ``app.core.url_safety.get_with_validated_redirects``).
+    """
+
+    def extract_cookies(self, response: httpx.Response) -> None:
+        return None
+
+
 def build_async_http_client(
     *,
     follow_redirects: bool,
@@ -53,6 +69,7 @@ def build_async_http_client(
     limits: httpx.Limits | None = None,
     force_ipv4: bool = False,
     headers: dict[str, str] | None = None,
+    persist_cookies: bool = True,
     transport_wrapper: Callable[[httpx.AsyncBaseTransport], httpx.AsyncBaseTransport]
     | None = None,
 ) -> httpx.AsyncClient:
@@ -65,17 +82,24 @@ def build_async_http_client(
     if transport_wrapper is not None:
         transport = transport_wrapper(transport or httpx.AsyncHTTPTransport())
     if transport is not None:
-        return httpx.AsyncClient(
+        client = httpx.AsyncClient(
             follow_redirects=follow_redirects,
             timeout=timeout,
             headers=merged_headers,
             transport=transport,
         )
-    return httpx.AsyncClient(
-        follow_redirects=follow_redirects,
-        timeout=timeout,
-        headers=merged_headers,
-    )
+    else:
+        client = httpx.AsyncClient(
+            follow_redirects=follow_redirects,
+            timeout=timeout,
+            headers=merged_headers,
+        )
+    if not persist_cookies:
+        # The public `cookies` setter re-wraps the value in a plain
+        # httpx.Cookies, so the non-persisting jar has to be installed
+        # directly.
+        client._cookies = NonPersistentCookies()
+    return client
 
 
 def default_request_headers(

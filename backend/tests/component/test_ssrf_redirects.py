@@ -10,6 +10,7 @@ from app.acquisition import runtime as acquisition_runtime
 from app.acquisition import browser_fetch_runner
 from app.acquisition.browser_page_flow import _ensure_public_landed_url
 from app.acquisition.browser_route_blocking import block_unneeded_route
+from app.core.records.network_resolution import build_async_http_client
 from app.core.url_safety import (
     SecurityError,
     get_with_validated_redirects,
@@ -553,6 +554,171 @@ async def test_curl_fetch_forwards_redirect_cookies_to_next_hop(
 
     assert result.status_code == 200
     assert seen_cookie_headers == ["pref=dark", "pref=dark; session=abc"]
+
+
+def _curl_cookie_recorder(
+    responses: dict[str, object],
+    seen: list[tuple[str, str]],
+):
+    def _fake_curl_get_once(
+        curl_requests,
+        url,
+        timeout_seconds,
+        *,
+        proxy=None,
+        cookie_header=None,
+        validated_target=None,
+    ):
+        del curl_requests, timeout_seconds, proxy, validated_target
+        seen.append((url, str(cookie_header or "")))
+        return responses[url]
+
+    return _fake_curl_get_once
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_curl_fetch_drops_cookies_on_cross_origin_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A handoff cookie header is scoped to the origin it was exported for. A
+    # redirect to another host must not carry it, and cookies the new host
+    # sets must not travel back to the original origin.
+    start_url = "https://victim.example/account"
+    attacker_url = "https://attacker.example/collect"
+    back_url = "https://victim.example/final"
+    seen: list[tuple[str, str]] = []
+    responses = {
+        start_url: SimpleNamespace(
+            text="",
+            headers={"location": attacker_url, "set-cookie": "hop=1; Path=/"},
+            status_code=302,
+            url=start_url,
+        ),
+        attacker_url: SimpleNamespace(
+            text="",
+            headers={"location": back_url, "set-cookie": "evil=1; Path=/"},
+            status_code=302,
+            url=attacker_url,
+        ),
+        back_url: SimpleNamespace(
+            text="<html><body>ok</body></html>",
+            headers={"content-type": "text/html"},
+            status_code=200,
+            url=back_url,
+        ),
+    }
+
+    monkeypatch.setattr(
+        "app.acquisition.runtime._curl_get_once",
+        _curl_cookie_recorder(responses, seen),
+    )
+
+    result = await acquisition_runtime.curl_fetch(
+        start_url,
+        5,
+        cookie_header="session=SECRET",
+    )
+
+    assert result.status_code == 200
+    assert seen == [
+        (start_url, "session=SECRET"),
+        (attacker_url, ""),
+        (back_url, "session=SECRET; hop=1"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_curl_fetch_drops_cookies_on_https_to_http_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://shop.example/start"
+    plaintext_url = "http://shop.example/final"
+    seen: list[tuple[str, str]] = []
+    responses = {
+        start_url: SimpleNamespace(
+            text="",
+            headers={"location": plaintext_url},
+            status_code=302,
+            url=start_url,
+        ),
+        plaintext_url: SimpleNamespace(
+            text="<html><body>ok</body></html>",
+            headers={"content-type": "text/html"},
+            status_code=200,
+            url=plaintext_url,
+        ),
+    }
+
+    monkeypatch.setattr(
+        "app.acquisition.runtime._curl_get_once",
+        _curl_cookie_recorder(responses, seen),
+    )
+
+    result = await acquisition_runtime.curl_fetch(
+        start_url,
+        5,
+        cookie_header="session=SECRET",
+    )
+
+    assert result.status_code == 200
+    assert seen == [(start_url, "session=SECRET"), (plaintext_url, "")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_http_client_does_not_persist_response_cookies() -> None:
+    # The shared client is reused across runs and users, so a Set-Cookie from
+    # one crawl must never be stored on it and replayed for another.
+    client = await acquisition_runtime.get_shared_http_client(proxy=None)
+    try:
+        client.cookies.extract_cookies(
+            httpx.Response(
+                200,
+                headers=[("set-cookie", "session=A; Path=/")],
+                request=httpx.Request("GET", "https://shop.example/"),
+            )
+        )
+        assert len(client.cookies) == 0
+    finally:
+        await acquisition_runtime.close_shared_http_client()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_validated_redirects_forward_cookies_without_client_state() -> None:
+    seen_cookie_headers: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen_cookie_headers.append(str(request.headers.get("cookie", "") or ""))
+        if request.url.path == "/start":
+            return httpx.Response(
+                302,
+                headers=[
+                    ("location", "https://example.com/final"),
+                    ("set-cookie", "session=abc; Path=/"),
+                ],
+                request=request,
+            )
+        return httpx.Response(200, text="ok", request=request)
+
+    client = build_async_http_client(
+        follow_redirects=False,
+        persist_cookies=False,
+        timeout=5,
+        transport_wrapper=lambda _transport: httpx.MockTransport(_handler),
+    )
+    async with client:
+        response = await get_with_validated_redirects(
+            client, "https://example.com/start"
+        )
+
+        assert response.status_code == 200
+        # Cookie continuity within the chain is preserved ...
+        assert seen_cookie_headers == ["", "session=abc"]
+        # ... but nothing is left on the shared client for the next caller.
+        assert len(client.cookies) == 0
 
 
 def test_shared_http_client_does_not_auto_follow_redirects() -> None:

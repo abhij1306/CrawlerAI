@@ -1,567 +1,203 @@
-# Invariants
+# CrawlerAI Invariants
+
+Hard runtime and engineering contracts. Violations are bugs. Read only sections touched by the task.
+Code and focused tests are authoritative when stale plans or audits disagree.
 
-These are the backend contracts. Violations are bugs, not style issues.
-**Each rule below includes what a violation looks like so there is no ambiguity.**
+## 1. Ownership, config, and repository shape
+
+- One concern has one owner. Extend or split that owner; do not create parallel managers, registries, helpers, stores, pipelines, or compatibility facades.
+- Grep before creating a function, class, constant, file, config source, or normalization path. Consolidate duplicates and delete superseded code.
+- Runtime strings, tokens, field names, selectors, URL patterns, thresholds, timeouts, and tunables live under `backend/app/core/config/`. Do not add bucket-local `constants.py`, `config.py`, or settings dictionaries.
+- One rule has one config source. Explicit typed mappings beat import-time `globals()` mutation.
+- Generic paths stay generic. Retailer/platform rules belong in declarative platform config or a genuine connector. A new abstraction must improve multiple domains or surfaces unless the user explicitly requests a site-specific path.
+- Cross-subsystem calls use public typed contracts. Do not import another module's underscore-prefixed internals. Allowlists are shrinking debt ledgers.
+- Delete completed migration shims and re-export stubs. Do not add `_misc`, `_helpers2`, `_v2`, `registry2`, or context-free root assets.
+- Split files by responsibility, not to hide complexity or evade LOC gates. Facades orchestrate; owners implement.
+
+Forbidden patterns consolidated from the former Engineering Strategy:
+
+- inline or duplicate config; cross-bucket field aliases; env-bypassing tuning dictionaries
+- hardcoded retailer/platform branches in generic acquisition, crawl, extraction, or publication code
+- speculative caching, plugin hooks, policy engines, or cross-cutting layers outside task scope
+- duplicate normalization, public-field cleanup, selector state, learned state, or artifact layouts
+- private-function test coupling; blanket lint disables; normalized-AST LOC accounting; mega test modules
+- binary mystery files at repository root; shell-owned DSN construction; build toolchains in runtime images
+
+## 2. User controls and run contracts
+
+- User-selected `surface`, traversal intent, proxy settings, diagnostics controls, and `llm_enabled` are authoritative. Heuristics may advise but never silently rewrite them.
+- Run creation freezes active runtime, profile, extraction-release, and LLM settings needed for reproducibility. Live changes affect future runs only.
+- Each batch URL owns its own database session and transaction. One failed URL cannot poison later URLs or the run-orchestration session.
+- With `CELERY_DISPATCH_ENABLED=false`, URL concurrency is `1`.
+- A run or URL result never reports clean success merely because transport returned HTTP 2xx.
+
+## 3. Extraction and publication
+
+Canonical ecommerce-detail flow:
+
+`Harvest -> representation-only normalization -> entity graph -> target selection -> Resolve -> Publish -> verdict`
+
+- Collectors emit immutable `Evidence`. Normalization may reshape values but cannot invent evidence, assign ownership, rank, or resolve semantics.
+- Entity assembly owns product/offer/variant/asset relationships. Target selection chooses the requested product before resolution.
+- Resolve owns accepted/rejected evidence IDs, conflicts, selected and derived facts, variant eligibility, offer inheritance, assets, and publication authorization.
+- Publish serializes only the authorized surface projection and checks the record against it. Persistence and exports never repair extraction.
+- Source order is a resolver tiebreaker, not permission to discard lower-tier evidence: adapter, structured data, network, JS state, DOM, then explicitly enabled grounded model evidence.
+- `transport_outcome`, `data_integrity`, field evidence states, and evidence dispositions remain separate.
+- Zero-record outcomes carry typed failure classifications and a stable diagnostic summary in `diagnose.json`.
+- Terminal shells, error bodies, challenge pages, redirect-only pages, and URL/title-only placeholders are not product observations. Mark source unavailability and suppress fake detail records.
 
----
+Field and identity rules:
 
-## HOW TO USE THIS FILE
+- Requested fields plus configured canonical defaults define the contract. Missing fields require deterministic recovery or a visible reason.
+- Candidate admission rejects breadcrumb categories, installment prices, promo values, system IDs/SKUs, structural tokens, placeholder types, related-product variants, sibling products, and non-product guide/glossary text before ranking.
+- Network/embedded JSON is untrusted until URL, product ID, SKU, or selected-root evidence links it to the requested product.
+- Locale, price parsing, currency inference, availability vocabulary, and GTIN validation use their config owners. Integral price strings mean whole currency units unless a transform explicitly enables cents. Negative decimal values are rejected.
+- Retailer identity and manufacturer identity are separate. Reject host-derived brand evidence during Resolve when product evidence identifies another brand.
+- Public `barcode` is digits-only and length 8/12/13/14. `gender` is one of Men/Women/Unisex/Kids/Boys/Girls. Brand loses region/site suffixes. Product identity fields reject structural tokens.
+- Asset dedupe uses canonical asset identity, not delivery URL equality. Preserve URL grammar such as commas inside `srcset` candidates.
 
-Before writing any code, read each rule that touches your subsystem.
-If your change would produce an output matching a VIOLATION signature below, stop and redesign.
-These rules override any plan doc, any inline comment, and any agent reasoning about "exceptions."
+Variant rules:
 
----
+- Variant and offer facts stay entity-scoped. Parent facts may be derived only from resolved variants with explicit lineage.
+- Public variants are flat rows with `variant_id`, transport fields, configured public axes, and top-level `variant_count`.
+- Never publish `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, nested `option_values`, or variant `title`.
+- Variant IDs are unique. Do not delete explicit inherited offer fields because they equal parent values.
+- DOM axes without a same-product variant matrix do not authorize a synthesized cross-product. This remains the active Bombas-style extraction gap.
+
+Never:
 
-## 1. Config and Constants — Zero Tolerance
+- repair titles, brands, SKUs, prices, availability, assets, variants, or identity in `publish/`, persistence, enrichment, exports, or UI
+- mutate fields after the evidence graph or record a repair only in record-level transforms
+- maintain parallel candidate arrays beside the Evidence ledger
+- synthesize parent facts from `selected_variant`
+- hide currency conflicts, resurrect rejected evidence, or treat HTTP success as clean integrity
+- validate artifact regressions only from old `records.json`; replay stored HTML/network inputs through the real pipeline
+
+## 4. Listing/detail separation
 
-**Rule:** Every string token, timeout value, threshold, field name, URL pattern, and numeric constant
-that controls runtime behavior lives in `app/core/config/`. Nowhere else.
+- Listing extraction never falls back to one detail-like metadata row. Zero listing rows produce `listing_detection_failed`.
+- Detail extraction rejects category/collection pages and must not promote the first tile or page heading into a product.
+- Detail expansion clicks only proven in-page/main-content controls. Never click header, nav, footer, marketing, assistant, or real navigation links.
+- A crawl page must not open another tab/window. Neutralize `window.open` and new-tab targets; keep the popup guard as backstop.
+
+## 5. Acquisition and browser runtime
+
+Acquisition returns observations: requested/final URL, status, method, headers, blocked state, diagnostics, rendered HTML, visible/accessibility text, network payloads, expansion artifacts, and optional screenshots. It never writes logical product fields.
+
+- Fast-finalize only successful 2xx responses with verified usable/extractable content. Error bodies continue through error/block classification.
+- Retry/escalate only from policy and evidence, with enough URL-local budget. Record every retry. When budget is insufficient, return the observed result with an explicit skipped diagnostic.
+- Do not retry static not-found pages, mismatched homepage/category shells, or existing low-quality detail rows merely missing defaults.
+- Respect `capture_screenshot=False` on every outcome.
+- Browser-driver disconnect is URL-local. Recycle a failed shared browser at most once. Browser close tasks remain observed if cleanup exceeds budget; do not cancel driver internals.
+
+Patchright and challenge contracts:
+
+- Patchright uses bundled headless Chromium. Rewrite headless UA/client hints coherently with the host OS. Do not add browserforge or JS fingerprint shaping.
+- Navigate directly to the target. No origin warmup.
+- Challenge recovery is bounded, re-reads and reclassifies live DOM every poll, and checks immediately after activity. A provider cookie is never required to observe that content cleared.
+- Terminal Access Denied evidence fails fast. Cloudflare interactive interstitials remain solvable until their bounded budget expires. Turnstile clicks are best-effort, coordinate-based, widget-gated, and engine-neutral.
+- `browser_outcome=usable_content` wins over provider headers, scripts, cookies, iframes, or telemetry. Only explicit blocked outcome, challenge title, strong visible blocker text, or forced hard-block status without usable content may override it.
+- Provider noise alone never writes hard-block memory or triggers real-Chrome escalation.
+
+## 6. Memory, cookies, SSRF, and bounded input
 
-**VIOLATION signatures — if your code matches any of these, it is wrong:**
-- A `.py` file outside `app/core/config/` contains a string like `"shopify"`, `"greenhouse"`, `"DataDome"`, a URL pattern, a timeout integer, or a field name as a bare constant
-- A new `constants.py`, `config.py`, or `settings.py` file is created inside any bucket folder
-- The same threshold or token appears in two different files
-- A dict or constant inside a service module silently overrides what `app/core/config.py` controls via env
+- Selector and learned structural memory is scoped by normalized `(domain, surface)`.
+- Acquisition profiles/cookies/host protection are separate from extraction memory. Durable engine choice and handoff eligibility belong to editable `DomainRunProfile`; short-TTL host memory only biases block/backoff safety.
+- Explicit run settings override learned contracts. Stale contracts stop forcing engine/handoff choices.
+- Domain and run browser state is engine-scoped. Challenge-state cookies/localStorage and blocked-run state are never persisted or replayed.
+- Browser-to-HTTP handoff requires sanitized state, matching proxy identity, and `handoff_eligible=true`. Try short-timeout curl first, then proven browser, then normal auto policy. Rendered/traversal/network-dependent paths are not handoff eligible.
+- A shared HTTP client carries no cross-run cookie state. Redirect-chain cookies stay per fetch and are re-matched by domain, path, and Secure on every hop.
+- URL validation and connection establishment are one SSRF boundary. HTTPX, curl, browser navigation/subresources, and every redirect connect only to the approved public IP while retaining original Host and TLS SNI. Mixed/private DNS fails closed.
+- Untrusted request and response bodies are bounded before full materialization. Oversize bodies are errors, never successful content.
+- Per-run browser cookie files are encrypted and bound to `(user_id, run_id, browser_engine)`, owner-only, deleted with the run, and cleaned when expired/orphaned. Plaintext or binding mismatch fails closed.
+- Proxy rows store no URL userinfo. Credentials resolve only at acquisition time. One redactor owns API, logs, diagnostics, telemetry, and exceptions. Celery receives run IDs, not secrets.
 
-**Fix:** Move the constant to the appropriate file in `app/core/config/` and import it. If no appropriate file exists, extend the nearest one. Do not create a new config file without confirming no existing config file can absorb it.
+## 7. Extraction memory
 
----
+`backend/app/models/extraction_memory.py` is the only durable structural-memory owner. PostgreSQL is authoritative.
 
-## 2. No Duplication Before Search
+- One immutable `ExtractionReleaseSnapshot` freezes each run. Each persisted URL result links one `ExtractionManifest`.
+- Selectors are domain-default recipes. Review promotions and feedback are typed `ExtractionOperatorLabel` rows.
+- `backend/app/extraction/` is storage-free. It may use pure core helpers but cannot import extraction-memory ORM or persistence modules.
+- Saved recipes rank admissible evidence only. They cannot create ownership, revive rejected evidence, or publish values.
+- Model output is grounded Evidence, lazy off deterministic success, and enabled only by approved benchmark metadata plus exact adapter/artifact identity. Predictions resolve to retained source paths and values.
+- Challengers diagnose or suspend a recipe through policy; they never mutate a published record.
+- No learned/model value publishes without a source locator and resolver acceptance.
 
-**Rule:** Before creating any function, class, constant, or file, run a grep to confirm it does not already exist.
-If it exists, extend it. If a similar version exists, consolidate — do not create a parallel copy.
+Never add parallel selector, review, feedback, knowledge-graph, runtime-snapshot, recipe, manifest, or learned-value stores.
 
-**VIOLATION signatures:**
-- Two functions in different files do the same normalization (e.g., price cleaning in both `extraction/collectors/dom.py` and `extraction/resolution/offers.py`)
-- A field alias defined in both `config/field_mappings.py` and a bucket-local dict
-- A new adapter that reimplements logic already in `core/shared/field_coerce_dispatch.py`
-- A plan doc that proposes the same fix as a closed plan that was never verified
+## 8. Persistence and diagnostics
 
-**Fix:** Grep first. Consolidate to the canonical owner. Delete the duplicate.
+- `record.data` contains populated logical fields only: no empty values, private/internal keys, raw manifests, page context, or site chrome.
+- `publish_url_result_artifacts` in `backend/app/persistence/url_result_artifacts.py` is the only per-URL artifact writer.
+- Each URL result owns exactly `page.html`, `record.json`, and self-contained bounded `diagnose.json` under `runs/{run_id}/results/{url_result_id}/`.
+- `diagnose.json` explains field status, accepted/rejected evidence, bounded previews, publication actions, failure classifications, and manifest context without opening another file or inventing another vocabulary.
+- Run-level `report.json` groups diagnoses only. It does not add monitoring, retention, webhook, or notification behavior.
 
----
+No parallel artifact roots, duplicate HTML, extra per-URL manifests/summaries/debug files, stale readers, or second reason vocabulary.
 
-## 3. Extraction Model — Field Quality and Repair
+## 9. LLM, enrichment, and product intelligence
 
-**How ecommerce-detail extraction works:**
-All collectors write immutable `Evidence` rows into one ledger. Normalization is representation-only: it may preserve raw values and canonicalize value shape, but it must not add evidence, assign ownership, rank, or infer semantics. Entity assembly groups evidence into product, offer, variant, and asset entities. Target selection chooses the primary product before canonical field resolution. Resolve owns accepted/rejected evidence IDs, conflicts, selected facts, derived facts, variant eligibility, asset selection, and publication policy. Publish serializes only the surface-specific publication projection and compares the serialized record back to that projection.
+LLM:
 
-There is no downstream semantic repair stage. Title cleanup, brand rejection, SKU repair, variant-family filtering, image choice, availability normalization, and cross-product rejection belong upstream in collector admission, entity linking, target selection, resolution, or asset decisions. Persistence writes the authorized public record and performs no extraction repair.
+- LLM runs only when both run settings and active config enable it. Failure is visible and does not corrupt deterministic state.
+- Ecommerce-detail LLM is adjudication-only: select/reject grounded evidence, suggest reusable locators, or abstain. It never generates missing field values or replaces accepted deterministic facts.
+- Non-detail LLM workflows remain explicitly gated.
 
-**Source priority is a resolver tiebreaker, not a source discard rule:**
-1. Platform adapter
-2. JSON-LD / Microdata
-3. Network payload intercept
-4. JS state
-5. DOM selector / heuristics
-6. LLM-adjudicated evidence only when the user enabled LLM
+Enrichment:
 
-Variant and offer facts remain entity-scoped. Parent offer/range/availability values may be derived from resolved variant facts only when the derivation has explicit lineage. A variant ID may be derived from one accepted unique SKU only when the derivation is recorded. No hidden post-resolution mutation is allowed.
+- Enrichment consumes persisted crawl records and writes derived rows. It does not clean polluted extraction output.
+- Shopify category paths/attribute handles come from `shopify_categories.json`; Shopify-defined values come from `shopify_attributes.json`.
+- Do not create local product-universe dictionaries for category synonyms, materials, colors, sizes, fabrics, or gender. Local rules may only implement generic parsing mechanics or vocabulary Shopify does not model.
 
-Extraction results expose `transport_outcome`, `data_integrity`, per-field evidence states, and terminal evidence dispositions. Field states include legacy states plus v2 states such as `captured_published`, `captured_suppressed`, `captured_conflicting`, `captured_unowned`, `source_unavailable`, and `not_requested`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
+Product Intelligence identity ladder, strongest first:
 
-Every zero-record extraction result must carry one or more typed failure classifications using the extraction taxonomy (`wrong_surface`, `insufficient_input_bundle`, `discovery`, `record_boundary`, `entity_binding`, `semantic_resolution`, `canonicalization`, `locale_normalization`, `validation`, `unsupported_representation`, `model_service_failure`, `internal_error`). `diagnose.json` must expose those classifications plus the stable diagnostic summary and manifest context when available.
+1. exact GTIN/UPC
+2. exact decomposed manufacturer style/model core
+3. brand-DTC own listing
+4. exact brand plus strong title
+5. exact brand plus distinctive model token
+6. exact brand plus medium title
+7. title-only refinement, never auto-accept
 
-Terminal shell acquisitions, including HTTP error bodies, challenge pages, browser low-content shells, redirect-only shells, and URL/title-only placeholders, are not successful product observations. They must mark affected detail fields as `source_unavailable` and suppress public `ecommerce_detail` records when the only surviving public values are the requested URL and a URL-derived title.
+- Brand evidence is not gated by registry membership. Never fabricate brand without candidate evidence.
+- Color/size differences are the same model, not automatic mismatch. Canonicalize volatile variant/tracking params before candidate dedupe.
+- Do not score raw composite retailer IDs, use image/pHash matching for recall, or call LLM in deterministic matching.
+- Google native search uses normal form fill plus Enter, no direct search-result `goto`, blanket quoted dorking, or random mouse behavior.
 
----
+## 10. Authentication and public boundaries
 
-**Active known bugs:** DOM-only variant axes can remain unresolved when the captured sources contain no product-scoped variant matrix. Details below. Keep this section for active extraction bugs only. Do not document already-fixed bugs here.
+- API startup never creates, promotes, reactivates, or resets users. Initial admin bootstrap is explicit, create-only, serialized by a durable consumed marker, and fails for an existing identity.
+- Unsafe cookie-authenticated requests require exact allowed Origin/Referer and signed double-submit CSRF. Explicit bearer requests remain independent of cookies.
+- Forwarded client identity is accepted only from configured trusted peers and resolved right-to-left to the first untrusted hop.
+- Public API global/IP Redis-first limits run before API-key DB lookup; per-key limits run after authentication.
+- MCP is stdio by default. Optional SSE binds only a literal loopback IP. MCP calls `/api/v1` with its principal key and never bypasses REST authentication/rate limits.
 
-### Known Extraction Gaps
+## 11. Production and release
 
-Run 1 artifact sampling on 2026-06-28 established these source/collector boundaries:
+- Central config accepts a complete database URL or composes and URL-encodes all components. Compose, workflows, and shell scripts never build DSNs.
+- Non-development startup rejects placeholder/local PostgreSQL, non-TLS Redis, and non-HTTPS frontend origins.
+- Migration and create-only bootstrap are separate one-off processes. API, worker, and beat never run them implicitly.
+- Images invoke project virtual-environment binaries explicitly. Runtime stages are non-root, digest-pinned, locked, and contain no compilers, headers, curl, or dependency resolver.
+- First-release Celery uses one solo worker per container and scales by container count.
+- API liveness is `/health/live`; readiness is `/health/ready`; worker readiness uses Celery ping. Frontend is a non-root static SPA server with security headers.
+- Every external Action is commit-pinned. Dependency audits are lock-based. Final images publish SPDX SBOMs.
+- Release scans gate immutable digests and fail closed. Fixable/unclassified High/Critical findings block. No-fix exceptions require explicit review plus a non-secret risk reference.
+- AWS uses OIDC. Docker credentials use runner-temporary config, the ECR helper, and disabled helper caching. Evidence contains no secrets.
 
-- Availability: Nike Air Force 1 (`url_result_id=2393`) and Apple iPhone 16 (`url_result_id=2407`) contain no product-scoped availability value in captured HTML. Nike's `sold out` text is translation copy, not selected-product state; Apple's availability wording is generic purchase-flow copy. Missing availability is expected for these captures.
-- Availability: Williams-Sonoma Bambino Plus (`url_result_id=2429`) contains six `Offer` rows with `availability=https://schema.org/InStock` nested under `Product.offers` as an `AggregateOffer.offers` list. The JSON-LD collector previously read only the aggregate row. It now recursively collects nested offers; artifact replay resolves `availability=in_stock`.
-- Variants: ColourPop Going Coconuts (`url_result_id=2388`) exposes one Shopify `Default Title` row. Sibling-product swatches are separate products, not variants of the selected product. Omitting public variants is expected.
-- Variants: Bombas ankle socks (`url_result_id=2389`) exposes four color controls and three size controls in DOM, but no captured product-scoped variant matrix connecting combinations to SKU, offer, or availability. The extractor reports `EXPECTED_VARIANT_AXIS_MISSING` with zero materialized variants. This remains an upstream collector gap. Do not synthesize the color/size cross-product from DOM axes alone; recover the product-state or network variant matrix with same-product evidence.
+## 12. Maintainability, tests, plans, and docs
 
-**Visible detail prices are extraction-owned. Owners: `extraction/pipeline.py` detail collectors (harvest) and `extraction/resolution/` (offer/price acceptance), with selector policy in `core/config/extraction_rules/`.**
+- Repository validation is owned by `scripts/check.ps1` and `scripts/validation.json`. Do not bypass it, weaken gates, raise limits, or edit mappings to avoid relevant tests.
+- Backend callable complexity fails above 15. Frontend complexity uses the existing VitePlus/ESLint threshold. LOC uses physical source lines with narrow legacy baselines that may not grow.
+- Applied Alembic migrations are immutable history. Validation scope, exclusions, and legacy baselines live only in `scripts/validation.json`; do not add undocumented exceptions or grow a baseline.
+- Split large test modules by public behavior. Shared fixture vocabulary may live in non-test support modules; preserve collected behavior.
+- Test contracts and observable behavior, not private call order or existence of private constants.
+- A plan slice is complete only after its mapped affected tests and canonical local gate pass. Full suites are CI-only.
+- Do not use `--no-verify`, skip/xfail/delete failures for green, trivialize assertions, over-mock behavior away, swallow errors, or turn failures into warnings.
+- Audit and plan docs are historical once complete/abandoned. Stable rules belong here; current ownership belongs in `CODEBASE_MAP.md`; product semantics belong in `BUSINESS_LOGIC.md`; implementation detail belongs in architecture docs.
 
-When structured data lacks price but the rendered detail DOM exposes a product display-price block, the detail DOM collectors (`extraction/collectors/dom.py`, wired by `extraction/pipeline.py`) may capture `price` and `original_price` evidence from configured detail price selectors. This is still upstream extraction. Do not add price repair in `publish/` or `crawl/pipeline/`.
+## 13. Deleted product surfaces
 
-**Definitions:**
-- **Requested fields**: Fields explicitly listed in run settings via `requested_fields`
-- **Default canonical repair fields for ecommerce detail**: `price`, `title`, `image_url` (as defined in config)
-- **High-value fields**: The union of requested fields and default canonical fields for the active surface
-- **Missing-field diagnostic**: A structured reason why a field could not be extracted (non-public, requires authentication, dynamically loaded only, etc.)
+Monitors, product alerts, in-app monitor notifications, and watch/alert MCP tools are deleted. Do not restore their routes, tables, frontend pages, schedulers, notifications, or Product Intelligence coupling without explicit new product scope.
 
-**Canonical field quality is extraction-owned.**
-For ecommerce detail, missing high-value fields such as `price`, `title`, and `image_url` are not acceptable just because one source tier had high total confidence. If the run requested deeper fields such as `brand`, `sku`, `variants`, or `availability`, those requested fields join the contract. Extraction must either repair contract fields, mark a diagnostic reason they are not public/extractable, or leave a visible missing-field diagnostic before persistence.
-
-Ecommerce detail candidate admission must reject semantic artifacts before ranking. BreadcrumbList JSON-LD is not a detail category source. DOM breadcrumbs may provide category only after UI/root labels and product-title suffixes are removed. Price repair may correct 100x cent/magnitude drift only when visible DOM, same-product variant evidence, or an explicit host/currency conflict corroborates the smaller value; host name alone must not divide integral prices by 100. Installment/payment-plan prices, promo variant values, hex-only color values, system SKUs, structural IDs, placeholder product types, raw list-string text, related-product variants, and whole-value non-product guide/glossary text must not win as canonical fields.
-
-Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain row-level `variant_id`, public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`), and configured public variant axes from `app/core/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`); `variant_count` is top-level only. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or other variant-only identity helpers. Public row-level `variant_id` values must be unique within one product record; duplicate ids are an upstream identity/linking failure, not a downstream export cleanup task. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
-
-Complete variant offers are semantic data, not transport duplication. Public-contract shaping must not delete inherited `price`, `currency`, or `availability` after the resolver makes them explicit. Product/variant consensus and offer inheritance belong to `app/extraction/resolution/`; findings belong to `app/extraction/validation.py`.
-
-Locale and market interpretation are policy, not structural extraction. Decimal/thousands parsing, ccTLD/locale currency inference, currency-symbol mapping, and GTIN check-digit validation belong to `app/core/config/locale_format_rules.py`. Availability enum/tokens and token-to-enum normalization belong beside the canonical enum in `app/core/config/extraction_rules/`. Extraction normalizes evidence by delegating to these config-owned policy surfaces; resolution remains the semantic authority for choosing currency evidence and deriving currency fallback facts.
-
-Plain integral price strings represent whole currency units unless the calling transform explicitly enables integral-cent interpretation. Price and other decimal fields reject negative numeric values in every accepted string representation.
-
-Asset dedupe uses canonical asset identity, not delivery URL equality. Storefront-host and CDN-host Shopify URLs for the same file, and transformed Nike URLs for the same asset ID, are one asset. Keep the strongest delivery URL.
-
-Image candidate parsing must preserve delivery-URL syntax before normalization. In particular, a comma inside a `srcset` URL is part of that URL; only the candidate grammar may separate source-set entries. A malformed relative fragment created by source-set parsing is not admissible image evidence.
-
-Network and embedded JSON admission is same-product evidence only. Ad/feed/analytics/recommendation payload roots, sibling products, and selected-color conflicts must be rejected or diagnosed before entity assembly unless an explicit URL, product id, SKU, or selected-root relationship ties the payload to the requested PDP. File extensions are not required for image evidence when the asset URL, response metadata, or product-scoped lineage proves the URL is an image.
-
-Retailer/site identity and product manufacturer identity are separate facts. When a title suffix is corroborated as host identity and a distinct title/path prefix supplies the product brand, host-derived brand evidence must be rejected during Resolve rather than repaired after publication.
-
-Public-field identity validators are single-owner rules at the public boundary (`core/shared/field_coerce_dispatch.py` `coerce_field_value`, backed by `core/shared/field_coerce_text.py`):
-
-- **`barcode`**: digits-only, allowed lengths `8`, `12`, `13`, `14`; otherwise absent and may be rerouted to `sku`.
-- **`gender`**: must be one of `Men`, `Women`, `Unisex`, `Kids`, `Boys`, `Girls` or absent.
-- **`brand`**: must not keep trailing region/site suffixes (`| US`, `- UK`).
-- **`product_id`, `title`, `product_type`**: must drop structural/internal tokens (`plp`, `pdp`, `specifications`, media-player tokens).
-
-**Enrichment is not extraction cleanup.**
-Data enrichment consumes persisted `record.data` as the upstream extraction contract. It must not add blocklists, URL-token cleanup, UI-title suppression, category/source correction, or field-specific compensations for polluted canonical fields. If enrichment output exposes garbage such as URL tokens in `brand`, UI copy in `title`, impossible `size` values, or breadcrumb/category pollution, fix the acquisition/extraction candidate, coercion, ranking, or finalization path before persistence.
-
-**Shopify taxonomy and attributes are the enrichment source of truth.**
-Data enrichment must use `shopify_categories.json` for product category paths and category attribute handles, and `shopify_attributes.json` for Shopify-defined attribute values such as colors, sizes, fabrics, materials, and target gender. Do not build local product-universe dictionaries for categories, colors, materials, sizes, or category synonyms. Small local rules are allowed only for generic parsing mechanics such as token singularization, UI noise stripping, source-field lookup, and availability wording that Shopify does not model.
-
-**Ecommerce detail LLM is adjudication-only.**
-Ecommerce detail must not call missing-field value generation. LLM may later choose or reject existing evidence IDs, suggest reusable selectors/source references, or abstain. Verified recipes store selectors, JSON paths, endpoint families, and validation rules by `(domain, surface)`; they never store extracted values. Non-detail LLM workflows remain explicitly gated by run settings and active config.
-
----
-
-**VIOLATION signatures — do not introduce these:**
-- Replacing the per-field `candidates` + `_winning_candidates_for_field` system with a record-level merge or a single `winner` variable
-- Adding a new tier or source that writes directly to `record` instead of going through `_add_sourced_candidate`
-- Accepting a partial ecommerce detail record with missing requested/default high-value fields and no repair attempt or diagnostic
-- Treating `requested_fields=[]` as permission to ignore ecommerce detail quality
-- Forcing optional deep ecommerce fields such as `brand`, `sku`, or `variants` when the user did not request them
-- Persisting or exporting legacy variant keys such as `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, nested `option_values`, or variant `title`
-- Letting non-numeric barcodes, region-suffixed brands, or structural identity tokens survive the public record boundary
-- Fixing missing variants by adding hidden browser-side extraction that bypasses normal field provenance
-- Capturing visible detail prices only at the end of the full harvest sequence but not after early-exit paths
-- Fixing missing visible PDP prices in persistence/export instead of the extraction collectors/resolution
-- Calling ecommerce-detail `extract_missing_fields()` or accepting an LLM-generated field value
-- Letting LLM replace a populated adapter / structured / network / JS / DOM value without an explicit conflict-review workflow
-- Maintaining parallel candidate source/evidence arrays beside the `Evidence` ledger (`extraction/contracts.py`)
-- Mutating public detail fields after `_evidence_graph` is serialized
-- Recording a repair only in record-level `_transforms` without a matching graph transform
-- Silently rewriting a contradictory currency or dropping the contradicting evidence instead of emitting a finding
-- Deleting explicit variant offer fields because they equal the parent offer
-- Treating a thin acquisition shell with only URL/title identity as a complete detail record without a high-severity evidence finding
-- Adding enrichment-side blocklists or cleanup to hide polluted extracted `title`, `brand`, `category`, `size`, `material`, or other canonical source fields
-- Adding local category synonym maps such as "matching sets -> outfit sets" instead of improving Shopify-backed taxonomy matching
-- Adding hand-maintained material/color/category lists when Shopify attributes or category metadata already contain the vocabulary
-
----
-
-## 4. Delete Before Adding
-
-**Rule:** When fixing a bug or adding a feature, the first question is always:
-"What existing code can I delete or simplify?" Adding more code to compensate for broken existing code is a violation.
-
-**VIOLATION signatures:**
-- A new normalization pass added in `publish/` to fix values that extraction harvest/resolution (`extraction/pipeline.py`, `extraction/resolution/`) already should have cleaned
-- A new fallback branch added in `pipeline/core.py` to handle a case that should be rejected upstream
-- A helper function added that duplicates logic in a file that was "too complex to refactor right now"
-- A plan that adds 3 new files without deleting any
-
-**Fix:** Trace the bad value upstream. Fix it at the source. Delete the downstream compensation if it existed.
-
----
-
-## 5. User Control Ownership
-
-**Rule:** User-selected controls are authoritative. Do not silently rewrite `surface`, traversal intent, `proxy_list`, or `llm_enabled`.
-
-**VIOLATION signatures:**
-- Heuristics or adapters silently change the run's `surface` after creation
-- Traversal runs without settings authorizing it
-- LLM activates without both run settings AND active config enabling it
-
----
-
-## 6. Acquisition — Observe, Render, Diagnose
-
-**Rule:** Acquisition returns observational facts only: URL, final URL, status, method, headers, blocked state, diagnostics, and artifacts. It does not invent blocker causes, insert retries not in policy, or escalate without evidence.
-
-Browser acquisition may use Patchright or real Chrome to produce better observations: rendered HTML, network payloads, visible text, accessibility text, readiness probes, and screenshots when enabled. It may also produce explicit detail-expansion artifacts (HTML/JSON from clicked size/color variant controls, expanded accordion sections, etc.). These are observation artifacts and are allowed inputs to extraction and LLM repair.
-Browser acquisition must not fabricate fields. It must not run hidden page scripts that directly assign `price`, `brand`, `variants`, or other logical fields outside the normal extraction/repair provenance path.
-
-Readiness and verified detail-extractability evidence may fast-finalize browser acquisition only for successful 2xx responses. HTTP error responses must continue through normal block/error classification even when their rendered body contains otherwise extractable fields.
-
-A crawl page must never open a second browsing context. As soon as the page is created, `suppress_new_context_openers` installs an idempotent guard (init script for every navigation plus an immediate `evaluate` for the live document) that neutralizes both new-tab vectors: `window.open` is overridden to return null, and a capture-phase click listener rewrites any anchor `target` to `_self`. Detail expansion deliberately keeps clicking accordions/tabs/"show more"; suppression is what makes those clicks safe so collapsed content is still revealed without a tab flashing open. The reactive popup guard (`install_popup_guard`) stays as the backstop for anything JS contrives that attribute/`window.open` rewriting can't catch — it is the safety net, not the primary defense. Detail admission (`_candidate_is_admitted`) is the third layer: navigational anchors (a real http(s) `href` or `target=_blank`/`_new`) are never clicked even when they also carry `aria-controls`, so only genuine in-page toggles are exercised.
-
-
-
-Challenge recovery is part of acquisition, not extraction. Direct browser navigation must run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
-
-Browser retry is allowed only when policy and diagnostics justify it, and only when enough URL-local budget remains to complete a meaningful browser attempt. If an HTTP result indicates a block/shell but the remaining budget is below `browser_retry_min_remaining_seconds`, acquisition returns the observed HTTP result with `browser_escalation_skipped=insufficient_budget` instead of starting a doomed browser navigation/settle stage.
-
-Empty extraction may retry browser for retryable HTTP statuses, blocked/shell evidence, listing-integrity recovery, and non-browser HTML with no static detail evidence. Detail runs with explicit requested fields may choose browser up front because those fields often require rendered DOM or expansion. It must not retry browser for static detail "not found" pages (for example `Page Not Found`, `Product not found`, or `Nothing to see here`), static homepage/category shells that do not match the requested detail slug, or low-quality detail records that already exist but are missing default fields. Missing `price`, `title`, `image_url`, or requested fields after a completed acquisition should be handled by deterministic extraction diagnostics and the explicit LLM path when enabled, not by hidden HTTP-to-browser escalation. Every retry must be logged.
-
-Diagnostics controls are user controls. If `diagnostics_profile.capture_screenshot` is `False`, browser acquisition must not capture any screenshots, regardless of outcome.
-
-Browser-driver disconnects are URL-local failures. If a shared browser dies during `new_context`, page bootstrap, or content serialization, the runtime may recycle that browser once, but `crawl/batch_runtime.py` must keep the failure scoped to the current URL and continue the batch.
-
-Every batch URL owns its own database session and transaction, including serial/local execution. A failed flush or `PendingRollbackError` for one URL must never poison the run-orchestration session or stop later URLs. When `CELERY_DISPATCH_ENABLED=false`, batch URL concurrency is `1`; local mode does not silently retain the Celery parallel execution policy.
-
-Browser close operations are bounded but not cancellation-owned by timeout wrappers. If Patchright/Playwright close exceeds its cleanup budget, the close task remains observed until completion; callers must not cancel driver internals and create unhandled `TargetClosedError` futures.
-
-**Patchright runs headless bundled Chromium; headless leaks must be masked.**
-
-- Engine is `patchright` headless bundled Chromium (`--headless=new`), not Patchright's headful `channel="chrome"` mode. Headless leaks a `HeadlessChrome` UA token with no `sec-ch-ua` hints, which PX/Akamai/DataDome block on sight.
-- `build_playwright_context_spec` MUST rewrite the UA to plain `Chrome` with coherent `sec-ch-ua` headers. UA OS token, `sec-ch-ua-platform`, and native `navigator.platform` MUST agree, keyed off host OS. Real Chrome (headful, native context) is exempt.
-- No `browserforge`, no JS init-script shaping. Patchright's "no fingerprint injection" guidance applies only to headful `channel="chrome"` and never justifies dropping the mask while headless.
-- There is no origin warmup. Acquisition navigates directly to the target URL on every engine (Patchright and real Chrome); a blocked product URL is recovered in place by the challenge loop, never by pre-seeding cookies from the origin root. The critical path carries no speculative warmup navigation.
-- Challenge recovery re-checks for clear immediately after challenge activity (activity is ~2s; providers often clear during it) to avoid a needless engine escalation on an already-usable page.
-- A terminal hard block (title/strong "Access Denied" evidence, no active challenge or challenge-element markers) never clears by waiting; the recovery loop exits early and skips the retry-goto so real-Chrome escalation is not delayed by the full challenge budget. **Cloudflare interactive interstitials are the explicit exception:** a "Just a moment…" / "Checking your browser" shell (Cloudflare provider + interstitial marker, even before the Turnstile iframe paints) is solvable, not terminal. `_is_solvable_interactive_challenge` must classify it as non-terminal so the recovery loop keeps polling long enough for the Turnstile widget to render and be clicked instead of failing fast. Akamai/DataDome "Access Denied" stays terminal.
-- Cloudflare Turnstile checkboxes are solved by a real coordinate click, on both engines. The recovery loop is engine-agnostic (`recover_browser_challenge` drops the engine), so when a Turnstile widget is present (`CLOUDFLARE_TURNSTILE_SELECTORS` match) `_maybe_click_turnstile` moves the mouse into the widget and clicks the checkbox hit point, latched so it fires once and re-fires only after a short poll cooldown. The click is best-effort and gated on an actual Turnstile match: non-Cloudflare challenges are never clicked.
-- Challenge recovery MUST re-read and re-classify the live DOM on every poll. It may not gate the clear-check on a provider cookie (e.g. Akamai `_abck`): a provider shell (Akamai/DataDome/PerimeterX) clears by swapping in real content, so the re-read HTML is the source of truth. Gating the re-check on a cookie that never appears in-page makes Patchright miss an already-usable page and wastes the whole challenge budget before a needless real-Chrome escalation. A missing provider cookie is at most a hint, never a reason to skip the DOM re-check.
-
-**Usable content beats provider noise. This is a hard contract.**
-If browser diagnostics report `browser_outcome == "usable_content"`, provider telemetry such as `provider:*`,
-`active_provider:*`, `challenge_provider_hits`, vendor headers, Akamai/DataDome/Cloudflare script markers,
-or challenge iframe markers is diagnostic evidence only. It must not by itself set `blocked=True`,
-`failure_reason=challenge_shell`, host hard-block memory, or real-Chrome retry.
-
-Only these can override `usable_content`:
-- explicit blocked outcome (`challenge_page`, `low_content_shell`)
-- challenge-title evidence (`title:*`)
-- strong visible blocker text evidence (`strong:*`, for example real CAPTCHA/access-denied copy)
-- HTTP-forced hard block status where no usable browser content was recovered
-
-This rule exists because modern commerce pages often load normal PDP content while bot-defense scripts,
-cookies, iframes, or Akamai/DataDome/Cloudflare markers remain present. Treating those markers as a block
-is a crawler bug, not stricter security detection.
-
-**VIOLATION signatures:**
-- Block detection classifies a page as blocked based on a vendor header alone when useful content is present and extractable
-- Block detection classifies a page as blocked from generic `captcha` text or `recaptcha` / `hcaptcha` provider markers alone when the page still has real extractable listing/detail content and no stronger challenge evidence such as challenge-title hits, active challenge markers, or challenge elements
-- `browser_outcome == "usable_content"` plus only `provider:*`, `active_provider:*`, `challenge_provider_hits`, vendor headers, or challenge iframe markers becomes `challenge_shell`
-- A usable detail page retries from Chromium to real Chrome solely because Akamai/DataDome/Cloudflare provider markers are present
-- Host protection memory records a hard block from a usable browser page with provider markers but no title/strong blocked evidence
-- A retry happens that is not logged and visible in diagnostics
-- Browser escalation starts when remaining acquisition budget is below `browser_retry_min_remaining_seconds`, producing predictable `Browser navigation/settle stage exceeded timeout_seconds=...` failures
-- Serial URL processing reuses the run-orchestration SQLAlchemy session for extraction/persistence work
-- `CELERY_DISPATCH_ENABLED=false` still allows `url_batch_concurrency > 1`
-- A static product-not-found or homepage-shell detail page retries browser only to rediscover the same non-product page
-- Provider-marked low-content shells skip the bounded recovery loop, or a Cloudflare "Just a moment" interstitial is treated as a terminal hard block and fails fast before the Turnstile widget can render and be clicked
-- A crawl page opens a second browsing context (new tab/window) — `window.open` or a `target=_blank` anchor is left un-neutralized so a tab flashes open during navigation or detail expansion
-- Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields
-- Browser-side code writes logical extraction fields directly into the record instead of returning observation artifacts
-- Browser acquisition captures a screenshot when `capture_screenshot=False`
-- Launching Patchright first when a learned contract specifies real Chrome, without explicit user override or when the contract has been marked stale (see Rule 9)
-
----
-
-## 7. Listing and Detail Stay Separate
-
-**Rule:** Listing extraction never falls back into single-record detail behavior. A listing run with zero records produces `listing_detection_failed`. It never produces a fake success with one row of page metadata.
-
-Detail extraction must also reject collection/category URLs that expose product-tile prices. A category URL submitted under `ecommerce_detail` is a bad seed, not a single PDP. Do not turn its first tile or page heading into a detail record.
-
-**VIOLATION signatures:**
-- A listing run returns 1 record containing the page title, OG description, or brand name
-- `verdict.py` returns `success` for a listing run that extracted zero product rows
-- The extraction engine routes a listing URL through the detail harvest pipeline (`extraction/pipeline.py`)
-- An `ecommerce_detail` run on `/c/...`, `/category/...`, or `/collections/...` persists a fake detail record from a product tile
-- Detail expansion clicks header/nav/footer chrome and navigates a PDP request onto a marketing or utility page
-
----
-
-## 8. Persistence — User-Facing Payload Only
-
-**Rule:** `record.data` contains only populated logical fields. No empty values, no `_` internals, no raw manifest containers, no internal page-context blobs, no site chrome.
-
-**VIOLATION signatures:**
-- Exported CSV contains fields like `_raw`, `_source`, `__nuxt`, or empty string columns
-- `record.data` contains breadcrumb text, footer links, or support page anchors
-- Detail records contain breadcrumb/support/link spillover or other internal page-context scaffolding
-
----
-
-## 9. Domain Memory Scoping
-
-**Rule:** Domain memory is always scoped by normalized `(domain, surface)`. A selector for `example.com` on `ecommerce_detail` must never apply to `example.com` on `job_detail` or to `other.com` on any surface.
-
-**VIOLATION signatures:**
-- A `DomainMemory` lookup uses only `domain` without `surface`
-- Self-heal writes a new selector without verifying the target surface
-- Generic fallback selectors override a domain-specific rule for the same surface
-
-**Domain cookie memory addendum:**
-- Domain cookie memory is acquisition memory, not a raw browser-state dump.
-- Challenge-state cookies/localStorage from bot-defense pages must never be persisted or replayed as reusable domain memory.
-- A blocked browser run must not promote its storage state into domain memory or run-scoped browser storage.
-- Run-scoped and domain-scoped browser storage must stay engine-scoped; `chromium`, `patchright`, and `real_chrome` state must not bleed across engines.
-- Browser-to-HTTP handoff may only reuse sanitized engine-scoped session state on the same proxy identity. If proxy affinity cannot be proven, skip handoff and stay browser-first.
-- Outbound URL validation and connection establishment are one security boundary. HTTPX, curl, and browser transports must connect to the exact public IP approved for that hop while retaining the original HTTP Host and TLS server name. Every redirect and browser subresource is revalidated; any mixed/non-public DNS answer fails closed. Browser traffic uses the local enforcing SOCKS bridge. Browser HTTP/HTTPS upstream proxies remain rejected until they have equivalent pinned CONNECT enforcement.
-- Untrusted bodies are bounded before materialization. The ASGI receive wrapper counts request chunks before JSON or multipart parsing/spooling, with config-owned route budgets. Acquisition, robots, and sitemap clients stream responses and stop on oversized advertised, downloaded, or decoded bodies; curl stops in its write callback. Oversize results are errors and are not retried or persisted as successful content.
-- Host browser-first memory is for repeated hard blocks, not one noisy challenge hit.
-- Real Chrome navigates directly to the detail URL; there is no origin warmup on any engine. Reusable engine-scoped `real_chrome` domain state, when it exists, is still applied to the context, but it does not gate a warmup step because none exists.
-- Real Chrome is not challenge-exempt. If the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/core/config/acquisition_policy.py`) before declaring the page blocked.
-- Learned acquisition contracts live in editable `DomainRunProfile` memory scoped by normalized `(domain, surface)`. They own durable engine choice and handoff eligibility; explicit run settings always override them.
-- Future crawls must reuse the successful acquisition/data-extraction path and learned selectors for the domain/surface without fresh experimentation unless the user explicitly changes settings, enables experimentation, resets learned memory, or the contract becomes stale.
-- Only contracts with `handoff_eligible=true` may trigger curl handoff. Browser success alone is not enough; rendered extraction (DOM-tier fields used), traversal (link discovery from rendered page), or network-payload dependence (intercepted XHR/fetch bodies) must disable handoff.
-- When safe cookies exist for a handoff-eligible saved engine:
-  1. Try curl handoff first.
-  2. On drift/block/empty output, fallback to the proven browser engine.
-  3. On further failure, revert to the normal auto policy.
-- **Handoff timeout is capped at `browser_http_handoff_timeout_seconds` (default 3s), not the full HTTP timeout.**
-  Handoff is speculative — it tries to skip the browser entirely using stored cookies. If the WAF hangs or slow-rejects, the full `http_timeout_seconds` (10s) would burn before the browser even starts launching. On WAF-heavy sites this caused 20–26s total acquisition delay (handoff timeout + cold browser launch). The dedicated short timeout ensures handoff either succeeds fast or fails fast, keeping browser-first paths responsive.
-- Host protection memory is short-TTL block/backoff memory only. It may bias browser-first safety, but it must not become the durable owner of engine preference or handoff eligibility.
-- After the configured acquisition-contract stale threshold (`acquisition_contract_stale_failure_threshold` in `app/core/config/runtime_settings.py`, enforced by `app/crawl/profile/acquisition_contract.py` `note_acquisition_contract_failure` / `acquisition_contract_is_stale`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices. (Extraction-recipe staleness is a separate threshold: `CASCADE_RECIPE_STALE_FAILURE_THRESHOLD` in `app/core/config/cascade.py`.)
-
-**Why this is here:**
-Static cleanup advice to persist/reuse more browser state caused a real regression on 2026-04-23. The crawler started replaying PerimeterX challenge state (`_px*`, `pxcts`, PX localStorage) across runs, which poisoned acquisition on multiple sites. Any future "simplification" of cookie memory must preserve this guard and its regression tests.
-
----
-
-## 10. LLM — Explicit, Degradable, Validated
-
-**Rule:** LLM runs only when both run settings and active config enable it. When enabled, LLM is a normal repair path for missing requested/default canonical fields after deterministic/browser evidence has been used. For ecommerce detail, default canonical LLM repair is limited to `price`, `title`, and `image_url`; deeper fields are repaired only when explicitly requested. LLM failures must be visible in diagnostics and must not corrupt deterministic extraction state.
-
-**VIOLATION signatures:**
-- LLM fires on a run where `llm_enabled=False`
-- A deterministic field value is replaced by an LLM output without explicit gating
-- An LLM timeout or API error silently produces an empty record instead of a diagnostic log entry
-- A missing requested/default high-value field is left unrepaired without recording that LLM was disabled, unavailable, rejected, or unnecessary
-
----
-
-## 11. Deleted Monitoring and Alerting Surfaces
-
-**Rule:** Monitors, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted product surfaces. Do not reintroduce monitor schedulers, alert routes, notification tables, or watch/alert MCP tools without a new approved plan.
-
-The run-complete callback remains a generic observability extension point. It must not grow monitor-specific diffing, retention, webhook, or notification behavior.
-
-**VIOLATION signatures:**
-- Runtime routes such as `/api/monitors`, `/api/alerts`, `/api/v1/alerts`, `/api/watches`, or `/api/v1/watches` are registered.
-- ORM tables such as `monitor_jobs`, `monitor_events`, `monitor_snapshots`, `monitor_webhook_deliveries`, or `in_app_notifications` return.
-- Celery or FastAPI startup registers monitor scheduler tasks or loops.
-- Frontend routes `/monitors` or `/alerts` return.
-- Product Intelligence creates monitors instead of handing selected URLs to normal crawl workflows.
-
----
-
-## 12. Single-Writer URL-Result Artifacts
-
-**Rule:** Exactly one component writes per-URL artifacts: `publish_url_result_artifacts` in `persistence/url_result_artifacts.py`. It writes exactly three files per URL result under `runs/{run_id}/results/{url_result_id}/`:
-
-- `page.html` — the acquired HTML, written **once**.
-- `record.json` — the public record(s); shape matches the records API.
-- `diagnose.json` — a **self-contained, bounded** root-cause artifact built by `app/observability/diagnose.py`.
-
-`diagnose.json` is the single-file debugging contract: a missing or wrong `price`, `currency`, `availability`, or dropped variant must be fully explainable from `diagnose.json` alone, without opening `page.html` or source. Per field it inlines status (existing `FieldEvidenceState` names), evidence disposition summaries, the winning candidate, rejected candidates with reasons (≤120-char value previews), and any publication-policy action. It reuses existing resolver/publication/disposition vocabulary — no parallel reason names — and references no other file. The deterministic run-level `report.json` (`app/observability/run_report.py`, a run-complete callback) groups root causes and links to each URL's `diagnose.json`.
-
-**VIOLATION signatures:**
-- A second writer or a second directory scheme (`runs/{id}/pages/...`) emits URL artifacts.
-- Any file other than the three above is written per URL result — `manifest.json`, `summary.json`, `records.json`, `debug.json`, `browser.json`, `trace.json`, `screenshot.*`, `llm_diagnosis.json`, or a duplicate copy of the HTML.
-- `page.html` is written twice.
-- `diagnose.json` references another file instead of inlining bounded provenance, or invents reason vocabulary instead of reusing `FieldEvidenceState`, evidence disposition, and publication-policy reasons.
-- A reader opens the never-written `acquisition.json` / `extraction.json`, or reads the deleted `source_trace` candidate/conflict/resolver/llm provenance keys.
-- `run_report.py` (or any run-complete callback) grows monitor-style diffing, retention, webhook, or notification behavior (see Rule 11).
-
----
-
-## 13. Codebase Shape
-
-**Rule:** Generic crawler paths stay generic. Pipeline boundaries use typed objects. CPU-bound parsing does not block async hot paths. New architecture must improve reusable coverage across multiple domains or surfaces, not just rescue one site, unless the user explicitly asks for a site-specific path.
-
-**VIOLATION signatures:**
-- `if "shopify" in url` or `if "greenhouse" in host` appears in `crawl/pipeline/`, `crawl/batch_runtime.py`, `acquisition/`, or any non-adapter file
-- A new shared layer, pipeline branch, or runtime abstraction is added for a bug proven on only one domain, with no evidence it improves broader extractor coverage
-- A generic service module starts owning logic that belongs in an adapter or existing platform-specific mapper just to fix one site's markup
-- A function returns a tuple of 4+ items instead of a typed object
-- A sync `requests.get()` or sync parsing call inside an `async def` function without `run_in_executor`
-
----
-
-## 14. Plans Must Be Verified, Not Just Written
-
-**Rule:** A plan slice is not done until its focused verify step passes. Plans that are not verified are not done — they are abandoned, and their changes must be treated as untrusted.
-
-Backend verify steps use the smallest relevant pytest target plus ruff for touched Python. Do not run broad `pytest tests -q` unless the user explicitly asks for a full-suite sweep.
-
-Frontend verify steps use direct VitePlus commands: `vp test <test-path>`,
-`vp check --fix`, and `vp build`. Do not use npm wrappers or Jest-only flags.
-
-Smoke scripts and fixture/corpus replay gates are not default verification. Do not add or run them unless the user explicitly asks for corpus, replay, or smoke work.
-
-**VIOLATION signatures:**
-- A slice is marked DONE without running the focused verify command
-- A plan doc exists with status IN PROGRESS but no corresponding test run in the last session
-- A second plan is created to fix the same issue as a previous plan that was never verified
-
-**Fix:** If a plan was abandoned, treat its changes as potentially broken. Do not build on top of unverified work.
-
----
-
-## 15. Google Search Mimicry Footprint
-
-**Rule:** Google native search discovery must mimic human behavior to avoid immediate blocks. 
-- **No random mouse jitter:** Never call `emit_browser_behavior_activity` on Google Search pages; erratic, high-speed mouse trajectories are a strong bot signal.
-- **Natural input:** Use `page.locator(...).fill()` and `Enter` rather than direct `goto` or slow character-by-character typing. 
-- **Natural syntax:** Queries must not use strict boolean dorking (e.g., exact match quotes around every word) unless explicitly required for specific repair.
-
-**VIOLATION signatures:**
-- `emit_browser_behavior_activity(page)` is called inside `_google_native_session`.
-- `_quoted` wraps every search token in double quotes.
-- `page.goto` is used for search execution instead of interacting with the search box.
-
----
-
-## 16. Product Intelligence — Discovery Identity Ladder
-
-**Rule:** Deterministic product matching uses a fixed identity ladder, strongest signal first.
-Owner: `product_intelligence/matching.py` (`score_candidate`) + `product_intelligence/discovery.py`,
-thresholds in `config/product_intelligence.py`. No LLM in the deterministic path (see Rule 10).
-
-Ladder (highest confidence first), with the basis recorded in `score_reasons["match_basis"]`:
-1. **GTIN/UPC exact** — strongest, auto-accept.
-2. **Manufacturer style/model code exact** — GTIN-class. The universal cross-retailer code
-   (e.g. Nike `FV5285`) must be **decomposed** from a composite retailer SKU before comparison.
-   Belk SKUs glue a numeric retailer prefix onto the manufacturer core (`3900462FV5285` → `FV5285`),
-   and external listings expose it bare or with a colorway suffix (`FV5285-002`). Match on the core.
-3. **Brand-DTC own listing** (brand-exact on the brand's own domain).
-4. **Brand-exact + strong title similarity.**
-5. **Brand-exact + distinctive model token** — model-level match. The distinctive model name
-   (brand-stripped, generic-descriptor-stripped, e.g. `promina`) is matched **directionally**
-   (source distinctive tokens must be contained in the candidate) so a truncated generic candidate
-   cannot self-promote.
-6. **Brand-exact + medium title similarity.**
-7. **Title-only** — refinement, never auto-accept.
-
-**Brand resolution is evidence-based, not allowlist-gated.** The brand registry / `BRAND_DOMAIN_MAP`
-only *canonicalizes* aliases. A candidate whose own text states the source brand matches even when the
-brand is absent from the registry. Brand is never fabricated without candidate-side evidence (Rule 6).
-
-**Colorway and size are the SAME model, not a variant mismatch.** The variant-spec guard
-(`_variant_spec_mismatch`) only fires on genuine spec conflicts (capacity unit, "N-in-1"). Footwear/apparel
-color and size differences must stay matchable. Candidate URLs are canonicalized (volatile size/color/
-tracking query params stripped) before dedupe so one listing at N sizes consumes one candidate slot.
-
-**The manufacturer style core and distinctive model token are NOT a site-specific path** (Rule 13): they
-apply to every branded ecommerce target. Raw internal retailer identifiers (a composite SKU string,
-`product_id`, `style_id`) are still never scored as-is — only the decomposed manufacturer core.
-
-**VIOLATION signatures:**
-- Scoring a raw composite retailer SKU string as an identity signal instead of the decomposed core.
-- Gating `brand_match` on registry membership so an obviously-branded candidate cannot match.
-- Treating a colorway/size difference as a wrong-product variant mismatch.
-- A single listing at multiple sizes consuming multiple per-product candidate slots (missing canonical dedupe).
-- Re-introducing image/pHash matching for recall (audited NO-GO: rejects same-model colorways).
-- Adding an LLM call to the deterministic discovery/matching path.
-
----
-
-## 17. Extraction Memory — Single PostgreSQL Owner
-
-**Supersession (2026-07-02, D4):** This rule replaces the former Knowledge Graph greenfield/no-backfill/reset-separation contract. The generic entity/relationship/claim graph and the parallel selector, review-promotion, field-feedback, and run-JSON stores were intentionally consolidated.
-
-**Rule:** `app/models/extraction_memory.py` is the only durable owner for structural templates, recipe layers, compiled recipes, locale-policy references, immutable run releases, per-URL manifests, operator labels, and extraction observations. PostgreSQL is authoritative.
-
-- **Frozen releases.** Run creation writes one immutable `ExtractionReleaseSnapshot`; workers load it through `CrawlRun.extraction_release_snapshot_id`. Live recipe changes cannot affect an in-flight run.
-- **Per-URL identity.** Every persisted URL result receives an `ExtractionManifest` and exposes its ID through `CrawlUrlResult.extraction_manifest_id`.
-- **Selectors are recipes.** `(domain, surface)` selector memory is the `domain-default` template's `selectors` recipe. `DomainMemory.selectors` must not return.
-- **Labels are unified.** Review promotions and field feedback are typed rows in `ExtractionOperatorLabel`, distinguished by `label_kind`.
-- **Extraction stays storage-free.** `app/extraction/` may import pure helpers from `app/core/extraction_memory/`; it must not import `app/models/extraction_memory.py` or `app/persistence/extraction_memory.py`.
-- **Resolve remains authority.** Saved contracts rank already-admissible evidence only. They cannot create ownership, resurrect rejected evidence, or publish values directly.
-- **Models remain evaluated fallback.** ML/LLM output is evidence only, is lazy off the deterministic success path, and cannot enter release evaluation unless qualified by the evaluation schema. Runtime ML requires approved, passing benchmark metadata in the frozen release snapshot plus an exact adapter/artifact identity match. Missing or unapproved metadata disables it. Predictions must resolve to retained compact-source paths and source values before becoming Evidence.
-- **Challengers cannot override.** A Sentinel/challenger may diagnose or suspend a recipe under an approved policy; it cannot directly replace resolved truth. Sampled known-template traffic may run generic deterministic and optional ML challengers after recipe publication capture; their observations are persisted separately and future fallback is achieved by scoped template suspension, not by mutating a published record.
-- **Grounded publication.** No learned or LLM-produced value reaches publication without a source locator and resolver acceptance.
-
-**VIOLATION signatures:** parallel selector/review/feedback stores; `extraction_runtime_snapshot` in run settings; generic KG entity/edge/claim tables; extraction importing mutable memory; ungrounded learned values; challenger output directly changing records.
-
----
-
-## 18. Authentication Boundaries Are Explicit and Restart-Safe
-
-**Rule:** API startup does not mutate identity. Initial admin creation runs only
-through the explicit create-only bootstrap command and is durably consumed.
-Existing accounts are never promoted or reactivated by bootstrap.
-
-Unsafe cookie-authenticated HTTP requests require both an exact allowed
-Origin/Referer and signed double-submit CSRF proof. Explicit bearer requests
-remain independent of cookies. Forwarded client identity is accepted only from
-configured trusted IP/CIDR peers and is resolved right-to-left to the first
-untrusted hop. Public API IP/global Redis-first limits run before API-key DB
-lookup; per-key limits run after authentication.
-
-**VIOLATION signatures:** `bootstrap_admin_user` called from lifespan; bootstrap
-updates an existing `User`; unsafe cookie mutation without Origin and CSRF
-header; leftmost `X-Forwarded-For` trust; API-key SELECT before pre-auth limits.
-
----
-
-## 19. MCP Is Local Until Inbound Principal Authentication Exists
-
-**Rule:** First-release MCP runs as stdio by default, one process and API key per
-client principal. Optional SSE may bind only to a literal loopback IP. A public,
-wildcard, hostname, or non-loopback bind fails before the server starts. MCP
-tools call `/api/v1` with the configured principal key and do not bypass public
-REST authentication or rate limits.
-
-**VIOLATION signatures:** default network listener; `0.0.0.0`/`::`/hostname MCP
-bind; anonymous hosted MCP backed by one shared API key; MCP tool importing
-crawl orchestration instead of calling public REST.
-
----
-
-## 20. Acquisition Secrets Have One Encrypted Lifecycle
-
-**Rule:** Crawl rows store proxy endpoints without URL userinfo plus encrypted,
-endpoint-bound secret references. Credentials are restored only when building
-an acquisition attempt. The canonical proxy redactor owns API, diagnostic,
-log, telemetry, and exception-text shaping. Celery receives only run IDs.
-
-Per-run browser cookie files are encrypted with the application encryption
-key and bound to `(user_id, run_id, browser_engine)`. Files and their directory
-are owner-only. Legacy plaintext files fail closed. Run deletion removes all
-engine and temporary variants; retention cleanup removes expired and orphaned
-files. Only API/worker services that use the storage mount its volume.
-
-**VIOLATION signatures:** proxy URL userinfo in `CrawlRun.settings`; a second
-redaction implementation; raw proxy URL in logs/task arguments; plaintext run
-cookie JSON; cookie load without owner/binding validation; run deletion that
-leaves an engine variant; cookie/artifact volumes mounted into Celery beat.
-
----
-
-## 21. Production Startup Is Explicit and Fail-Closed
-
-**Rule:** Database configuration accepts one complete `DATABASE_URL` or all
-deployment components; only centralized config composes and URL-encodes the
-latter. Non-dev startup rejects local/placeholder PostgreSQL, non-TLS Redis,
-and non-HTTPS frontend origins. Images invoke their project virtual
-environment explicitly. Migration and create-only bootstrap are separate
-one-off processes; steady API/worker/beat processes disable bootstrap.
-
-First-release Celery uses one solo worker process per container and scales by
-container count. API liveness uses `/health/live`; readiness uses
-`/health/ready`; deployment verifies workers with Celery ping. Frontend is a
-non-root static server with SPA fallback and response security headers.
-
-**VIOLATION signatures:** DSN concatenation in Compose/workflows; production
-`APP_ENV=development`; bare `python`/`uvicorn`/`celery` overrides; migration in
-API lifespan; bootstrap enabled in steady tasks; prefork browser workers;
-readiness used as liveness; frontend dev server in production.
-
----
-
-## 22. Release Evidence Fails Closed
-
-**Rule:** Every external Action reference is an immutable commit. Backend and
-frontend dependency audits are lock-based. Final images produce SPDX SBOMs and
-block fixable High/Critical findings before release. Production promotion uses
-ECR enhanced findings by immutable digest: fixable and unclassified
-High/Critical findings always block; no-fix findings block unless an explicit
-review boolean and non-secret risk-acceptance reference are both present.
-
-AWS access uses OIDC. Docker uses a runner-temporary `DOCKER_CONFIG`, the ECR
-credential helper, and disabled helper caching. Scan evidence contains finding
-identifiers and dispositions, never credentials or environment secrets.
-
-**VIOLATION signatures:** tag-only Action reference; unlocked dependency audit;
-SBOM missing; image tag used instead of digest; scan not ready treated as pass;
-unknown fix availability accepted; no-fix exception defaulting true; ECR login
-password piped to Docker; persistent runner Docker credentials.
+The generic run-complete callback remains observability-only. It must not acquire monitor-specific diffing, retention, webhook, or notification logic.

@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - "backend/**"
+      - "scripts/check.ps1"
+      - "scripts/validation.json"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "scripts/check.ps1"
+      - "scripts/validation.json"
       - ".github/workflows/backend-ci.yml"
   workflow_dispatch:
 
@@ -81,6 +85,10 @@ jobs:
 
       - name: Mypy
         run: uv run --frozen --extra dev python -m mypy app
+
+      - name: Backend LOC and complexity limits
+        working-directory: .
+        run: pwsh ./scripts/check.ps1 -Mode Limits -Scope Backend
 
       - name: Pytest
         run: uv run --frozen --extra dev python -m pytest tests -q

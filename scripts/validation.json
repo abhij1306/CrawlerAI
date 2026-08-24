@@ -1,0 +1,180 @@
+{
+  "baseRef": "origin/main",
+  "maxLines": 800,
+  "maxPythonComplexity": 15,
+  "backendRoots": ["backend/app"],
+  "frontendRoots": ["frontend/app", "frontend/components", "frontend/lib", "frontend/src"],
+  "legacyLineBaselines": {
+    "backend/app/extraction/collectors/dom.py": 1217,
+    "backend/app/extraction/engine.py": 1145,
+    "backend/app/extraction/collectors/js_state.py": 1086,
+    "backend/app/extraction/entities.py": 1037,
+    "backend/app/extraction/collectors/jsonld.py": 992,
+    "backend/app/extraction/pipeline.py": 989,
+    "backend/app/extraction/contracts.py": 955,
+    "backend/app/extraction/result_building.py": 941,
+    "backend/app/extraction/validation.py": 846,
+    "backend/app/persistence/extraction_memory.py": 823,
+    "backend/app/intelligence/matching.py": 806
+  },
+  "legacyComplexityBaselines": {
+    "backend/app/acquisition/cookie_http_export.py::_http_cookie_candidate": 16
+  },
+  "globalTriggers": [
+    "backend/pyproject.toml",
+    "backend/uv.lock",
+    "backend/tests/conftest.py",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/vite.config.ts",
+    "frontend/vitest.setup.ts",
+    "scripts/check.ps1",
+    "scripts/validation.json"
+  ],
+  "backendGlobalTests": ["tests/unit/test_*.py", "tests/component/test_*.py", "tests/regression/test_*.py"],
+  "frontendGlobalTests": ["app/**/*.test.ts", "app/**/*.test.tsx", "components/**/*.test.ts", "components/**/*.test.tsx", "lib/**/*.test.ts", "lib/**/*.test.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"],
+  "backendFallbackTests": [
+    "tests/unit/test_container_runtime_contract.py",
+    "tests/unit/test_final_architecture_contracts.py",
+    "tests/unit/test_pipeline_import_cycle.py"
+  ],
+  "frontendFallbackTests": ["lib/check-crawl-architecture.test.ts"],
+  "rules": [
+    {
+      "sources": ["backend/app/acquisition/**", "backend/app/robots_policy.py", "backend/app/url_safety.py"],
+      "backendTests": [
+        "tests/unit/test_*browser*.py",
+        "tests/unit/test_*acquisition*.py",
+        "tests/unit/test_block_detection.py",
+        "tests/unit/test_dom_runtime.py",
+        "tests/unit/test_network_listing.py",
+        "tests/unit/test_platform_detection.py",
+        "tests/unit/test_source_capabilities.py",
+        "tests/component/test_acquirer.py",
+        "tests/component/test_browser_*.py",
+        "tests/component/test_fetch_*.py",
+        "tests/component/test_escalation_ladder.py",
+        "tests/component/test_pacing.py",
+        "tests/component/test_robots_policy.py",
+        "tests/component/test_ssrf_*.py"
+      ]
+    },
+    {
+      "sources": ["backend/app/extraction/**", "backend/app/core/records/**", "backend/app/core/shared/**"],
+      "backendTests": [
+        "tests/unit/test_extraction_*.py",
+        "tests/unit/test_*variant*.py",
+        "tests/unit/test_*listing*.py",
+        "tests/unit/test_*resolution*.py",
+        "tests/unit/test_*record*.py",
+        "tests/unit/test_*url_identity*.py",
+        "tests/unit/test_collector_root_scoping.py",
+        "tests/unit/test_conflict_aware_product_linking.py",
+        "tests/unit/test_description_quality.py",
+        "tests/unit/test_divergence_guard.py",
+        "tests/unit/test_evidence_scope_contracts.py",
+        "tests/unit/test_field_*.py",
+        "tests/unit/test_flat_map.py",
+        "tests/unit/test_js_state_*.py",
+        "tests/unit/test_primary_product_root_selection.py",
+        "tests/unit/test_shared_*.py",
+        "tests/unit/test_surface_schema.py",
+        "tests/unit/test_title_quality.py"
+      ]
+    },
+    {
+      "sources": ["backend/app/crawl/**", "backend/app/tasks.py", "backend/app/workers/**"],
+      "backendTests": [
+        "tests/unit/test_crawl_*.py",
+        "tests/unit/test_tasks.py",
+        "tests/unit/test_run*.py",
+        "tests/component/test_crawl_*.py",
+        "tests/component/test_crawls_*.py",
+        "tests/component/test_dispatchers.py",
+        "tests/component/test_domain_*.py",
+        "tests/component/test_pipeline_*.py",
+        "tests/component/test_run_*.py",
+        "tests/component/test_site*.py",
+        "tests/component/test_sitemap_*.py",
+        "tests/regression/test_batch_*.py",
+        "tests/regression/test_runscale_*.py"
+      ]
+    },
+    {
+      "sources": ["backend/app/api/**", "backend/app/schemas/**", "backend/app/models/**"],
+      "backendTests": [
+        "tests/unit/test_*schemas.py",
+        "tests/unit/test_security.py",
+        "tests/component/test_*api*.py",
+        "tests/component/test_auth_*.py",
+        "tests/component/test_crawl_*.py",
+        "tests/component/test_crawls_*.py",
+        "tests/component/test_dashboard_service.py",
+        "tests/component/test_main.py",
+        "tests/component/test_public_api_*.py",
+        "tests/component/test_records_api.py",
+        "tests/component/test_review_service.py",
+        "tests/component/test_selectors_api.py"
+      ]
+    },
+    {
+      "sources": ["backend/app/core/config/**", "backend/app/core/database.py", "backend/app/core/security.py"],
+      "backendTests": [
+        "tests/unit/test_config_security.py",
+        "tests/unit/test_container_runtime_contract.py",
+        "tests/unit/test_currency_hints.py",
+        "tests/unit/test_field_policy.py",
+        "tests/unit/test_locale_format_rules.py",
+        "tests/unit/test_matching_config_thresholds.py",
+        "tests/unit/test_security.py",
+        "tests/unit/test_surface_schema.py"
+      ]
+    },
+    {
+      "sources": ["backend/app/connectors/llm/**"],
+      "backendTests": ["tests/component/test_llm_*.py", "tests/regression/test_llm_*.py"]
+    },
+    {
+      "sources": ["backend/app/intelligence/**"],
+      "backendTests": ["tests/unit/test_matching_*.py", "tests/component/test_product_intelligence_*.py"]
+    },
+    {
+      "sources": ["backend/app/enrichment/**"],
+      "backendTests": ["tests/component/test_enrichment_*.py", "tests/regression/test_data_enrichment_*.py"]
+    },
+    {
+      "sources": ["backend/app/observability/**"],
+      "backendTests": ["tests/unit/test_diagnose*.py", "tests/unit/test_run_report_builder.py", "tests/component/test_diagnostics_api.py"]
+    },
+    {
+      "sources": ["backend/app/persistence/**"],
+      "backendTests": ["tests/unit/test_*persistence*.py", "tests/unit/test_url_result_*.py", "tests/component/test_record*.py", "tests/component/test_records_api.py", "tests/component/test_run_artifact_cleanup.py"]
+    },
+    {
+      "sources": ["backend/app/mcp_server/**"],
+      "backendTests": ["tests/component/test_mcp_server.py"]
+    },
+    {
+      "sources": ["frontend/app/**", "frontend/components/crawl/**", "frontend/lib/crawl/**"],
+      "frontendTests": ["app/**/*.test.ts", "app/**/*.test.tsx", "components/crawl/**/*.test.ts", "components/crawl/**/*.test.tsx", "lib/crawl/**/*.test.ts"],
+      "frontendE2E": ["e2e/smoke.spec.ts"]
+    },
+    {
+      "sources": ["frontend/components/ui/**", "frontend/lib/ui/**"],
+      "frontendTests": ["components/ui/**/*.test.ts", "components/ui/**/*.test.tsx", "lib/ui/**/*.test.ts"]
+    },
+    {
+      "sources": ["frontend/components/layout/**"],
+      "frontendTests": ["components/layout/**/*.test.ts", "components/layout/**/*.test.tsx"],
+      "frontendE2E": ["e2e/smoke.spec.ts"]
+    },
+    {
+      "sources": ["frontend/src/api/**"],
+      "frontendTests": ["src/api/**/*.test.ts", "src/api/**/*.test.tsx"]
+    },
+    {
+      "sources": ["frontend/lib/**", "frontend/src/**"],
+      "frontendTests": ["lib/**/*.test.ts", "lib/**/*.test.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"]
+    }
+  ]
+}

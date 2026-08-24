@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import http.cookiejar
 import inspect
 import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -32,6 +33,7 @@ from app.core.records.network_resolution import (
 from app.core.url_safety import (
     ResponseBodyTooLarge,
     ValidatedTarget,
+    cookie_header_for_url,
     get_redirect_location,
     get_with_validated_redirects,
     validate_public_target,
@@ -286,6 +288,11 @@ async def get_shared_http_client(
             # get_with_validated_redirects); never auto-follow here.
             client = build_async_http_client(
                 follow_redirects=False,
+                # This client is shared across runs and users, so response
+                # cookies must never be persisted on it. Redirect-chain
+                # cookies are kept in a per-fetch jar by
+                # get_with_validated_redirects.
+                persist_cookies=False,
                 timeout=crawler_runtime_settings.http_timeout_seconds,
                 limits=httpx.Limits(
                     max_connections=settings.http_max_connections,
@@ -375,14 +382,15 @@ async def curl_fetch(
     # Manual redirect following: each hop runs in a worker thread (sync
     # curl_cffi), and every hop target — including the initial URL — is
     # re-validated against the SSRF guard on the event loop immediately
-    # before the request is issued. Set-Cookie values from intermediate hops
-    # are forwarded into the next request, preserving the cookie behavior
-    # curl applies when it follows a redirect chain natively.
+    # before the request is issued. Cookies (the browser handoff header and
+    # any Set-Cookie from intermediate hops) are held in a per-fetch jar and
+    # re-matched against each hop's URL, so a cross-origin redirect never
+    # carries the origin's cookies to the new host.
     from curl_cffi import requests as curl_requests
 
     deadline = time.monotonic() + max(0.001, float(timeout_seconds))
     current_url = str(url or "").strip()
-    merged_cookie_header = str(cookie_header or "").strip()
+    cookies = _cookie_jar_for_handoff_header(cookie_header, current_url)
     redirect_count = 0
     while True:
         validated_target = await validate_public_target(current_url)
@@ -395,7 +403,7 @@ async def curl_fetch(
             current_url,
             remaining_seconds,
             proxy=proxy,
-            cookie_header=merged_cookie_header,
+            cookie_header=cookie_header_for_url(cookies, current_url),
             validated_target=validated_target,
         )
         location = get_redirect_location(response)
@@ -407,8 +415,9 @@ async def curl_fetch(
                 f"Too many redirects while fetching {url} "
                 f"(limit {MAX_VALIDATED_REDIRECTS})"
             )
-        merged_cookie_header = _merge_cookie_header(
-            merged_cookie_header,
+        _store_set_cookie_values(
+            cookies,
+            current_url,
             _response_set_cookie_values(getattr(response, "headers", None)),
         )
         current_url = urljoin(current_url, location)
@@ -439,27 +448,68 @@ def _response_set_cookie_values(headers: Any) -> list[str]:
     return []
 
 
-def _merge_cookie_header(existing: str, set_cookie_values: list[str]) -> str:
-    pairs: dict[str, str] = {}
-    order: list[str] = []
+def _cookie_jar_for_handoff_header(
+    cookie_header: str | None,
+    url: str,
+) -> httpx.Cookies:
+    """Scope a flattened handoff ``Cookie`` header to the origin it came from.
 
-    def _add(pair: str) -> None:
-        name, _, value = pair.partition("=")
+    ``export_cookie_header_for_domain`` already matched domain/path/Secure
+    against ``url``, but the flattened header carries no scope of its own. It
+    is re-attached here as host-only cookies so the redirect loop cannot
+    replay a session cookie to a different host, or over plaintext after an
+    https -> http hop.
+    """
+
+    jar = httpx.Cookies()
+    host = (urlsplit(url).hostname or "").strip()
+    if not host:
+        return jar
+    secure = urlsplit(url).scheme.lower() == "https"
+    for chunk in str(cookie_header or "").split(";"):
+        name, _, value = chunk.strip().partition("=")
         name = name.strip()
         if not name:
-            return
-        if name not in pairs:
-            order.append(name)
-        pairs[name] = f"{name}={value.strip()}"
+            continue
+        jar.jar.set_cookie(
+            http.cookiejar.Cookie(
+                version=0,
+                name=name,
+                value=value.strip(),
+                port=None,
+                port_specified=False,
+                domain=host,
+                domain_specified=False,
+                domain_initial_dot=False,
+                path="/",
+                path_specified=True,
+                secure=secure,
+                expires=None,
+                discard=True,
+                comment=None,
+                comment_url=None,
+                rest={},
+                rfc2109=False,
+            )
+        )
+    return jar
 
-    for chunk in existing.split(";"):
-        if chunk.strip():
-            _add(chunk.strip())
-    for header in set_cookie_values:
-        first_pair = header.split(";", 1)[0].strip()
-        if first_pair:
-            _add(first_pair)
-    return "; ".join(pairs[name] for name in order)
+
+def _store_set_cookie_values(
+    cookies: httpx.Cookies,
+    url: str,
+    set_cookie_values: list[str],
+) -> None:
+    if not set_cookie_values:
+        return
+    request = httpx.Request("GET", url)
+    cookies.extract_cookies(
+        httpx.Response(
+            200,
+            headers=[("set-cookie", value) for value in set_cookie_values],
+            request=request,
+        )
+    )
 
 
 def copy_headers(headers: Any) -> httpx.Headers:
