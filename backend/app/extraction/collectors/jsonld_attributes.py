@@ -56,7 +56,18 @@ def product_attribute_evidence(
                 if value := text_value(rating.get(key)):
                     rows.append((fact, value, f"{path}/aggregateRating/{key}"))
                     break
-    for prefix, source in ((path, obj), (f"{path}/audience", obj.get("audience"))):
+    raw_audience = obj.get("audience")
+    audiences = raw_audience if isinstance(raw_audience, list) else [raw_audience]
+    sources = [(path, obj)] + [
+        (
+            f"{path}/audience/{index}"
+            if isinstance(raw_audience, list)
+            else f"{path}/audience",
+            item,
+        )
+        for index, item in enumerate(audiences)
+    ]
+    for prefix, source in sources:
         if not isinstance(source, dict):
             continue
         for key in field_mappings.ECOMMERCE_JSONLD_GENDER_KEYS:

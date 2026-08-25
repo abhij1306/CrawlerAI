@@ -4,7 +4,7 @@
 **Status:** QUEUED — start in a fresh session from updated `main`
 **Started:** 2026-08-25
 **Current slice:** Slice 1 — DOM selected state (largest remaining cluster)
-**Last slice completed:** CrawlerAI Ecommerce Data Accuracy — DONE, 303 → 205 owned assertions, run-3 verified
+**Last slice completed:** CrawlerAI Ecommerce Data Accuracy — DONE, 303 -> 205 non-variant assertions (288 total with variant assertions now enabled), run-3 verified
 
 ## Queue
 1. CrawlerAI Security Remediation and Deployment Failure Fixes → `docs/plans/crawlerai-security-remediation-and-deployment-fix-plan.md` — BLOCKED on external image/live-infrastructure evidence

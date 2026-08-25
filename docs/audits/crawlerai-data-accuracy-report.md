@@ -184,8 +184,9 @@ its job and caught the shortcut.
 | `gender` | 26 | 5 |
 | **All fields** | **303** | **196** |
 
-Full-reference replay across both PR 2 slices: 303 -> 196 failing assertions,
-78 -> 68 failing cases. No field regressed. Two `style_id` and two `sku` edge cases are documented below.
+Full-reference replay across both PR 2 slices: 303 -> 196 non-variant failing
+assertions, 78 -> 68 failing cases. No field regressed. See "Correction: Variant
+Assertions Were Never Being Checked" for the restated absolute totals. Two `style_id` and two `sku` edge cases are documented below.
 
 ### Ownership moves
 
@@ -243,7 +244,7 @@ collector. The earlier note suggesting this as an opportunity is superseded.
 
 A fresh live crawl (`backend/artifacts/runs/3`, 82 captures) was analysed in
 `docs/audits/crawlerai_run3_comparison.md`. Against run-3 captures the owned replay
-started at 207 failing assertions and ends at **205**, with the two named engineering
+started at 207 non-variant failing assertions and ends at **205**, with the two named engineering
 regressions fixed and nothing new failing.
 
 ### Price rescaled to a hundredth of its value (case 5, P0)
@@ -295,6 +296,69 @@ so variants (which carry their own stock state) now block inheritance entirely.
 - **MAC case 77** size options changed from gram to ounce units; option unit
   normalization is unowned.
 - **Apple case 34** family bounds remain unresolved.
+
+## Correction: Variant Assertions Were Never Being Checked
+
+Review of this PR found that `_variant_failures` never ran. The gate is
+`"variants" in fields`, but `_requested_fields` only returns members of a case's
+`expected`/`constraints` maps, and the variant specification is a **top-level** case
+key. Thirty-one cases declare one, so every variant count, required-field and example
+assertion in the reference was silently skipped.
+
+The harness now admits `variants` explicitly. Enabling it exposes **83 additional
+failing assertions** that were always failing but invisible.
+
+This changes the reported totals, so they are restated precisely:
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Non-variant assertions (measured both sides) | 303 | 205 |
+| Variant assertions (never previously checked) | not run | 83 |
+| **True current total** | — | **288** |
+
+The 303 to 205 improvement stands: both sides were measured with variant assertions
+inert, so the comparison is like for like. What was wrong was the **absolute** figure,
+which understated the true failure count. The 83 variant failures are pre-existing and
+are the first item of PR 2 work.
+
+## Review Findings Addressed
+
+Fixed after verification against current code:
+
+- `_variant_size` no longer infers a size from a comma-less product name; the fallback
+  split had returned the whole name.
+- JSON-LD gender read from an `audience` node records `<path>/audience/<key>`, and
+  `audience` is now read in both its object and **array** forms.
+- Image locators keep the source list index, and a scalar `image` addresses
+  `<path>/image`.
+- The volatile constraint mode was price-shaped: it required a positive value **and** a
+  currency, so case 71's legitimate `0.0` rating could never pass. It is now
+  field-aware — money needs a positive value and a currency, a rating or review count
+  only needs a real non-negative number.
+- `strip_identifier_label_prefix` handles a label with no space after the delimiter
+  (`SKU:BT-1MW`) for known label words only, so `ABC:123` is still preserved.
+- CodeQL high (`py/incomplete-url-substring-sanitization`): the harness test fake
+  matched a host by substring and now compares the parsed hostname.
+- The dead `url_identity` re-export was removed and callers point at the owning module.
+
+Rejected after verification, with reasons:
+
+- **Gating the `" - a - b"` size form on a declared size axis.** This breaks
+  `test_jsonld_variant_name_recovers_explicit_size_segment`, which deliberately trusts
+  the explicit three-segment form without `variesBy`. The concern was raised without a
+  failing case; only the looser comma fallback is gated.
+- **Protocol `...` bodies read as ineffectual statements.** A docstring-only body
+  implicitly returns `None` and breaks the declared return types. `...` is the correct
+  idiom; the finding is a false positive.
+
+Deferred to PR 2 with reasons recorded in that plan: the two-segment pipe rule, selected
+group merging in `entities.py`, selected-variant price aggregation versus
+`existing_fact_keys`, DOM `parse_money` locale, JSON-LD selected-variant identity
+comparison, the `colorproductcode` DOM axis, the `asin`/`style_id` projection
+fallbacks, and reference-data inconsistencies in case 79. Each concerns code that
+predates this session's work, and none arrived with a reproduction; changing offer or
+variant selection semantics without one risks exactly the regressions this plan
+guards against.
 
 ## Documented Edge Cases
 

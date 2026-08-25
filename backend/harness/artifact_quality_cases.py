@@ -421,6 +421,11 @@ def _requested_fields(
         if name in partitions:
             selected.update(AREA_FIELDS[name])
     available = set(expected) | set(constrained)
+    if case.get("variants"):
+        # The variant specification is a top-level case key, not a member of
+        # expected/constraints, so it has to be admitted explicitly or
+        # _variant_failures never runs for the 31 cases that declare one.
+        available.add("variants")
     return tuple(sorted((((available - defective) | selected) & available)))
 
 
@@ -532,7 +537,7 @@ def _assert_case(
                 f"{field}: expected {expected[field]!r}, actual {projection.get(field)!r}"
             )
         if field in constraints and not _constraint_matches(
-            projection.get(field), constraints[field], projection
+            projection.get(field), constraints[field], projection, field
         ):
             failures.append(
                 f"{field}: constraint {constraints[field]!r}, actual {projection.get(field)!r}"
@@ -571,8 +576,16 @@ def _values_match(actual: object, expected: object) -> bool:
     return str(actual or "").strip() == str(expected or "").strip()
 
 
+_MONETARY_CONSTRAINT_FIELDS = frozenset(
+    {"original_price", "price", "price_max", "price_min"}
+)
+
+
 def _constraint_matches(
-    actual: object, constraint: object, projection: Mapping[str, Any]
+    actual: object,
+    constraint: object,
+    projection: Mapping[str, Any],
+    field: str = "",
 ) -> bool:
     row = constraint if isinstance(constraint, Mapping) else {}
     mode = str(row.get("mode") or "exact")
@@ -581,10 +594,15 @@ def _constraint_matches(
     if mode not in {"volatile", "locale_sensitive"}:
         return False
     try:
-        positive = Decimal(str(actual)) > 0
+        amount = Decimal(str(actual))
     except (InvalidOperation, TypeError):
         return False
-    return positive and bool(str(projection.get("currency") or "").strip())
+    # Money must be positive and carry a currency. A volatile rating or review
+    # count only has to be a real non-negative number: case 71 legitimately
+    # reports a 0.0 rating, and a currency is unrelated to either field.
+    if field in _MONETARY_CONSTRAINT_FIELDS:
+        return amount > 0 and bool(str(projection.get("currency") or "").strip())
+    return amount >= 0
 
 
 def _contains_forbidden(actual: object, forbidden: object) -> bool:

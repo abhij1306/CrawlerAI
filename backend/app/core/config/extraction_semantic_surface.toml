@@ -41,7 +41,7 @@ publish_receives_evidence_or_entity_graph = false
 # callable above CC 15 into named domain steps. Total LOC reconciled to the
 # measured readable implementation; the default CC ceiling is now 15 and only
 # the stricter resolver ceiling remains as a module override.
-physical_loc_budget = 18188
+physical_loc_budget = 18199
 default_module_cyclomatic_complexity_budget = 15
 
 [ratchets.module_physical_loc_budgets]
@@ -52,7 +52,7 @@ default_module_cyclomatic_complexity_budget = 15
 "collectors/dom.py" = 1115
 "collectors/js_state.py" = 996
 "collectors/jsonld.py" = 919
-"collectors/jsonld_attributes.py" = 145
+"collectors/jsonld_attributes.py" = 156
 "collectors/metadata.py" = 188
 "collectors/url.py" = 120
 "contracts.py" = 787

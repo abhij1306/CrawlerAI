@@ -74,6 +74,26 @@ _BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
 # ("Item # 77295", "SKU: BT-1MW") because the label and value share a cell.
 # The label is page furniture, never part of the identifier.
 _IDENTIFIER_LABEL_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z.\s]{0,20}?\s*[#:]\s+(?=\S)")
+# Without whitespace after the delimiter only a known label word may be stripped,
+# so "SKU:BT-1MW" loses its label while an identifier that legitimately contains a
+# delimiter ("ABC:123") is preserved.
+_IDENTIFIER_LABEL_WORDS = (
+    "article",
+    "art",
+    "item",
+    "model",
+    "mpn",
+    "part",
+    "product",
+    "ref",
+    "sku",
+    "style",
+)
+_IDENTIFIER_TIGHT_LABEL_RE = re.compile(
+    rf"^(?:{'|'.join(_IDENTIFIER_LABEL_WORDS)})"
+    r"(?:\s*(?:no|number|code|id)\.?)?\s*[#:]\s*(?=\S)",
+    re.IGNORECASE,
+)
 
 
 def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
@@ -581,7 +601,10 @@ def coerce_barcode(value: object) -> str | None:
 
 def strip_identifier_label_prefix(value: str) -> str:
     """Drop a field label that a DOM cell carried along with its identifier."""
-    return _IDENTIFIER_LABEL_PREFIX_RE.sub("", value).strip() or value
+    stripped = _IDENTIFIER_LABEL_PREFIX_RE.sub("", value, count=1)
+    if stripped == value:
+        stripped = _IDENTIFIER_TIGHT_LABEL_RE.sub("", value, count=1)
+    return stripped.strip() or value
 
 
 def coerce_sku(value: object) -> str | None:

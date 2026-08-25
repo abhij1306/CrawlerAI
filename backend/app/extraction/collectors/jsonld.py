@@ -849,6 +849,8 @@ def _variant_size(row: dict[str, Any], *, infer_from_name: bool) -> str:
     if explicit := text_value(row.get("size")):
         return explicit
     name = text_value(row.get("name"))
+    # The explicit " - a - b" option form is trusted on its own; only the looser
+    # comma fallback needs a declared size axis.
     parts = name.rsplit(VARIANT_JSONLD_NAME_OPTION_SEPARATOR, 2)
     candidate = parts[-1].strip() if len(parts) >= 3 else ""
     if not candidate and infer_from_name and "," in name:

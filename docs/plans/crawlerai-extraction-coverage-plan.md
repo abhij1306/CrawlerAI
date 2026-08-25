@@ -23,13 +23,14 @@ The data-accuracy PR pulled several PR 2 items forward because they were the lar
 - **Identity display contracts**: trademark symbols, host-derived site-name suffixes, identifier field labels.
 - **Run 3 regressions**: the `215.00` to `2.15` price rescale, and Rockler's unpublished availability.
 
-Measured effect on the owned replay: **303 to 205 failing assertions** (run 1/2 captures 303 to 196; run 3 captures 207 to 205).
+Measured effect on the owned replay: **303 to 205 non-variant failing assertions** (run 1/2 captures 303 to 196; run 3 captures 207 to 205). Both sides were measured with variant assertions inert, so the comparison is like for like; see Baseline for the restated absolute total.
 
 ## Baseline
 
 - Fresh live crawl: `backend/artifacts/runs/3` (82 captures).
 - External analysis: `docs/audits/crawlerai_run3_comparison.md`, `docs/audits/crawlerai_defects_run3.json` (146 defects, 54 failing cases).
-- Local owned replay against run-3 captures: **205 failing assertions, 69 cases**. The counts differ because the harness also asserts regression-protection fields the external defect set does not score.
+- Local owned replay against run-3 captures: **288 failing assertions, 72 cases**, of which **83 are variant assertions** that the harness had never actually run (the gate required `variants` in a case's `expected`/`constraints`, but it is a top-level key). PR 1 fixed the gate; the 83 failures are pre-existing and are Slice 2 work.
+- Non-variant assertions are 205. The counts differ from the external defect set because the harness also asserts regression-protection fields it does not score.
 - Reproduce with `audit_artifact_quality_cases(refs, backend_root=..., partitions=None)` against `crawlerai_eval_html_grounded_v3_2.json`.
 
 Remaining assertions by field:
@@ -47,6 +48,7 @@ Remaining assertions by field:
 | `rating` | 8 | `price_max`, `price_min`, `product_family` | 1 each |
 | `style_id` | 7 | | |
 | `review_count` | 7 | | |
+| `variants` | 83 | | |
 
 ## Approaches Already Measured and Rejected
 
@@ -59,6 +61,23 @@ Do not retry these blind. Each was measured against the failing cases:
 | `title` tokens for `gender` | 9 correct, 0 wrong — superseded by the URL-path rule (15 correct, 0 wrong) |
 | Preferring the longer title candidate | Reference expectations contradict each other: case 44 wants the longer, case 61 the shorter |
 | Casing normalization for `color`/`brand` | Expectations point in both directions: case 25 wants `Black` from `black`, case 12 wants `black/...` from `Black/...` |
+
+## Inherited Review Findings (verified, not yet fixed)
+
+Raised on PR 1 and deliberately deferred: each concerns code that predates that PR's
+work, and none arrived with a reproduction. Confirm with a failing case before
+changing offer or variant selection semantics.
+
+| Location | Concern |
+| --- | --- |
+| `core/records/title_normalization.py` two-segment pipe rule | Strips a trailing segment on word count/length alone, so `Jacket | Red` can lose a colour before URL corroboration runs |
+| `extraction/entities.py` selected group merging | Selected URL evidence is appended to every matching candidate; multiple structured variants can each absorb the same selected shell |
+| `extraction/resolution/variant_rollup.py` selected price | The selected-variant price aggregate ignores `existing_fact_keys`, so it can overwrite a resolved primary offer price |
+| `extraction/collectors/dom.py` `parse_money` | Called without a locale hint, so `1.234` and `1,234` both admit as `1234` before page locale is known |
+| `extraction/collectors/jsonld.py` selected variant | Compares resource identity only, so variants differing solely by `?style=` query can all be marked selected |
+| `config/extraction_rules/_variants.py` DOM axes | `colorcode`/`colorproductcode` are absent from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN`, dropping the style axis |
+| `harness/artifact_quality_cases.py` projection | `asin` falls back to `product_id` and `style_id` to `mpn`, letting one field satisfy another's assertion |
+| Reference case 79 | Asserts `rating`/`review_count` as exact values while every other case treats them as volatile |
 
 ## Slices
 
@@ -74,7 +93,7 @@ Do not retry these blind. Each was measured against the failing cases:
 ### Slice 2: Variant and Option Completeness
 
 **Status:** TODO
-**Owns:** `variant_count` 10, `size_options` 4, `model_options` 1
+**Owns:** `variants` 83, `variant_count` 10, `size_options` 4, `model_options` 1
 **What:** Nike is 25 vs 24, H&M 10 vs 50, New Balance 48 vs 146, and case 25 collapses seven sizes to one. Recover complete same-product matrices from structured and first-party state; allow one-axis DOM controls only when each option is purchasable with option-level evidence. Add option **unit** normalization (MAC case 77 returns `0.05 oz` where the reference expects `1.5 g`).
 **Verify:** Variant resolution/publication tests plus the affected cases and existing correct variant cases.
 
