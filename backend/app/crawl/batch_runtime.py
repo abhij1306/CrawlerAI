@@ -35,7 +35,6 @@ from app.core.config.sitemap import (
     SITEMAP_DEFAULT_MAX_URLS,
 )
 from app.core.config.runtime_settings import (
-    BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES,
     crawler_runtime_settings,
 )
 from app.core.domain_utils import normalize_domain
@@ -57,6 +56,8 @@ from app.crawl.pipeline.runtime_helpers import (
 from app.crawl.pipeline.types import URLProcessingResult
 from app.crawl.pipeline.url_failure_recovery import rollback_url_session
 from app.crawl.pipeline.url_worker import (
+    parallel_url_concurrency,
+    parallel_worker_record_limit,
     process_url_in_owned_session,
     url_metric,
 )
@@ -85,70 +86,7 @@ async def resolve_category_urls_from_sitemap(
     return result.urls
 
 
-_DEFAULT_URL_CONCURRENCY = 1
 type URLResultItem = tuple[int, str, URLProcessingResult]
-
-
-def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
-    if not bool(settings.celery_dispatch_enabled):
-        return _DEFAULT_URL_CONCURRENCY
-    try:
-        system_limit = int(
-            getattr(settings, "system_max_concurrent_urls", _DEFAULT_URL_CONCURRENCY)
-        )
-    except (AttributeError, TypeError, ValueError):
-        system_limit = _DEFAULT_URL_CONCURRENCY
-    try:
-        url_batch_concurrency = getattr(settings_view, "url_batch_concurrency", None)
-        raw_batch_limit = (
-            url_batch_concurrency()
-            if callable(url_batch_concurrency)
-            else url_batch_concurrency
-        )
-        if raw_batch_limit is None:
-            raw_batch_limit = _DEFAULT_URL_CONCURRENCY
-        batch_limit = int(raw_batch_limit)
-    except (AttributeError, TypeError, ValueError):
-        batch_limit = _DEFAULT_URL_CONCURRENCY
-    limits = [total_urls, system_limit, batch_limit]
-    browser_capacity_limit = _browser_capacity_limit(settings_view)
-    if browser_capacity_limit is not None:
-        limits.append(browser_capacity_limit)
-    return max(1, min(limits))
-
-
-def _browser_capacity_limit(settings_view) -> int | None:
-    fetch_mode = _settings_fetch_mode(settings_view)
-    if fetch_mode in BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES:
-        return None
-    try:
-        return max(1, int(crawler_runtime_settings.browser_runtime_context_capacity))
-    except (AttributeError, TypeError, ValueError):
-        return _DEFAULT_URL_CONCURRENCY
-
-
-def _settings_fetch_mode(settings_view) -> str:
-    fetch_profile = None
-    try:
-        fetch_profile_attr = getattr(settings_view, "fetch_profile", None)
-        fetch_profile = (
-            fetch_profile_attr() if callable(fetch_profile_attr) else fetch_profile_attr
-        )
-    except (AttributeError, TypeError, ValueError):
-        fetch_profile = None
-    if fetch_profile is None:
-        getter = getattr(settings_view, "get", None)
-        if callable(getter):
-            fetch_profile = getter("fetch_profile")
-    if not isinstance(fetch_profile, dict):
-        return ""
-    return str(fetch_profile.get("fetch_mode") or "").strip().lower()
-
-
-def _parallel_worker_record_limit(max_records: int, concurrency: int) -> int:
-    total_budget = max(1, int(max_records or 1))
-    worker_count = max(1, int(concurrency or 1))
-    return max(1, (total_budget + worker_count - 1) // worker_count)
 
 
 def _safe_sitemap_max_urls(value: object) -> int:
@@ -497,7 +435,7 @@ async def _process_urls_in_parallel(
     url_timeout_seconds: float,
     owner: str,
 ) -> tuple[list[str], int]:
-    concurrency = _parallel_url_concurrency(total_urls, settings_view)
+    concurrency = parallel_url_concurrency(total_urls, settings_view)
     await log_event(
         session,
         run.id,
@@ -512,7 +450,7 @@ async def _process_urls_in_parallel(
         total_urls=total_urls,
         progress_state=progress_state,
         max_records=max_records,
-        record_limit=_parallel_worker_record_limit(max_records, concurrency),
+        record_limit=parallel_worker_record_limit(max_records, concurrency),
         url_timeout_seconds=url_timeout_seconds,
         owner=owner,
         concurrency=concurrency,
@@ -754,7 +692,7 @@ async def _process_run_with_span(
         if pending_items:
             if (
                 total_urls > 1
-                and _parallel_url_concurrency(total_urls, settings_view) > 1
+                and parallel_url_concurrency(total_urls, settings_view) > 1
             ):
                 await _process_urls_in_parallel(
                     session,
