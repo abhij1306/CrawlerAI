@@ -7,6 +7,7 @@ import logging
 from typing import Any, Literal
 
 import httpx
+from patchright.async_api import Error as PlaywrightError
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
 from app.acquisition.fetch.browser_policy import (
@@ -20,10 +21,12 @@ from app.acquisition.fetch.browser_policy import (
 # Planned HTTP emits canonical attempt diagnostics. Runtime
 # AcquisitionIntent/PageAcquisitionResult are different page-flow contracts.
 from app.acquisition.contracts import (
+    AcquisitionRuntimeError,
     AcquisitionPlan,
     AcquisitionResult,
     AttemptResult,
 )
+from app.core.url_safety import SecurityError
 from app.acquisition.executor import AttemptExecution, AttemptExecutor
 from app.acquisition.planner import AcquisitionPlanner, PlanningRequest
 from app.acquisition.runtime import PageFetchResult
@@ -165,21 +168,38 @@ def _http_exhaustion_error(
     *,
     diagnostics: dict[str, object],
     attempt_results: list[AttemptResult],
-) -> Exception:
+) -> (
+    TimeoutError
+    | httpx.HTTPError
+    | OSError
+    | PlaywrightError
+    | SecurityError
+    | AcquisitionRuntimeError
+):
     last_attempt = attempt_results[-1] if attempt_results else None
     if last_attempt is not None and last_attempt.error in {
         "attempt_deadline_exhausted",
         "global_deadline_exhausted",
     }:
-        error: Exception = TimeoutError(
-            f"Acquisition deadline exhausted for {context.url}"
-        )
-    elif context.last_error is not None:
+        error: (
+            TimeoutError
+            | httpx.HTTPError
+            | OSError
+            | PlaywrightError
+            | SecurityError
+            | AcquisitionRuntimeError
+        ) = TimeoutError(f"Acquisition deadline exhausted for {context.url}")
+    elif isinstance(
+        context.last_error,
+        (httpx.HTTPError, OSError, TimeoutError, PlaywrightError, SecurityError),
+    ):
         error = context.last_error
     else:
-        error = RuntimeError(
+        error = AcquisitionRuntimeError(
             f"Failed to fetch {context.url} using planned HTTP attempts"
         )
+        if context.last_error is not None:
+            error.__cause__ = context.last_error
     setattr(error, "acquisition_diagnostics", diagnostics)
     return error
 

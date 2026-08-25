@@ -50,23 +50,22 @@ async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_
             headers={"x-datadome": "blocked"},
         )
 
-    async def _browser_fetch(request_url: str, browser_budget: float, **kwargs):
-        del request_url
-        browser_timeouts.append(browser_budget)
-        engine = str(kwargs.get("browser_engine") or "")
+    async def _browser_fetch(request):
+        browser_timeouts.append(request.timeout_seconds)
+        engine = str(request.browser_engine or "")
         if engine == "patchright":
             await asyncio.sleep(0.06)
             raise TimeoutError("patchright budget exhausted")
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Rendered</h1></body></html>",
             status_code=200,
             method="browser",
             blocked=False,
             browser_diagnostics={
                 "browser_engine": engine,
-                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+                "host_policy_snapshot": dict(request.host_policy_snapshot or {}),
             },
         )
 
@@ -92,9 +91,11 @@ async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        url,
-        timeout_seconds=0.2,
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            url,
+            timeout_seconds=0.2,
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.browser_diagnostics["browser_engine"] == "real_chrome"
@@ -135,10 +136,9 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
     )
 
     @_as_async
-    def _fake_browser_fetch(url: str, browser_timeout: float, **kwargs):
-        del url
-        engine = str(kwargs.get("browser_engine") or "")
-        browser_calls.append((engine, browser_timeout))
+    def _fake_browser_fetch(request):
+        engine = str(request.browser_engine or "")
+        browser_calls.append((engine, request.timeout_seconds))
         if engine == "patchright":
             raise TimeoutError("patchright budget exhausted")
         return PageFetchResult(
@@ -228,10 +228,9 @@ async def test_run_browser_attempts_does_not_cap_patchright_just_because_real_ch
     )
 
     @_as_async
-    def _fake_browser_fetch(url: str, browser_timeout: float, **kwargs):
-        del url
-        engine = str(kwargs.get("browser_engine") or "")
-        browser_calls.append((engine, browser_timeout))
+    def _fake_browser_fetch(request):
+        engine = str(request.browser_engine or "")
+        browser_calls.append((engine, request.timeout_seconds))
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -290,10 +289,9 @@ async def test_run_browser_attempts_patchright_probe_cap_bounds_wall_clock(
     context.resolved_timeout = 0.12
     context.deadline_monotonic = time.perf_counter() + 0.12
 
-    async def _fake_browser_fetch(url: str, browser_timeout: float, **kwargs):
-        del url
-        engine = str(kwargs.get("browser_engine") or "")
-        browser_calls.append((engine, browser_timeout))
+    async def _fake_browser_fetch(request):
+        engine = str(request.browser_engine or "")
+        browser_calls.append((engine, request.timeout_seconds))
         if engine == "patchright":
             await asyncio.sleep(0.08)
             raise TimeoutError("patchright hidden launch exceeded probe budget")
@@ -419,9 +417,8 @@ async def test_fetch_page_returns_http_result_when_browser_escalation_budget_is_
         )
 
     @_as_async
-    def _unexpected_browser(request_url: str, browser_timeout: float, **_kwargs):
-        del request_url
-        browser_calls.append(browser_timeout)
+    def _unexpected_browser(request):
+        browser_calls.append(request.timeout_seconds)
         raise AssertionError("browser should not start with insufficient budget")
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _blocked_http)
@@ -434,9 +431,11 @@ async def test_fetch_page_returns_http_result_when_browser_escalation_budget_is_
     monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
 
     result = await crawl_fetch_runtime.fetch_page(
-        url,
-        timeout_seconds=2.0,
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            url,
+            timeout_seconds=2.0,
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "curl_cffi"
@@ -462,9 +461,8 @@ async def test_fetch_page_skips_cookie_handoff_when_proxy_identity_would_drift(
         raise AssertionError("proxy handoff must not reuse unscoped domain cookies")
 
     @_as_async
-    def _browser_ok(request_url, timeout, **kwargs):
-        del request_url, timeout
-        browser_calls.append(kwargs.get("proxy"))
+    def _browser_ok(request):
+        browser_calls.append(request.proxy)
         return PageFetchResult(
             url=url,
             final_url=url,
@@ -499,9 +497,11 @@ async def test_fetch_page_skips_cookie_handoff_when_proxy_identity_would_drift(
     )
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
-            proxy_list=["http://proxy-a"],
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+                proxy_list=["http://proxy-a"],
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -541,12 +541,11 @@ async def test_fetch_page_prefers_browser_after_hard_blocked_fetch(
         )
 
     @_as_async
-    def _browser_blocked(request_url, timeout, **kwargs):
-        del timeout
-        browser_reasons.append(kwargs.get("browser_reason"))
+    def _browser_blocked(request):
+        browser_reasons.append(request.browser_reason)
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>still blocked</body></html>",
             status_code=403,
             method="browser",
@@ -583,8 +582,12 @@ async def test_fetch_page_prefers_browser_after_hard_blocked_fetch(
         _fake_note_host_hard_block,
     )
     try:
-        first = await crawl_fetch_runtime.fetch_page(url, surface="job_listing")
-        second = await crawl_fetch_runtime.fetch_page(url, surface="job_listing")
+        first = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="job_listing")
+        )
+        second = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="job_listing")
+        )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
 
@@ -640,7 +643,8 @@ async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_
         raise httpx_error
 
     @_as_async
-    def _failing_browser(url, timeout, **kwargs):
+    def _failing_browser(request):
+        del request
         raise browser_error
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
@@ -648,7 +652,9 @@ async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _failing_browser)
 
     with pytest.raises(RuntimeError, match="browser launch failed") as excinfo:
-        await crawl_fetch_runtime.fetch_page("https://paycomonline.net/career-page")
+        await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall("https://paycomonline.net/career-page")
+        )
 
     assert excinfo.value.__cause__ is httpx_error
     assert excinfo.value.browser_diagnostics["browser_attempted"] is True

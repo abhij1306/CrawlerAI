@@ -85,7 +85,7 @@ def plan_deadline(runner: AttemptRunner) -> datetime:
     return runner.plan.plan_deadline
 
 
-async def raise_if_no_budget(
+def raise_if_no_budget(
     runner: AttemptRunner,
     engine: str,
     engine_index: int,

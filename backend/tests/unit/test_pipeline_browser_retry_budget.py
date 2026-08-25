@@ -47,7 +47,7 @@ async def test_browser_retry_result_honors_configured_rung_bound(monkeypatch) ->
         calls += 1
         return _result("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -99,7 +99,7 @@ async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
         calls += 1
         return _result("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -164,7 +164,7 @@ async def test_browser_retry_network_rung_preserves_authorized_plan(
         requests.append(request)
         return _result("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -225,7 +225,7 @@ async def test_browser_retry_failure_preserves_original_http_result(
             "Page.evaluate: Connection closed while reading from the driver"
         )
 
-    async def fake_log(_context, _level, message, **_kwargs):
+    def fake_log(_context, _level, message, **_kwargs):
         logged.append(message)
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -271,7 +271,7 @@ async def test_initial_browser_without_network_payloads_runs_network_retry(
         requests.append(request)
         return _result("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -323,7 +323,7 @@ async def test_initial_browser_skips_when_required_artifacts_already_present(
         calls += 1
         return _result("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "acquire", fake_acquire)

@@ -313,7 +313,7 @@ def _category_match_for_product_path(
 
 
 def build_llm_diagnostics(
-    product: EnrichedProduct, payload: dict[str, object], applied_fields: list[str]
+    payload: dict[str, object], applied_fields: list[str]
 ) -> dict[str, object]:
     return {
         "rejected_payload": rejected_llm_payload(payload, applied_fields),

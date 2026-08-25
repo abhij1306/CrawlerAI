@@ -13,6 +13,7 @@ from app.acquisition.internal_api_replay import replay_internal_api_endpoints
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
+from app.acquisition.fetch.types import FetchPageCall
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 from app.acquisition.source_capabilities import attach_source_capability_diagnostics
 from app.extraction.documents import HtmlDocument
@@ -317,32 +318,34 @@ async def _acquire_from_fetch_page(
     browser_reason: str | None,
 ) -> PageAcquisitionResult:
     result = await fetch_page(
-        effective_url,
-        run_id=request.run_id,
-        timeout_seconds=request.attempt_timeout_seconds,
-        proxy_list=request.proxy_list,
-        proxy_profile=dict(acquisition_policy.proxy_profile)
-        if acquisition_policy.proxy_profile
-        else None,
-        locality_profile=dict(acquisition_policy.locality_profile)
-        if acquisition_policy.locality_profile
-        else None,
-        fetch_mode=acquisition_policy.fetch_mode,
-        prefer_browser=acquisition_policy.prefer_browser,
-        surface=request.surface,
-        traversal_mode=request.traversal_mode,
-        requested_fields=list(request.requested_fields),
-        listing_recovery_mode=acquisition_policy.listing_recovery_mode,
-        max_pages=request.max_pages,
-        max_scrolls=request.max_scrolls,
-        max_records=request.max_records,
-        browser_reason=browser_reason,
-        capture_screenshot=acquisition_policy.capture_screenshot,
-        host_memory_ttl_seconds=acquisition_policy.host_memory_ttl_seconds,
-        prefer_curl_handoff=acquisition_policy.prefer_curl_handoff,
-        handoff_cookie_engine=acquisition_policy.handoff_cookie_engine,
-        forced_browser_engine=acquisition_policy.forced_browser_engine,
-        on_event=request.on_event,
+        FetchPageCall(
+            url=effective_url,
+            run_id=request.run_id,
+            timeout_seconds=request.attempt_timeout_seconds,
+            proxy_list=request.proxy_list,
+            proxy_profile=dict(acquisition_policy.proxy_profile)
+            if acquisition_policy.proxy_profile
+            else None,
+            locality_profile=dict(acquisition_policy.locality_profile)
+            if acquisition_policy.locality_profile
+            else None,
+            fetch_mode=acquisition_policy.fetch_mode,
+            prefer_browser=acquisition_policy.prefer_browser,
+            surface=request.surface,
+            traversal_mode=request.traversal_mode,
+            requested_fields=list(request.requested_fields),
+            listing_recovery_mode=acquisition_policy.listing_recovery_mode,
+            max_pages=request.max_pages,
+            max_scrolls=request.max_scrolls,
+            max_records=request.max_records,
+            browser_reason=browser_reason,
+            capture_screenshot=acquisition_policy.capture_screenshot,
+            host_memory_ttl_seconds=acquisition_policy.host_memory_ttl_seconds,
+            prefer_curl_handoff=acquisition_policy.prefer_curl_handoff,
+            handoff_cookie_engine=acquisition_policy.handoff_cookie_engine,
+            forced_browser_engine=acquisition_policy.forced_browser_engine,
+            on_event=request.on_event,
+        )
     )
     return PageAcquisitionResult(
         request=request,

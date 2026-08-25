@@ -489,8 +489,9 @@ describe('DomainMemoryPage', () => {
     });
     expect(await screen.findByText('Version 5')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Source for product.brand' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Saved selector · .brand' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Source for product.brand' }), {
+      target: { value: 'css_recipe:.brand' },
+    });
 
     await waitFor(() => {
       expect(apiMock.selectKnowledgeContractSource).toHaveBeenCalledWith('contract-1', {
@@ -517,8 +518,9 @@ describe('DomainMemoryPage', () => {
     renderDomainMemoryPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Profiles (1)' }));
-    fireEvent.click(screen.getByRole('combobox', { name: 'Fetch Mode' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Browser Only' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Fetch Mode' }), {
+      target: { value: 'browser_only' },
+    });
     fireEvent.change(screen.getByLabelText('Host Memory TTL (s)'), { target: { value: '600' } });
     fireEvent.change(screen.getByDisplayValue('IN'), { target: { value: 'US' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));

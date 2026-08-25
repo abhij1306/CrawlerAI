@@ -140,7 +140,7 @@ class _BrowserRetryPlan:
     profile_updates: dict[str, object] = field(default_factory=dict)
 
 
-async def _browser_retry_plan(
+def _browser_retry_plan(
     context: _URLProcessingContext,
     acquisition_result,
     *,
@@ -197,7 +197,7 @@ async def _commit_before_browser_rung(context: _URLProcessingContext) -> None:
     if callable(commit):
         await commit()
     else:
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "warning",
             "Skipping browser retry pre-acquire commit: context.session is missing or has no async commit API",
@@ -250,7 +250,7 @@ async def _handle_failed_browser_rung(
         acquisition_result,
         requested_fields=list(context.requested_fields),
     )
-    await _log_pipeline_event(
+    _log_pipeline_event(
         context,
         "warning",
         (
@@ -326,7 +326,7 @@ async def _acquire_browser_retry_result(
     max_attempts: int = 1,
     forced_browser_engine: str | None = None,
 ):
-    plan = await _browser_retry_plan(
+    plan = _browser_retry_plan(
         context,
         fetched.acquisition_result,
         retry_reason=retry_reason,
@@ -335,7 +335,7 @@ async def _acquire_browser_retry_result(
         forced_browser_engine=forced_browser_engine,
     )
     if plan.skip_reason is not None:
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "info",
             f"Skipping browser retry for {context.url}: {plan.skip_reason}",

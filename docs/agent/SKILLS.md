@@ -8,8 +8,8 @@ If paths moved, update this file after confirming ownership in `docs/CODEBASE_MA
 ## Run Tests
 
 ```powershell
-.\scripts\check.ps1 -Mode Affected
 .\scripts\check.ps1
+.\scripts\test.ps1
 ```
 
 The repository mapping owns completion scope. Running one known failing test directly is allowed

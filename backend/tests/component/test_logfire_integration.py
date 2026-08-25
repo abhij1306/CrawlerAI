@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from app.core import logfire_integration
 from app.core.config import settings
@@ -230,3 +230,26 @@ def test_logfire_disabled_under_pytest_by_default(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_enabled_in_tests", False)
 
     assert logfire_integration.configure_logfire() is False
+
+
+@pytest.mark.component
+def test_patched_route_details_preserves_included_route_template() -> None:
+    router = APIRouter()
+
+    @router.get("/items/{item_id}")
+    async def get_item(item_id: str) -> dict[str, str]:
+        return {"item_id": item_id}
+
+    app = FastAPI()
+    app.include_router(router)
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/items/42",
+        "root_path": "",
+        "headers": [],
+        "query_string": b"",
+        "app": app,
+    }
+
+    assert logfire_integration._patched_get_route_details(scope) == "/items/{item_id}"

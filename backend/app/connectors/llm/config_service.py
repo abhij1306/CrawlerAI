@@ -169,35 +169,42 @@ async def resolve_run_config(
     task_type: str,
     config_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    if isinstance(config_snapshot, dict):
-        for candidate in [task_type, "general"]:
-            config_value = config_snapshot.get(candidate)
-            if isinstance(config_value, dict) and validate_config_snapshot(
-                config_value
-            ):
-                return config_value
-            if isinstance(config_value, dict):
-                logger.warning(
-                    "Ignoring malformed LLM config snapshot for %s", candidate
-                )
+    resolved = _config_from_snapshot(config_snapshot, task_type=task_type, source="LLM")
+    if resolved is not None:
+        return resolved
     if run_id is not None:
         run = await session.get(CrawlRun, run_id)
         if run is not None:
-            snapshot = run.settings_view.llm_config_snapshot()
-            for candidate in [task_type, "general"]:
-                config_snapshot = snapshot.get(candidate)
-                if isinstance(config_snapshot, dict) and validate_config_snapshot(
-                    config_snapshot
-                ):
-                    return config_snapshot
-                if isinstance(config_snapshot, dict):
-                    logger.warning(
-                        "Ignoring malformed run LLM config snapshot for %s", candidate
-                    )
+            resolved = _config_from_snapshot(
+                run.settings_view.llm_config_snapshot(),
+                task_type=task_type,
+                source="run LLM",
+            )
+            if resolved is not None:
+                return resolved
     config = await resolve_active_config(session, task_type)
     if config is None:
         return None
     return serialize_config_snapshot(config)
+
+
+def _config_from_snapshot(
+    snapshot: object,
+    *,
+    task_type: str,
+    source: str,
+) -> dict[str, Any] | None:
+    if not isinstance(snapshot, dict):
+        return None
+    for candidate in (task_type, "general"):
+        value = snapshot.get(candidate)
+        if isinstance(value, dict) and validate_config_snapshot(value):
+            return value
+        if isinstance(value, dict):
+            logger.warning(
+                "Ignoring malformed %s config snapshot for %s", source, candidate
+            )
+    return None
 
 
 def provider_env_key(provider: str) -> str:

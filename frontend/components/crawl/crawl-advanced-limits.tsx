@@ -33,7 +33,16 @@ export function CrawlAdvancedLimits({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Limits &amp; Locales</h3>
         <Tooltip content="Set repeat-run bounds and regional hints before dispatch.">
-          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
+          <button
+            type="button"
+            aria-label="More information"
+            className="focus-ring inline-flex rounded-sm"
+          >
+            <Info
+              aria-hidden="true"
+              className="size-3 cursor-help text-muted transition-colors hover:text-secondary"
+            />
+          </button>
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>
@@ -84,7 +93,16 @@ export function CrawlAdvancedLimits({
             <Tooltip
               content={`Blank uses default ${CRAWL_DEFAULTS.HOST_MEMORY_TTL_SECONDS}s. Lower TTL forgets host block and pacing memory sooner.`}
             >
-              <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
+              <button
+                type="button"
+                aria-label="More information"
+                className="focus-ring inline-flex rounded-sm"
+              >
+                <Info
+                  aria-hidden="true"
+                  className="size-3 cursor-help text-muted transition-colors hover:text-secondary"
+                />
+              </button>
             </Tooltip>
           </div>
           <Input

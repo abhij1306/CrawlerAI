@@ -42,9 +42,11 @@ def prune_html_tree(
     for node in document.safe_css("*"):
         attrs = dict(node.node.attributes)
         for key, value in attrs.items():
-            if allowed_attrs is not None and key not in allowed:
-                del node.node.attributes[key]
-            elif attr_filter and not attr_filter(key, value):
+            disallowed_name = allowed_attrs is not None and key not in allowed
+            rejected_value = not disallowed_name and bool(
+                attr_filter and not attr_filter(key, value)
+            )
+            if disallowed_name or rejected_value:
                 del node.node.attributes[key]
     return document
 
@@ -110,7 +112,7 @@ def _assigned_state_payloads(
         payload = _decode_assigned_json(text, match.end(), decoder)
         if payload is None:
             continue
-        state_key = re.sub(r"\s*\.\s*", ".", match.group("key"))
+        state_key = ".".join(part.strip() for part in match.group("key").split("."))
         yield f"/embedded/{state_key}/{script_index}", payload
 
 

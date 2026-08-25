@@ -166,7 +166,6 @@ def test_build_search_queries_uses_decomposed_style_core_not_composite_sku() -> 
     # never the composite Belk SKU (3900462FV5285) which no external retailer indexes.
     queries = build_search_queries(
         {"title": "Men's Promina Sneakers", "brand": "Nike", "sku": "3900462FV5285"},
-        source_domain_value="belk.com",
     )
     joined = " | ".join(queries).lower()
     assert "fv5285" in joined

@@ -28,7 +28,7 @@ async def log_event(session, run_id: int | None, level: str, message: str) -> No
     await session.flush()
 
 
-async def log_pipeline_event(
+def log_pipeline_event(
     context,
     level: str,
     message: str,
@@ -68,7 +68,7 @@ def pipeline_acquisition_event_logger(context):
     """Build the acquisition-stage ``on_event`` callback for a URL context."""
 
     async def _log(level: str, message: str) -> None:
-        await log_pipeline_event(context, level, message)
+        log_pipeline_event(context, level, message)
 
     return _log
 

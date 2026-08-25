@@ -188,9 +188,6 @@ async def recover_browser_challenge(
     *,
     url: str,
     response: Any,
-    browser_engine: str | None = None,
-    _browser_engine: str | None = None,
-    timeout_seconds: float,
     phase_timings_ms: dict[str, int],
     challenge_wait_max_seconds: float,
     challenge_poll_interval_ms: int,
@@ -200,7 +197,6 @@ async def recover_browser_challenge(
     get_page_html,
     looks_like_low_content_shell=None,
 ):
-    del browser_engine, _browser_engine, timeout_seconds
     phase_timings_ms.setdefault("challenge_wait", 0)
     phase_timings_ms.setdefault("challenge_retry", 0)
     max_wait_seconds = max(0.0, float(challenge_wait_max_seconds or 0))

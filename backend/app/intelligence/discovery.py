@@ -87,8 +87,6 @@ QueryRunner = Callable[[str, int], Awaitable[list["SearchResult"]]]
 
 def build_search_queries(
     product: dict[str, object],
-    *,
-    source_domain_value: str = "",
 ) -> list[str]:
     brand = normalize_brand(product.get("brand"))
     brand_query = brand
@@ -140,7 +138,7 @@ async def discover_candidates(
     max_candidates: int,
     run_query: QueryRunner | None = None,
 ) -> list[DiscoveredCandidate]:
-    queries = build_search_queries(product, source_domain_value=source_domain_value)
+    queries = build_search_queries(product)
     if not queries:
         return []
     provider_name = (
@@ -216,42 +214,25 @@ async def _collect_candidates(
     for query_order, query in enumerate(queries):
         results = await run_query(query, pool_limit)
         for rank, result in enumerate(results, start=1):
-            normalized_url = clean_result_url(result.url)
-            if not normalized_url:
-                continue
-            # Collapse the same listing offered at multiple sizes/colors (URLs differing only
-            # by volatile query params) to one canonical key so a single product at N sizes
-            # does not consume N per-product candidate slots.
-            dedupe_key = candidate_dedupe_key(normalized_url)
-            if dedupe_key in seen:
-                continue
-            if _same_source_url(normalized_url, source_urls):
-                continue
-            domain = source_domain(normalized_url)
-            if not _domain_allowed(
-                domain, allowed_domains, excluded_domains, source_domains
-            ):
-                continue
-            if not _candidate_matches_product(product, normalized_url, result.payload):
-                continue
-            if (
-                domain_counts.get(domain, 0)
-                >= product_intelligence_settings.max_urls_per_result_domain
-            ):
-                continue
-            seen.add(dedupe_key)
-            domain_counts[domain] = domain_counts.get(domain, 0) + 1
-            candidates.append(
-                DiscoveredCandidate(
-                    url=normalized_url,
-                    domain=domain,
-                    source_type=classify_source_type(domain, product),
-                    query_used=query,
-                    search_rank=rank,
-                    payload=result.payload,
-                    query_order=query_order,
-                )
+            admitted = _admit_candidate(
+                result,
+                query=query,
+                rank=rank,
+                query_order=query_order,
+                product=product,
+                seen=seen,
+                source_urls=source_urls,
+                source_domains=source_domains,
+                allowed_domains=allowed_domains,
+                excluded_domains=excluded_domains,
+                domain_counts=domain_counts,
             )
+            if admitted is None:
+                continue
+            dedupe_key, candidate = admitted
+            seen.add(dedupe_key)
+            domain_counts[candidate.domain] = domain_counts.get(candidate.domain, 0) + 1
+            candidates.append(candidate)
             if len(candidates) >= pool_limit:
                 return _rank_discovered_candidates(candidates, product=product)[
                     :max_candidates
@@ -263,6 +244,47 @@ async def _collect_candidates(
         ):
             await asyncio.sleep(product_intelligence_settings.search_delay_ms / 1000)
     return _rank_discovered_candidates(candidates, product=product)[:max_candidates]
+
+
+def _admit_candidate(
+    result: SearchResult,
+    *,
+    query: str,
+    rank: int,
+    query_order: int,
+    product: dict[str, object],
+    seen: set[str],
+    source_urls: set[str],
+    source_domains: set[str],
+    allowed_domains: list[str],
+    excluded_domains: list[str],
+    domain_counts: dict[str, int],
+) -> tuple[str, DiscoveredCandidate] | None:
+    normalized_url = clean_result_url(result.url)
+    if not normalized_url or _same_source_url(normalized_url, source_urls):
+        return None
+    dedupe_key = candidate_dedupe_key(normalized_url)
+    if dedupe_key in seen:
+        return None
+    domain = source_domain(normalized_url)
+    if not _domain_allowed(domain, allowed_domains, excluded_domains, source_domains):
+        return None
+    if not _candidate_matches_product(product, normalized_url, result.payload):
+        return None
+    if (
+        domain_counts.get(domain, 0)
+        >= product_intelligence_settings.max_urls_per_result_domain
+    ):
+        return None
+    return dedupe_key, DiscoveredCandidate(
+        url=normalized_url,
+        domain=domain,
+        source_type=classify_source_type(domain, product),
+        query_used=query,
+        search_rank=rank,
+        payload=result.payload,
+        query_order=query_order,
+    )
 
 
 @contextlib.asynccontextmanager
@@ -409,10 +431,6 @@ def _query_has_identifier(query: str) -> bool:
         if len(compact) >= 5 and any(char.isdigit() for char in compact):
             return True
     return False
-
-
-async def _empty_search_payload() -> dict[str, object]:
-    return {}
 
 
 async def _search_serpapi_engine(

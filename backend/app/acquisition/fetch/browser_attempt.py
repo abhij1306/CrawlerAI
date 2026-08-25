@@ -6,10 +6,11 @@ from contextlib import suppress
 from typing import Any
 
 from app.acquisition.runtime import PageFetchResult
+from app.acquisition.browser_fetch_support import BrowserFetchRequest
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 
-def browser_fetch_kwargs(
+def browser_fetch_request(
     context: Any,
     *,
     proxy: str | None,
@@ -20,40 +21,38 @@ def browser_fetch_kwargs(
     requested_fields: list[str],
     recovery_mode: str | None,
     capture_screenshot: bool,
-) -> dict[str, Any]:
-    return {
-        "run_id": context.run_id,
-        "proxy": proxy,
-        "browser_engine": browser_engine,
-        "browser_reason": reason,
-        "escalation_lane": escalation_lane,
-        "host_policy_snapshot": host_policy_snapshot,
-        "proxy_profile": context.proxy_profile,
-        "locality_profile": context.locality_profile,
-        "surface": context.surface,
-        "traversal_mode": context.traversal_mode,
-        "requested_fields": requested_fields,
-        "listing_recovery_mode": recovery_mode,
-        "capture_screenshot": capture_screenshot,
-        "max_pages": context.max_pages,
-        "max_scrolls": context.max_scrolls,
-        "max_records": context.max_records,
-        "on_event": context.on_event,
-    }
+) -> BrowserFetchRequest:
+    return BrowserFetchRequest(
+        url=context.url,
+        timeout_seconds=0.0,
+        run_id=context.run_id,
+        proxy=proxy,
+        browser_engine=browser_engine,
+        browser_reason=reason,
+        escalation_lane=escalation_lane,
+        host_policy_snapshot=host_policy_snapshot,
+        proxy_profile=context.proxy_profile,
+        locality_profile=context.locality_profile,
+        surface=context.surface,
+        traversal_mode=context.traversal_mode,
+        requested_fields=requested_fields,
+        listing_recovery_mode=recovery_mode,
+        capture_screenshot=capture_screenshot,
+        max_pages=context.max_pages,
+        max_scrolls=context.max_scrolls,
+        max_records=context.max_records,
+        on_event=context.on_event,
+    )
 
 
 async def browser_fetch_with_wall_clock_timeout(
     fetcher: Callable[..., Coroutine[Any, Any, PageFetchResult]],
-    url: str,
-    timeout_seconds: float,
+    request: BrowserFetchRequest,
     *,
     browser_engine: str,
-    fetch_kwargs: dict[str, Any],
 ) -> PageFetchResult:
-    bounded_timeout = max(0.001, float(timeout_seconds))
-    task: asyncio.Task[PageFetchResult] = asyncio.create_task(
-        fetcher(url, bounded_timeout, **fetch_kwargs)
-    )
+    bounded_timeout = max(0.001, float(request.timeout_seconds))
+    task: asyncio.Task[PageFetchResult] = asyncio.create_task(fetcher(request))
     done, _pending = await asyncio.wait(
         {task},
         timeout=bounded_timeout,

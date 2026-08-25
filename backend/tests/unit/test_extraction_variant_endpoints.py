@@ -366,7 +366,7 @@ async def test_sfcc_variant_endpoint_expansion_failure_is_best_effort(
 
     events: list[tuple[str, str]] = []
 
-    async def record_event(_context, level: str, message: str) -> None:
+    def record_event(_context, level: str, message: str) -> None:
         events.append((level, message))
 
     monkeypatch.setattr(

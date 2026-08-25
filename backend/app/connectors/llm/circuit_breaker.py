@@ -148,7 +148,6 @@ async def circuit_is_open(provider: str) -> bool:
     return await redis_fail_open(
         _check,
         default=local_default,
-        operation_name=f"llm_circuit_check:{provider}",
     )
 
 
@@ -174,7 +173,6 @@ async def record_success(provider: str) -> None:
     await redis_fail_open(
         _update,
         default=None,
-        operation_name=f"llm_circuit_success:{provider}",
     )
 
 
@@ -201,7 +199,6 @@ async def record_failure(provider: str, category: LLMErrorCategory) -> None:
     await redis_fail_open(
         _update,
         default=None,
-        operation_name=f"llm_circuit_failure:{provider}",
     )
 
 

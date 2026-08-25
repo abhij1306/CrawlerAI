@@ -80,7 +80,6 @@ async def load_cached_llm_result(cache_key: str) -> LLMTaskResult | None:
     return await redis_fail_open(
         _load,
         default=None,
-        operation_name="llm_result_cache_get",
     )
 
 
@@ -152,5 +151,4 @@ async def store_cached_llm_result(cache_key: str, result: LLMTaskResult) -> None
     await redis_fail_open(
         _store,
         default=False,
-        operation_name="llm_result_cache_set",
     )

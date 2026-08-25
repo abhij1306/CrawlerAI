@@ -161,7 +161,31 @@ def _success_outcome(**overrides) -> dict:
         "network_payloads": [],
     }
     outcome.update(overrides)
-    return outcome
+    acquisition_result = SimpleNamespace(
+        method=outcome["method"],
+        final_url=outcome["page_url"],
+        browser_diagnostics={
+            **outcome["browser_diagnostics"],
+            "browser_engine": outcome["browser_engine"],
+        },
+        network_payloads=outcome["network_payloads"],
+        request=SimpleNamespace(requested_fields=outcome["requested_fields"]),
+    )
+    url_result = SimpleNamespace(
+        records=outcome["records"],
+        verdict=outcome["verdict"],
+        url_metrics={
+            "record_count": outcome["persisted_count"],
+            "blocked": outcome["blocked"],
+        },
+    )
+    return {
+        "domain": outcome["domain"],
+        "surface": outcome["surface"],
+        "source_run_id": outcome["source_run_id"],
+        "acquisition_result": acquisition_result,
+        "url_result": url_result,
+    }
 
 
 async def test_contract_outcome_upsert_debounced_when_unchanged(
@@ -299,12 +323,12 @@ async def test_log_pipeline_event_batches_rows_until_url_commit(
     monkeypatch.setattr(db_session, "flush", _flush)
 
     for index in range(3):
-        await log_pipeline_event(context, "info", f"event {index}")
+        log_pipeline_event(context, "info", f"event {index}")
     # No per-event flush or commit: rows ride the URL's single final commit.
     assert counts == {"commit": 0, "flush": 0}
 
     context.config.persist_logs = False
-    await log_pipeline_event(context, "info", "dropped")
+    log_pipeline_event(context, "info", "dropped")
 
     await db_session.commit()
     rows = (

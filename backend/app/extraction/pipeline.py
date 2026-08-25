@@ -20,6 +20,7 @@ from app.extraction.collectors.metadata import (
 from app.extraction.collectors.url import UrlCollector
 from app.core.config import field_mappings
 from app.core.config.variant_policy import ECOMMERCE_FACT_TYPES
+from app.core.shared.url_utils import strip_srcset_descriptor
 from app.core.config.extraction_price_rules import (
     DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD,
 )
@@ -655,6 +656,8 @@ def normalize_evidence(
 def _normalize_text_representation(evidence: Evidence, value: object) -> object:
     if isinstance(value, str):
         value = re.sub(r"\s+", " ", value).strip()
+        if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE:
+            value = strip_srcset_descriptor(value)
     if evidence.fact_type in {
         field_mappings.PRODUCT_TITLE_FACT_TYPE,
         field_mappings.PRODUCT_BRAND_FACT_TYPE,
@@ -666,10 +669,6 @@ def _normalize_text_representation(evidence: Evidence, value: object) -> object:
     ):
         value = coerce_long_text(value) or value
         value = _segment_grounded_description(value)
-    if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE and isinstance(
-        value, str
-    ):
-        value = re.sub(r"\s+\d+(?:\.\d+)?[wx]\s*$", "", value, flags=re.IGNORECASE)
     return value
 
 

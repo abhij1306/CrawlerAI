@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from tests.component.browser_context_test_support import (
     _credential_url,
     _secret_mapping,
@@ -109,13 +111,17 @@ async def test_browser_settle_parses_once_per_unique_snapshot(
 
     result = await browser_settle.settle_browser_page(
         _Page(),
-        url="https://example.test/table",
-        surface="table",
-        requested_fields=None,
+        SimpleNamespace(
+            request=SimpleNamespace(
+                url="https://example.test/table",
+                requested_fields=None,
+            ),
+            normalized_surface="table",
+            phase_timings_ms={},
+        ),
         timeout_seconds=1,
         readiness_override=None,
         readiness_policy={},
-        phase_timings_ms={},
         crawler_runtime_settings=crawler_runtime_settings,
         get_page_html_impl=get_page_html_impl,
         probe_browser_readiness=probe_browser_readiness,

@@ -150,6 +150,7 @@ class URLProcessingConfig:
     persist_logs: bool = True
     prefetch_only: bool = False
     record_writer: RecordWriter | None = None
+    url_timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if self.acquisition_plan is None:
@@ -173,6 +174,7 @@ class URLProcessingConfig:
         persist_logs: bool = True,
         prefetch_only: bool = False,
         record_writer: RecordWriter | None = None,
+        url_timeout_seconds: float | None = None,
     ) -> "URLProcessingConfig":
         return cls(
             acquisition_plan=plan,
@@ -180,6 +182,7 @@ class URLProcessingConfig:
             persist_logs=persist_logs,
             prefetch_only=prefetch_only,
             record_writer=record_writer,
+            url_timeout_seconds=url_timeout_seconds,
         )
 
     def resolved_acquisition_plan(self, *, surface: str) -> AcquisitionIntent:

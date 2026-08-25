@@ -51,6 +51,7 @@ from app.core.config.extraction_rules import (
     VARIANT_PLACEHOLDER_VALUES,
     VARIANT_URL_AXIS_PARAMS,
 )
+from app.core.config import extraction_rules as rules
 from app.core.config import field_mappings
 from app.core.config.field_mappings import (
     ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
@@ -63,16 +64,6 @@ from app.core.records.field_policy import normalize_field_key, normalize_request
 from app.core.shared.url_utils import is_utility_image_url, largest_srcset_url
 
 logger = logging.getLogger(__name__)
-
-_IMAGE_SCOPE_ATTRIBUTES = (
-    "id",
-    "class",
-    "data-testid",
-    "data-component",
-    "data-section",
-    "aria-label",
-    "role",
-)
 
 
 class DomCollector:
@@ -118,15 +109,8 @@ class DomCollector:
 def _base_dom_evidence(
     bundle: CaptureBundle, doc, product_subject: str
 ) -> list[Evidence]:
-    selectors = (
-        ("h1", "product.title"),
-        ("head title", "product.title"),
-        ("[data-price]", "offer.price"),
-        ("[data-currency]", "offer.currency"),
-        ("[data-sku]", "product.sku"),
-    )
     rows: list[Evidence] = []
-    for selector, fact in selectors:
+    for selector, fact in rules.DETAIL_DOM_BASE_SELECTORS:
         for tag in doc.css(selector):
             row = _base_dom_row(bundle, tag, selector, fact, product_subject)
             if row is not None:
@@ -192,10 +176,8 @@ def _product_brand_evidence(
             seen.add(key)
             role = _brand_node_role(node)
             rows.append(
-                evidence(
+                _product_dom_evidence(
                     bundle,
-                    "dom",
-                    "dom",
                     "product.brand",
                     value,
                     SourceLocator(
@@ -203,17 +185,42 @@ def _product_brand_evidence(
                         value=node.stable_locator(),
                         preview=value[:120],
                     ),
-                    hint=EntityHint(entity_type="product"),
-                    confidence=0.72,
-                    subject_id=product_subject,
+                    product_subject,
+                    0.72,
                     metadata={
                         "brand_evidence_kind": "explicit_product_label",
                         "brand_role": role,
                     },
-                    brand_role=role,
                 )
             )
     return tuple(rows)
+
+
+def _product_dom_evidence(
+    bundle: CaptureBundle,
+    fact_type: str,
+    value: str,
+    locator: SourceLocator,
+    subject_id: str,
+    confidence: float,
+    *,
+    source: str = "dom",
+    flags: tuple[str, ...] = (),
+    metadata: dict[str, object] | None = None,
+) -> Evidence:
+    return evidence(
+        bundle,
+        source,
+        "dom",
+        fact_type,
+        value,
+        locator,
+        hint=EntityHint(entity_type="product"),
+        confidence=confidence,
+        flags=flags,
+        subject_id=subject_id,
+        metadata=metadata,
+    )
 
 
 def _brand_node_role(node: HtmlNode) -> str:
@@ -236,8 +243,7 @@ def _brand_node_role(node: HtmlNode) -> str:
 
 def _brand_node_value(node: HtmlNode) -> str:
     for attribute in DETAIL_BRAND_DOM_VALUE_ATTRIBUTES:
-        value = str(node.attribute(attribute) or "").strip()
-        if value:
+        if value := str(node.attribute(attribute) or "").strip():
             return value
     text = " ".join(str(node.text() or "").split())
     match = re.fullmatch(DETAIL_BRAND_VISIBLE_LABEL_PATTERN, text, re.IGNORECASE)
@@ -262,12 +268,10 @@ def _product_root_nodes(doc) -> tuple[HtmlNode, ...]:
             identity = node.identity()
             if identity in seen or _node_context_excluded(node):
                 continue
-            score = sum(
-                1
+            if not any(
+                node.safe_css(positive)
                 for positive in DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS
-                if node.safe_css(positive)
-            )
-            if score <= 0:
+            ):
                 continue
             roots.append(node)
             seen.add(identity)
@@ -282,25 +286,13 @@ def _product_description_evidence(
     for root in roots:
         for selector in DETAIL_DOM_DESCRIPTION_SELECTORS:
             for node in root.safe_css(selector):
-                hidden = node.is_hidden()
-                if _node_context_excluded(node) or (
-                    hidden and not _hidden_product_content_allowed(node)
-                ):
+                admitted = _admit_description_node(node, seen)
+                if admitted is None:
                     continue
-                value = _description_node_value(node)
-                key = value.casefold()
-                if (
-                    not value
-                    or len(value) < DETAIL_DOM_DESCRIPTION_MIN_CHARS
-                    or key in seen
-                ):
-                    continue
-                seen.add(key)
+                value, hidden = admitted
                 rows.append(
-                    evidence(
+                    _product_dom_evidence(
                         bundle,
-                        "dom",
-                        "dom",
                         "product.description",
                         value,
                         SourceLocator(
@@ -308,10 +300,9 @@ def _product_description_evidence(
                             value=node.stable_locator(),
                             preview=value[:120],
                         ),
-                        hint=EntityHint(entity_type="product"),
-                        confidence=0.66 if hidden else 0.74,
+                        product_subject,
+                        0.66 if hidden else 0.74,
                         flags=("hidden_product_content",) if hidden else (),
-                        subject_id=product_subject,
                         metadata=(
                             {"visibility": "hidden", "component_role": "product_panel"}
                             if hidden
@@ -322,10 +313,26 @@ def _product_description_evidence(
     return tuple(rows)
 
 
+def _admit_description_node(
+    node: HtmlNode,
+    seen: set[str],
+) -> tuple[str, bool] | None:
+    hidden = node.is_hidden()
+    if _node_context_excluded(node) or (
+        hidden and not _hidden_product_content_allowed(node)
+    ):
+        return None
+    value = _description_node_value(node)
+    key = value.casefold()
+    if not value or len(value) < DETAIL_DOM_DESCRIPTION_MIN_CHARS or key in seen:
+        return None
+    seen.add(key)
+    return value, hidden
+
+
 def _description_node_value(node: HtmlNode) -> str:
     for attribute in ("data-description", "content", "value", "title", "aria-label"):
-        value = str(node.attribute(attribute) or "").strip()
-        if value:
+        if value := str(node.attribute(attribute) or "").strip():
             return " ".join(value.split())
     return text_without_non_text_descendants(node)
 
@@ -338,20 +345,10 @@ def _product_offer_evidence(
     for root in roots:
         for selector in DETAIL_DOM_OFFER_SELECTORS:
             for node in root.safe_css(selector)[:DETAIL_DOM_OFFER_MAX_CANDIDATES]:
-                if (
-                    node.is_hidden()
-                    or _node_context_excluded(node)
-                    or _is_commercial_variant_control(node)
-                ):
-                    continue
-                offer = _visible_offer_values(node)
+                offer = _admit_offer_node(node, seen)
                 if offer is None:
                     continue
                 price, currency, availability = offer
-                key = (price, currency, availability)
-                if key in seen:
-                    continue
-                seen.add(key)
                 group = f"offer:dom:{node.identity()}"
                 subject_id = stable_id("subject", bundle.bundle_id, group)
                 locator = SourceLocator(
@@ -384,6 +381,23 @@ def _product_offer_evidence(
                         )
                     )
     return tuple(rows)
+
+
+def _admit_offer_node(
+    node: HtmlNode,
+    seen: set[tuple[str, str, str]],
+) -> tuple[str, str, str] | None:
+    if (
+        node.is_hidden()
+        or _node_context_excluded(node)
+        or _is_commercial_variant_control(node)
+    ):
+        return None
+    offer = _visible_offer_values(node)
+    if offer is None or offer in seen:
+        return None
+    seen.add(offer)
+    return offer
 
 
 def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str] | None:
@@ -459,7 +473,7 @@ def _node_context_excluded(node: HtmlNode) -> bool:
     context = " ".join(
         str(current.attribute(attribute) or "").casefold()
         for current in (node, *node.ancestors()[:8])
-        for attribute in _IMAGE_SCOPE_ATTRIBUTES
+        for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
     )
     return any(
         token in context
@@ -485,12 +499,7 @@ def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
 def _product_image_candidates(doc) -> list[tuple[HtmlNode, str]]:
     candidates: list[tuple[HtmlNode, str]] = []
     seen: set[int] = set()
-    for node in doc.css(
-        "main img[src], main img[data-src], main img[data-lazy-src], "
-        "main img[data-original], main img[data-image], main img[srcset], "
-        "main img[data-srcset], main source[srcset], main source[data-srcset], "
-        "img[data-product-image][src], img[data-product-image][data-src]"
-    ):
+    for node in doc.css(rules.DETAIL_DOM_IMAGE_CANDIDATE_SELECTOR):
         identity = node.identity()
         src = _image_node_url(node)
         if identity in seen or node.is_hidden() or not src or is_utility_image_url(src):
@@ -517,12 +526,14 @@ def _scoped_product_image_nodes(
 
 def _image_node_url(node: HtmlNode) -> str:
     for attribute in DETAIL_IMAGE_URL_ATTRS:
-        value = str(node.attribute(attribute) or "").strip()
-        if value and not is_utility_image_url(value):
+        if (
+            value := str(node.attribute(attribute) or "").strip()
+        ) and not is_utility_image_url(value):
             return value
     for attribute in DETAIL_IMAGE_SRCSET_ATTRS:
-        value = largest_srcset_url(str(node.attribute(attribute) or ""))
-        if value and not is_utility_image_url(value):
+        if (
+            value := largest_srcset_url(str(node.attribute(attribute) or ""))
+        ) and not is_utility_image_url(value):
             return value
     return ""
 
@@ -531,7 +542,7 @@ def _image_scope_context(node: HtmlNode) -> str:
     return " ".join(
         str(current.attribute(attribute) or "").casefold()
         for current in (node, *node.ancestors()[:12])
-        for attribute in _IMAGE_SCOPE_ATTRIBUTES
+        for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
     )
 
 
@@ -552,36 +563,25 @@ def collect_requested_fields(
         if not fact_type:
             continue
         dash_field = field.replace("_", "-")
-        selectors = tuple(
-            template.format(field=field, dash_field=dash_field)
-            for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES
-        )
-        for selector in selectors:
+        for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES:
+            selector = template.format(field=field, dash_field=dash_field)
             for node in doc.css(selector):
-                hidden = node.is_hidden()
-                if hidden and not _hidden_product_content_allowed(node):
+                admitted = _admit_requested_node(node, fact_type, seen)
+                if admitted is None:
                     continue
-                value = _requested_node_value(node, fact_type)
-                key = (fact_type, value.casefold())
-                if not value or key in seen:
-                    continue
-                seen.add(key)
+                value, hidden = admitted
                 rows.append(
-                    evidence(
+                    _product_dom_evidence(
                         bundle,
-                        "html",
-                        "dom",
                         fact_type,
                         value,
                         SourceLocator(
-                            kind="css_selector",
-                            value=selector,
-                            preview=value[:120],
+                            kind="css_selector", value=selector, preview=value[:120]
                         ),
-                        hint=EntityHint(entity_type="product"),
-                        confidence=0.5 if hidden else 0.62,
+                        product_subject,
+                        0.5 if hidden else 0.62,
+                        source="html",
                         flags=("hidden_product_content",) if hidden else (),
-                        subject_id=product_subject,
                         metadata=(
                             {"visibility": "hidden", "component_role": "product_panel"}
                             if hidden
@@ -592,19 +592,27 @@ def collect_requested_fields(
     return tuple(rows)
 
 
+def _admit_requested_node(
+    node: HtmlNode,
+    fact_type: str,
+    seen: set[tuple[str, str]],
+) -> tuple[str, bool] | None:
+    hidden = node.is_hidden()
+    if hidden and not _hidden_product_content_allowed(node):
+        return None
+    value = _requested_node_value(node, fact_type)
+    key = (fact_type, value.casefold())
+    if not value or key in seen:
+        return None
+    seen.add(key)
+    return value, hidden
+
+
 def _hidden_product_content_allowed(node: HtmlNode) -> bool:
     raw_parts = [
         str(current.attribute(attribute) or "")
         for current in (node, *node.ancestors()[:8])
-        for attribute in (
-            "id",
-            "class",
-            "data-testid",
-            "data-component",
-            "data-section",
-            "aria-label",
-            "role",
-        )
+        for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
     ]
     tokens = {
         token
@@ -636,12 +644,8 @@ def _hidden_product_context_matches(
 
 
 def _requested_node_value(node, fact_type: str) -> str:
-    attribute_order = (
-        ("href", "content", "value", "title", "aria-label")
-        if fact_type == "product.url"
-        else ("src", "data-src", "content", "href", "alt", "title")
-        if fact_type == "asset.image_url"
-        else ("content", "value", "title", "aria-label")
+    attribute_order = rules.DETAIL_DOM_REQUESTED_VALUE_ATTRIBUTES.get(
+        fact_type, rules.DETAIL_DOM_REQUESTED_DEFAULT_VALUE_ATTRIBUTES
     )
     for attribute in attribute_order:
         value = str(node.attribute(attribute) or "").strip()
@@ -1202,16 +1206,11 @@ def _css_subject_binding(
 
 
 def _css_node_value(node, fact_type: str) -> str | None:
-    attr_order: tuple[str, ...]
-    if fact_type == field_mappings.PRODUCT_URL_FACT_TYPE:
-        attr_order = ("href", "content", "value", "title", "aria-label")
-    elif fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE:
-        attr_order = ("src", "data-src", "content", "href", "alt", "title")
-    else:
-        attr_order = ("content", "value", "title", "aria-label")
+    attr_order = rules.DETAIL_DOM_REQUESTED_VALUE_ATTRIBUTES.get(
+        fact_type, rules.DETAIL_DOM_REQUESTED_DEFAULT_VALUE_ATTRIBUTES
+    )
     for attr in attr_order:
         value = str(node.attribute(attr) or "").strip()
         if value:
             return value
-    text = re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip()
-    return text or None
+    return re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip() or None

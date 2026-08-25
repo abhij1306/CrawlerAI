@@ -2,9 +2,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { Dropdown, Skeleton, Toggle } from './primitives';
+import { Tooltip } from './tooltip';
 
 describe('Dropdown', () => {
-  it('sanitizes option IDs and correctly manages aria-activedescendant for accessibility', () => {
+  it('uses native keyboard, change, and disabled behavior', () => {
     const handleChange = vi.fn();
 
     render(
@@ -20,22 +21,55 @@ describe('Dropdown', () => {
     );
 
     const combobox = screen.getByRole('combobox', { name: 'Surface' });
-    fireEvent.click(combobox);
-    const listbox = screen.getByRole('listbox');
-    const activeDescendant = combobox.getAttribute('aria-activedescendant');
-    const activeOption = screen.getByRole('option', { name: 'Jobs Detail' });
-    expect(activeOption.id).toMatch(/jobs-detail$/);
-    expect(activeOption.id).not.toBe('jobs / detail');
-    expect(activeOption.id).not.toBe('');
-    expect(activeOption.id).not.toContain(' ');
-    expect(combobox).toHaveAttribute('aria-activedescendant', activeOption.id);
-    expect(listbox).not.toHaveAttribute('aria-activedescendant');
-    expect(document.getElementById(activeDescendant ?? '')).toBe(activeOption);
+    expect(combobox.tagName).toBe('SELECT');
+    fireEvent.change(combobox, { target: { value: 'commerce:listing' } });
+    expect(handleChange).toHaveBeenCalledWith('commerce:listing');
 
-    const otherOption = screen.getByRole('option', { name: 'Commerce Listing' });
-    expect(otherOption.id).toMatch(/commerce-listing$/);
-    expect(otherOption.id).not.toBe('');
-    expect(otherOption.id).not.toContain(' ');
+    const { rerender } = render(<div />);
+    rerender(
+      <Dropdown
+        ariaLabel="Disabled surface"
+        value="jobs / detail"
+        onChange={handleChange}
+        options={[{ value: 'jobs / detail', label: 'Jobs Detail' }]}
+        disabled
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Disabled surface' })).toBeDisabled();
+  });
+});
+
+describe('Tooltip', () => {
+  it('opens from its focusable child and wires aria-describedby', () => {
+    render(
+      <Tooltip content="Helpful context">
+        <button type="button" aria-label="More information">
+          i
+        </button>
+      </Tooltip>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'More information' });
+    fireEvent.focus(trigger);
+    const tooltip = screen.getByRole('tooltip');
+    expect(trigger).toHaveAttribute('aria-describedby', tooltip.id);
+    fireEvent.blur(trigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('appends its description to an existing aria-describedby value', () => {
+    render(
+      <Tooltip content="Helpful context">
+        <button type="button" aria-label="Details" aria-describedby="existing-description">
+          i
+        </button>
+      </Tooltip>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Details' });
+    fireEvent.focus(trigger);
+    const tooltip = screen.getByRole('tooltip');
+    expect(trigger).toHaveAttribute('aria-describedby', `existing-description ${tooltip.id}`);
   });
 });
 

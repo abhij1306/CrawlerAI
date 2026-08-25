@@ -65,59 +65,77 @@ def nuxt_product_roots(data: object) -> Iterable[tuple[str, object]]:
 def decode_nuxt_devalue(data: object, root_index: int) -> object:
     if not isinstance(data, list) or not (0 <= root_index < len(data)):
         return None
-    memo: dict[int, object] = {}
-    visiting: set[int] = set()
-    visited = 0
+    return _NuxtDecoder(data).decode_ref(root_index, 0)
 
-    def decode_ref(index: int, depth: int) -> object:
-        nonlocal visited
-        if index < 0 or index >= len(data):
+
+class _NuxtDecoder:
+    def __init__(self, data: list[object]) -> None:
+        self.data = data
+        self.memo: dict[int, object] = {}
+        self.visiting: set[int] = set()
+        self.visited = 0
+
+    def decode_ref(self, index: int, depth: int) -> object:
+        if not (0 <= index < len(self.data)):
             return None
-        if index in memo:
-            return memo[index]
-        if index in visiting:
+        if index in self.memo:
+            return self.memo[index]
+        if index in self.visiting or self._limit_reached(depth):
             return None
-        if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
-            return None
-        if visited >= variant_policy.NUXT_DEVALUE_DECODE_MAX_NODES:
-            return None
-        visiting.add(index)
-        visited += 1
-        decoded = decode_node(data[index], depth)
-        visiting.remove(index)
-        memo[index] = decoded
+        self.visiting.add(index)
+        self.visited += 1
+        decoded = self.decode_node(self.data[index], depth)
+        self.visiting.remove(index)
+        self.memo[index] = decoded
         return decoded
 
-    def decode_node(node: object, depth: int) -> object:
+    def _limit_reached(self, depth: int) -> bool:
+        return (
+            depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH
+            or self.visited >= variant_policy.NUXT_DEVALUE_DECODE_MAX_NODES
+        )
+
+    def decode_node(self, node: object, depth: int) -> object:
         if isinstance(node, dict):
-            if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
-                return None
-            return {
-                str(key): decode_ref(value, depth + 1)
-                if type(value) is int
-                else decode_node(value, depth + 1)
-                for key, value in node.items()
-                if key not in (None, "")
-            }
+            return self._decode_mapping(node, depth)
         if isinstance(node, list):
-            if (
-                len(node) >= 2
-                and isinstance(node[0], str)
-                and node[0] in variant_policy.NUXT_DEVALUE_WRAPPER_TAGS
-                and type(node[1]) is int
-            ):
-                return decode_ref(node[1], depth + 1)
-            if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
-                return None
-            return [
-                decode_ref(value, depth + 1)
-                if type(value) is int
-                else decode_node(value, depth + 1)
-                for value in node[: variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS]
-            ]
+            return self._decode_list(node, depth)
         return node
 
-    return decode_ref(root_index, 0)
+    def _decode_mapping(self, node: dict, depth: int) -> object:
+        if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
+            return None
+        return {
+            str(key): self._decode_value(value, depth + 1)
+            for key, value in node.items()
+            if key not in (None, "")
+        }
+
+    def _decode_list(self, node: list, depth: int) -> object:
+        if self._is_wrapper(node):
+            return self.decode_ref(node[1], depth + 1)
+        if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
+            return None
+        return [
+            self._decode_value(value, depth + 1)
+            for value in node[: variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS]
+        ]
+
+    def _decode_value(self, value: object, depth: int) -> object:
+        return (
+            self.decode_ref(value, depth)
+            if type(value) is int
+            else self.decode_node(value, depth)
+        )
+
+    @staticmethod
+    def _is_wrapper(node: list) -> bool:
+        return (
+            len(node) >= 2
+            and isinstance(node[0], str)
+            and node[0] in variant_policy.NUXT_DEVALUE_WRAPPER_TAGS
+            and type(node[1]) is int
+        )
 
 
 def hydrate_parent_option_labels(data: object) -> object:
@@ -181,24 +199,43 @@ def variant_axis_hints(
         if not isinstance(parent, dict):
             continue
         axes = parent_option_axes(parent)
-        for child_key in variant_policy.VARIANT_PARENT_OPTION_CHILD_KEYS:
-            children = parent.get(child_key)
-            if not isinstance(children, list) or not axes:
-                continue
-            for index, child in enumerate(children):
-                if isinstance(child, dict):
-                    hints[f"{parent_path}/{child_key}/{index}"] = axes
+        _record_child_axis_hints(
+            hints,
+            parent_path=parent_path,
+            parent=parent,
+            child_keys=variant_policy.VARIANT_PARENT_OPTION_CHILD_KEYS,
+            axes=axes,
+        )
         value_axis = parent_option_value_axis(parent)
         if not value_axis:
             continue
-        for child_key in variant_policy.VARIANT_PARENT_OPTION_VALUE_CHILD_KEYS:
-            children = parent.get(child_key)
-            if not isinstance(children, list):
-                continue
-            for index, child in enumerate(children):
-                if isinstance(child, dict):
-                    hints[f"{parent_path}/{child_key}/{index}"] = (value_axis,)
+        _record_child_axis_hints(
+            hints,
+            parent_path=parent_path,
+            parent=parent,
+            child_keys=variant_policy.VARIANT_PARENT_OPTION_VALUE_CHILD_KEYS,
+            axes=(value_axis,),
+        )
     return hints
+
+
+def _record_child_axis_hints(
+    hints: dict[str, tuple[str, ...]],
+    *,
+    parent_path: str,
+    parent: dict,
+    child_keys: tuple[str, ...],
+    axes: tuple[str, ...],
+) -> None:
+    if not axes:
+        return
+    for child_key in child_keys:
+        children = parent.get(child_key)
+        if not isinstance(children, list):
+            continue
+        for index, child in enumerate(children):
+            if isinstance(child, dict):
+                hints[f"{parent_path}/{child_key}/{index}"] = axes
 
 
 def parent_option_axes(obj: dict) -> tuple[str, ...]:

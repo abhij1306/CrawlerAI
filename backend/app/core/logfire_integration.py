@@ -9,13 +9,15 @@ from contextlib import contextmanager, nullcontext
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import FastAPI
+from fastapi import FastAPI, routing as fastapi_routing
+from starlette.routing import Match, Route
 
 from app.core.config import settings
 from app.core.proxy_secrets import redact_secret_text, strip_url_userinfo
 
 logger = logging.getLogger("app.core.logfire")
 _MAX_ATTRIBUTE_LENGTH = 500
+_iter_route_contexts: Any = getattr(fastapi_routing, "iter_route_contexts", None)
 
 
 class _LogfireState:
@@ -63,47 +65,53 @@ def _patch_opentelemetry_fastapi() -> None:
     """Apply safety patch for opentelemetry-instrumentation-fastapi _IncludedRouter bug."""
     try:
         import opentelemetry.instrumentation.fastapi as otel_fastapi
-        from starlette.routing import Match, Route
 
-        def patched_get_route_details(scope: dict[str, Any]) -> str | None:
-            app = scope.get("app")
-            if app is None:
-                return None
-            route = None
-
-            for starlette_route in getattr(app, "routes", []):
-                try:
-                    match, _ = (
-                        Route.matches(starlette_route, scope)
-                        if isinstance(starlette_route, Route)
-                        else starlette_route.matches(scope)
-                    )
-                except Exception:
-                    logger.debug(
-                        "Route match probe failed for %r; trying the next route",
-                        getattr(starlette_route, "path", starlette_route),
-                        exc_info=True,
-                    )
-                    continue
-                if match == Match.FULL:
-                    try:
-                        route = starlette_route.path
-                    except AttributeError:
-                        route = scope.get("path")
-                    break
-                if match == Match.PARTIAL:
-                    try:
-                        route = starlette_route.path
-                    except AttributeError:
-                        route = scope.get("path")
-            return route
-
-        otel_fastapi._get_route_details = patched_get_route_details
+        otel_fastapi._get_route_details = _patched_get_route_details
         logger.debug("Successfully patched opentelemetry.instrumentation.fastapi")
     except Exception:
         logger.debug(
             "Optional opentelemetry patch not applied; library may not be present"
         )
+
+
+def _patched_get_route_details(scope: dict[str, Any]) -> str | None:
+    app = scope.get("app")
+    if app is None:
+        return None
+    route = None
+    routes = getattr(app, "routes", [])
+    route_contexts = _iter_route_contexts(routes) if _iter_route_contexts else routes
+    for starlette_route in route_contexts:
+        match = _route_match(starlette_route, scope)
+        if match == Match.FULL:
+            return getattr(
+                starlette_route,
+                "path_format",
+                getattr(starlette_route, "path", scope.get("path")),
+            )
+        if match == Match.PARTIAL:
+            route = getattr(
+                starlette_route,
+                "path_format",
+                getattr(starlette_route, "path", scope.get("path")),
+            )
+    return route
+
+
+def _route_match(starlette_route, scope: dict[str, Any]):
+    try:
+        return (
+            Route.matches(starlette_route, scope)
+            if isinstance(starlette_route, Route)
+            else starlette_route.matches(scope)
+        )[0]
+    except Exception:
+        logger.debug(
+            "Route match probe failed for %r; trying the next route",
+            getattr(starlette_route, "path", starlette_route),
+            exc_info=True,
+        )
+        return None
 
 
 def instrument_fastapi(app: FastAPI) -> bool:

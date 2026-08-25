@@ -171,11 +171,10 @@ def _size_systems(attribute: dict[str, object]) -> dict[str, object]:
         value = clean_text(raw_value)
         if not value:
             continue
-        match = re.search(r"\(([A-Za-z0-9]+)\)\s*$", value)
-        canonical = match.group(1).upper() if match else ""
-        if canonical:
+        size_alias = _trailing_size_alias(value)
+        if size_alias is not None:
+            base_name, canonical = size_alias
             aliases[value.casefold()] = canonical
-            base_name = clean_text(re.sub(r"\s*\([A-Za-z0-9]+\)\s*$", "", value))
             if base_name:
                 aliases[base_name.casefold()] = canonical
             target = (
@@ -192,6 +191,17 @@ def _size_systems(attribute: dict[str, object]) -> dict[str, object]:
         "aliases": aliases,
         "systems": {key: sorted(values) for key, values in systems.items()},
     }
+
+
+def _trailing_size_alias(value: str) -> tuple[str, str] | None:
+    stripped = value.rstrip()
+    if not stripped.endswith(")"):
+        return None
+    opening = stripped.rfind("(")
+    token = stripped[opening + 1 : -1] if opening >= 0 else ""
+    if not token or not token.isalnum():
+        return None
+    return clean_text(stripped[:opening]), token.upper()
 
 
 @lru_cache(maxsize=16)

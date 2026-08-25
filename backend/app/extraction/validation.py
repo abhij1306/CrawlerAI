@@ -31,7 +31,6 @@ FindingScope = Literal[
 def validate(
     evidence: tuple[Evidence, ...],
     entities: EntitySet,
-    requested_fields: tuple[str, ...] = (),
 ) -> tuple[Finding, ...]:
     relation_conflicts = _validate_offer_relation_conflicts(evidence)
     conflicted_group_ids = {

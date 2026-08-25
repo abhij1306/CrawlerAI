@@ -228,7 +228,7 @@ def _resolve_detail(
     spec = _surface_spec(request)
     target = select_commerce_target(graph_state, evidence, request, spec)
     graph = scoped_graph(graph_state, target)
-    findings = validate_ecommerce_detail(evidence, graph, request.requested_fields)
+    findings = validate_ecommerce_detail(evidence, graph)
     preferences: dict[str, tuple[str, ...]] = {}
     fingerprint = ""
     if request.runtime_snapshot:

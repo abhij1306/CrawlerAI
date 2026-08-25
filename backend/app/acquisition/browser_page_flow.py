@@ -207,8 +207,6 @@ async def navigate_browser_page(
         page,
         url=url,
         response=response,
-        browser_engine=browser_engine,
-        timeout_seconds=timeout_seconds,
         phase_timings_ms=phase_timings_ms,
         challenge_wait_max_seconds=float(
             crawler_runtime_settings.challenge_wait_max_seconds or 0
@@ -234,23 +232,25 @@ async def navigate_browser_page(
 
 async def serialize_browser_page_content(
     page: Any,
+    state,
     *,
-    surface: str | None,
-    traversal_mode: str | None,
-    listing_recovery_mode: str | None,
     traversal_active: bool,
     timeout_seconds: float,
-    max_pages: int,
-    max_scrolls: int,
-    max_records: int | None = None,
     prefetched_html: str | None = None,
     prefetched_analysis: HtmlAnalysis | None = None,
-    phase_timings_ms: dict[str, int],
     execute_listing_traversal,
     recover_listing_page_content,
     elapsed_ms,
     on_event=None,
 ):
+    request = state.request
+    surface = state.normalized_surface
+    traversal_mode = request.traversal_mode
+    listing_recovery_mode = request.listing_recovery_mode
+    max_pages = request.max_pages
+    max_scrolls = request.max_scrolls
+    max_records = request.max_records
+    phase_timings_ms = state.phase_timings_ms
     should_flatten_shadow = "listing" not in str(surface or "").strip().lower()
     traversal_result = None
     traversal_html = ""

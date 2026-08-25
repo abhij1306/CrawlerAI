@@ -150,7 +150,6 @@ async def redis_fail_open(
     operation: Callable[[Redis], Awaitable[T]],
     *,
     default: T,
-    operation_name: str,
 ) -> T:
     if not redis_is_enabled():
         return default
@@ -170,8 +169,6 @@ async def redis_fail_open(
 
 def schedule_fail_open(
     operation: Callable[[Redis], Awaitable[object]],
-    *,
-    operation_name: str,
 ) -> None:
     if not redis_is_enabled():
         return
@@ -184,7 +181,6 @@ def schedule_fail_open(
         await redis_fail_open(
             operation,
             default=None,
-            operation_name=operation_name,
         )
 
     task = loop.create_task(_runner())

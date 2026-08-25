@@ -1,18 +1,15 @@
 param(
-    [ValidateSet("Affected", "Local", "Limits")]
+    [ValidateSet("Local", "Limits")]
     [string] $Mode = "Local",
     [ValidateSet("All", "Backend", "Frontend")]
     [string] $Scope = "All",
-    [string] $BaseRef,
-    [switch] $CheckOnly,
-    [switch] $ListOnly
+    [switch] $CheckOnly
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot "validation.json") -Raw |
     ConvertFrom-Json -AsHashtable
-if (-not $BaseRef) { $BaseRef = $config.baseRef }
 
 function Invoke-Step {
     param([string] $Name, [scriptblock] $Command)
@@ -41,116 +38,6 @@ function Invoke-FrontendVp {
     if (-not (Get-Command vp -ErrorAction SilentlyContinue)) { throw "VitePlus ('vp') missing from PATH." }
     Push-Location (Join-Path $repoRoot "frontend")
     try { & vp @Arguments } finally { Pop-Location }
-}
-
-function Get-ChangedPaths {
-    $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    function Add-Paths([string[]] $Arguments) {
-        $output = & git -C $repoRoot @Arguments 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            foreach ($path in $output) {
-                if ($path) { [void] $paths.Add($path.Replace("\", "/")) }
-            }
-        }
-    }
-    & git -C $repoRoot rev-parse --verify --quiet $BaseRef *> $null
-    if ($LASTEXITCODE -ne 0) { throw "Base ref '$BaseRef' cannot be resolved." }
-    Add-Paths @("diff", "--name-only", "--diff-filter=ACMR", "$BaseRef...HEAD")
-    Add-Paths @("diff", "--name-only", "--diff-filter=ACMR")
-    Add-Paths @("diff", "--cached", "--name-only", "--diff-filter=ACMR")
-    Add-Paths @("ls-files", "--others", "--exclude-standard")
-    return @($paths | Sort-Object)
-}
-
-function Resolve-TestPatterns([string] $Root, [string[]] $Patterns, [string[]] $Extensions) {
-    $files = Get-ChildItem -LiteralPath $Root -Recurse -File |
-        Where-Object { $_.Extension -in $Extensions } |
-        ForEach-Object { [IO.Path]::GetRelativePath($Root, $_.FullName).Replace("\", "/") }
-    $selected = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($pattern in $Patterns) {
-        foreach ($file in $files) {
-            if ($file -like $pattern) { [void] $selected.Add($file) }
-        }
-    }
-    return @($selected | Sort-Object)
-}
-
-function Invoke-AffectedTests {
-    $changedPaths = @(Get-ChangedPaths)
-    if ($changedPaths.Count -eq 0) {
-        Write-Host "No changed paths. No affected tests selected." -ForegroundColor Green
-        return
-    }
-
-    Write-Host "Changed paths:" -ForegroundColor Cyan
-    $changedPaths | ForEach-Object { Write-Host " - $_" }
-    $backendPatterns = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $frontendPatterns = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $e2ePatterns = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $backendChanged = $false
-    $frontendChanged = $false
-    $globalTriggered = $false
-
-    foreach ($path in $changedPaths) {
-        if ($path -like "backend/app/*.py" -or $path -like "backend/app/**/*.py") { $backendChanged = $true }
-        if ($path -like "frontend/app/**" -or $path -like "frontend/components/**" -or
-            $path -like "frontend/lib/**" -or $path -like "frontend/src/**") { $frontendChanged = $true }
-        if ($path -like "backend/tests/test_*.py" -or $path -like "backend/tests/**/test_*.py") {
-            [void] $backendPatterns.Add($path.Substring("backend/".Length))
-        }
-        if ($path -like "frontend/*.test.*" -or $path -like "frontend/**/*.test.*" -or
-            $path -like "frontend/*.spec.*" -or $path -like "frontend/**/*.spec.*") {
-            [void] $frontendPatterns.Add($path.Substring("frontend/".Length))
-        }
-        foreach ($trigger in $config.globalTriggers) {
-            if ($path -like $trigger) { $globalTriggered = $true }
-        }
-    }
-
-    if ($globalTriggered) {
-        $config.backendGlobalTests | ForEach-Object { [void] $backendPatterns.Add($_) }
-        $config.frontendGlobalTests | ForEach-Object { [void] $frontendPatterns.Add($_) }
-    }
-    else {
-        foreach ($rule in $config.rules) {
-            $ruleMatched = $false
-            foreach ($sourcePattern in $rule.sources) {
-                if ($changedPaths | Where-Object { $_ -like $sourcePattern }) { $ruleMatched = $true; break }
-            }
-            if (-not $ruleMatched) { continue }
-            if ($rule.backendTests) { $rule.backendTests | ForEach-Object { [void] $backendPatterns.Add($_) } }
-            if ($rule.frontendTests) { $rule.frontendTests | ForEach-Object { [void] $frontendPatterns.Add($_) } }
-            if ($rule.frontendE2E) { $rule.frontendE2E | ForEach-Object { [void] $e2ePatterns.Add($_) } }
-        }
-    }
-
-    if ($backendChanged -and $backendPatterns.Count -eq 0) {
-        $config.backendFallbackTests | ForEach-Object { [void] $backendPatterns.Add($_) }
-    }
-    if ($frontendChanged -and $frontendPatterns.Count -eq 0) {
-        $config.frontendFallbackTests | ForEach-Object { [void] $frontendPatterns.Add($_) }
-    }
-
-    $backendTests = @(Resolve-TestPatterns (Join-Path $repoRoot "backend") @($backendPatterns) @(".py"))
-    $frontendTests = @(Resolve-TestPatterns (Join-Path $repoRoot "frontend") @($frontendPatterns) @(".ts", ".tsx", ".js", ".jsx"))
-    $frontendE2E = @(Resolve-TestPatterns (Join-Path $repoRoot "frontend") @($e2ePatterns) @(".ts", ".tsx", ".js", ".jsx"))
-
-    Write-Host "`nSelected affected tests:" -ForegroundColor Cyan
-    $backendTests | ForEach-Object { Write-Host " - backend/$_" }
-    $frontendTests | ForEach-Object { Write-Host " - frontend/$_" }
-    $frontendE2E | ForEach-Object { Write-Host " - frontend/$_ (E2E)" }
-    if ($backendTests.Count + $frontendTests.Count + $frontendE2E.Count -eq 0) { Write-Host " - none (non-code change)" }
-    if ($ListOnly) { return }
-
-    if ($backendTests.Count -gt 0) {
-        Invoke-Step "Affected backend tests" { Invoke-BackendPython -m pytest @backendTests -q }
-    }
-    if ($frontendTests.Count -gt 0) {
-        Invoke-Step "Affected frontend tests" { Invoke-FrontendVp test @frontendTests }
-    }
-    if ($frontendE2E.Count -gt 0) {
-        Invoke-Step "Mapped frontend E2E" { Invoke-FrontendVp exec playwright test --config playwright.config.ts @frontendE2E }
-    }
 }
 
 function Test-CodeLimits([string] $SelectedScope) {
@@ -223,12 +110,8 @@ function Invoke-StaticChecks([string] $SelectedScope) {
 }
 
 switch ($Mode) {
-    "Affected" { Invoke-AffectedTests }
     "Limits" { Test-CodeLimits $Scope }
-    "Local" {
-        Invoke-StaticChecks $Scope
-        Invoke-AffectedTests
-    }
+    "Local" { Invoke-StaticChecks $Scope }
 }
 
 Write-Host "`n$Mode validation passed." -ForegroundColor Green

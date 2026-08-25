@@ -16,7 +16,6 @@ from app.acquisition.browser_capture import (
 )
 from app.acquisition.browser_detail import expand_detail_content_if_needed
 from app.acquisition.browser_diagnostics import (
-    CHROMIUM_BROWSER_ENGINE,
     REAL_CHROME_BROWSER_ENGINE,
     browser_launch_mode,
     browser_profile,
@@ -120,7 +119,7 @@ def _callable_accepts_keyword(candidate: Any, keyword: str) -> bool:
 
 async def _resolve_runtime_provider(state: BrowserFetchState):
     request = state.request
-    provider = request.runtime_provider
+    provider = state.runtime_provider
     if request.proxy is not None and _callable_accepts_keyword(provider, "proxy"):
         return await provider(
             proxy=request.proxy,
@@ -133,8 +132,8 @@ async def _resolve_page_context(
     state: BrowserFetchState,
 ) -> tuple[SharedBrowserRuntime | None, Any]:
     request = state.request
-    if request.proxy and request.proxied_page_factory is not None:
-        context = request.proxied_page_factory(
+    if request.proxy and state.proxied_page_factory is not None:
+        context = state.proxied_page_factory(
             proxy=request.proxy,
             run_id=request.run_id,
             domain=state.normalized_domain,
@@ -326,7 +325,6 @@ async def _run_settlement(
     readiness_policy: dict[str, object],
     readiness_override: dict[str, object] | None,
 ):
-    request = state.request
     return await run_browser_stage(
         stage="settle",
         page=page,
@@ -334,13 +332,10 @@ async def _run_settlement(
         phase_timings_ms=state.phase_timings_ms,
         operation=lambda: settle_browser_page(
             page,
-            url=request.url,
-            surface=state.normalized_surface,
-            requested_fields=request.requested_fields,
+            state,
             timeout_seconds=remaining(),
             readiness_override=readiness_override,
             readiness_policy=readiness_policy,
-            phase_timings_ms=state.phase_timings_ms,
             crawler_runtime_settings=crawler_runtime_settings,
             probe_browser_readiness=probe_browser_readiness,
             wait_for_listing_readiness=wait_for_listing_readiness,
@@ -371,17 +366,11 @@ async def _run_serialization(
         phase_timings_ms=state.phase_timings_ms,
         operation=lambda: serialize_browser_page_content(
             page,
-            surface=state.normalized_surface,
-            traversal_mode=request.traversal_mode,
-            listing_recovery_mode=request.listing_recovery_mode,
+            state,
             traversal_active=traversal_active,
             timeout_seconds=remaining(),
-            max_pages=request.max_pages,
-            max_scrolls=request.max_scrolls,
-            max_records=request.max_records,
             prefetched_html=prefetched_html,
             prefetched_analysis=prefetched_analysis,
-            phase_timings_ms=state.phase_timings_ms,
             execute_listing_traversal=execute_listing_traversal,
             recover_listing_page_content=recover_listing_page_content,
             elapsed_ms=_elapsed_ms,
@@ -604,53 +593,16 @@ async def _execute_browser_fetch(state: BrowserFetchState) -> PageFetchResult:
 
 
 async def browser_fetch(
-    url: str,
-    timeout_seconds: float,
+    request: BrowserFetchRequest,
     *,
-    run_id: int | None = None,
-    proxy: str | None = None,
-    browser_engine: str = CHROMIUM_BROWSER_ENGINE,
-    browser_reason: str | None = None,
-    escalation_lane: str | None = None,
-    host_policy_snapshot: dict[str, object] | None = None,
-    proxy_profile: dict[str, object] | None = None,
-    locality_profile: dict[str, object] | None = None,
-    surface: str | None = None,
-    traversal_mode: str | None = None,
-    requested_fields: list[str] | None = None,
-    listing_recovery_mode: str | None = None,
-    capture_screenshot: bool = False,
-    max_pages: int = 1,
-    max_scrolls: int = 1,
-    max_records: int | None = None,
-    on_event=None,
     runtime_provider=get_browser_runtime,
     proxied_page_factory=None,
 ) -> PageFetchResult:
-    request = BrowserFetchRequest(
-        url=url,
-        timeout_seconds=timeout_seconds,
-        run_id=run_id,
-        proxy=proxy,
-        browser_engine=browser_engine,
-        browser_reason=browser_reason,
-        escalation_lane=escalation_lane,
-        host_policy_snapshot=host_policy_snapshot,
-        proxy_profile=proxy_profile,
-        locality_profile=locality_profile,
-        surface=surface,
-        traversal_mode=traversal_mode,
-        requested_fields=requested_fields,
-        listing_recovery_mode=listing_recovery_mode,
-        capture_screenshot=capture_screenshot,
-        max_pages=max_pages,
-        max_scrolls=max_scrolls,
-        max_records=max_records,
-        on_event=on_event,
+    state = new_browser_fetch_state(
+        request,
         runtime_provider=runtime_provider,
         proxied_page_factory=proxied_page_factory,
     )
-    state = new_browser_fetch_state(request)
     try:
         return await _execute_browser_fetch(state)
     except Exception as exc:

@@ -51,8 +51,8 @@ async def test_record_failure_normalizes_none_threshold_for_redis(
         async def eval(self, *args) -> None:
             seen_args.extend(args)
 
-    async def _fake_redis_fail_open(operation, *, default, operation_name):
-        del default, operation_name
+    async def _fake_redis_fail_open(operation, *, default):
+        del default
         return await operation(_FakeRedis())
 
     monkeypatch.setattr(

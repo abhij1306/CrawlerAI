@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from tests.component.crawl_service_test_support import (
     AsyncSession,
     CrawlerConfigurationError,
@@ -11,10 +13,50 @@ from tests.component.crawl_service_test_support import (
     normalize_domain_run_profile,
     note_acquisition_contract_failure,
     pytest,
-    record_acquisition_contract_outcome,
+    record_acquisition_contract_outcome as _record_acquisition_contract_outcome,
     resolve_url_acquisition_recipe,
     save_domain_run_profile,
 )
+
+
+async def record_acquisition_contract_outcome(
+    session,
+    *,
+    domain,
+    surface,
+    source_run_id,
+    method,
+    browser_engine,
+    browser_diagnostics,
+    requested_fields,
+    records,
+    persisted_count,
+    verdict,
+    blocked,
+    page_url=None,
+    network_payloads=None,
+):
+    diagnostics = {**browser_diagnostics, "browser_engine": browser_engine}
+    acquisition_result = SimpleNamespace(
+        method=method,
+        final_url=page_url,
+        browser_diagnostics=diagnostics,
+        network_payloads=network_payloads or [],
+        request=SimpleNamespace(requested_fields=requested_fields),
+    )
+    url_result = SimpleNamespace(
+        records=records,
+        verdict=verdict,
+        url_metrics={"record_count": persisted_count, "blocked": blocked},
+    )
+    await _record_acquisition_contract_outcome(
+        session,
+        domain=domain,
+        surface=surface,
+        source_run_id=source_run_id,
+        acquisition_result=acquisition_result,
+        url_result=url_result,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -428,6 +470,37 @@ async def test_record_acquisition_contract_outcome_counts_empty_detail_failure(
         "failure_count": 1,
         "stale": False,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_record_acquisition_contract_outcome_preserves_explicit_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved = False
+
+    async def mark_saved(*_args, **_kwargs) -> None:
+        nonlocal saved
+        saved = True
+
+    monkeypatch.setattr(
+        "app.crawl.profile.acquisition_contract.save_learned_acquisition_contract",
+        mark_saved,
+    )
+    await _record_acquisition_contract_outcome(
+        SimpleNamespace(),
+        domain="example.com",
+        surface="ecommerce_detail",
+        source_run_id=13,
+        acquisition_result=SimpleNamespace(),
+        url_result=SimpleNamespace(
+            records=[{"title": "not persisted"}],
+            verdict="success",
+            url_metrics={"record_count": 0},
+        ),
+    )
+
+    assert saved is False
 
 
 @pytest.mark.component

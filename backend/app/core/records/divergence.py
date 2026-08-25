@@ -131,47 +131,73 @@ def compare_records_to_projection(
     )
     expected_fields: dict[str, set[str]] = {}
     for entry in projection.entries:
-        match = pattern.match(entry.path)
-        if match is None:
+        identity = _projection_entry_identity(entry.path, projection, pattern)
+        if identity is None:
             continue
-        if isinstance(projection, JobDetailProjection):
-            entity_id, field = projection.record_entity_id, match.group(1)
-        else:
-            entity_id, field = match.groups()
+        entity_id, field = identity
         expected_fields.setdefault(entity_id, set()).add(field)
         row = actual_by_id.get(entity_id)
-        actual = row.get(field) if row is not None else None
-        if row is not None and (field not in row or not _values_equal(actual, entry)):
-            findings.append(
-                _projection_divergence_finding(
-                    path=entry.path,
-                    reason=(
-                        "authorized_field_missing"
-                        if field not in row
-                        else "semantic_value_mismatch"
-                    ),
-                    expected=entry.value,
-                    actual=actual,
-                    blocking=blocking,
-                    selected_fact_id=entry.selected_fact_id,
-                    derived_fact_id=entry.derived_fact_id,
-                )
-            )
-    for entity_id, row in actual_by_id.items():
-        for field, value in row.items():
-            if field.startswith("_") or value in _EMPTY:
-                continue
-            if field not in expected_fields.get(entity_id, set()):
-                findings.append(
-                    _projection_divergence_finding(
-                        path=f"record[{entity_id}].{field}",
-                        reason="unauthorized_public_field",
-                        expected=None,
-                        actual=value,
-                        blocking=blocking,
-                    )
-                )
+        finding = _projected_field_finding(entry, row, field=field, blocking=blocking)
+        if finding is not None:
+            findings.append(finding)
+    findings.extend(
+        _unexpected_record_field_findings(
+            actual_by_id, expected_fields, blocking=blocking
+        )
+    )
     return tuple(findings)
+
+
+def _projection_entry_identity(path, projection, pattern) -> tuple[str, str] | None:
+    match = pattern.match(path)
+    if match is None:
+        return None
+    if isinstance(projection, JobDetailProjection):
+        return projection.record_entity_id, match.group(1)
+    return match.groups()
+
+
+def _projected_field_finding(
+    entry, row, *, field: str, blocking: bool
+) -> Finding | None:
+    if row is None:
+        return None
+    actual = row.get(field)
+    if field in row and _values_equal(actual, entry):
+        return None
+    return _projection_divergence_finding(
+        path=entry.path,
+        reason="authorized_field_missing"
+        if field not in row
+        else "semantic_value_mismatch",
+        expected=entry.value,
+        actual=actual,
+        blocking=blocking,
+        selected_fact_id=entry.selected_fact_id,
+        derived_fact_id=entry.derived_fact_id,
+    )
+
+
+def _unexpected_record_field_findings(
+    actual_by_id: Mapping[str, Mapping[str, Any]],
+    expected_fields: Mapping[str, set[str]],
+    *,
+    blocking: bool,
+) -> tuple[Finding, ...]:
+    return tuple(
+        _projection_divergence_finding(
+            path=f"record[{entity_id}].{field}",
+            reason="unauthorized_public_field",
+            expected=None,
+            actual=value,
+            blocking=blocking,
+        )
+        for entity_id, row in actual_by_id.items()
+        for field, value in row.items()
+        if not field.startswith("_")
+        and value not in _EMPTY
+        and field not in expected_fields.get(entity_id, set())
+    )
 
 
 def _record_projection_index(

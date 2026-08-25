@@ -72,24 +72,32 @@ function normalizeKnowledgeSourcePattern(source: string) {
 
 function knowledgeValueLabel(value: unknown) {
   if (value == null) return '';
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) {
-      try {
-        const parsed = new URL(trimmed);
-        const filename = parsed.pathname.split('/').filter(Boolean).at(-1);
-        return filename ? `${parsed.hostname} / ${filename}` : parsed.hostname;
-      } catch {
-        return trimmed.slice(0, 80);
-      }
-    }
-    if (/^[a-z]+(?:_[a-z]+)+$/.test(trimmed)) return titleCaseToken(trimmed);
-    return trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
-  }
+  if (typeof value === 'string') return stringKnowledgeValueLabel(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   const encoded = JSON.stringify(value);
   return encoded.length > 80 ? `${encoded.slice(0, 77)}...` : encoded;
+}
+
+function stringKnowledgeValueLabel(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (
+    !trimmed.toLowerCase().startsWith('http://') &&
+    !trimmed.toLowerCase().startsWith('https://')
+  ) {
+    return /^[a-z]+(?:_[a-z]+)+$/.test(trimmed)
+      ? titleCaseToken(trimmed)
+      : trimmed.length > 80
+        ? `${trimmed.slice(0, 77)}...`
+        : trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const filename = parsed.pathname.split('/').filter(Boolean).at(-1);
+    return filename ? `${parsed.hostname} / ${filename}` : parsed.hostname;
+  } catch {
+    return trimmed.slice(0, 80);
+  }
 }
 
 function knowledgeSourceOption(source: string, value: unknown): KnowledgeSourceOption {

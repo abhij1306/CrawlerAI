@@ -10,14 +10,14 @@ from app.models.crawl_settings import CrawlRunSettings
 
 from app.crawl import batch_runtime as batch_runtime_module
 
-from app.crawl.pipeline import extraction_loop
+from app.crawl.pipeline import extraction_loop, url_worker
 
 from app.crawl.pipeline import record_extraction_stage
 
-from app.crawl.batch_runtime import (
-    _parallel_url_concurrency,
-    _parallel_worker_record_limit,
-    process_run,
+from app.crawl.batch_runtime import process_run
+from app.crawl.pipeline.url_worker import (
+    parallel_url_concurrency,
+    parallel_worker_record_limit,
 )
 
 from app.crawl.pipeline.run_progress import assemble_run_summary_payload
@@ -108,8 +108,9 @@ __all__ = [
     "URLProcessingResult",
     "_detail_html",
     "_listing_shell_html",
-    "_parallel_url_concurrency",
-    "_parallel_worker_record_limit",
+    "parallel_url_concurrency",
+    "parallel_worker_record_limit",
+    "url_worker",
     "assemble_run_summary_payload",
     "async_sessionmaker",
     "asyncio",

@@ -45,6 +45,73 @@ type CrawlTargetCardProps = {
   onAdditionalFieldRemove: (value: string) => void;
 };
 
+type TargetInputProps = Pick<
+  CrawlTargetCardProps,
+  | 'crawlTab'
+  | 'pdpMode'
+  | 'activeMode'
+  | 'targetUrl'
+  | 'bulkUrls'
+  | 'csvFile'
+  | 'sitemapDomain'
+  | 'sitemapFilterKeyword'
+  | 'sitemapMaxUrls'
+  | 'onTargetUrlChange'
+  | 'onBulkUrlsChange'
+  | 'onCsvFileChange'
+  | 'onSitemapDomainChange'
+  | 'onSitemapFilterKeywordChange'
+  | 'onSitemapMaxUrlsChange'
+> & { bulkMode: boolean };
+
+function TargetInput(props: Readonly<TargetInputProps>) {
+  if (props.bulkMode) {
+    return (
+      <label className="grid gap-2">
+        <span className="type-control font-medium">URLs (one per line)</span>
+        <div className="relative">
+          <Textarea
+            value={props.bulkUrls}
+            onChange={(event) => props.onBulkUrlsChange(event.target.value)}
+            placeholder={'https://example.com/page-1\nhttps://example.com/page-2'}
+            className="min-h-[420px] font-mono"
+            aria-label="Bulk URLs input"
+          />
+          {props.bulkUrls.trim() ? (
+            <div className="type-caption absolute right-2 bottom-2 rounded-sm bg-background/80 px-2 py-1 text-foreground backdrop-blur-sm">
+              {parseLines(props.bulkUrls).length} URLs
+            </div>
+          ) : null}
+        </div>
+      </label>
+    );
+  }
+  if (props.crawlTab === 'pdp' && props.pdpMode === 'csv') {
+    return <CsvFileField file={props.csvFile} onChange={props.onCsvFileChange} />;
+  }
+  if (props.crawlTab === 'category' && props.activeMode === 'sitemap') {
+    return (
+      <SitemapConfigFields
+        domain={props.sitemapDomain}
+        filterKeyword={props.sitemapFilterKeyword}
+        maxUrls={props.sitemapMaxUrls}
+        onDomainChange={props.onSitemapDomainChange}
+        onFilterKeywordChange={props.onSitemapFilterKeywordChange}
+        onMaxUrlsChange={props.onSitemapMaxUrlsChange}
+      />
+    );
+  }
+  return (
+    <TargetUrlField
+      value={props.targetUrl}
+      onChange={props.onTargetUrlChange}
+      placeholder={
+        props.crawlTab === 'category' ? 'https://example.com/list' : 'https://example.com/page'
+      }
+    />
+  );
+}
+
 export function CrawlTargetCard({
   crawlTab,
   categoryMode,
@@ -122,44 +189,24 @@ export function CrawlTargetCard({
           <CrawlActionButtons canSubmit={canSubmit} isSubmitting={isSubmitting} />
         </div>
 
-        {bulkMode ? (
-          <label className="grid gap-2">
-            <span className="type-control font-medium">URLs (one per line)</span>
-            <div className="relative">
-              <Textarea
-                value={bulkUrls}
-                onChange={(event) => onBulkUrlsChange(event.target.value)}
-                placeholder={'https://example.com/page-1\nhttps://example.com/page-2'}
-                className="min-h-[420px] font-mono"
-                aria-label="Bulk URLs input"
-              />
-              {bulkUrls.trim() ? (
-                <div className="type-caption absolute right-2 bottom-2 rounded-sm bg-background/80 px-2 py-1 text-foreground backdrop-blur-sm">
-                  {parseLines(bulkUrls).length} URLs
-                </div>
-              ) : null}
-            </div>
-          </label>
-        ) : crawlTab === 'pdp' && pdpMode === 'csv' ? (
-          <CsvFileField file={csvFile} onChange={onCsvFileChange} />
-        ) : crawlTab === 'category' && activeMode === 'sitemap' ? (
-          <SitemapConfigFields
-            domain={sitemapDomain}
-            filterKeyword={sitemapFilterKeyword}
-            maxUrls={sitemapMaxUrls}
-            onDomainChange={onSitemapDomainChange}
-            onFilterKeywordChange={onSitemapFilterKeywordChange}
-            onMaxUrlsChange={onSitemapMaxUrlsChange}
-          />
-        ) : (
-          <TargetUrlField
-            value={targetUrl}
-            onChange={onTargetUrlChange}
-            placeholder={
-              crawlTab === 'category' ? 'https://example.com/list' : 'https://example.com/page'
-            }
-          />
-        )}
+        <TargetInput
+          crawlTab={crawlTab}
+          pdpMode={pdpMode}
+          activeMode={activeMode}
+          targetUrl={targetUrl}
+          bulkUrls={bulkUrls}
+          csvFile={csvFile}
+          sitemapDomain={sitemapDomain}
+          sitemapFilterKeyword={sitemapFilterKeyword}
+          sitemapMaxUrls={sitemapMaxUrls}
+          onTargetUrlChange={onTargetUrlChange}
+          onBulkUrlsChange={onBulkUrlsChange}
+          onCsvFileChange={onCsvFileChange}
+          onSitemapDomainChange={onSitemapDomainChange}
+          onSitemapFilterKeywordChange={onSitemapFilterKeywordChange}
+          onSitemapMaxUrlsChange={onSitemapMaxUrlsChange}
+          bulkMode={bulkMode}
+        />
 
         {savedProfileMessage ? (
           <div className="type-body rounded-md border border-subtle-panel-border bg-subtle-panel px-3 py-2 leading-relaxed text-secondary">

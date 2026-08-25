@@ -324,8 +324,10 @@ async def test_fetch_page_waits_for_host_slot_before_http_attempt(
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/collections/widgets",
-        surface="ecommerce_listing",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/collections/widgets",
+            surface="ecommerce_listing",
+        )
     )
 
     assert result.method == "curl_cffi"

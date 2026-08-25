@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import logging
 
+from app.core.config import settings
+from app.core.config.runtime_settings import (
+    BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES,
+    crawler_runtime_settings,
+)
 from app.core.domain_utils import normalize_domain
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
@@ -15,6 +20,64 @@ from app.crawl.pipeline.url_failure_recovery import (
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 logger = logging.getLogger(__name__)
+_DEFAULT_URL_CONCURRENCY = 1
+
+
+def _settings_fetch_mode(settings_view) -> str:
+    fetch_profile = None
+    try:
+        fetch_profile_attr = getattr(settings_view, "fetch_profile", None)
+        fetch_profile = (
+            fetch_profile_attr() if callable(fetch_profile_attr) else fetch_profile_attr
+        )
+    except (AttributeError, TypeError, ValueError):
+        fetch_profile = None
+    if fetch_profile is None:
+        getter = getattr(settings_view, "get", None)
+        if callable(getter):
+            fetch_profile = getter("fetch_profile")
+    if not isinstance(fetch_profile, dict):
+        return ""
+    return str(fetch_profile.get("fetch_mode") or "").strip().lower()
+
+
+def _browser_capacity_limit(settings_view) -> int | None:
+    if _settings_fetch_mode(settings_view) in BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES:
+        return None
+    try:
+        return max(1, int(crawler_runtime_settings.browser_runtime_context_capacity))
+    except (AttributeError, TypeError, ValueError):
+        return _DEFAULT_URL_CONCURRENCY
+
+
+def parallel_url_concurrency(total_urls: int, settings_view) -> int:
+    if not bool(settings.celery_dispatch_enabled):
+        return _DEFAULT_URL_CONCURRENCY
+    try:
+        system_limit = int(
+            getattr(settings, "system_max_concurrent_urls", _DEFAULT_URL_CONCURRENCY)
+        )
+    except (AttributeError, TypeError, ValueError):
+        system_limit = _DEFAULT_URL_CONCURRENCY
+    try:
+        batch_limit_value = getattr(settings_view, "url_batch_concurrency", None)
+        raw_batch_limit = (
+            batch_limit_value() if callable(batch_limit_value) else batch_limit_value
+        )
+        batch_limit = int(raw_batch_limit or _DEFAULT_URL_CONCURRENCY)
+    except (AttributeError, TypeError, ValueError):
+        batch_limit = _DEFAULT_URL_CONCURRENCY
+    limits = [total_urls, system_limit, batch_limit]
+    browser_capacity_limit = _browser_capacity_limit(settings_view)
+    if browser_capacity_limit is not None:
+        limits.append(browser_capacity_limit)
+    return max(1, min(limits))
+
+
+def parallel_worker_record_limit(max_records: int, concurrency: int) -> int:
+    total_budget = max(1, int(max_records or 1))
+    worker_count = max(1, int(concurrency or 1))
+    return max(1, (total_budget + worker_count - 1) // worker_count)
 
 
 def url_metric(
@@ -64,6 +127,7 @@ async def process_url_in_owned_session(
             ),
             update_run_state=False,
             persist_logs=True,
+            url_timeout_seconds=url_timeout_seconds,
         )
         if not log_start:
             await url_session.commit()
@@ -84,7 +148,6 @@ async def process_url_in_owned_session(
                         run=run,
                         url=url,
                         config=url_config,
-                        url_timeout_seconds=url_timeout_seconds,
                     ),
                     url_timeout_seconds,
                 )

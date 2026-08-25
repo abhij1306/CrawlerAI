@@ -21,6 +21,7 @@ from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.surfaces import parse_surface
 from app.core.records.html_helpers import html_to_text
 from app.acquisition.fetch.fetch_context import fetch_page
+from app.acquisition.fetch.types import FetchPageCall
 from app.core.records.field_policy import normalize_field_key
 from app.core.shared.field_coerce import coerce_int as _coerce_int
 from app.core.url_safety import ensure_public_crawl_targets
@@ -41,7 +42,7 @@ SANDBOXED_HTML_PREVIEW_HEADERS: dict[str, str] = {
 
 async def fetch_selector_document(url: str) -> dict[str, object]:
     await ensure_public_crawl_targets([url])
-    result = await fetch_page(str(url), prefer_browser=False)
+    result = await fetch_page(FetchPageCall(url=str(url), prefer_browser=False))
     final_url = result.final_url
     html = result.html
     promoted = False
@@ -52,7 +53,9 @@ async def fetch_selector_document(url: str) -> dict[str, object]:
         candidate_url = _primary_iframe_candidate(final_url, html)
         if not candidate_url or candidate_url in visited:
             break
-        iframe_result = await fetch_page(candidate_url, prefer_browser=False)
+        iframe_result = await fetch_page(
+            FetchPageCall(url=candidate_url, prefer_browser=False)
+        )
         iframe_text = html_to_text(iframe_result.html)
         page_text = html_to_text(html)
         if len(iframe_text) <= len(page_text):

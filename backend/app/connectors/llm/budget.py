@@ -38,5 +38,4 @@ async def reserve_run_llm_call(
     return await redis_fail_open(
         _reserve,
         default=True,
-        operation_name="llm_run_call_budget",
     )

@@ -43,7 +43,6 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_capture.py": 704,
     "acquisition/browser_recovery.py": 728,
     "core/config/field_mappings.py": 704,
-    "crawl/batch_runtime.py": 709,
     # Services/tooling simplification: LLM payload application moved to the
     # diagnostics owner and product execution was flattened; the cohesive job
     # lifecycle owner shrank from 905 to 708 nonblank lines.

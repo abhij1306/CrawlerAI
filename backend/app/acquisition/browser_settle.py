@@ -311,14 +311,11 @@ async def _run_detail_expansion(context: _SettleContext) -> dict[str, object]:
 
 async def settle_browser_page(
     page: Any,
+    state,
     *,
-    url: str,
-    surface: str,
-    requested_fields: list[str] | None,
     timeout_seconds: float,
     readiness_override: dict[str, object] | None,
     readiness_policy: dict[str, object],
-    phase_timings_ms: dict[str, int],
     crawler_runtime_settings,
     get_page_html_impl=get_page_html,
     probe_browser_readiness,
@@ -327,23 +324,24 @@ async def settle_browser_page(
     append_readiness_probe,
     elapsed_ms,
 ):
+    request = state.request
     cache = _ReadinessSnapshotCache(
         page=page,
-        url=url,
-        surface=surface,
+        url=request.url,
+        surface=state.normalized_surface,
         listing_override=readiness_override,
         get_page_html_impl=get_page_html_impl,
         probe_browser_readiness=probe_browser_readiness,
     )
     context = _SettleContext(
         page=page,
-        url=url,
-        surface=surface,
-        requested_fields=requested_fields,
+        url=request.url,
+        surface=state.normalized_surface,
+        requested_fields=request.requested_fields,
         timeout_seconds=timeout_seconds,
         readiness_override=readiness_override,
         readiness_policy=readiness_policy,
-        phase_timings_ms=phase_timings_ms,
+        phase_timings_ms=state.phase_timings_ms,
         settings=crawler_runtime_settings,
         wait_for_listing_readiness=wait_for_listing_readiness,
         expand_detail_content_if_needed=expand_detail_content_if_needed,

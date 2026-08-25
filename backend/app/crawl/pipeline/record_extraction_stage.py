@@ -15,12 +15,10 @@ from app.crawl.domain_memory_service import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.extraction_memory.contract_runtime import select_active_recipe
-from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.extraction import extract, parse_surface
 from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import request_from_acquisition_result
 from app.crawl.pipeline.runtime_helpers import (
-    effective_blocked as _effective_blocked,
     log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
 )
@@ -205,7 +203,6 @@ async def _maybe_learn_once(
             suspended = await note_recipe_drift_after_replay(
                 context.session,
                 request=request,
-                run_id=context.run.id,
             )
             if suspended:
                 await context.session.commit()
@@ -310,7 +307,7 @@ async def _expand_variant_endpoint_payloads(
         acquisition_result.acquisition_diagnostics = diagnostics
         logger.warning("SFCC variant endpoint expansion failed", exc_info=True)
         try:
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "warning",
                 "SFCC variant endpoint expansion failed; continuing deterministic extraction",
@@ -362,7 +359,7 @@ async def _extract_records_from_preserved_browser_html(
     finally:
         acquisition_result.html = original_html
     if not fallback_result.records:
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "warning",
             "Traversal yielded no extractable listing records; fallback extraction on full rendered HTML also returned 0 records",
@@ -383,7 +380,7 @@ async def _extract_records_from_preserved_browser_html(
     artifacts["traversal_composed_html"] = str(acquisition_result.html or "")
     acquisition_result.artifacts = artifacts
     acquisition_result.html = rendered_html
-    await _log_pipeline_event(
+    _log_pipeline_event(
         context,
         "info",
         f"Traversal yielded 0 extractable records; recovered {len(fallback_result.records)} record(s) from full rendered HTML",
@@ -428,38 +425,20 @@ async def _update_acquisition_contract_memory(
     context: _URLProcessingContext,
     *,
     acquisition_result,
-    records: list[dict[str, object]],
-    persisted_count: int,
-    verdict: str,
+    url_result,
 ) -> None:
     domain = normalize_domain(
         getattr(acquisition_result, "final_url", "") or context.url
     )
     if not domain:
         return
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
     await record_acquisition_contract_outcome(
         context.session,
         domain=domain,
         surface=context.surface,
         source_run_id=int(context.run.id),
-        method=getattr(acquisition_result, "method", None),
-        browser_engine=str(diagnostics.get("browser_engine") or "").strip().lower(),
-        browser_diagnostics=dict(diagnostics),
-        requested_fields=acquisition_contract_fields_for_surface(
-            context.surface,
-            list(context.requested_fields),
-        ),
-        records=records,
-        persisted_count=persisted_count,
-        verdict=verdict,
-        blocked=_effective_blocked(acquisition_result),
-        page_url=getattr(acquisition_result, "final_url", "") or context.url,
-        network_payloads=list(
-            getattr(acquisition_result, "network_payloads", []) or []
-        ),
+        acquisition_result=acquisition_result,
+        url_result=url_result,
     )
 
 

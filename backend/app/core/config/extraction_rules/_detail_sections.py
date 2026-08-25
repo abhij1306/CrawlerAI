@@ -3,6 +3,39 @@ from __future__ import annotations
 from ._common import _STATIC_EXPORTS
 from ._detail import AVAILABILITY_IN_STOCK, AVAILABILITY_OUT_OF_STOCK
 
+DETAIL_DOM_BASE_SELECTORS = (
+    ("h1", "product.title"),
+    ("head title", "product.title"),
+    ("[data-price]", "offer.price"),
+    ("[data-currency]", "offer.currency"),
+    ("[data-sku]", "product.sku"),
+)
+DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES = (
+    "id",
+    "class",
+    "data-testid",
+    "data-component",
+    "data-section",
+    "aria-label",
+    "role",
+)
+DETAIL_DOM_IMAGE_CANDIDATE_SELECTOR = (
+    "main img[src], main img[data-src], main img[data-lazy-src], "
+    "main img[data-original], main img[data-image], main img[srcset], "
+    "main img[data-srcset], main source[srcset], main source[data-srcset], "
+    "img[data-product-image][src], img[data-product-image][data-src]"
+)
+DETAIL_DOM_REQUESTED_VALUE_ATTRIBUTES = {
+    "product.url": ("href", "content", "value", "title", "aria-label"),
+    "asset.image_url": ("src", "data-src", "content", "href", "alt", "title"),
+}
+DETAIL_DOM_REQUESTED_DEFAULT_VALUE_ATTRIBUTES = (
+    "content",
+    "value",
+    "title",
+    "aria-label",
+)
+
 DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset({"breadcrumblist", "listitem"})
 DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS = (
     "/public_config/",

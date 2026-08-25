@@ -209,7 +209,6 @@ async def note_recipe_drift_after_replay(
     session: AsyncSession,
     *,
     request: ExtractionRequest,
-    run_id: int | None,
 ) -> bool:
     """Record a drift failure for an existing recipe whose replay found nothing.
 

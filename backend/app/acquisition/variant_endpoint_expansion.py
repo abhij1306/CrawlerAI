@@ -97,9 +97,12 @@ def _raw_product_variation_urls(html_text: str) -> tuple[str, ...]:
 
 def _normalize_candidate_url(page_url: str, raw_url: str) -> str:
     value = html.unescape(raw_url).replace("\\/", "/").strip()
-    # One optional backslash per trailing junk char (not per run) keeps the
-    # pattern free of nested quantifiers (ReDoS) while trimming the same text.
-    value = re.sub(r"(?:\\?[\"'}\]])+$", "", value)
+    end = len(value)
+    while end and value[end - 1] in "\"'}]":
+        end -= 1
+        if end and value[end - 1] == "\\":
+            end -= 1
+    value = value[:end]
     return urljoin(page_url, value)
 
 
@@ -222,7 +225,7 @@ async def _fetch_variant_endpoint_with_curl(
             proxy=proxy,
         )
         body = json.loads(str(result.html or ""))
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return None
     if result.status_code >= 400 or body in (None, "", [], {}):
         return None

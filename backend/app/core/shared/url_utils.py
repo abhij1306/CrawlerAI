@@ -222,6 +222,18 @@ def _srcset_rank(descriptor: str, index: int) -> float:
     return float(index)
 
 
+def strip_srcset_descriptor(value: str) -> str:
+    parts = value.rstrip().rsplit(maxsplit=1)
+    if len(parts) != 2:
+        return value
+    prefix, descriptor = parts
+    number = descriptor[:-1]
+    valid_number = number.count(".") <= 1 and number.replace(".", "", 1).isdigit()
+    return (
+        prefix if descriptor[-1:].casefold() in {"w", "x"} and valid_number else value
+    )
+
+
 def largest_srcset_url(value: str) -> str:
     """Return the highest-resolution URL from a ``srcset``/``data-srcset`` list."""
     ranked = [
@@ -459,7 +471,55 @@ def _is_tracking_pixel_url(text: str) -> bool:
         return False
     if any(dimension > 1 for dimension in _image_query_dimensions(text)):
         return False
-    return not re.search(r"(?<!\w)\d{2,}\s*[x×]\s*\d{2,}(?!\w)", text)
+    return not _has_large_inline_dimensions(text)
+
+
+def _has_large_inline_dimensions(text: str) -> bool:
+    return any(
+        character in "x×" and _is_large_inline_dimension_at(text, index)
+        for index, character in enumerate(text)
+    )
+
+
+def _is_large_inline_dimension_at(text: str, index: int) -> bool:
+    left_end = _skip_space_left(text, index)
+    left_start = _skip_digits_left(text, left_end)
+    right_start = _skip_space_right(text, index + 1)
+    right_end = _skip_digits_right(text, right_start)
+    return (
+        left_end - left_start >= 2
+        and right_end - right_start >= 2
+        and not _word_character_at(text, left_start - 1)
+        and not _word_character_at(text, right_end)
+    )
+
+
+def _skip_space_left(text: str, index: int) -> int:
+    while index and text[index - 1].isspace():
+        index -= 1
+    return index
+
+
+def _skip_digits_left(text: str, index: int) -> int:
+    while index and text[index - 1].isdigit():
+        index -= 1
+    return index
+
+
+def _skip_space_right(text: str, index: int) -> int:
+    while index < len(text) and text[index].isspace():
+        index += 1
+    return index
+
+
+def _skip_digits_right(text: str, index: int) -> int:
+    while index < len(text) and text[index].isdigit():
+        index += 1
+    return index
+
+
+def _word_character_at(text: str, index: int) -> bool:
+    return 0 <= index < len(text) and (text[index].isalnum() or text[index] == "_")
 
 
 def is_utility_image_url(value: object) -> bool:

@@ -78,11 +78,11 @@ function renderTable(recordCount: number) {
 }
 
 function bottomSpacerHeight(container: HTMLElement) {
-  // At scrollTop 0 the top spacer is absent; the only aria-hidden div is the
+  // At scrollTop 0 the top spacer is absent; the only aria-hidden row is the
   // bottom spacer whose height is (totalCount - endIndex) * rowHeight.
   const spacers = container.querySelectorAll('[aria-hidden]');
   expect(spacers).toHaveLength(1);
-  return (spacers[0] as HTMLElement).style.height;
+  return (spacers[0].querySelector('td') as HTMLElement).style.height;
 }
 
 afterEach(() => {
@@ -90,6 +90,15 @@ afterEach(() => {
 });
 
 describe('records-table derived windowing heights', () => {
+  it('renders native table structure', () => {
+    stubCssVars({});
+    const { container } = renderTable(2);
+    expect(container.querySelector('table')).not.toBeNull();
+    expect(container.querySelector('thead th[scope="col"]')).not.toBeNull();
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(container.querySelector('tbody td')).not.toBeNull();
+  });
+
   it('drives the windowing math from the CSS vars at mount', () => {
     stubCssVars({ '--table-header-height': '40px', '--table-row-height': '50px' });
     const { container } = renderTable(100);

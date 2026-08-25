@@ -106,9 +106,31 @@ def detail_title_is_url_corroborated_style_code(value: str, url: str) -> bool:
     url_key = re.sub(r"[^A-Za-z0-9]+", "", unquote(str(url or ""))).casefold()
     if title_key not in url_key:
         return False
-    return bool(
-        re.search(r"[A-Za-z]{2,}[^A-Za-z0-9]+\d|\d[^A-Za-z0-9]+[A-Za-z]{2,}", title)
-    )
+    return _has_style_code_separator(title)
+
+
+def _has_style_code_separator(value: str) -> bool:
+    index = 0
+    while index < len(value):
+        if value[index].isalnum():
+            index += 1
+            continue
+        separator_start = index
+        while index < len(value) and not value[index].isalnum():
+            index += 1
+        left = value[:separator_start]
+        right = value[index:]
+        left_letters = len(left) - len(
+            left.rstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        )
+        right_letters = len(right) - len(
+            right.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        )
+        if (left_letters >= 2 and right[:1].isdigit()) or (
+            left[-1:].isdigit() and right_letters >= 2
+        ):
+            return True
+    return False
 
 
 def detail_title_has_seo_pollution(
@@ -144,17 +166,44 @@ def normalize_detail_marketplace_title(value: str) -> str:
         trailing_words = len(re.findall(r"\w+", trailing))
         if trailing_words <= 2 and len(trailing) < len(pipe_parts[0]):
             normalized = pipe_parts[0]
-    normalized = re.sub(
-        r"\s+-\s+[A-Z][A-Za-z0-9&'.\-\s]{2,40}(?:Watches|India|USA|US|UK|Official Site)\s*$",
-        "",
-        normalized,
-    )
+    normalized = _strip_marketplace_site_suffix(normalized)
     return re.sub(
         DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
         "",
         normalized,
         flags=re.IGNORECASE,
     ).strip()
+
+
+def _strip_marketplace_site_suffix(value: str) -> str:
+    title, separator, raw_suffix = value.rpartition(" - ")
+    if not separator:
+        return value
+    suffix = raw_suffix.strip()
+    terminal = next(
+        (
+            candidate
+            for candidate in (
+                "Official Site",
+                "Watches",
+                "India",
+                "USA",
+                "US",
+                "UK",
+            )
+            if suffix.endswith(candidate)
+        ),
+        "",
+    )
+    body = suffix[: -len(terminal)] if terminal else ""
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789&'.- ")
+    if (
+        suffix[:1].isupper()
+        and 3 <= len(body) <= 41
+        and all(character in allowed for character in body)
+    ):
+        return title.rstrip()
+    return value
 
 
 def _detail_url_title_segment_is_code(value: str) -> bool:
@@ -523,13 +572,13 @@ def _semantic_product_asset_conflicts(
         if len(tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
         and len(product_tokens & tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
     )
-    if anchored >= PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS:
-        return conflicts
     opaque_peer_count = sum(
         len(tokens) < PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
         for tokens in asset_tokens.values()
     )
-    if len(conflicts) == 1 and opaque_peer_count >= 1:
+    if anchored >= PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS or (
+        len(conflicts) == 1 and opaque_peer_count >= 1
+    ):
         return conflicts
     return frozenset()
 
