@@ -39,7 +39,7 @@ Work the slices in order. Slice 1 (DOM selected state) and Slice 2 (variant/opti
 
 - No site-specific branches, retailer aliases, or casing tables in generic extraction code.
 - No acquisition/browser/traversal changes and no option clicking. Absent source artifacts stay capture-limited.
-- Extraction-package LOC and complexity budgets in `backend/app/core/config/extraction_semantic_surface.toml` are **downward ratchets and currently saturated**. Prefer extracting a module over growing one; document any budget change in `tests/unit/test_extraction_architecture.py` the way the existing exceptions are documented.
+- Size policy is the repo-wide one in `scripts/validation.json` (`maxLines` 800, `maxPythonComplexity` 15), enforced in CI by `scripts/check.ps1 -Mode Limits`. The per-module budgets that used to live in `extraction_semantic_surface.toml` and the per-file ledgers in the architecture tests were removed in favour of that single rule. Prefer extracting a module over growing one.
 - Every published value must come from an authorized projection with lineage. A post-serialization alias trips `PUBLIC_RESOLUTION_DIVERGENCE` and suppresses the whole record — PR 1 hit this; do not repeat it.
 - Amazon case 55 returning no product is **correct** behaviour for an anti-automation shell, not a defect.
 

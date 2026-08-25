@@ -72,7 +72,10 @@ belong in `INVARIANTS.md`.
 - schema.org enumerations publish as plain wording (`NewCondition` becomes `New`).
 - Trademark and service-mark symbols are legal notation and are not part of a
   published title or brand.
-- `rating` and `review_count` are currently published as strings, like `price`.
+- `rating` publishes as a decimal and `review_count` as an integer, the types the
+  canonical record declares. The conversion from source text is an authorized
+  canonicalization carrying its own lineage. `price` stays a string, where
+  trailing-zero precision is part of the value.
 - A page that fails acquisition (an anti-automation shell) publishes no product
   rather than a value derived from the URL.
 

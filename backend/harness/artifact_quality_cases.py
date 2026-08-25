@@ -480,7 +480,6 @@ def _runtime_field(field: str) -> str:
         "product_family": "variants",
         "selected_fit": "variants",
         "size_options": "variants",
-        "style_id": "mpn",
     }.get(field, field)
 
 
@@ -506,7 +505,11 @@ def _evaluation_projection(public: dict[str, Any]) -> dict[str, Any]:
     projection = dict(public)
     projection.update(
         {
-            "asin": public.get("asin") or public.get("product_id"),
+            # No cross-field fallback: a value published as `product_id` or
+            # `mpn` must not satisfy an `asin` or `style_id` assertion. Those
+            # are distinct identifiers, and crediting one for another hides a
+            # miss as a pass.
+            "asin": public.get("asin"),
             "material": public.get("materials"),
             "model_options": model_options,
             "product_family": bool(
@@ -520,7 +523,7 @@ def _evaluation_projection(public: dict[str, Any]) -> dict[str, Any]:
             "size_options": sorted(
                 {str(row["size"]) for row in variants if row.get("size")}
             ),
-            "style_id": public.get("style_id") or public.get("mpn"),
+            "style_id": public.get("style_id"),
         }
     )
     return projection

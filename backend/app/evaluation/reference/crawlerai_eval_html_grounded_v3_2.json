@@ -2558,10 +2558,18 @@
     "color": "Smoked Walnut",
     "gender": "Women",
     "selected_fit": "Classic",
-    "rating": 4.7,
-    "review_count": 1378,
     "sku": "CI939-BR8825",
     "availability": "in_stock"
+   },
+   "constraints": {
+    "rating": {
+     "value": 4.7,
+     "mode": "volatile"
+    },
+    "review_count": {
+     "value": 1378,
+     "mode": "volatile"
+    }
    }
   },
   {

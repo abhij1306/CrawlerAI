@@ -385,7 +385,6 @@ def _aggregate_variant_price(
     selected_fact = _selected_variant_price_fact(
         entity_id,
         decimals,
-        existing_fact_keys=existing_fact_keys,
         selected_variant_ids=selected_variant_ids,
     )
     ranges = _bounded_variant_price_facts(
@@ -442,9 +441,15 @@ def _selected_variant_price_fact(
     entity_id: str,
     decimals: list[tuple[Decimal, VariantDecision]],
     *,
-    existing_fact_keys: frozenset[tuple[str, str]],
     selected_variant_ids: frozenset[str],
 ) -> DerivedFact | None:
+    """The price of the variant the request selected.
+
+    Deliberately not gated on ``existing_fact_keys``, unlike the minimum-price
+    aggregate: the selected variant's price is more specific than a page-level
+    offer price and is meant to outrank it. Gating it publishes the page price
+    for a request that named a variant (measured: reference cases 25 and 67).
+    """
     selected = [
         (value, row)
         for value, row in decimals
