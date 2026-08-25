@@ -110,13 +110,15 @@ before changing offer or variant selection semantics):
 
 ### Slice 1: Selected State From the DOM (largest cluster)
 
-**Status:** MEASURED — premise does not hold; re-scope before implementing.
-Only **7 of the 33** failing `color`/`size` assertions are reachable via any
-selected-state marker; 23 have the value present with no marker carrying it, and
-3 are capture-limited. None of the 7 captures contain the `[data-attr-id]`
-controls the existing selected-state predicate runs on, so this needs a new
-collection path, not a predicate change. Full measurement, including the
-per-strategy table, is in `docs/audits/crawlerai-extraction-coverage-report.md`.
+**Status:** MEASURED — implement as a *generalization*, not a rule hunt.
+Selected state is currently read only through one commerce platform's markup
+(`VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR` = `[data-attr-id][data-attr-value]`),
+so pages using the platform-neutral standards are not read at all. Fix that
+coupling. Of the 33 failing `color`/`size` assertions, 7 carry a standard
+selected marker, 23 have the value present with nothing marking it as current
+(stay open by design — guessing publishes a wrong colour), and 3 are
+capture-limited. Full measurement in
+`docs/audits/crawlerai-extraction-coverage-report.md`.
 **Owns:** `color` 29, `size` 4, part of `variant_count`
 **Why first:** 19 of 20 previously analysed missing colours encode **no** colour axis anywhere in the requested or served URL, and structured sources expose several colours at once (case 11 offers White, Black and Dark Brown under one `hasVariant`). Choosing among them requires reading which option the page marks as selected.
 **What:** Read explicit selected-option state from the rendered DOM — `aria-selected`, `aria-checked`, `[selected]`, `checked`, and the platform-neutral current-option patterns already present in the captures. Bind it to the same-product variant set and publish only when exactly one option is marked. Fail closed on zero or multiple.

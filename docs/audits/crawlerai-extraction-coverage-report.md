@@ -73,8 +73,10 @@ Recorded in full in the plan's rejected-approaches table. Summary:
 
 ## Slice 1 pre-measurement: Selected State From the DOM (2026-08-25)
 
-**Status: measured, not implemented.** The measurement contradicts the slice's
-premise strongly enough that it should be re-scoped before any code is written.
+**Status: measured, not implemented.** The measurement is recorded as evidence
+about the *captures*, not as a target. The reference corpus is development
+guidance, not ground truth, so nothing below should be read as an assertion
+count to hit.
 
 ### What the slice assumed
 
@@ -135,9 +137,74 @@ Capturing the 7 therefore requires a new collection path keyed on selected-state
 markers and bound to the same-product variant set — a materially larger piece of
 work than the slice describes, for 7 of 33 assertions.
 
+### The architectural defect this exposes
+
+The count is not the point. What the measurement surfaced is that CrawlerAI
+reads selected state through **one commerce platform's markup convention**:
+`VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR` is
+`[data-attr-id][data-attr-value], [data-attr-id][data-dvalue]`, a Salesforce
+Commerce Cloud pattern. Pages that mark selection with the platform-neutral
+standards — `aria-selected`, `aria-checked`, `aria-pressed`, `aria-current`,
+`option[selected]`, `input[checked]` — are simply not read, whatever their
+markup quality.
+
+That is site-specific coupling in generic extraction code, which this codebase
+rules out on principle. It should be fixed because it is wrong, independent of
+how many reference assertions move: a correct extractor reads the web standard
+for "this option is currently chosen", and falls back to vendor conventions,
+not the other way round.
+
 ### Recommendation
 
-Re-scope before implementing. The 3 capture-limited cases should be recorded as
-such. Slice 2 (`variants` 83) should be checked for the same premise gap before
-it is started, since it rests on the same assumption about what the captures
-hold.
+Implement generic selected-state reading (see the handoff prompt for the shape).
+The 3 capture-limited cases (39, 76, 82) should be recorded as capture-limited.
+The 23 unmarked cases stay open by design: where a capture does not mark a
+selection, choosing among siblings would publish a wrong colour, and a missing
+value is preferable to a wrong one.
+
+## Breadth analysis and the SKU identity defect (2026-08-25)
+
+Prioritization principle for the remaining work: **a single site missing a few
+fields is acceptable; a single field missing across many sites is not.** Breadth
+across sites, not assertion count, decides order.
+
+The 82 captures are effectively one host per case, so failing-case counts read
+directly as sites affected:
+
+| Field | Sites | Field | Sites |
+| --- | --: | --- | --: |
+| `color` | 29 | `variant_count` | 10 |
+| `title` | 24 | `availability` / `style_id` | 9 |
+| `brand` | 24 | `rating` / `review_count` | 8 / 7 |
+| `variants` | 22 | `currency` / `gender` | 6 / 5 |
+| `sku` | 19 | `size`, `size_options`, `condition`, `original_price` | 3-4 |
+| `material` | 18 | `barcode`, `mpn`, `model_options`, bounds, `product_family` | 1-2 |
+| `price` | 15 | | |
+
+This reorders the plan: `sku` affects 19 sites and is not a named slice at all,
+while several named slices are 1-4 site tails.
+
+### SKU: a bare digit run outranks the merchant SKU
+
+Of the 19 sites, 7 publish a wrong `sku`, and in **5 of those 7** the published
+value is a pure-digit string while the expected value is alphanumeric:
+
+| Case | Expected | Published | Published is all digits |
+| --- | --- | --- | --- |
+| 5 | `HQ7978-103` | `45993954738410` | yes |
+| 31 | `PE1001550` | `100155080614` | yes |
+| 66 | `395205_01` | `4099686132767` | yes |
+| 71 | `4D3032G-PCG` | `198629014314` | yes |
+| 4 | `HJ0139-045` | `21001455` | yes |
+| 2 | `DIME2SP2542BLK` | `DIME2SP2542BLK-S` | no - variant SKU on the parent |
+| 39 | `870543 4GAK3 1360` | `8705434GAK31360` | no - separator normalization |
+
+Merchant SKUs and style codes carry letters and separators; bare digit runs are
+barcodes, internal ids or database keys. Preferring an alphanumeric candidate
+over a pure-digit one is generic, needs no site knowledge, and covers 5 sites.
+
+**Measured caution against over-fitting to GTIN:** only cases 66 and 71 pass
+`validate_gtin`. Cases 5 and 31 are 14- and 12-digit values that *fail* the
+checksum - barcode-shaped internal ids, not barcodes. A GTIN-only rule would
+catch 2 of the 5; the digit-shape rule catches all 5. Use GTIN validation only to
+decide whether the rejected value should populate `barcode`.
