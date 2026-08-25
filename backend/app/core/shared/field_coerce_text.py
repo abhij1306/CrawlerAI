@@ -146,7 +146,7 @@ def infer_brand_from_title_marker(title: object) -> str | None:
         brand = clean_text(f"{leading_marker}{leading_token}") if leading_token else ""
         if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
             return None
-        return _without_trademark_symbols(brand) or None
+        return brand
     marker_positions = [
         index for marker in ("\u2122", "\u00ae") if (index := text.find(marker)) >= 0
     ]
@@ -155,7 +155,7 @@ def infer_brand_from_title_marker(title: object) -> str | None:
     brand = clean_text(text[: min(marker_positions) + 1])
     if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
         return None
-    return _without_trademark_symbols(brand) or None
+    return brand
 
 
 def infer_brand_from_marked_title_path(*, url: str, title: object) -> str | None:

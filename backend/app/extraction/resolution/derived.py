@@ -10,6 +10,7 @@ from app.core.config.locale_format_rules import (
     currency_hint_from_page_url,
 )
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+from app.core.records.title_normalization import strip_identity_trademark_symbols
 from app.core.records.url_identity import detail_style_code_from_url
 from app.core.shared.field_coerce_text import (
     infer_brand_from_marked_title_path,
@@ -432,7 +433,12 @@ def _new_title_brand(
     has_independent_product_signal: bool,
     marked: object,
 ) -> tuple[str, str] | None:
-    marker_brand = infer_brand_from_title_marker(marked)
+    # The marker locates where the brand name ends; it is not part of the name,
+    # so the published brand drops it. The shared helper keeps the source form
+    # because product-intelligence matching compares against raw snapshots.
+    marker_brand = strip_identity_trademark_symbols(
+        infer_brand_from_title_marker(marked) or ""
+    )
     marked_path = infer_brand_from_marked_title_path(url=page_url, title=marked)
     if (
         marker_brand

@@ -42,7 +42,16 @@ OVERSIZED_MODULE_DEBT = {
     # to measured.
     "acquisition/browser_capture.py": 704,
     "acquisition/browser_recovery.py": 728,
-    "core/config/field_mappings.py": 704,
+    # Data-accuracy PR (2026-08-25): _detail.py entered the ledger with the
+    # config-owned identity rules this PR added - trademark notation, the
+    # host-derived site-suffix constants, schema.org enumeration vocabularies,
+    # and the URL audience-gender markers. Config owns the vocabulary so the
+    # collectors and normalizers stay generic.
+    "core/config/extraction_rules/_detail.py": 767,
+    # Same PR: field_mappings.py grew with the product attribute fact types and
+    # their JSON-LD key maps (rating, review_count, material, gender,
+    # condition, style_id, gtin variants).
+    "core/config/field_mappings.py": 730,
     # Services/tooling simplification: LLM payload application moved to the
     # diagnostics owner and product execution was flattened; the cohesive job
     # lifecycle owner shrank from 905 to 708 nonblank lines.
