@@ -62,22 +62,46 @@ Do not retry these blind. Each was measured against the failing cases:
 | Preferring the longer title candidate | Reference expectations contradict each other: case 44 wants the longer, case 61 the shorter |
 | Casing normalization for `color`/`brand` | Expectations point in both directions: case 25 wants `Black` from `black`, case 12 wants `black/...` from `Black/...` |
 
-## Inherited Review Findings (verified, not yet fixed)
+## Inherited Review Findings (complete set from PR 1)
 
-Raised on PR 1 and deliberately deferred: each concerns code that predates that PR's
-work, and none arrived with a reproduction. Confirm with a failing case before
-changing offer or variant selection semantics.
+All 14 CodeRabbit findings raised on PR 1, with disposition. Six were fixed in that
+PR; the rest are carried here. Nothing was silently dropped.
+
+| # | Location | Finding | Status |
+| --: | --- | --- | --- |
+| 1 | `config/extraction_rules/_variants.py` DOM axes | `colorcode`/`colorproductcode` are absent from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN`, so the style axis is dropped and different selected variants can compare equal in `target_offer_group_id` | **Carried** |
+| 2 | `core/shared/field_coerce_text.py` identifier labels | A label with no space after the delimiter (`SKU:BT-1MW`) was not stripped | Fixed in PR 1 (known label words only, so `ABC:123` survives) |
+| 3 | Reference case 71 rating constraint | `volatile` mode was price-shaped: it required a positive value **and** a currency, so a legitimate `0.0` rating could never pass | Fixed in PR 1 (constraint mode is field-aware) |
+| 4 | Reference case 79 | Asserts `rating`/`review_count` as exact values while every other case treats them as volatile, contradicting the reference's own rule | **Carried** — reference-data decision, needs the owner's call |
+| 5 | `collectors/jsonld_attributes.py` numeric types | `text_value` stringifies `rating`/`review_count`; the canonical contract declares them numeric | **Carried** — Slice 6, must be fixed at fact-value normalization (a post-serialization alias trips `PUBLIC_RESOLUTION_DIVERGENCE`) |
+| 6 | `collectors/jsonld_attributes.py` locators | Gender read from `audience` pointed at the product node; image locators re-indexed after filtering; a scalar `image` addressed `/image/0` | Fixed in PR 1 (also reads `audience` in array form) |
+| 7 | `collectors/jsonld.py` offer grouping (~L275-291) | Product-scope offers with no offer URL but a hint URL normalizing to the target page all share the `offer:target` group instead of getting distinct fallback groups, merging distinct offers | **Carried** — heavy lift |
+| 8 | `extraction/entities.py` selected group merging (~L636) | Selected URL evidence is appended to every matching candidate before the source group is removed, so one selected shell can attach to several variants | **Carried** — merge only on exactly one unambiguous candidate |
+| 9 | `harness/artifact_quality_cases.py` projection | `asin` falls back to `product_id` and `style_id` to `mpn`, letting a value published under one field satisfy another field's assertion | **Carried** — weakens identifier assertions |
+| 10 | `harness/artifact_quality_cases.py` `_variant_failures` | Never ran: the gate needs `variants` in `expected`/`constraints` but it is a top-level case key, so 31 cases' variant assertions were skipped | Fixed in PR 1 — exposed **83** pre-existing failures |
+| 11 | `harness/artifact_quality_cases.py` `_numeric_path_part` | Malformed capture directory names mapped to `0` and ranked alongside real captures | Fixed in PR 1 (non-numeric directories are skipped) |
+| 12 | `docs/audits/crawlerai_defects_run3.json` case 55 | Counts anti-automation suppression as a `MISSING_PRODUCT_RESULT` defect, but no product output is the correct contract | **Carried** — the accuracy report already states the correct behaviour; the external analysis artifact was left as the record of what that tool produced. Regenerate its counts if it is reused as a baseline. |
+| 13 | `core/records/url_identity.py` re-export | Compatibility re-export retained after title normalization moved to its owner | Fixed in PR 1 (removed; callers point at `title_normalization`) |
+| 14 | `docs/BUSINESS_LOGIC.md` rating/review types | Public semantics record string publication for values the canonical schema declares numeric | **Carried** — update together with #5 |
+
+Two further suggestions were **rejected with reasons** and should not be re-applied
+blind:
+
+- Gating the explicit `" - a - b"` size form on a declared size axis breaks
+  `test_jsonld_variant_name_recovers_explicit_size_segment`, which deliberately trusts
+  that form without `variesBy`. Only the looser comma fallback is gated.
+- Protocol `...` bodies flagged as ineffectual statements: a docstring-only body
+  implicitly returns `None` and breaks the declared return types. `...` is correct.
+
+Also carried from other reviewers (same rule applies — confirm with a failing case
+before changing offer or variant selection semantics):
 
 | Location | Concern |
 | --- | --- |
-| `core/records/title_normalization.py` two-segment pipe rule | Strips a trailing segment on word count/length alone, so `Jacket | Red` can lose a colour before URL corroboration runs |
-| `extraction/entities.py` selected group merging | Selected URL evidence is appended to every matching candidate; multiple structured variants can each absorb the same selected shell |
-| `extraction/resolution/variant_rollup.py` selected price | The selected-variant price aggregate ignores `existing_fact_keys`, so it can overwrite a resolved primary offer price |
+| `core/records/title_normalization.py` two-segment pipe rule | Strips a trailing segment on word count and length alone, so a genuine colour or edition can be lost before URL corroboration runs |
+| `extraction/resolution/variant_rollup.py` selected price | The selected-variant price aggregate ignores `existing_fact_keys` and can overwrite a resolved primary offer price |
 | `extraction/collectors/dom.py` `parse_money` | Called without a locale hint, so `1.234` and `1,234` both admit as `1234` before page locale is known |
-| `extraction/collectors/jsonld.py` selected variant | Compares resource identity only, so variants differing solely by `?style=` query can all be marked selected |
-| `config/extraction_rules/_variants.py` DOM axes | `colorcode`/`colorproductcode` are absent from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN`, dropping the style axis |
-| `harness/artifact_quality_cases.py` projection | `asin` falls back to `product_id` and `style_id` to `mpn`, letting one field satisfy another's assertion |
-| Reference case 79 | Asserts `rating`/`review_count` as exact values while every other case treats them as volatile |
+| `extraction/collectors/jsonld.py` selected variant (~L724) | Compares resource identity only, so variants differing solely by a `?style=` query can all be marked selected |
 
 ## Slices
 

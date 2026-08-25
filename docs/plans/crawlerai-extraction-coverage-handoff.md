@@ -45,7 +45,17 @@ Work the slices in order. Slice 1 (DOM selected state) and Slice 2 (variant/opti
 
 **Inherited review findings**
 
-The plan has an "Inherited Review Findings" table of eight items raised on PR 1 and deliberately deferred — pipe-rule title stripping, selected group merging, selected-variant price vs `existing_fact_keys`, DOM `parse_money` locale, JSON-LD selected-variant identity, the `colorproductcode` axis, the harness `asin`/`style_id` fallbacks, and case 79's reference inconsistency. Each concerns code predating PR 1 and arrived without a reproduction. **Confirm each with a failing case before changing offer or variant selection semantics.**
+The plan's "Inherited Review Findings" section records **all 14 CodeRabbit findings** from PR 1 with their disposition — six fixed there, eight carried — plus four from other reviewers and two that were rejected with reasons. Nothing was dropped silently.
+
+Carried items worth planning around:
+
+- `colorcode`/`colorproductcode` missing from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN` (drops the style axis) — pairs naturally with Slice 1.
+- URL-less product-scope offers sharing the `offer:target` group (merges distinct offers) and selected-group merging in `entities.py` attaching one shell to several variants — both pair with Slice 2.
+- `rating`/`review_count` numeric types and the matching `BUSINESS_LOGIC.md` line — Slice 6, and must be fixed at fact-value normalization.
+- Harness `asin`/`style_id` projection fallbacks, and reference case 79's exact-vs-volatile inconsistency.
+- `crawlerai_defects_run3.json` counts case 55's anti-automation suppression as a defect; regenerate its counts if you reuse it as a baseline.
+
+**Confirm each with a failing case before changing offer or variant selection semantics.** The two rejected suggestions are documented — do not re-apply them blind.
 
 **Gates**
 

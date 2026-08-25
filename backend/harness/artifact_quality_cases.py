@@ -229,6 +229,11 @@ def _discover_captures(root: Path) -> tuple[dict[str, Any], ...]:
     captures: list[dict[str, Any]] = []
     for diagnose_path in sorted(root.glob("*/results/*/diagnose.json")):
         result_root = diagnose_path.parent
+        if not (
+            _is_numeric_path_part(result_root.parent.parent.name)
+            and _is_numeric_path_part(result_root.name)
+        ):
+            continue
         page_path = result_root / "page.html"
         if not page_path.is_file():
             raise ValueError(f"capture missing page.html: {result_root}")
@@ -669,7 +674,17 @@ def _timing_summary(durations: Sequence[float]) -> dict[str, float]:
     }
 
 
+def _is_numeric_path_part(value: str) -> bool:
+    return value.isdigit()
+
+
 def _numeric_path_part(value: str) -> int:
+    """Capture directories are numbered; a non-numeric name is not a capture.
+
+    Mapping a malformed name to 0 made it rank alongside genuine captures and
+    could surface as an "ambiguous latest captures" failure instead of being
+    skipped, so callers filter on ``_is_numeric_path_part`` first.
+    """
     try:
         return int(value)
     except ValueError:
