@@ -17,7 +17,10 @@ from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.extraction_memory import EXTRACTION_RELEASE_VERSION
 from app.crawl.pipeline import persistence as record_persistence
 from app.crawl.pipeline import record_extraction_stage
-from app.crawl.pipeline.runtime_helpers import log_pipeline_event
+from app.crawl.pipeline.runtime_helpers import (
+    log_pipeline_event,
+    pipeline_acquisition_event_logger,
+)
 from app.crawl.pipeline.url_processing_context import URLProcessingContext
 from app.crawl.profile import acquisition_contract
 from app.crawl.profile import repository as profile_repository
@@ -341,6 +344,32 @@ async def test_log_pipeline_event_batches_rows_until_url_commit(
         .all()
     )
     assert [row.message for row in rows] == ["event 0", "event 1", "event 2"]
+
+
+async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
+    db_session: AsyncSession, create_test_run
+) -> None:
+    run = await create_test_run(url="https://example.com/a", surface="ecommerce_detail")
+    context = SimpleNamespace(
+        config=SimpleNamespace(persist_logs=True),
+        url="https://example.com/a",
+        run=run,
+        session=db_session,
+    )
+
+    await pipeline_acquisition_event_logger(context)("info", "browser started")
+    await db_session.commit()
+
+    rows = (
+        (
+            await db_session.execute(
+                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.message for row in rows] == ["browser started"]
 
 
 def _acquisition(final_url: str = "https://example.com/p/1") -> SimpleNamespace:

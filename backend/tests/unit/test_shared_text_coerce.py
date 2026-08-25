@@ -65,6 +65,35 @@ def test_literal_text_lists_and_empty_values() -> None:
 
 
 @pytest.mark.unit
+def test_coerce_structured_scalar_uses_first_matching_nested_value() -> None:
+    from app.core.shared.field_coerce import coerce_structured_scalar
+
+    keys = ("label", "name")
+    assert (
+        coerce_structured_scalar(
+            '{"label": ["", {"name": "Primary"}]}',
+            keys=keys,
+        )
+        == "Primary"
+    )
+    assert (
+        coerce_structured_scalar(
+            {"label": "", "name": ["", {"label": "Fallback"}]},
+            keys=keys,
+        )
+        == "Fallback"
+    )
+    assert (
+        coerce_structured_scalar(
+            ["", {"label": "First"}, {"label": "Later"}],
+            keys=keys,
+        )
+        == "First"
+    )
+    assert coerce_structured_scalar({"other": "ignored"}, keys=keys) is None
+
+
+@pytest.mark.unit
 def test_title_noise_and_slug_tokens() -> None:
     assert is_title_noise("undefined")
     assert is_title_noise("null")

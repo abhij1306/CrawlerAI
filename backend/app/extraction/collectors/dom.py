@@ -84,9 +84,7 @@ class DomCollector:
         out.extend(_product_offer_evidence(bundle, product_roots, product_subject))
         for img, confidence in _product_image_nodes(doc):
             src = _image_node_url(img)
-            locator = SourceLocator(
-                kind="css_selector", value=img.stable_locator(), preview=src[:120]
-            )
+            locator = _css_locator(img.stable_locator(), src)
             out.append(
                 evidence(
                     bundle,
@@ -283,34 +281,38 @@ def _product_description_evidence(
 ) -> tuple[Evidence, ...]:
     rows: list[Evidence] = []
     seen: set[str] = set()
-    for root in roots:
-        for selector in DETAIL_DOM_DESCRIPTION_SELECTORS:
-            for node in root.safe_css(selector):
-                admitted = _admit_description_node(node, seen)
-                if admitted is None:
-                    continue
-                value, hidden = admitted
-                rows.append(
-                    _product_dom_evidence(
-                        bundle,
-                        "product.description",
-                        value,
-                        SourceLocator(
-                            kind="css_selector",
-                            value=node.stable_locator(),
-                            preview=value[:120],
-                        ),
-                        product_subject,
-                        0.66 if hidden else 0.74,
-                        flags=("hidden_product_content",) if hidden else (),
-                        metadata=(
-                            {"visibility": "hidden", "component_role": "product_panel"}
-                            if hidden
-                            else {"component_role": "product_panel"}
-                        ),
-                    )
-                )
+    for node in _root_selector_nodes(roots, DETAIL_DOM_DESCRIPTION_SELECTORS):
+        admitted = _admit_description_node(node, seen)
+        if admitted is None:
+            continue
+        value, hidden = admitted
+        metadata: dict[str, object] = {"component_role": "product_panel"}
+        if hidden:
+            metadata["visibility"] = "hidden"
+        rows.append(
+            _product_dom_evidence(
+                bundle,
+                "product.description",
+                value,
+                _css_locator(node.stable_locator(), value),
+                product_subject,
+                0.66 if hidden else 0.74,
+                flags=("hidden_product_content",) if hidden else (),
+                metadata=metadata,
+            )
+        )
     return tuple(rows)
+
+
+def _root_selector_nodes(
+    roots: tuple[HtmlNode, ...], selectors: tuple[str, ...], limit: int | None = None
+):
+    return (
+        node
+        for root in roots
+        for selector in selectors
+        for node in root.safe_css(selector)[:limit]
+    )
 
 
 def _admit_description_node(
@@ -342,44 +344,39 @@ def _product_offer_evidence(
 ) -> tuple[Evidence, ...]:
     rows: list[Evidence] = []
     seen: set[tuple[str, str, str]] = set()
-    for root in roots:
-        for selector in DETAIL_DOM_OFFER_SELECTORS:
-            for node in root.safe_css(selector)[:DETAIL_DOM_OFFER_MAX_CANDIDATES]:
-                offer = _admit_offer_node(node, seen)
-                if offer is None:
-                    continue
-                price, currency, availability = offer
-                group = f"offer:dom:{node.identity()}"
-                subject_id = stable_id("subject", bundle.bundle_id, group)
-                locator = SourceLocator(
-                    kind="css_selector",
-                    value=node.stable_locator(),
-                    preview=price[:120],
-                )
-                for fact_type, value in (
-                    ("offer.price", price),
-                    ("offer.currency", currency),
-                    ("offer.availability", availability),
-                ):
-                    if not value:
-                        continue
-                    rows.append(
-                        evidence(
-                            bundle,
-                            "dom",
-                            "dom",
-                            fact_type,
-                            value,
-                            locator,
-                            group_id=group,
-                            hint=EntityHint(entity_type="offer"),
-                            confidence=0.7,
-                            subject_id=subject_id,
-                            parent_subject_id=product_subject,
-                            parent_scope="product",
-                            metadata={"component_role": "product_offer"},
-                        )
+    for node in _root_selector_nodes(
+        roots, DETAIL_DOM_OFFER_SELECTORS, DETAIL_DOM_OFFER_MAX_CANDIDATES
+    ):
+        offer = _admit_offer_node(node, seen)
+        if offer is None:
+            continue
+        price, currency, availability = offer
+        group = f"offer:dom:{node.identity()}"
+        subject_id = stable_id("subject", bundle.bundle_id, group)
+        locator = _css_locator(node.stable_locator(), price)
+        for fact_type, value in (
+            ("offer.price", price),
+            ("offer.currency", currency),
+            ("offer.availability", availability),
+        ):
+            if value:
+                rows.append(
+                    evidence(
+                        bundle,
+                        "dom",
+                        "dom",
+                        fact_type,
+                        value,
+                        locator,
+                        group_id=group,
+                        hint=EntityHint(entity_type="offer"),
+                        confidence=0.7,
+                        subject_id=subject_id,
+                        parent_subject_id=product_subject,
+                        parent_scope="product",
+                        metadata={"component_role": "product_offer"},
                     )
+                )
     return tuple(rows)
 
 
@@ -461,39 +458,36 @@ def _offer_availability(node: HtmlNode) -> str:
 
 
 def _offer_context_text(node: HtmlNode) -> str:
-    parts = [node.text(separator=" ", strip=True)]
-    parts.extend(
-        ancestor.text(separator=" ", strip=True)
-        for ancestor in node.ancestors()[:DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT]
+    nodes = (node, *node.ancestors()[:DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT])
+    return " ".join(
+        " ".join(current.text(separator=" ", strip=True) for current in nodes).split()
     )
-    return " ".join(" ".join(parts).split())
 
 
 def _node_context_excluded(node: HtmlNode) -> bool:
+    nodes = (node, *node.ancestors()[:8])
     context = " ".join(
         str(current.attribute(attribute) or "").casefold()
-        for current in (node, *node.ancestors()[:8])
+        for current in nodes
         for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
     )
-    return any(
-        token in context
-        for token in (
-            *DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
-            *DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
-        )
-    )
+    tokens = (*DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS, *DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS)
+    return any(token in context for token in tokens)
 
 
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
     candidates = _product_image_candidates(doc)
-    scoped = _scoped_product_image_nodes(candidates)
+    scoped = [
+        node
+        for node, context in candidates
+        if node.attribute("data-product-image") is not None
+        or any(token in context for token in DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS)
+    ]
     if scoped:
         return tuple((node, 0.58) for node in scoped)
     # Fail closed on galleries: a single admissible main image is a trustworthy
     # fallback, but several un-scoped candidates are usually another gallery.
-    if len(candidates) == 1:
-        return tuple((node, 0.5) for node, _ in candidates)
-    return ()
+    return tuple((node, 0.5) for node, _ in candidates) if len(candidates) == 1 else ()
 
 
 def _product_image_candidates(doc) -> list[tuple[HtmlNode, str]]:
@@ -513,17 +507,6 @@ def _product_image_candidates(doc) -> list[tuple[HtmlNode, str]]:
     return candidates
 
 
-def _scoped_product_image_nodes(
-    candidates: list[tuple[HtmlNode, str]],
-) -> list[HtmlNode]:
-    return [
-        node
-        for node, context in candidates
-        if node.attribute("data-product-image") is not None
-        or any(token in context for token in DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS)
-    ]
-
-
 def _image_node_url(node: HtmlNode) -> str:
     for attribute in DETAIL_IMAGE_URL_ATTRS:
         if (
@@ -536,6 +519,10 @@ def _image_node_url(node: HtmlNode) -> str:
         ) and not is_utility_image_url(value):
             return value
     return ""
+
+
+def _css_locator(value: str, preview: str) -> SourceLocator:
+    return SourceLocator(kind="css_selector", value=value, preview=preview[:120])
 
 
 def _image_scope_context(node: HtmlNode) -> str:
@@ -558,37 +545,55 @@ def collect_requested_fields(
     rows: list[Evidence] = []
     seen: set[tuple[str, str]] = set()
     for requested_field in requested_fields:
-        field = normalize_requested_field(requested_field)
-        fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field)
-        if not fact_type:
-            continue
-        dash_field = field.replace("_", "-")
-        for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES:
-            selector = template.format(field=field, dash_field=dash_field)
-            for node in doc.css(selector):
-                admitted = _admit_requested_node(node, fact_type, seen)
-                if admitted is None:
-                    continue
-                value, hidden = admitted
-                rows.append(
-                    _product_dom_evidence(
-                        bundle,
-                        fact_type,
-                        value,
-                        SourceLocator(
-                            kind="css_selector", value=selector, preview=value[:120]
-                        ),
-                        product_subject,
-                        0.5 if hidden else 0.62,
-                        source="html",
-                        flags=("hidden_product_content",) if hidden else (),
-                        metadata=(
-                            {"visibility": "hidden", "component_role": "product_panel"}
-                            if hidden
-                            else {}
-                        ),
-                    )
+        rows.extend(
+            _requested_field_evidence(
+                bundle,
+                doc,
+                normalize_requested_field(requested_field),
+                product_subject,
+                seen,
+            )
+        )
+    return tuple(rows)
+
+
+def _requested_field_evidence(
+    bundle: CaptureBundle,
+    doc,
+    field: str,
+    product_subject: str,
+    seen: set[tuple[str, str]],
+) -> tuple[Evidence, ...]:
+    fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field)
+    if not fact_type:
+        return ()
+    rows: list[Evidence] = []
+    dash_field = field.replace("_", "-")
+    for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES:
+        selector = template.format(field=field, dash_field=dash_field)
+        for node in doc.css(selector):
+            admitted = _admit_requested_node(node, fact_type, seen)
+            if admitted is None:
+                continue
+            value, hidden = admitted
+            metadata: dict[str, object] = (
+                {"visibility": "hidden", "component_role": "product_panel"}
+                if hidden
+                else {}
+            )
+            rows.append(
+                _product_dom_evidence(
+                    bundle,
+                    fact_type,
+                    value,
+                    _css_locator(selector, value),
+                    product_subject,
+                    (0.62, 0.5)[hidden],
+                    source="html",
+                    flags=("hidden_product_content",) if hidden else (),
+                    metadata=metadata,
                 )
+            )
     return tuple(rows)
 
 
@@ -675,9 +680,7 @@ def _commercial_variant_controls(
         hint = EntityHint(entity_type="variant", sku=sku, option_values={"size": size})
         variant_subject = stable_id("subject", bundle.bundle_id, "dom", "variant", sku)
         variant_group = f"variant:dom:{sku}"
-        locator = SourceLocator(
-            kind="css_selector", value=node.stable_locator(), preview=size[:120]
-        )
+        locator = _css_locator(node.stable_locator(), size)
         variant_fields = (
             ("variant.sku", sku),
             ("variant.option.size", size),
@@ -939,9 +942,7 @@ def _attribute_control_variant_rows(
         option_values=options,
         selected=_attribute_control_selected(node),
     )
-    locator = SourceLocator(
-        kind="css_selector", value=node.stable_locator(), preview=control_url[:120]
-    )
+    locator = _css_locator(node.stable_locator(), control_url)
     rows: list[Evidence] = []
     variant_fields: list[tuple[str, object]] = [
         ("variant.url", control_url),

@@ -292,7 +292,6 @@ async def _run_navigation(
         operation=lambda: navigate_browser_page(
             page,
             url=request.url,
-            browser_engine=state.runtime_engine,
             timeout_seconds=remaining(),
             phase_timings_ms=state.phase_timings_ms,
             readiness_policy=readiness_policy,

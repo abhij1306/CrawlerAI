@@ -6,6 +6,22 @@ from __future__ import annotations
 from tests.unit.extraction_pipeline_test_support import *
 
 
+def test_product_option_label_maps_preserves_valid_axis_labels() -> None:
+    from app.core.records.structured_variant_state import product_option_label_maps
+
+    assert product_option_label_maps(
+        {
+            "attributes": [
+                {"type": "color", "options": [{"value": "brn", "label": "Brown"}]},
+                {"type": "color", "options": [{"value": "brn", "label": "Dark Brown"}]},
+                {"type": "size", "options": [{"value": "", "label": "Ignored"}]},
+                {"type": "size", "options": [None, {"value": "8", "label": ""}]},
+                None,
+            ]
+        }
+    ) == {"color": {"brn": "Dark Brown"}}
+
+
 def test_js_state_dict_values_do_not_crash_dedupe() -> None:
     artifacts = {
         "js_state_objects": {

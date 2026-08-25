@@ -1,0 +1,1080 @@
+{
+  "metadata": {
+    "dataset": "crawlerai_improvement_defects_compact",
+    "version": "2.0",
+    "purpose": "Planning input for Codex. Group defects by engineering root-cause area instead of repeating research evidence."
+  },
+  "summary": {
+    "cases": 82,
+    "failing_cases": 59,
+    "defects": 165,
+    "severity": {
+      "critical": 14,
+      "high": 48,
+      "medium": 84,
+      "low": 19
+    },
+    "recommended_order": [
+      "product_identity_and_page_state",
+      "selected_variant_state",
+      "commercial_fields",
+      "variants_and_options",
+      "product_identifiers",
+      "core_identity_fields",
+      "attributes",
+      "reviews"
+    ]
+  },
+  "problem_areas": [
+    {
+      "area": "commercial_fields",
+      "priority": "P0",
+      "goal": "Reliably extract and normalize price, currency, original price and stock state; separate locale/time variance from extraction failure.",
+      "defects": 26,
+      "affected_cases": 12,
+      "case_ids": [
+        1,
+        21,
+        26,
+        28,
+        34,
+        55,
+        61,
+        67,
+        72,
+        78,
+        79,
+        81
+      ],
+      "top_fields": [
+        {
+          "field": "availability",
+          "count": 9
+        },
+        {
+          "field": "price",
+          "count": 7
+        },
+        {
+          "field": "currency",
+          "count": 4
+        },
+        {
+          "field": "original_price",
+          "count": 4
+        },
+        {
+          "field": "price_min",
+          "count": 1
+        },
+        {
+          "field": "price_max",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "price",
+          "expected": "58.00",
+          "actual": null
+        },
+        {
+          "id": 1,
+          "field": "currency",
+          "expected": "USD",
+          "actual": null
+        },
+        {
+          "id": 1,
+          "field": "availability",
+          "expected": "in_stock",
+          "actual": null
+        },
+        {
+          "id": 21,
+          "field": "price",
+          "expected": "100.00",
+          "actual": null
+        }
+      ]
+    },
+    {
+      "area": "product_identity_and_page_state",
+      "priority": "P0",
+      "goal": "Keep extraction bound to the requested PDP/product family; do not drift to category/related products or collapse configurable family pages.",
+      "defects": 3,
+      "affected_cases": 3,
+      "case_ids": [
+        1,
+        34,
+        55
+      ],
+      "top_fields": [
+        {
+          "field": "product_identity",
+          "count": 3
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "product_identity",
+          "expected": "Nike Dunk Low Retro White Black Panda (DD1391-100)",
+          "actual": "Nike Dunk Low Retro Varsity Jacket Sail Fir University Gold / https://stockx.com/nike/dunk"
+        },
+        {
+          "id": 34,
+          "field": "product_identity",
+          "expected": "Configurable family page: iPhone 16 + iPhone 16 Plus",
+          "actual": "iPhone 16 Plus"
+        },
+        {
+          "id": 55,
+          "field": "product_identity",
+          "expected": "Poppi Prebiotic Soda, Punch Pop, 12 Oz, 12 Pack (ASIN B0F5Y3X8PP)",
+          "actual": "Sparkling Prebiotic Beverage Vinegar Seltzer"
+        }
+      ]
+    },
+    {
+      "area": "variants_and_options",
+      "priority": "P0",
+      "goal": "Extract product options and variant dimensions/availability without flattening or losing option structure.",
+      "defects": 3,
+      "affected_cases": 3,
+      "case_ids": [
+        22,
+        26,
+        34
+      ],
+      "top_fields": [
+        {
+          "field": "variants",
+          "count": 3
+        }
+      ],
+      "examples": [
+        {
+          "id": 22,
+          "field": "variants",
+          "expected": [
+            "UK 3",
+            "UK 7",
+            "UK 8",
+            "UK 9",
+            "UK 10",
+            "UK 11"
+          ],
+          "actual": []
+        },
+        {
+          "id": 26,
+          "field": "variants",
+          "expected": "All 8 sizes are coming_soon",
+          "actual": [
+            {
+              "size": "1X",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "2X",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "3X",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "L",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "M",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "S",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "XL",
+              "actual": "out_of_stock"
+            },
+            {
+              "size": "XS",
+              "actual": "out_of_stock"
+            }
+          ]
+        },
+        {
+          "id": 34,
+          "field": "variants",
+          "expected": [
+            {
+              "model": "iPhone 16",
+              "price": "699.00"
+            },
+            {
+              "model": "iPhone 16 Plus",
+              "price": "799.00"
+            }
+          ],
+          "actual": []
+        }
+      ]
+    },
+    {
+      "area": "selected_variant_state",
+      "priority": "P0",
+      "goal": "Honor URL/query-selected color, fit, style, child SKU and other explicit product state.",
+      "defects": 2,
+      "affected_cases": 2,
+      "case_ids": [
+        28,
+        79
+      ],
+      "top_fields": [
+        {
+          "field": "selected_color",
+          "count": 1
+        },
+        {
+          "field": "selected_fit",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 28,
+          "field": "selected_color",
+          "expected": "Berry Jam/Berry Patch (color/318988)",
+          "actual": "CrawlerAI canonicalized to Alabaster/Birch (color/1108576)"
+        },
+        {
+          "id": 79,
+          "field": "selected_fit",
+          "expected": "Classic / Smoked Walnut",
+          "actual": "Petite Soleil pant in linen"
+        }
+      ]
+    },
+    {
+      "area": "product_identifiers",
+      "priority": "P1",
+      "goal": "Capture stable product identifiers such as SKU/style/ASIN/product ID from structured or embedded sources.",
+      "defects": 17,
+      "affected_cases": 17,
+      "case_ids": [
+        1,
+        2,
+        4,
+        5,
+        12,
+        21,
+        22,
+        28,
+        55,
+        56,
+        61,
+        66,
+        67,
+        71,
+        75,
+        79,
+        81
+      ],
+      "top_fields": [
+        {
+          "field": "sku",
+          "count": 11
+        },
+        {
+          "field": "style_id",
+          "count": 4
+        },
+        {
+          "field": "asin",
+          "count": 1
+        },
+        {
+          "field": "product_id",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "style_id",
+          "expected": "DD1391-100",
+          "actual": null
+        },
+        {
+          "id": 2,
+          "field": "sku",
+          "expected": "DIME2SP2542BLK",
+          "actual": null
+        },
+        {
+          "id": 4,
+          "field": "sku",
+          "expected": "HJ0139-045",
+          "actual": null
+        },
+        {
+          "id": 5,
+          "field": "sku",
+          "expected": "HQ7978-103",
+          "actual": "45993954607338"
+        }
+      ]
+    },
+    {
+      "area": "core_identity_fields",
+      "priority": "P1",
+      "goal": "Normalize title and brand without losing or switching product identity.",
+      "defects": 16,
+      "affected_cases": 15,
+      "case_ids": [
+        10,
+        11,
+        20,
+        21,
+        27,
+        31,
+        34,
+        40,
+        46,
+        55,
+        56,
+        61,
+        71,
+        73,
+        79
+      ],
+      "top_fields": [
+        {
+          "field": "brand",
+          "count": 15
+        },
+        {
+          "field": "title",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 10,
+          "field": "brand",
+          "expected": "Levtex Home",
+          "actual": null
+        },
+        {
+          "id": 11,
+          "field": "title",
+          "expected": "Arizona Birko-Flor in Color Black",
+          "actual": "arizona core birkoflor 0 eva u 1"
+        },
+        {
+          "id": 11,
+          "field": "brand",
+          "expected": "BIRKENSTOCK",
+          "actual": null
+        },
+        {
+          "id": 20,
+          "field": "brand",
+          "expected": "Nike",
+          "actual": null
+        }
+      ]
+    },
+    {
+      "area": "attributes",
+      "priority": "P2",
+      "goal": "Improve normalized secondary attributes such as color, material, gender, size and condition.",
+      "defects": 79,
+      "affected_cases": 50,
+      "case_ids": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12,
+        15,
+        16,
+        19,
+        20,
+        21,
+        22,
+        23,
+        25,
+        26,
+        28,
+        29,
+        30,
+        33,
+        35,
+        37,
+        38,
+        39,
+        41,
+        43,
+        51,
+        56,
+        57,
+        59,
+        61,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        76,
+        78,
+        79,
+        80,
+        81,
+        82
+      ],
+      "top_fields": [
+        {
+          "field": "color",
+          "count": 35
+        },
+        {
+          "field": "gender",
+          "count": 19
+        },
+        {
+          "field": "material",
+          "count": 17
+        },
+        {
+          "field": "size",
+          "count": 5
+        },
+        {
+          "field": "condition",
+          "count": 2
+        },
+        {
+          "field": "size_options",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "color",
+          "expected": "White/Black",
+          "actual": null
+        },
+        {
+          "id": 2,
+          "field": "color",
+          "expected": "BLACK",
+          "actual": null
+        },
+        {
+          "id": 2,
+          "field": "material",
+          "expected": "100% Cotton",
+          "actual": null
+        },
+        {
+          "id": 2,
+          "field": "gender",
+          "expected": "Men",
+          "actual": null
+        }
+      ]
+    },
+    {
+      "area": "reviews",
+      "priority": "P3",
+      "goal": "Extract ratings/review counts when present; lower priority than commerce-critical fields.",
+      "defects": 19,
+      "affected_cases": 10,
+      "case_ids": [
+        16,
+        25,
+        32,
+        42,
+        51,
+        70,
+        74,
+        78,
+        79,
+        81
+      ],
+      "top_fields": [
+        {
+          "field": "review_count",
+          "count": 10
+        },
+        {
+          "field": "rating",
+          "count": 9
+        }
+      ],
+      "examples": [
+        {
+          "id": 16,
+          "field": "review_count",
+          "expected": 222,
+          "actual": null
+        },
+        {
+          "id": 25,
+          "field": "rating",
+          "expected": 4.2,
+          "actual": null
+        },
+        {
+          "id": 25,
+          "field": "review_count",
+          "expected": 1167,
+          "actual": null
+        },
+        {
+          "id": 32,
+          "field": "rating",
+          "expected": 4.453032,
+          "actual": null
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "url": "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+      "issues": [
+        "WRONG_PRODUCT_IDENTITY",
+        "MISSING_STYLE_ID",
+        "MISSING_VOLATILE_FIELD",
+        "MISSING_CURRENCY",
+        "MISSING_AVAILABILITY",
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 2,
+      "url": "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+      "issues": [
+        "MISSING_SKU",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 4,
+      "url": "https://www.shoepalace.com/products/jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1?variant=43468991627470",
+      "issues": [
+        "MISSING_SKU",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 5,
+      "url": "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103",
+      "issues": [
+        "WRONG_VALUE",
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 6,
+      "url": "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html?queryID=92cd67a81343c72b1e7ea4257417a975",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 8,
+      "url": "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 9,
+      "url": "https://www.backmarket.com/en-us/p/iphone-15-plus",
+      "issues": [
+        "MISSING_CONDITION"
+      ]
+    },
+    {
+      "id": 10,
+      "url": "https://www.target.com/p/tobago-stripe-duvet-cover-set-levtex-home/-/A-1002150739?preselect=1002150742#lnk=sametab",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_COLOR",
+        "MISSING_SIZE"
+      ]
+    },
+    {
+      "id": 11,
+      "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+      "issues": [
+        "WRONG_VALUE",
+        "MISSING_BRAND",
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 12,
+      "url": "https://www.converse.com/shop/p/chuck-taylor-all-star-retro-embroidery-unisex-high-top-shoe/A16914F.html?dwvar_A16914F_color=black%2Fnew%20found%20bloom&dwvar_A16914F_width=standard&styleNo=A16914F&cgid=womens-high-top-shoes",
+      "issues": [
+        "MISSING_SKU",
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 15,
+      "url": "https://bombas.com/products/mens-all-purpose-performance-ankle-socks",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 16,
+      "url": "https://www.vans.com/en-us/p/shoes/icons/old-skool-5205/old-skool-VN000E9TBPG",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 19,
+      "url": "https://savannahs.com/collections/all-boots/products/pavlova-100-lace-up-blush-satin-boots-cl28517s",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 20,
+      "url": "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 21,
+      "url": "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_SKU",
+        "MISSING_PRICE",
+        "MISSING_CURRENCY",
+        "MISSING_ORIGINAL_PRICE",
+        "MISSING_AVAILABILITY",
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 22,
+      "url": "https://in.puma.com/in/en/pd/speedcat-sneakers/406329?swatch=02",
+      "issues": [
+        "MISSING_STYLE_ID",
+        "MISSING_COLOR",
+        "MISSING_SIZE_OPTIONS",
+        "MISSING_VARIANT_DIMENSION"
+      ]
+    },
+    {
+      "id": 23,
+      "url": "https://ar.puma.com/pd/zapatillas-mostro-ecstasy-unisex/397328.html?color=07",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 25,
+      "url": "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 26,
+      "url": "https://www.fashionnova.com/products/just-vibes-strapless-pant-set-yellow?recommendationAttributionId=error-nosto-1-fallback-nosto-1-copy-1720644688978",
+      "issues": [
+        "MISSING_ORIGINAL_PRICE",
+        "WRONG_VALUE",
+        "MISSING_COLOR",
+        "WRONG_VARIANT_AVAILABILITY"
+      ]
+    },
+    {
+      "id": 27,
+      "url": "https://www.ulta.com/p/shape-tape-concealer-xlsImpprod14251035",
+      "issues": [
+        "MISSING_BRAND"
+      ]
+    },
+    {
+      "id": 28,
+      "url": "https://www.zappos.com/kratos/p/womens-hoka-bondi-9-berry-jam-berry-patch/product/9984296/color/318988?zlfid=191&ref=pd_search_nr-1-bqcp_1",
+      "issues": [
+        "WRONG_SELECTED_VARIANT",
+        "MISSING_SKU",
+        "MISSING_AVAILABILITY",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 29,
+      "url": "https://zadig-et-voltaire.com/eu/uk/p/JMTS01771443/t-shirt-teddyx-blue-sixtine",
+      "issues": [
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 30,
+      "url": "https://www.karenmillen.com/eu/product/karen-millen-cotton-utility-button-detail-barrel-leg-trouser_bkk28382?colour=ivory",
+      "issues": [
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 31,
+      "url": "https://www.phase-eight.com/product/lucinda-spot-midi-dress-10015500806.html",
+      "issues": [
+        "MISSING_BRAND"
+      ]
+    },
+    {
+      "id": 32,
+      "url": "https://www.glossier.com/en-in/products/balm-dotcom",
+      "issues": [
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 33,
+      "url": "https://www.brooklinen.com/products/plush-bath-towels?variant=42851068870746",
+      "issues": [
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 34,
+      "url": "https://www.apple.com/shop/buy-iphone/iphone-16",
+      "issues": [
+        "CONFIGURABLE_FAMILY_COLLAPSED",
+        "MISSING_BRAND",
+        "MISSING_PRICE_MIN",
+        "WRONG_VALUE",
+        "MISSING_PRODUCT_OPTIONS"
+      ]
+    },
+    {
+      "id": 35,
+      "url": "https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 37,
+      "url": "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 38,
+      "url": "https://www.net-a-porter.com/en-us/shop/product/eleuteri/jewelry-and-watches/vintage-bracelets/plus-bulgari-vintage-1980s-doppio-cuore-18-karat-gold-coral-and-diamond-bracelet/46376663163120086",
+      "issues": [
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 39,
+      "url": "https://www.gucci.com/int/en/pr/men/accessories-for-men/scarves-for-men/scarves-for-men/gg-wool-silk-jacquard-stole-p-8705434GAK31360",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 40,
+      "url": "https://www.onepeloton.com/shop/tread",
+      "issues": [
+        "MISSING_BRAND"
+      ]
+    },
+    {
+      "id": 41,
+      "url": "https://www.rockler.com/rockler-table-saw-crosscut-sled",
+      "issues": [
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 42,
+      "url": "https://www.ifixit.com/products/iphone-16-plus-battery",
+      "issues": [
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 43,
+      "url": "https://www.kitchenaid.com/countertop-appliances/food-processors/processors/p.13-cup-food-processor.KFP1318CU.html",
+      "issues": [
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 46,
+      "url": "https://www.nintendo.com/us/store/products/pragmata-switch-2/",
+      "issues": [
+        "MISSING_BRAND"
+      ]
+    },
+    {
+      "id": 51,
+      "url": "https://www.roamluggage.com/collections/luggage/products/large-check-in",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_MATERIAL",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 55,
+      "url": "https://www.amazon.com/Sparkling-Prebiotic-Beverage-Vinegar-Seltzer/dp/B0F5Y3X8PP/?th=1",
+      "issues": [
+        "WRONG_PRODUCT_IDENTITY",
+        "WRONG_VALUE",
+        "MISSING_ASIN",
+        "MISSING_PRICE",
+        "MISSING_CURRENCY",
+        "MISSING_AVAILABILITY"
+      ]
+    },
+    {
+      "id": 56,
+      "url": "https://amsterdamvintagewatches.com/shop/rolex-day-date-18038-champagne-5/",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_SKU",
+        "MISSING_CONDITION",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 57,
+      "url": "https://www.bhphotovideo.com/c/product/1882297-REG/cozyla_cd_8v543f0_white_us_32_4k_calendar_gen2_white.html",
+      "issues": [
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 59,
+      "url": "https://www.bluenile.com/engagement-rings/design-your-own-ring/riviera-pave-diamond-engagement-ring-in-14k-white-gold-1-6-ct-tw-item-195326",
+      "issues": [
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 61,
+      "url": "https://www2.hm.com/en_us/productpage.1344928003.html",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_SKU",
+        "MISSING_PRICE",
+        "MISSING_CURRENCY",
+        "MISSING_ORIGINAL_PRICE",
+        "MISSING_AVAILABILITY",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 65,
+      "url": "https://www.underarmour.com/en-us/p/ua_charged_assert_10_mens_running_shoes/3026175.html",
+      "issues": [
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 66,
+      "url": "https://us.puma.com/us/en/pd/suede-classic-sneakers/395205",
+      "issues": [
+        "WRONG_VALUE",
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 67,
+      "url": "https://www.newbalance.com/pd/1080v15/M1080V15_RU-FTW-825428.html?dwvar_M1080V15__RU-FTW-825428_style=M108022W",
+      "issues": [
+        "MISSING_STYLE_ID",
+        "WRONG_VALUE",
+        "WRONG_VALUE",
+        "MISSING_COLOR"
+      ]
+    },
+    {
+      "id": 68,
+      "url": "https://www.thenorthface.com/en-us/p/womens/womens-bottoms/womens-pants-224272/womens-basin-convertible-pants-NF0A8FBT?color=2EL",
+      "issues": [
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 69,
+      "url": "https://www.gap.com/browse/product.do?pid=887835012&vid=1&pcid=80799&cid=80799&nav=meganav%3AMen%3ACategories%3APants#pdp-page-content",
+      "issues": [
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 70,
+      "url": "https://www.skechers.com/skechers-viper-court-pro-2.0---pickleball/246109_WBLP.html",
+      "issues": [
+        "MISSING_GENDER",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 71,
+      "url": "https://www.calvinklein.us/en/men/accessories/bags/structured-commuter-bag/198629014314.html",
+      "issues": [
+        "MISSING_BRAND",
+        "WRONG_VALUE",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 72,
+      "url": "https://www.ralphlauren.global/in/en/the-iconic-cotton-chino-ball-cap-650310.html?dwvar650310_colorname=Heritage%20Royal&cgid=women-scarves-hats-gloves#start=1&cgid=women-scarves-hats-gloves",
+      "issues": [
+        "WRONG_VALUE",
+        "MISSING_COLOR",
+        "MISSING_MATERIAL"
+      ]
+    },
+    {
+      "id": 73,
+      "url": "https://usa.tommy.com/en/women/shoes-accessories/shoes/script-monogram-espadrille-sandal/TZ001658-420.html?journey=women-shoesandacc-shoes-sandalsandslides",
+      "issues": [
+        "MISSING_BRAND",
+        "MISSING_MATERIAL",
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 74,
+      "url": "https://www.vans.com/en-us/p/shoes/icons/old-skool-5205/lx-old-skool-36-VN000D9RH91",
+      "issues": [
+        "MISSING_COLOR",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 75,
+      "url": "https://www.sephora.com/product/eadem-le-chouchou-exfoliating-softening-peptide-lip-balm-P511921?skuId=2960730&icid2=bestsellers_us_skugrid_ufe:p511921:product",
+      "issues": [
+        "MISSING_SKU"
+      ]
+    },
+    {
+      "id": 76,
+      "url": "https://www.clinique.com/product/1687/126187/skincare/moisturizers/clinique-smart-clinical-repairtm-overnight-recovery-cream-mask",
+      "issues": [
+        "MISSING_SIZE"
+      ]
+    },
+    {
+      "id": 78,
+      "url": "https://www.balmainbeauty.com/product/39323/130117/fragrance/carbone-eau-de-parfum#/sku/189322",
+      "issues": [
+        "WRONG_VALUE",
+        "WRONG_VALUE",
+        "MISSING_SIZE",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 79,
+      "url": "https://www.jcrew.com/in/m/womens/categories/clothing/pants/wide-leg/ME988?display=standard&fit=Classic&colorProductCode=CI939&colorCode=BR8825",
+      "issues": [
+        "WRONG_SELECTED_FIT",
+        "MISSING_BRAND",
+        "MISSING_STYLE_ID",
+        "WRONG_VALUE",
+        "MISSING_COLOR",
+        "MISSING_GENDER",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 80,
+      "url": "https://www.ae.com/us/en/p/women/tops/tank-tops-tube-tops/ae-daily-fave-tank-top/0366_6514_115",
+      "issues": [
+        "MISSING_GENDER"
+      ]
+    },
+    {
+      "id": 81,
+      "url": "https://www.chewy.com/wellness-core-rawrev-grain-free-wild/dp/141791",
+      "issues": [
+        "MISSING_PRODUCT_ID",
+        "MISSING_ORIGINAL_PRICE",
+        "MISSING_SIZE",
+        "MISSING_RATING",
+        "MISSING_REVIEW_COUNT"
+      ]
+    },
+    {
+      "id": 82,
+      "url": "https://www.petco.com/product/blue-female-crowntail-betta",
+      "issues": [
+        "MISSING_SIZE"
+      ]
+    }
+  ]
+}

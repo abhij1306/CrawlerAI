@@ -123,7 +123,6 @@ async def navigate_browser_page(
     page: Any,
     *,
     url: str,
-    browser_engine: str | None = None,
     timeout_seconds: float,
     phase_timings_ms: dict[str, int],
     readiness_policy: dict[str, object] | None,

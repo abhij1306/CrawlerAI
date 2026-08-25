@@ -11,6 +11,42 @@
 
 This is a reviewed subset. Sonar opened **647 issues** and **34 hotspots**. Most are style, duplicate literals, or analyzer false positives. Only items below are treated as real product risk or real maintainability debt.
 
+## Remediation closure
+
+The reviewed remediation scope is closed on 2026-08-25. PR `#64` supplied the main implementation; the remaining residuals were corrected in the working tree on revision `f49509018c76b415a89e26b71af58f59bcd66e83`.
+
+- Canonical static gate passed, including Ruff, mypy, VitePlus, LOC, and complexity.
+- The affected selector reached 1,293 passes before exposing one acquisition diagnostic-wrapper regression and one load-sensitive batch timeout. The wrapper contract was corrected, the batch case passed alone, and the required retry delta passed 393 tests.
+- Processed closure scan: CE task `d9b690f8-d57a-431e-a7c8-a39ca299794d`, analysis `d6758fa2-423c-48fd-8e57-213f581fd34e`, status `SUCCESS`.
+- That scan cleared every original audited residual except rejected V1. It found one new complexity relocation in a DOM helper; the helper was reduced locally from Sonar 19 to Radon 7 while keeping `dom.py` at its 1,217-line ceiling.
+- Follow-up CE task `16ec8733-7364-4dc6-a69c-9f02dababb04` was submitted but intentionally not polled further at user direction. No additional Sonar run or query was made.
+
+V1 remains rejected. Unnamed complexity findings remain outside this audit's remediation scope.
+
+## Intermediate post-merge verification
+
+PR `#64` merged as revision `f49509018c76b415a89e26b71af58f59bcd66e83`, but the remediation plan is **not complete**.
+
+- Fresh scan CE task: `df70770a-9a62-4b27-b0a6-4b1f85a594f6` (`SUCCESS`)
+- Analysis: `316713e0-5673-4d10-9abf-7266eaed0dbb`
+- Scope and Python profile: unchanged from the reviewed baseline
+- Targeted-rule query: 87 open issues — 79 `python:S3776`, two `python:S7503`, two `python:S5713`, and one each of `python:S1172`, `python:S1871`, `python:S112`, and `python:S7497`
+
+Audited areas cleared by the refreshed scan: backend/frontend `S5852`, parameter-count `python:S107`, frontend complexity, frontend accessibility (`S6848`, `S6819`), and duplicate CSS (`S4666`). Eight of the 13 named backend complexity targets also cleared.
+
+Valid residuals at the merged revision:
+
+| Rule | Current location | Residual |
+| --- | --- | --- |
+| `python:S7503` | `crawl/pipeline/retry/stage.py:214`; `crawl/pipeline/runtime_helpers.py:70` | Two audited fake-async helpers remain. |
+| `python:S1172` | `acquisition/browser_page_flow.py:126` | `browser_engine` remains unused after the argument-list refactor. |
+| `python:S112` | `acquisition/fetch/fetch_context.py:337` | Audited generic acquisition exception remains. |
+| `python:S1871` | `core/records/url_identity.py:628` | Audited identical URL-token branch remains. |
+| `python:S5713` | `core/records/js_state_scope.py:332`; `acquisition/fetch/fetch_context.py:304` | One audited and one changed-file redundant exception tuple remain. |
+| `python:S3776` | `core/shared/field_coerce.py:194`; `core/records/structured_variant_state.py:172`; `extraction/collectors/dom.py:281,340,549` | Five named complexity targets remain above 15 (20, 18, 22, 19, and 24 respectively). |
+
+The remaining 74 `python:S3776` findings are outside the plan's named complexity scope. V1 remains open in Sonar as `python:S7497`, but is rejected below based on regression evidence.
+
 ## Headline measures
 
 | Metric | Value |
@@ -31,7 +67,6 @@ This is a reviewed subset. Sonar opened **647 issues** and **34 hotspots**. Most
 
 | ID | Rule | Location | Why it is valid |
 | --- | --- | --- | --- |
-| V1 | `python:S7497` (BUG) | `backend/app/acquisition/browser_stage_runner.py:98` | `except asyncio.CancelledError: pass` swallows cancellation after `wait_for(shield(stage_task))`. If the **caller** is cancelled, this helper can finish teardown and return normally instead of propagating cancel. Comment says caller owns cancel; current code does not re-raise. |
 | V2 | `python:S7503` | `backend/app/crawl/batch_runtime.py:90` `_prewarm_browser_pool` | Marked `async` and always `return None` with no await. Callers think they prewarm a pool. Dead no-op. |
 | V3 | `python:S7503` | `backend/app/crawl/pipeline/retry/stage.py:143`, `acquisition/fetch/attempt_plan.py:88`, `crawl/pipeline/runtime_helpers.py:31`, `intelligence/discovery.py:414`, `mcp_server/tools.py:32` | Async functions with no await. Misleading concurrency contract; extra event-loop hops for no work. |
 
@@ -122,6 +157,7 @@ Native-control rules on custom widgets. Valid for keyboard/screen-reader use of 
 
 | Finding | Verdict |
 | --- | --- |
+| V1 / `python:S7497` `browser_stage_runner.py:98` | **False bug.** Caller cancellation propagates out of the stage runner. Teardown intentionally consumes cancellation from the already-cancelled child task. `backend/tests/unit/test_browser_stage_runner.py` proves caller cancellation escapes after cleanup and stage timeout remains `TimeoutError`. |
 | `typescript:S7727` `use-run-log-stream.ts:161` `.reduce(appendLiveLog)` | **False bug.** `appendLiveLog(current, incoming)` ignores extra `reduce` args. |
 | `python:S3516` `batch_runtime.py:282,350` “always same return” | **False.** `_record_url_result` and `_process_urls_in_parallel` return varying `verdict` / counts. Analyzer collapsed the tuple shape. |
 | `python:S5655` `_attempt_browser_rung` type mismatch | **False.** Call site matches `(context, fetched, request, ...)`. |
@@ -144,12 +180,11 @@ Native-control rules on custom widgets. Valid for keyboard/screen-reader use of 
 
 ## Suggested fix order
 
-1. Re-raise or explicitly handle caller `CancelledError` in `browser_stage_runner.py`.
-2. Delete or implement `_prewarm_browser_pool`; drop fake `async` on the S7503 list.
-3. Atomic-safe regexes on HTML/URL coerce paths (`html_helpers`, `url_identity`, `field_coerce`).
-4. Remove unused pipeline parameters (start with `persistence.py` and `fetch_context.py`).
-5. Split the 30+ complexity functions in `dom.py` and `structured_variant_state.py` along existing owners.
-6. Native table/dropdown markup if crawl review a11y is in scope.
+1. Preserve V1 production behavior and its cancellation/timeout regressions.
+2. Remove `async` from the two residual S7503 helpers and update callers.
+3. Remove the residual browser parameter and correct the remaining exception/branch findings.
+4. Reduce the five residual named complexity callables to 15 or less.
+5. Run the canonical check/test selectors and repeat the targeted Sonar query before closure.
 
 ## Scan notes
 

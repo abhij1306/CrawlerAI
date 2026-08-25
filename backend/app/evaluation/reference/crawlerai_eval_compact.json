@@ -1,0 +1,1018 @@
+{
+  "metadata": {
+    "dataset": "crawlerai_ecommerce_eval_compact",
+    "version": "2.0",
+    "cases": 82,
+    "purpose": "Compact engineering eval/reference for CrawlerAI improvement planning.",
+    "rules": [
+      "Only independently supported expected fields are included.",
+      "Missing fields are omitted, not asserted as null.",
+      "Descriptions/images/provenance/research notes are intentionally excluded.",
+      "Variant lists are summarized by verified dimensions, expected count when known, and up to 3 examples.",
+      "constraints.mode=volatile or locale_sensitive means presence/handling matters more than exact snapshot value."
+    ]
+  },
+  "cases": [
+    {
+      "id": 1,
+      "url": "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+      "expected": {
+        "title": "Nike Dunk Low Retro White Black Panda",
+        "brand": "Nike",
+        "style_id": "DD1391-100",
+        "currency": "USD",
+        "availability": "in_stock",
+        "color": "White/Black"
+      },
+      "constraints": {
+        "price": {
+          "value": "58.00",
+          "mode": "volatile"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "url": "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+      "expected": {
+        "title": "Dime Soft Rock Crewneck",
+        "brand": "Dime",
+        "sku": "DIME2SP2542BLK",
+        "style_id": "DIME2SP2542BLK",
+        "price": "64.00",
+        "currency": "EUR",
+        "availability": "out_of_stock",
+        "color": "BLACK",
+        "material": "100% Cotton",
+        "gender": "Men",
+        "size_options": [
+          "S",
+          "M",
+          "L",
+          "XL"
+        ],
+        "variant_count": 4
+      },
+      "variants": {
+        "fields": [
+          "size",
+          "price",
+          "currency",
+          "availability"
+        ],
+        "count": 4,
+        "examples": [
+          {
+            "size": "L",
+            "price": "64.00",
+            "currency": "EUR",
+            "availability": "out_of_stock"
+          },
+          {
+            "size": "M",
+            "price": "64.00",
+            "currency": "EUR",
+            "availability": "out_of_stock"
+          },
+          {
+            "size": "S",
+            "price": "64.00",
+            "currency": "EUR",
+            "availability": "out_of_stock"
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "url": "https://sneakerpolitics.com/collections/hoodies/products/one-of-these-days-follow-the-road-pullover-hoodie-dark-brown",
+      "expected": {
+        "title": "One Of These Days Follow The Road Pullover Hoodie - Dark Brown",
+        "brand": "One Of These Days"
+      }
+    },
+    {
+      "id": 4,
+      "url": "https://www.shoepalace.com/products/jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1?variant=43468991627470",
+      "expected": {
+        "title": "Jordan 40th Anniversary Graphic Womens Short Sleeve Shirt Black Red HJ0139-045",
+        "brand": "Jordan",
+        "sku": "HJ0139-045",
+        "color": "Black/Red",
+        "material": "cotton",
+        "gender": "Women",
+        "size_options": [
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "2XL"
+        ],
+        "variant_count": 6
+      },
+      "variants": {
+        "fields": [
+          "size"
+        ],
+        "count": 6,
+        "examples": [
+          {
+            "size": "L"
+          },
+          {
+            "size": "M"
+          },
+          {
+            "size": "XS"
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "url": "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103",
+      "expected": {
+        "title": "Jordan Air Jordan 5 Retro White Metallic",
+        "brand": "Jordan",
+        "sku": "HQ7978-103",
+        "color": "White",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 6,
+      "url": "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html?queryID=92cd67a81343c72b1e7ea4257417a975",
+      "expected": {
+        "title": "47 NY Yankees Clean Up Cap Vintage Navy",
+        "brand": "47",
+        "sku": "B-RGW17GWS-VN",
+        "color": "Vintage Navy",
+        "material": "100% Cotton"
+      }
+    },
+    {
+      "id": 7,
+      "url": "https://www.size.co.uk/product/purple-adidas-originals-sl-72-pt/19738059/",
+      "expected": {
+        "title": "Purple adidas Originals SL 72 PT",
+        "brand": "adidas Originals"
+      }
+    },
+    {
+      "id": 8,
+      "url": "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+      "expected": {
+        "title": "SATISFY TheROCKER - Jet Black",
+        "brand": "SATISFY",
+        "color": "Jet Black",
+        "material": "Rippy 66 Monomesh",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 9,
+      "url": "https://www.backmarket.com/en-us/p/iphone-15-plus",
+      "expected": {
+        "title": "iPhone 15 Plus • Unlocked Refurbished",
+        "brand": "Apple",
+        "condition": "Refurbished"
+      }
+    },
+    {
+      "id": 10,
+      "url": "https://www.target.com/p/tobago-stripe-duvet-cover-set-levtex-home/-/A-1002150739?preselect=1002150742#lnk=sametab",
+      "expected": {
+        "title": "Tobago Stripe Blue Twin/Twin XL Duvet Cover Set - Levtex Home",
+        "brand": "Levtex Home",
+        "color": "Blue",
+        "size": "Twin/Twin XL"
+      }
+    },
+    {
+      "id": 11,
+      "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+      "expected": {
+        "title": "Arizona Birko-Flor in Color Black",
+        "brand": "BIRKENSTOCK",
+        "color": "Black"
+      }
+    },
+    {
+      "id": 12,
+      "url": "https://www.converse.com/shop/p/chuck-taylor-all-star-retro-embroidery-unisex-high-top-shoe/A16914F.html?dwvar_A16914F_color=black%2Fnew%20found%20bloom&dwvar_A16914F_width=standard&styleNo=A16914F&cgid=womens-high-top-shoes",
+      "expected": {
+        "title": "Chuck Taylor All Star Retro Embroidery",
+        "brand": "Converse",
+        "sku": "A16914F",
+        "color": "black/new found bloom",
+        "gender": "Unisex"
+      }
+    },
+    {
+      "id": 13,
+      "url": "https://us.frankbody.com/products/original-coffee-scrub",
+      "expected": {
+        "title": "Original Coffee Scrub",
+        "brand": "frank body"
+      }
+    },
+    {
+      "id": 14,
+      "url": "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+      "expected": {
+        "title": "Going Coconuts Warm Neutral Palette",
+        "brand": "ColourPop"
+      }
+    },
+    {
+      "id": 15,
+      "url": "https://bombas.com/products/mens-all-purpose-performance-ankle-socks",
+      "expected": {
+        "title": "Men's All Sport Ankle Socks",
+        "brand": "Bombas",
+        "availability": "in_stock",
+        "color": "Midnight Forest",
+        "gender": "Men"
+      },
+      "constraints": {
+        "price": {
+          "value": "15.00",
+          "mode": "locale_sensitive"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "url": "https://www.vans.com/en-us/p/shoes/icons/old-skool-5205/old-skool-VN000E9TBPG",
+      "expected": {
+        "title": "Old Skool Shoe in True White",
+        "brand": "Vans",
+        "price": "85.00",
+        "currency": "USD",
+        "color": "True White",
+        "review_count": 222
+      }
+    },
+    {
+      "id": 17,
+      "url": "https://www.puravidabracelets.com/products/black-seascape-stretch-bracelet?pr_prod_strat=e5_desc&pr_rec_id=3ef961ba9&pr_rec_pid=7216396632150&pr_ref_pid=7559267778646&pr_seq=uniform&variant=41298450153558",
+      "expected": {
+        "title": "Black Seascape Stretch Bracelet",
+        "brand": "Pura Vida"
+      }
+    },
+    {
+      "id": 18,
+      "url": "https://31philliplim.com/collections/the-luna-bag-1/products/luna-1",
+      "expected": {
+        "title": "Luna Bag",
+        "brand": "3.1 Phillip Lim"
+      }
+    },
+    {
+      "id": 19,
+      "url": "https://savannahs.com/collections/all-boots/products/pavlova-100-lace-up-blush-satin-boots-cl28517s",
+      "expected": {
+        "title": "Christian Louboutin Pavlova 100 Lace Up Blush Satin Boots",
+        "brand": "Christian Louboutin",
+        "color": "Blush",
+        "material": "Satin"
+      }
+    },
+    {
+      "id": 20,
+      "url": "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
+      "expected": {
+        "title": "Nike Air Force 1 '07 Men's Shoes",
+        "brand": "Nike",
+        "sku": "CW2288-111",
+        "color": "White/White",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 21,
+      "url": "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+      "expected": {
+        "title": "Stan Smith Shoes",
+        "brand": "adidas",
+        "sku": "M20324",
+        "price": "100.00",
+        "original_price": "100.00",
+        "currency": "USD",
+        "availability": "in_stock",
+        "color": "Cloud White / Core White / Green"
+      }
+    },
+    {
+      "id": 22,
+      "url": "https://in.puma.com/in/en/pd/speedcat-sneakers/406329?swatch=02",
+      "expected": {
+        "title": "Speedcat Sneakers",
+        "brand": "PUMA",
+        "style_id": "406329_02",
+        "price": "9999.00",
+        "currency": "INR",
+        "availability": "in_stock",
+        "color": "For All Time Red-PUMA White",
+        "size_options": [
+          "UK 3",
+          "UK 7",
+          "UK 8",
+          "UK 9",
+          "UK 10",
+          "UK 11"
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "url": "https://ar.puma.com/pd/zapatillas-mostro-ecstasy-unisex/397328.html?color=07",
+      "expected": {
+        "title": "Zapatillas Mostro Ecstasy unisex",
+        "brand": "PUMA",
+        "color": "Fresh Mint-PUMA White",
+        "gender": "Unisex"
+      }
+    },
+    {
+      "id": 24,
+      "url": "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html?v1=527078510",
+      "expected": {
+        "title": "RUSTIC COTTON T-SHIRT",
+        "brand": "Zara"
+      }
+    },
+    {
+      "id": 25,
+      "url": "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+      "expected": {
+        "title": "Gymshark Arrival 5\" Shorts - Black",
+        "brand": "Gymshark",
+        "price": "26.00",
+        "currency": "USD",
+        "color": "Black",
+        "rating": 4.2,
+        "review_count": 1167
+      }
+    },
+    {
+      "id": 26,
+      "url": "https://www.fashionnova.com/products/just-vibes-strapless-pant-set-yellow?recommendationAttributionId=error-nosto-1-fallback-nosto-1-copy-1720644688978",
+      "expected": {
+        "title": "Just Vibes Strapless Pant Set",
+        "brand": "Fashion Nova",
+        "price": "18.00",
+        "original_price": "29.99",
+        "currency": "USD",
+        "availability": "coming_soon",
+        "color": "Yellow",
+        "size_options": [
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "1X",
+          "2X",
+          "3X"
+        ],
+        "variant_count": 8
+      },
+      "variants": {
+        "fields": [
+          "size",
+          "color",
+          "availability"
+        ],
+        "count": 8,
+        "examples": [
+          {
+            "size": "1X",
+            "color": "yellow",
+            "availability": "coming_soon"
+          },
+          {
+            "size": "2X",
+            "color": "yellow",
+            "availability": "coming_soon"
+          },
+          {
+            "size": "3X",
+            "color": "yellow",
+            "availability": "coming_soon"
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "url": "https://www.ulta.com/p/shape-tape-concealer-xlsImpprod14251035",
+      "expected": {
+        "title": "Shape Tape Concealer",
+        "brand": "Tarte"
+      }
+    },
+    {
+      "id": 28,
+      "url": "https://www.zappos.com/kratos/p/womens-hoka-bondi-9-berry-jam-berry-patch/product/9984296/color/318988?zlfid=191&ref=pd_search_nr-1-bqcp_1",
+      "expected": {
+        "title": "Women's HOKA Bondi 9",
+        "brand": "HOKA",
+        "sku": "9984296",
+        "product_id": "9984296",
+        "price": "174.95",
+        "currency": "USD",
+        "availability": "in_stock",
+        "color": "Berry Jam/Berry Patch",
+        "material": "Textile lining; EVA insole; rubber outsole",
+        "gender": "Women"
+      }
+    },
+    {
+      "id": 29,
+      "url": "https://zadig-et-voltaire.com/eu/uk/p/JMTS01771443/t-shirt-teddyx-blue-sixtine",
+      "expected": {
+        "title": "T-shirt Teddyx Blue Sixtine",
+        "brand": "Zadig&Voltaire",
+        "color": "Sixtine"
+      }
+    },
+    {
+      "id": 30,
+      "url": "https://www.karenmillen.com/eu/product/karen-millen-cotton-utility-button-detail-barrel-leg-trouser_bkk28382?colour=ivory",
+      "expected": {
+        "title": "Ivory Cotton Utility Button Detail Barrel Leg Trouser",
+        "brand": "Karen Millen",
+        "color": "Ivory"
+      }
+    },
+    {
+      "id": 31,
+      "url": "https://www.phase-eight.com/product/lucinda-spot-midi-dress-10015500806.html",
+      "expected": {
+        "title": "Lucinda Spot Midi Dress",
+        "brand": "Phase Eight"
+      }
+    },
+    {
+      "id": 32,
+      "url": "https://www.glossier.com/en-in/products/balm-dotcom",
+      "expected": {
+        "title": "Balm Dotcom",
+        "brand": "Glossier",
+        "rating": 4.453032,
+        "review_count": 10752
+      }
+    },
+    {
+      "id": 33,
+      "url": "https://www.brooklinen.com/products/plush-bath-towels?variant=42851068870746",
+      "expected": {
+        "title": "Plush Turkish Cotton Bath Towels Set of 2",
+        "brand": "Brooklinen",
+        "material": "Turkish cotton"
+      }
+    },
+    {
+      "id": 34,
+      "url": "https://www.apple.com/shop/buy-iphone/iphone-16",
+      "expected": {
+        "title": "Buy iPhone 16 and iPhone 16 Plus",
+        "brand": "Apple",
+        "price_min": "699.00",
+        "price_max": "799.00",
+        "currency": "USD",
+        "product_family": true,
+        "model_options": [
+          {
+            "model": "iPhone 16",
+            "price": 699,
+            "currency": "USD"
+          },
+          {
+            "model": "iPhone 16 Plus",
+            "price": 799,
+            "currency": "USD"
+          }
+        ],
+        "variant_count": 2
+      },
+      "variants": {
+        "fields": [
+          "model",
+          "price",
+          "currency"
+        ],
+        "count": 2,
+        "examples": [
+          {
+            "model": "iPhone 16",
+            "price": "699.00",
+            "currency": "USD"
+          },
+          {
+            "model": "iPhone 16 Plus",
+            "price": "799.00",
+            "currency": "USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "url": "https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+      "expected": {
+        "title": "WILLY CHAVARRIA - Brown Ruff Rider Leather Jacket",
+        "brand": "WILLY CHAVARRIA",
+        "color": "Brown",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 36,
+      "url": "https://www.selfridges.com/GB/en/product/creed-aventus-eau-de-parfum_365-83022651-AVENTUS/",
+      "expected": {
+        "title": "CREED - Aventus Eau de Parfum",
+        "brand": "CREED"
+      }
+    },
+    {
+      "id": 37,
+      "url": "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657",
+      "expected": {
+        "title": "Locò Small embroidered top-handle bag",
+        "brand": "Valentino Garavani",
+        "sku": "P01155657",
+        "price": "1935.00",
+        "currency": "EUR",
+        "availability": "in_stock",
+        "color": "beige",
+        "material": "linen"
+      }
+    },
+    {
+      "id": 38,
+      "url": "https://www.net-a-porter.com/en-us/shop/product/eleuteri/jewelry-and-watches/vintage-bracelets/plus-bulgari-vintage-1980s-doppio-cuore-18-karat-gold-coral-and-diamond-bracelet/46376663163120086",
+      "expected": {
+        "title": "ELEUTERI + Bulgari Vintage 1980s Doppio Cuore 18-karat gold, coral and diamond bracelet",
+        "brand": "ELEUTERI",
+        "sku": "0400674000885",
+        "availability": "out_of_stock",
+        "color": "Gold"
+      },
+      "constraints": {
+        "price": {
+          "value": "22500.00",
+          "mode": "locale_sensitive"
+        }
+      }
+    },
+    {
+      "id": 39,
+      "url": "https://www.gucci.com/int/en/pr/men/accessories-for-men/scarves-for-men/scarves-for-men/gg-wool-silk-jacquard-stole-p-8705434GAK31360",
+      "expected": {
+        "title": "Gucci - GG wool silk jacquard stole",
+        "brand": "Gucci",
+        "sku": "870543 4GAK3 1360",
+        "color": "White/Black",
+        "material": "70% wool, 30% silk",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 40,
+      "url": "https://www.onepeloton.com/shop/tread",
+      "expected": {
+        "title": "Shop the Peloton Cross Training Tread",
+        "brand": "Peloton"
+      }
+    },
+    {
+      "id": 41,
+      "url": "https://www.rockler.com/rockler-table-saw-crosscut-sled",
+      "expected": {
+        "title": "Rockler Table Saw Crosscut Sled",
+        "brand": "Rockler",
+        "material": "Phenolic, aluminum, steel, nylon, ABS plastic, thermoplastic rubber"
+      }
+    },
+    {
+      "id": 42,
+      "url": "https://www.ifixit.com/products/iphone-16-plus-battery",
+      "expected": {
+        "title": "iPhone 16 Plus Battery",
+        "rating": 5.0,
+        "review_count": 3
+      }
+    },
+    {
+      "id": 43,
+      "url": "https://www.kitchenaid.com/countertop-appliances/food-processors/processors/p.13-cup-food-processor.KFP1318CU.html",
+      "expected": {
+        "title": "13-Cup Food Processor - Contour Silver",
+        "brand": "KitchenAid",
+        "color": "Contour Silver"
+      }
+    },
+    {
+      "id": 44,
+      "url": "https://www.williams-sonoma.com/products/breville-the-bambino-plus/",
+      "expected": {
+        "title": "Breville Bambino Plus Espresso Machine with Milk Frother",
+        "brand": "Breville"
+      }
+    },
+    {
+      "id": 45,
+      "url": "https://intl.fender.com/products/american-vintage-ii-1972-telecaster-thinline?variant=45940647035102",
+      "expected": {
+        "title": "American Vintage II 1972 Telecaster Thinline",
+        "brand": "Fender"
+      }
+    },
+    {
+      "id": 46,
+      "url": "https://www.nintendo.com/us/store/products/pragmata-switch-2/",
+      "expected": {
+        "title": "PRAGMATA for Nintendo Switch 2",
+        "brand": "Capcom"
+      }
+    },
+    {
+      "id": 47,
+      "url": "https://www.usa.canon.com/shop/p/eos-r5",
+      "expected": {
+        "title": "Canon EOS R5",
+        "brand": "Canon"
+      }
+    },
+    {
+      "id": 48,
+      "url": "https://www.lego.com/en-us/product/millennium-falcon-75192",
+      "expected": {
+        "title": "Millennium Falcon 75192",
+        "brand": "LEGO"
+      }
+    },
+    {
+      "id": 49,
+      "url": "https://www.sony.co.in/interchangeable-lens-cameras/products/ilce-9m3?sku=ilce-9m3-in5",
+      "expected": {
+        "title": "ILCE-9M3",
+        "brand": "Sony"
+      }
+    },
+    {
+      "id": 50,
+      "url": "https://fellowproducts.com/products/stagg-ekg-electric-pour-over-kettle",
+      "expected": {
+        "title": "Stagg EKG Electric Kettle",
+        "brand": "Fellow"
+      }
+    },
+    {
+      "id": 51,
+      "url": "https://www.roamluggage.com/collections/luggage/products/large-check-in",
+      "expected": {
+        "title": "Large Check-In",
+        "brand": "ROAM",
+        "price": "850.00",
+        "currency": "USD",
+        "color": "Newport - Navy Gloss / Slate Trim",
+        "material": "50% recycled polycarbonate",
+        "rating": 4.9,
+        "review_count": 76
+      }
+    },
+    {
+      "id": 52,
+      "url": "https://www.therevolverclub.com/products/technics-sl-1200mk7?variant=39337238593654&country=IN%C2%A4cy=INR&srsltid=AfmBOorhNg50VFVA7JuwiVt-GvpmZo20096mRBth-CNZwRVTLnvRD8Asy5Q",
+      "expected": {
+        "title": "Technics SL-1200MK7 [Phono Pre-Amp Needed] (Quick Ship)",
+        "brand": "Technics"
+      }
+    },
+    {
+      "id": 53,
+      "url": "https://www.bluenile.com/engagement-rings/design-your-own-ring/classic-four-prong-solitaire-engagement-ring-in-platinum-item-194156",
+      "expected": {
+        "title": "Classic Four Prong Solitaire Engagement Ring in Platinum",
+        "brand": "Blue Nile"
+      }
+    },
+    {
+      "id": 54,
+      "url": "https://www.aesop.com/home-fragrance/candles/aganice-aromatique-candle/HM03.html#tab=description",
+      "expected": {
+        "title": "Aganice Aromatique Candle",
+        "brand": "Aesop"
+      }
+    },
+    {
+      "id": 55,
+      "url": "https://www.amazon.com/Sparkling-Prebiotic-Beverage-Vinegar-Seltzer/dp/B0F5Y3X8PP/?th=1",
+      "expected": {
+        "title": "Poppi Prebiotic Soda, Punch Pop, 12 Oz, 12 Pack",
+        "brand": "Poppi",
+        "asin": "B0F5Y3X8PP",
+        "price": "23.64",
+        "currency": "USD",
+        "availability": "in_stock"
+      }
+    },
+    {
+      "id": 56,
+      "url": "https://amsterdamvintagewatches.com/shop/rolex-day-date-18038-champagne-5/",
+      "expected": {
+        "title": "Rolex Day-Date 18038",
+        "brand": "Rolex",
+        "sku": "8303",
+        "condition": "Vintage",
+        "color": "Champagne",
+        "material": "18k yellow gold"
+      }
+    },
+    {
+      "id": 57,
+      "url": "https://www.bhphotovideo.com/c/product/1882297-REG/cozyla_cd_8v543f0_white_us_32_4k_calendar_gen2_white.html",
+      "expected": {
+        "title": "Cozyla 32\" 4K Calendar+ 2 (White)",
+        "brand": "Cozyla",
+        "color": "White"
+      }
+    },
+    {
+      "id": 58,
+      "url": "https://arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397",
+      "expected": {
+        "title": "Norvan LD 4 GTX Shoe Men's",
+        "brand": "Arc'teryx"
+      }
+    },
+    {
+      "id": 59,
+      "url": "https://www.bluenile.com/engagement-rings/design-your-own-ring/riviera-pave-diamond-engagement-ring-in-14k-white-gold-1-6-ct-tw-item-195326",
+      "expected": {
+        "title": "Riviera Pavé Diamond Engagement Ring in 14k White Gold (1/6 ct. tw.)",
+        "brand": "Blue Nile",
+        "sku": "501590w14",
+        "material": "14K White Gold"
+      }
+    },
+    {
+      "id": 60,
+      "url": "https://www.brilliantearth.com/Secret-Halo-1.5mm-Diamond-Ring-14K-Gold-BE1D13065-76823478",
+      "expected": {
+        "title": "Secret Halo 1.5mm Diamond Ring in 14K Yellow Gold",
+        "brand": "Brilliant Earth"
+      }
+    },
+    {
+      "id": 61,
+      "url": "https://www2.hm.com/en_us/productpage.1344928003.html",
+      "expected": {
+        "title": "Relaxed-Fit Printed T-Shirt",
+        "brand": "H&M",
+        "sku": "1344928003",
+        "price": "12.99",
+        "original_price": "12.99",
+        "currency": "USD",
+        "availability": "in_stock",
+        "color": "White/Track Unit TRK",
+        "material": "Cotton, Jersey"
+      }
+    },
+    {
+      "id": 62,
+      "url": "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html",
+      "expected": {
+        "title": "RUSTIC COTTON T-SHIRT",
+        "brand": "Zara"
+      }
+    },
+    {
+      "id": 63,
+      "url": "https://www.uniqlo.com/us/en/products/E455957-000/00?colorDisplayCode=57&sizeDisplayCode=004",
+      "expected": {
+        "title": "Men's Premium Linen Shirt",
+        "brand": "UNIQLO"
+      }
+    },
+    {
+      "id": 64,
+      "url": "https://www.levi.com/US/en_US/clothing/men/shorts/carrier-cargo-lightweight-9-mens-shorts/p/001KG0053",
+      "expected": {}
+    },
+    {
+      "id": 65,
+      "url": "https://www.underarmour.com/en-us/p/ua_charged_assert_10_mens_running_shoes/3026175.html",
+      "expected": {
+        "title": "UA Charged Assert 10 Men's Running Shoes",
+        "brand": "Under Armour",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 66,
+      "url": "https://us.puma.com/us/en/pd/suede-classic-sneakers/395205",
+      "expected": {
+        "title": "Suede XL Sneakers",
+        "brand": "PUMA",
+        "sku": "395205_01",
+        "price": "85.00",
+        "currency": "USD",
+        "color": "PUMA Team Royal-PUMA White"
+      }
+    },
+    {
+      "id": 67,
+      "url": "https://www.newbalance.com/pd/1080v15/M1080V15_RU-FTW-825428.html?dwvar_M1080V15__RU-FTW-825428_style=M108022W",
+      "expected": {
+        "title": "1080v15 Suede",
+        "brand": "New Balance",
+        "style_id": "M108022W",
+        "price": "169.99",
+        "currency": "USD",
+        "availability": "out_of_stock",
+        "color": "SEA SALT with FAST TRACK"
+      }
+    },
+    {
+      "id": 68,
+      "url": "https://www.thenorthface.com/en-us/p/womens/womens-bottoms/womens-pants-224272/womens-basin-convertible-pants-NF0A8FBT?color=2EL",
+      "expected": {
+        "title": "Women’s Basin Convertible Pants",
+        "brand": "The North Face",
+        "gender": "Women"
+      }
+    },
+    {
+      "id": 69,
+      "url": "https://www.gap.com/browse/product.do?pid=887835012&vid=1&pcid=80799&cid=80799&nav=meganav%3AMen%3ACategories%3APants#pdp-page-content",
+      "expected": {
+        "title": "Linen-Cotton Relaxed Taper Easy Pants",
+        "brand": "Gap",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 70,
+      "url": "https://www.skechers.com/skechers-viper-court-pro-2.0---pickleball/246109_WBLP.html",
+      "expected": {
+        "title": "Skechers Viper Court Pro 2.0 - Pickleball",
+        "brand": "Skechers",
+        "price": "115.00",
+        "currency": "USD",
+        "gender": "Men",
+        "rating": 3.5,
+        "review_count": 296
+      }
+    },
+    {
+      "id": 71,
+      "url": "https://www.calvinklein.us/en/men/accessories/bags/structured-commuter-bag/198629014314.html",
+      "expected": {
+        "title": "Structured Commuter Bag",
+        "brand": "Calvin Klein",
+        "sku": "4D3032G-PCG",
+        "material": "100% polyester",
+        "gender": "Men"
+      }
+    },
+    {
+      "id": 72,
+      "url": "https://www.ralphlauren.global/in/en/the-iconic-cotton-chino-ball-cap-650310.html?dwvar650310_colorname=Heritage%20Royal&cgid=women-scarves-hats-gloves#start=1&cgid=women-scarves-hats-gloves",
+      "expected": {
+        "title": "The Iconic Cotton Chino Ball Cap",
+        "brand": "Polo Ralph Lauren",
+        "sku": "650310",
+        "price": "9700.00",
+        "currency": "INR",
+        "availability": "out_of_stock",
+        "color": "Heritage Royal",
+        "material": "100% cotton"
+      }
+    },
+    {
+      "id": 73,
+      "url": "https://usa.tommy.com/en/women/shoes-accessories/shoes/script-monogram-espadrille-sandal/TZ001658-420.html?journey=women-shoesandacc-shoes-sandalsandslides",
+      "expected": {
+        "title": "Script Monogram Espadrille Sandal",
+        "brand": "Tommy Hilfiger",
+        "material": "Polyester and polyethylene upper; thermoplastic rubber outsole",
+        "gender": "Women"
+      }
+    },
+    {
+      "id": 74,
+      "url": "https://www.vans.com/en-us/p/shoes/icons/old-skool-5205/lx-old-skool-36-VN000D9RH91",
+      "expected": {
+        "title": "Premium Old Skool 36 Shoe in Paint Splatter Charcoal Grey",
+        "brand": "Vans",
+        "sku": "VN000D9RH91",
+        "price": "110.00",
+        "currency": "USD",
+        "availability": "out_of_stock",
+        "color": "Paint Splatter Charcoal Grey",
+        "rating": 4.2,
+        "review_count": 76
+      }
+    },
+    {
+      "id": 75,
+      "url": "https://www.sephora.com/product/eadem-le-chouchou-exfoliating-softening-peptide-lip-balm-P511921?skuId=2960730&icid2=bestsellers_us_skugrid_ufe:p511921:product",
+      "expected": {
+        "title": "Le Chouchou Exfoliating + Softening Peptide Lip Balm",
+        "brand": "EADEM",
+        "sku": "2960730"
+      }
+    },
+    {
+      "id": 76,
+      "url": "https://www.clinique.com/product/1687/126187/skincare/moisturizers/clinique-smart-clinical-repairtm-overnight-recovery-cream-mask",
+      "expected": {
+        "title": "Clinique Smart Clinical Repair Overnight Recovery Cream + Mask",
+        "brand": "Clinique",
+        "size": "1.7 oz / 50 ml"
+      }
+    },
+    {
+      "id": 77,
+      "url": "https://www.maccosmetics.com/product/13840/363/products/makeup/eyes/eyeshadow/eye-shadow",
+      "expected": {
+        "title": "Small Eye Shadow",
+        "brand": "MAC"
+      }
+    },
+    {
+      "id": 78,
+      "url": "https://www.balmainbeauty.com/product/39323/130117/fragrance/carbone-eau-de-parfum#/sku/189322",
+      "expected": {
+        "title": "Carbone Eau de Parfum",
+        "brand": "Balmain Beauty",
+        "price": "190.00",
+        "currency": "USD",
+        "availability": "out_of_stock",
+        "size": "50 ml",
+        "rating": 4.3,
+        "review_count": 1285
+      }
+    },
+    {
+      "id": 79,
+      "url": "https://www.jcrew.com/in/m/womens/categories/clothing/pants/wide-leg/ME988?display=standard&fit=Classic&colorProductCode=CI939&colorCode=BR8825",
+      "expected": {
+        "title": "Soleil pant in linen",
+        "brand": "J.Crew",
+        "style_id": "CI939",
+        "price": "14462.00",
+        "currency": "INR",
+        "color": "Smoked Walnut",
+        "gender": "Women",
+        "selected_fit": "Classic",
+        "rating": 4.7,
+        "review_count": 1378
+      }
+    },
+    {
+      "id": 80,
+      "url": "https://www.ae.com/us/en/p/women/tops/tank-tops-tube-tops/ae-daily-fave-tank-top/0366_6514_115",
+      "expected": {
+        "title": "AE Daily Fave Tank Top",
+        "brand": "American Eagle",
+        "gender": "Women"
+      }
+    },
+    {
+      "id": 81,
+      "url": "https://www.chewy.com/wellness-core-rawrev-grain-free-wild/dp/141791",
+      "expected": {
+        "title": "Wellness CORE+ with Freeze-Dried Pieces Adult Grain-Free High-Protein Natural Wild Game Dry Dog Food, 18-lb bag",
+        "brand": "Wellness",
+        "product_id": "141791",
+        "price": "81.98",
+        "original_price": "84.99",
+        "currency": "USD",
+        "availability": "in_stock",
+        "size": "18-lb bag",
+        "rating": 4.4,
+        "review_count": 446
+      }
+    },
+    {
+      "id": 82,
+      "url": "https://www.petco.com/product/blue-female-crowntail-betta",
+      "expected": {
+        "title": "Female Blue Crowntail Betta",
+        "brand": "Imagitarium",
+        "sku": "1397702",
+        "price": "7.49",
+        "currency": "USD",
+        "availability": "out_of_stock",
+        "size": "1.5-2 inches"
+      }
+    }
+  ]
+}

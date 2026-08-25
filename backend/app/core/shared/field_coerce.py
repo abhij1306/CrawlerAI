@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Iterable
 from typing import Any
 from app.core.records.html_helpers import html_to_text
 from app.core.config.extraction_rules import (
@@ -197,27 +198,56 @@ def coerce_structured_scalar(
     keys: tuple[str, ...],
 ) -> str | None:
     if isinstance(value, str):
-        parsed, fallback = _parse_structured_scalar_text(value, keys=keys)
-        if parsed is not None:
-            return coerce_structured_scalar(parsed, keys=keys)
-        if fallback is not None:
-            return fallback
+        return _coerce_structured_string_scalar(value, keys=keys)
     if isinstance(value, dict):
-        for key in keys:
-            candidate = value.get(key)
-            if candidate in (None, "", [], {}):
-                continue
-            text = coerce_structured_scalar(candidate, keys=keys)
-            if text:
-                return text
-        return None
+        return _coerce_structured_mapping_scalar(value, keys=keys)
     if isinstance(value, list):
-        for item in value:
-            text = coerce_structured_scalar(item, keys=keys)
-            if text:
-                return text
-        return None
+        return _coerce_structured_list_scalar(value, keys=keys)
     return coerce_text(value)
+
+
+def _coerce_structured_string_scalar(
+    value: str,
+    *,
+    keys: tuple[str, ...],
+) -> str | None:
+    parsed, fallback = _parse_structured_scalar_text(value, keys=keys)
+    if parsed is not None:
+        return coerce_structured_scalar(parsed, keys=keys)
+    return fallback if fallback is not None else coerce_text(value)
+
+
+def _coerce_structured_mapping_scalar(
+    value: dict,
+    *,
+    keys: tuple[str, ...],
+) -> str | None:
+    return _first_coerced_structured_scalar(
+        (value.get(key) for key in keys),
+        keys=keys,
+    )
+
+
+def _coerce_structured_list_scalar(
+    value: list,
+    *,
+    keys: tuple[str, ...],
+) -> str | None:
+    return _first_coerced_structured_scalar(value, keys=keys)
+
+
+def _first_coerced_structured_scalar(
+    values: Iterable[object],
+    *,
+    keys: tuple[str, ...],
+) -> str | None:
+    for candidate in values:
+        if candidate in (None, "", [], {}):
+            continue
+        text = coerce_structured_scalar(candidate, keys=keys)
+        if text:
+            return text
+    return None
 
 
 def _parse_structured_scalar_text(

@@ -175,20 +175,36 @@ def product_option_label_maps(data: dict) -> dict[str, dict[str, str]]:
         return {}
     out: dict[str, dict[str, str]] = {}
     for item in raw_attributes:
-        if not isinstance(item, dict):
-            continue
-        axis = canonical_axis(first(item, "type", "attributeId", "id", "name"))
-        raw_options = item.get("options")
-        if not axis or not isinstance(raw_options, list):
-            continue
-        for option in raw_options:
-            if not isinstance(option, dict):
-                continue
-            value = str(scalar_value(option.get("value")) or "").strip()
-            label = str(scalar_value(option.get("label")) or "").strip()
-            if value and label:
-                out.setdefault(axis, {})[value] = label
+        _add_product_option_label_map(out, item)
     return out
+
+
+def _add_product_option_label_map(
+    out: dict[str, dict[str, str]],
+    item: object,
+) -> None:
+    if not isinstance(item, dict):
+        return
+    axis = canonical_axis(first(item, "type", "attributeId", "id", "name"))
+    raw_options = item.get("options")
+    if not axis or not isinstance(raw_options, list):
+        return
+    for option in raw_options:
+        _add_product_option_label(out, axis=axis, option=option)
+
+
+def _add_product_option_label(
+    out: dict[str, dict[str, str]],
+    *,
+    axis: str,
+    option: object,
+) -> None:
+    if not isinstance(option, dict):
+        return
+    value = str(scalar_value(option.get("value")) or "").strip()
+    label = str(scalar_value(option.get("label")) or "").strip()
+    if value and label:
+        out.setdefault(axis, {})[value] = label
 
 
 def variant_axis_hints(

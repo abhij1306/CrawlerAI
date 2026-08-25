@@ -458,6 +458,28 @@ async def test_fetch_page_kitchenaid_prefer_browser_timeout_falls_back_to_http(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_final_browser_fallback_wraps_only_unexpected_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _default_fetch_context()
+    unexpected = RuntimeError("browser implementation failure")
+
+    async def _failing_browser(*_args, **_kwargs):
+        raise unexpected
+
+    monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _failing_browser)
+
+    with pytest.raises(crawl_fetch_runtime.AcquisitionRuntimeError) as raised:
+        await crawl_fetch_runtime._run_final_browser_fallback(
+            context,
+            browser_reason="http-escalation",
+        )
+
+    assert raised.value.__cause__ is unexpected
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_handle_http_result_retries_browser_after_browser_first_failure_and_block(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,

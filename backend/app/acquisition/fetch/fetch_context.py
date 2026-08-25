@@ -298,18 +298,14 @@ async def _try_browser_first_acquisition(
         )
         await _update_host_result_memory(context, result=browser_result)
         return browser_result
-    except (
-        httpx.HTTPError,
-        OSError,
-        TimeoutError,
-        PlaywrightError,
-        SecurityError,
-    ) as exc:
-        await _record_browser_first_failure(
+    except (httpx.HTTPError, OSError, PlaywrightError, SecurityError) as exc:
+        must_propagate = await _record_browser_first_failure(
             context,
             exc=exc,
             resolved_browser_reason=resolved_browser_reason,
         )
+        if must_propagate:
+            raise
         return None
     except Exception as exc:
         raise AcquisitionRuntimeError(
@@ -320,9 +316,9 @@ async def _try_browser_first_acquisition(
 async def _record_browser_first_failure(
     context: _FetchRuntimeContext,
     *,
-    exc: Exception,
+    exc: httpx.HTTPError | OSError | PlaywrightError | SecurityError,
     resolved_browser_reason: str,
-) -> None:
+) -> bool:
     context.last_error = exc
     context.browser_first_failed = True
     if not context.last_browser_attempt_diagnostics:
@@ -334,7 +330,7 @@ async def _record_browser_first_failure(
     if context.fetch_mode == "browser_only" or _hard_browser_requirement(
         context=context
     ):
-        raise exc
+        return True
     await _emit_fetch_event(
         context.on_event,
         "warning",
@@ -343,6 +339,7 @@ async def _record_browser_first_failure(
             f"({type(exc).__name__})"
         ),
     )
+    return False
 
 
 async def _run_final_browser_fallback(
@@ -350,7 +347,6 @@ async def _run_final_browser_fallback(
     *,
     browser_reason: str | None,
 ) -> PageFetchResult:
-    cause = context.last_error if isinstance(context.last_error, Exception) else None
     logger.info(
         "HTTP fetchers exhausted for %s (%s); attempting browser fallback",
         context.url,
@@ -365,12 +361,25 @@ async def _run_final_browser_fallback(
             capture_screenshot=context.capture_screenshot,
             proxies=context.proxies,
         )
+    except (httpx.HTTPError, OSError, PlaywrightError, SecurityError) as exc:
+        _attach_exception_browser_diagnostics(
+            exc,
+            context.last_browser_attempt_diagnostics,
+        )
+        raise
     except Exception as exc:
         _attach_exception_browser_diagnostics(
             exc,
             context.last_browser_attempt_diagnostics,
         )
-        raise exc from cause
+        wrapped = AcquisitionRuntimeError(
+            f"Unexpected browser fallback failure for {context.url}: {exc}"
+        )
+        _attach_exception_browser_diagnostics(
+            wrapped,
+            context.last_browser_attempt_diagnostics,
+        )
+        raise wrapped from exc
 
 
 def _acquisition_strategy_message(

@@ -68,7 +68,7 @@ Make CrawlerAI safe and mechanically deployable before AWS infrastructure is cre
 - `backend/app/extraction/**` — do not change deterministic extraction order or semantics while fixing platform security.
 - `backend/app/publish/**` — do not compensate downstream for acquisition defects.
 - Eval corpora and `TEST_SITES.md` — evidence inputs, not remediation targets.
-- `docs/plans/crawlerai-extraction-accuracy-plan.md` — separate active work owned by the current plan.
+- `docs/plans/crawlerai-data-accuracy-plan.md` and `docs/plans/crawlerai-extraction-coverage-plan.md` — separate queued extraction work; this plan must not alter it.
 - Existing API & MCP route/page ownership — extend `frontend/app/api-access/**`; do not create a parallel surface.
 - Invoro source/state — reference lessons only. Never edit or point CrawlerAI Terraform at Invoro state.
 

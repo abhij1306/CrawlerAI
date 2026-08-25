@@ -211,7 +211,7 @@ def _classify_rung_outcome(exc: BaseException) -> str:
     )
 
 
-async def _handle_failed_browser_rung(
+def _handle_failed_browser_rung(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     attempt: EscalationAttemptDiagnostics,
@@ -294,7 +294,7 @@ async def _attempt_browser_rung(
         )
         raise
     except Exception as exc:
-        await _handle_failed_browser_rung(
+        _handle_failed_browser_rung(
             context,
             fetched,
             attempt,

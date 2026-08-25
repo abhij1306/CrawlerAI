@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from app.core.database import SessionLocal
@@ -67,8 +68,11 @@ def log_pipeline_event(
 def pipeline_acquisition_event_logger(context):
     """Build the acquisition-stage ``on_event`` callback for a URL context."""
 
-    async def _log(level: str, message: str) -> None:
+    def _log(level: str, message: str) -> asyncio.Future[None]:
         log_pipeline_event(context, level, message)
+        completed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        completed.set_result(None)
+        return completed
 
     return _log
 

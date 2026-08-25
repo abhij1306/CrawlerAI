@@ -618,13 +618,15 @@ def _commerce_identity_tokens(value: object) -> frozenset[str]:
             and re.fullmatch(r"[a-f0-9]+", token)
         ):
             continue
-        if token.isdigit() and len(token) >= DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH:
-            tokens.add(token)
-        elif (
+        numeric_identity = token.isdigit() and (
+            len(token) >= DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH
+        )
+        alphanumeric_identity = (
             len(token) >= DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH
             and any(char.isalpha() for char in token)
             and any(char.isdigit() for char in token)
-        ):
+        )
+        if numeric_identity or alphanumeric_identity:
             tokens.add(token)
     return frozenset(tokens)
 

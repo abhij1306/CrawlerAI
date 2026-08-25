@@ -656,7 +656,7 @@ async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_
             crawl_fetch_runtime.FetchPageCall("https://paycomonline.net/career-page")
         )
 
-    assert excinfo.value.__cause__ is httpx_error
+    assert excinfo.value.__cause__ is browser_error
     assert excinfo.value.browser_diagnostics["browser_attempted"] is True
     assert excinfo.value.browser_diagnostics["browser_outcome"] == "navigation_failed"
     assert excinfo.value.browser_diagnostics["failure_kind"] == "navigation_error"
