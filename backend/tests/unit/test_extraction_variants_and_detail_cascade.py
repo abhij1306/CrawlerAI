@@ -151,7 +151,7 @@ def test_responsive_layout_dimensions_do_not_materialize_as_variants() -> None:
     assert not result.records[0].get("variants")
 
 
-def test_jsonld_aggregate_offer_low_price_materializes() -> None:
+def test_jsonld_aggregate_offer_publishes_bounds_not_current_price() -> None:
     html = HTML.replace(
         '"@type": "Offer",\n    "price": "129",',
         '"@type": "AggregateOffer",\n    "lowPrice": "9.99",\n    "highPrice": "19.99",',
@@ -163,10 +163,26 @@ def test_jsonld_aggregate_offer_low_price_materializes() -> None:
     )
     record = result.records[0] if result.records else None
     assert record is not None
-    assert record["price"] == "9.99"
+    assert record.get("price") is None
+    assert record["price_min"] == "9.99"
     assert record["price_max"] == "19.99"
     assert record.get("original_price") is None
     assert record["currency"] == "USD"
+
+
+def test_jsonld_equal_aggregate_bounds_publish_exact_current_price() -> None:
+    html = HTML.replace(
+        '"@type": "Offer",\n    "price": "129",',
+        '"@type": "AggregateOffer",\n    "lowPrice": "19.99",\n    "highPrice": "19.99",',
+    )
+
+    record = _extract(
+        "ecommerce_detail", html, "https://shop.test/products/trail-shoe"
+    ).records[0]
+
+    assert record["price"] == "19.99"
+    assert record["price_min"] == "19.99"
+    assert record["price_max"] == "19.99"
 
 
 def test_jsonld_aggregate_offer_child_availability_materializes() -> None:
@@ -176,25 +192,32 @@ def test_jsonld_aggregate_offer_child_availability_materializes() -> None:
         <script type="application/ld+json">
         {
           "@context": "https://schema.org",
-          "@type": "Product",
+          "@type": "ProductGroup",
           "name": "Bambino Plus",
           "url": "https://shop.test/products/bambino-plus",
           "image": "https://shop.test/bambino.jpg",
+          "variesBy": ["https://schema.org/size"],
+          "hasVariant": [
+            {"@type": "Product", "name": "Bambino Plus, Small", "url": "https://shop.test/products/bambino-plus-small"},
+            {"@type": "Product", "name": "Bambino Plus, Large", "url": "https://shop.test/products/bambino-plus"}
+          ],
           "offers": {
             "@type": "AggregateOffer",
-            "lowPrice": "499.95",
+            "lowPrice": "399.95",
             "highPrice": "499.95",
             "priceCurrency": "USD",
             "offers": [
               {
                 "@type": "Offer",
-                "price": "499.95",
+                "url": "https://shop.test/products/bambino-plus-small",
+                "price": "399.95",
                 "priceCurrency": "USD",
-                "availability": "https://schema.org/InStock",
+                "availability": "https://schema.org/OutOfStock",
                 "sku": "1437371"
               },
               {
                 "@type": "Offer",
+                "url": "https://shop.test/products/bambino-plus",
                 "price": "499.95",
                 "priceCurrency": "USD",
                 "availability": "https://schema.org/InStock",
@@ -212,6 +235,10 @@ def test_jsonld_aggregate_offer_child_availability_materializes() -> None:
     assert record["price"] == "499.95"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
+    assert {(row["size"], row["price"]) for row in record["variants"]} == {
+        ("Large", "499.95"),
+        ("Small", "399.95"),
+    }
 
 
 def test_jsonld_offer_price_specification_materializes_atomically() -> None:

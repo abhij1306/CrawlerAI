@@ -1,5 +1,3 @@
-"""Variant-to-parent aggregation and parent/variant price reconciliation."""
-
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -197,18 +195,27 @@ def _price_scale_conflicts(left: Decimal, right: Decimal) -> bool:
 
 def _parent_derived_from_variants(
     *,
-    primary_offer_entity_id: str | None,
     primary_product_entity_id: str | None,
+    primary_offer_entity_id: str | None,
     variant_decisions: tuple[VariantDecision, ...],
     expected_variant_count: int,
     existing_fact_keys: frozenset[tuple[str, str]],
     selected_variant_ids: frozenset[str] = frozenset(),
 ) -> tuple[DerivedFact, ...]:
-    if not primary_offer_entity_id:
+    if not primary_product_entity_id:
         return ()
     variants = tuple(row for row in variant_decisions if row.status == "eligible")
     leaf_variants = _leaf_variant_decisions(variants)
-    out: list[DerivedFact] = []
+    out = list(
+        _selected_variant_option_facts(
+            primary_product_entity_id,
+            variants,
+            selected_variant_ids=selected_variant_ids,
+            existing_fact_keys=existing_fact_keys,
+        )
+    )
+    if not primary_offer_entity_id:
+        return tuple(out)
     out.extend(
         _aggregate_variant_field(
             primary_offer_entity_id,
@@ -242,17 +249,48 @@ def _parent_derived_from_variants(
             primary_offer_entity_id,
             variants,
             expected_variant_count=expected_variant_count,
+            selected_variant_ids=selected_variant_ids,
         )
     )
-    if (
-        primary_product_entity_id
-        and (
-            primary_product_entity_id,
-            field_mappings.PRODUCT_SKU_FACT_TYPE,
+    return tuple(out)
+
+
+def _selected_variant_option_facts(
+    entity_id: str,
+    variants: tuple[VariantDecision, ...],
+    *,
+    selected_variant_ids: frozenset[str],
+    existing_fact_keys: frozenset[tuple[str, str]],
+) -> tuple[DerivedFact, ...]:
+    selected = tuple(
+        row for row in variants if row.variant_entity_id in selected_variant_ids
+    )
+    out: list[DerivedFact] = []
+    for axis in ("color", "size"):
+        values = [row.values.get(axis) for row in selected]
+        if (
+            not values
+            or any(value in (None, "", [], {}, ()) for value in values)
+            or len({str(value) for value in values}) != 1
+            or (entity_id, f"product.{axis}") in existing_fact_keys
+        ):
+            continue
+        lineages = [row.lineage.get(axis) for row in selected]
+        out.append(
+            _aggregate_fact(
+                entity_id,
+                f"product.{axis}",
+                values[0],
+                _lineage_evidence_ids(lineages),
+                "selected_variant_option",
+                input_selected_fact_ids=_lineage_reference_ids(
+                    lineages, "selected_fact_id"
+                ),
+                input_derived_fact_ids=_lineage_reference_ids(
+                    lineages, "derived_fact_id"
+                ),
+            )
         )
-        not in existing_fact_keys
-    ):
-        out.extend(_single_variant_sku(primary_product_entity_id, leaf_variants))
     return tuple(out)
 
 
@@ -285,9 +323,8 @@ def _aggregate_variant_field(
 ) -> tuple[DerivedFact, ...]:
     values = [row.values.get(public_field) for row in variants]
     if not values or any(value in (None, "", [], {}, ()) for value in values):
-        # Partial prices may publish a bounded range, never a false aggregate.
         if public_field == "price":
-            return _aggregate_partial_variant_price(
+            return _aggregate_variant_price(
                 entity_id,
                 variants,
                 existing_fact_keys=existing_fact_keys,
@@ -301,18 +338,16 @@ def _aggregate_variant_field(
     evidence_ids = _lineage_evidence_ids(lineages)
     selected_fact_ids = _lineage_reference_ids(lineages, "selected_fact_id")
     derived_fact_ids = _lineage_reference_ids(lineages, "derived_fact_id")
-    if public_field == "price" and len(unique_values) > 1:
-        return _variant_price_range_facts(
+    if public_field == "price":
+        price_facts = _aggregate_variant_price(
             entity_id,
-            unique_values,
+            variants,
             existing_fact_keys=existing_fact_keys,
-            evidence_ids=evidence_ids,
-            selected_fact_ids=selected_fact_ids,
-            derived_fact_ids=derived_fact_ids,
+            selected_variant_ids=selected_variant_ids,
         )
-    if len(unique_values) != 1:
-        return ()
-    if (entity_id, fact_type) in existing_fact_keys:
+        if price_facts:
+            return price_facts
+    if len(unique_values) != 1 or (entity_id, fact_type) in existing_fact_keys:
         return ()
     return (
         _aggregate_fact(
@@ -327,67 +362,13 @@ def _aggregate_variant_field(
     )
 
 
-def _variant_price_range_facts(
-    entity_id: str,
-    unique_values: set[str],
-    *,
-    existing_fact_keys: frozenset[tuple[str, str]],
-    evidence_ids: tuple[str, ...],
-    selected_fact_ids: tuple[str, ...],
-    derived_fact_ids: tuple[str, ...],
-) -> tuple[DerivedFact, ...]:
-    try:
-        decimal_values = tuple(Decimal(value) for value in unique_values)
-    except (InvalidOperation, TypeError, ValueError):
-        return ()
-    minimum = format(min(decimal_values), ".2f")
-    maximum = format(max(decimal_values), ".2f")
-    price = (
-        ()
-        if (entity_id, "offer.price") in existing_fact_keys
-        else (
-            _aggregate_fact(
-                entity_id,
-                "offer.price",
-                minimum,
-                evidence_ids,
-                "minimum_variant_price_aggregate",
-                input_selected_fact_ids=selected_fact_ids,
-                input_derived_fact_ids=derived_fact_ids,
-            ),
-        )
-    )
-    return (
-        *price,
-        _aggregate_fact(
-            entity_id,
-            "offer.price_min",
-            minimum,
-            evidence_ids,
-            "minimum_variant_price_aggregate",
-            input_selected_fact_ids=selected_fact_ids,
-            input_derived_fact_ids=derived_fact_ids,
-        ),
-        _aggregate_fact(
-            entity_id,
-            "offer.price_max",
-            maximum,
-            evidence_ids,
-            "maximum_variant_price_aggregate",
-            input_selected_fact_ids=selected_fact_ids,
-            input_derived_fact_ids=derived_fact_ids,
-        ),
-    )
-
-
-def _aggregate_partial_variant_price(
+def _aggregate_variant_price(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
     *,
     existing_fact_keys: frozenset[tuple[str, str]],
     selected_variant_ids: frozenset[str],
 ) -> tuple[DerivedFact, ...]:
-    """Publish bounded partial prices and an explicitly selected display price."""
     priced = [
         row for row in variants if row.values.get("price") not in (None, "", [], {}, ())
     ]
@@ -400,6 +381,7 @@ def _aggregate_partial_variant_price(
         return ()
     minimum = format(min(value for value, _ in decimals), ".2f")
     maximum = format(max(value for value, _ in decimals), ".2f")
+    complete = len(priced) == len(variants)
     selected_fact = _selected_variant_price_fact(
         entity_id,
         decimals,
@@ -413,8 +395,47 @@ def _aggregate_partial_variant_price(
         maximum=maximum,
         lineages=lineages,
         existing_fact_keys=existing_fact_keys,
+        rule_id=(
+            "minimum_variant_price_aggregate"
+            if complete
+            else "bounded_variant_price_range"
+        ),
     )
-    return (*((selected_fact,) if selected_fact else ()), *ranges)
+    minimum_fact = _complete_variant_minimum_fact(
+        entity_id,
+        minimum,
+        lineages,
+        existing_fact_keys=existing_fact_keys,
+        complete=complete and minimum != maximum,
+        selected=bool(selected_variant_ids),
+    )
+    return (
+        *((selected_fact,) if selected_fact else ()),
+        *((minimum_fact,) if minimum_fact else ()),
+        *ranges,
+    )
+
+
+def _complete_variant_minimum_fact(
+    entity_id: str,
+    minimum: str,
+    lineages: list[object],
+    *,
+    existing_fact_keys: frozenset[tuple[str, str]],
+    complete: bool,
+    selected: bool,
+) -> DerivedFact | None:
+    if not complete or selected or (entity_id, "offer.price") in existing_fact_keys:
+        return None
+    return _aggregate_fact(
+        entity_id,
+        "offer.price",
+        minimum,
+        _lineage_evidence_ids(lineages),
+        "minimum_variant_price_aggregate",
+        input_selected_fact_ids=_lineage_reference_ids(lineages, "selected_fact_id"),
+        input_derived_fact_ids=_lineage_reference_ids(lineages, "derived_fact_id"),
+    )
 
 
 def _selected_variant_price_fact(
@@ -429,7 +450,7 @@ def _selected_variant_price_fact(
         for value, row in decimals
         if row.variant_entity_id in selected_variant_ids
     ]
-    if not selected or (entity_id, "offer.price") in existing_fact_keys:
+    if not selected or len({value for value, _row in selected}) != 1:
         return None
     value, row = selected[0]
     selected_lineage = [row.lineage.get("price")]
@@ -456,6 +477,7 @@ def _bounded_variant_price_facts(
     maximum: str,
     lineages: list[object],
     existing_fact_keys: frozenset[tuple[str, str]],
+    rule_id: str,
 ) -> tuple[DerivedFact, ...]:
     if priced_count < 2 or minimum == maximum:
         return ()
@@ -468,7 +490,7 @@ def _bounded_variant_price_facts(
             field,
             bound_value,
             evidence_ids,
-            "bounded_variant_price_range",
+            rule_id,
             input_selected_fact_ids=selected_fact_ids,
             input_derived_fact_ids=derived_fact_ids,
         )
@@ -485,7 +507,12 @@ def _aggregate_variant_availability(
     variants: tuple[VariantDecision, ...],
     *,
     expected_variant_count: int,
+    selected_variant_ids: frozenset[str] = frozenset(),
 ) -> tuple[DerivedFact, ...]:
+    selected = selected_variant_ids
+    if selected:
+        variants = tuple(row for row in variants if row.variant_entity_id in selected)
+        expected_variant_count = len(selected)
     lineages = tuple(row.lineage.get("availability") for row in variants)
     if len(variants) != expected_variant_count or _has_parent_inherited_lineage(
         lineages
@@ -496,11 +523,7 @@ def _aggregate_variant_availability(
         value not in AVAILABILITY_PARENT_ROLLUP_PRECEDENCE for value in values
     ):
         return ()
-    rolled_up = next(
-        (state for state in AVAILABILITY_PARENT_ROLLUP_PRECEDENCE if state in values),
-        None,
-    )
-    if rolled_up is None:
+    if (rolled_up := _variant_availability_value(values, bool(selected))) is None:
         return ()
     return (
         _aggregate_fact(
@@ -508,7 +531,7 @@ def _aggregate_variant_availability(
             "offer.availability",
             rolled_up,
             _lineage_evidence_ids(lineages),
-            "variant_availability_aggregate",
+            f"{'selected_' if selected else ''}variant_availability_aggregate",
             input_selected_fact_ids=_lineage_reference_ids(
                 lineages, "selected_fact_id"
             ),
@@ -517,30 +540,10 @@ def _aggregate_variant_availability(
     )
 
 
-def _single_variant_sku(
-    entity_id: str,
-    variants: tuple[VariantDecision, ...],
-) -> tuple[DerivedFact, ...]:
-    if len(variants) != 1:
-        return ()
-    sku = variants[0].values.get("sku")
-    if sku in (None, "", [], {}, ()):
-        return ()
-    return (
-        _aggregate_fact(
-            entity_id,
-            "product.sku",
-            sku,
-            _lineage_evidence_ids((variants[0].lineage.get("sku"),)),
-            "single_variant_sku_to_parent",
-            input_selected_fact_ids=_lineage_reference_ids(
-                (variants[0].lineage.get("sku"),), "selected_fact_id"
-            ),
-            input_derived_fact_ids=_lineage_reference_ids(
-                (variants[0].lineage.get("sku"),), "derived_fact_id"
-            ),
-        ),
-    )
+def _variant_availability_value(values: list[str], selected: bool) -> str | None:
+    if selected:
+        return values[0] if len(set(values)) == 1 else None
+    return next(filter(values.__contains__, AVAILABILITY_PARENT_ROLLUP_PRECEDENCE))
 
 
 def _inherit_variant_offer_facts(

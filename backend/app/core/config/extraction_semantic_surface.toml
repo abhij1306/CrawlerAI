@@ -41,7 +41,7 @@ publish_receives_evidence_or_entity_graph = false
 # callable above CC 15 into named domain steps. Total LOC reconciled to the
 # measured readable implementation; the default CC ceiling is now 15 and only
 # the stricter resolver ceiling remains as a module override.
-physical_loc_budget = 17909
+physical_loc_budget = 18182
 default_module_cyclomatic_complexity_budget = 15
 
 [ratchets.module_physical_loc_budgets]
@@ -52,8 +52,9 @@ default_module_cyclomatic_complexity_budget = 15
 "collectors/dom.py" = 1115
 "collectors/js_state.py" = 996
 "collectors/jsonld.py" = 919
+"collectors/jsonld_attributes.py" = 139
 "collectors/metadata.py" = 188
-"collectors/url.py" = 100
+"collectors/url.py" = 120
 "contracts.py" = 787
 "documents.py" = 308
 "engine.py" = 1067
@@ -68,6 +69,7 @@ default_module_cyclomatic_complexity_budget = 15
 "network_listing.py" = 230
 "pipeline.py" = 893
 "publication.py" = 726
+"publication_policy.py" = 40
 "replay.py" = 319
 "representation/__init__.py" = 23
 "representation/flat_map.py" = 246
@@ -75,8 +77,8 @@ default_module_cyclomatic_complexity_budget = 15
 "resolution/decisions.py" = 312
 "resolution/derived.py" = 420
 "resolution/lineage.py" = 116
-"resolution/offers.py" = 212
-"resolution/resolver.py" = 278
+"resolution/offers.py" = 274
+"resolution/resolver.py" = 285
 "resolution/variant_rollup.py" = 611
 "resolution/variants.py" = 447
 "resolution/assets.py" = 296
@@ -84,7 +86,7 @@ default_module_cyclomatic_complexity_budget = 15
 "resolution/ranking.py" = 134
 "result_building.py" = 863
 "sentinel.py" = 251
-"surfaces.py" = 270
+"surfaces.py" = 275
 "targeting.py" = 222
 "validation.py" = 777
 

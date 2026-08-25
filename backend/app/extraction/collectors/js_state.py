@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 import re
@@ -45,6 +43,7 @@ from app.core.records.js_state_scope import (
     root_admits_path,
     select_product_roots,
 )
+from app.core.records.product_identity import target_offer_group_id
 from app.core.records.url_identity import (
     detail_title_from_url,
     detail_urls_conflict,
@@ -212,8 +211,6 @@ def prioritize_evidence_rows(
     requested_fields: tuple[str, ...],
     limit: int,
 ) -> tuple[list[Evidence], tuple[Evidence, ...]]:
-    """Keep structural and requested facts before descriptive bulk evidence."""
-
     requested_facts = {
         fact
         for field in requested_fields
@@ -428,7 +425,12 @@ def _network_product_evidence(
     offer_context = _has_offer_context(path, obj, product_context=product_context)
     if not product_context and not offer_context:
         return []
-    group = f"offer:{artifact_id}:{path}" if offer_context else None
+    raw_identity = _scalar_value(_first(obj, *ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS))
+    product_identity = str(raw_identity or "").strip() or None
+    target_group = target_offer_group_id(
+        bundle.final_url, _url_value(obj), product_identity
+    )
+    group = (target_group or f"offer:{artifact_id}:{path}") if offer_context else None
     product_subject = _network_product_subject(bundle)
     product_source_subject_ids = _structured_source_subject_ids(bundle, obj)
     source_rows: list[tuple[str, str, object, str]] = [
@@ -450,6 +452,7 @@ def _network_product_evidence(
             value=value,
             suffix=suffix,
             group=group,
+            product_identity=product_identity,
             product_subject=product_subject,
             product_source_subject_ids=product_source_subject_ids,
             collector_id=collector_id,
@@ -503,6 +506,7 @@ def _network_evidence(
     value: object,
     suffix: str,
     group: str | None,
+    product_identity: str | None,
     product_subject: str,
     product_source_subject_ids: tuple[str, ...],
     collector_id: str,
@@ -514,17 +518,9 @@ def _network_evidence(
         if fact.startswith("asset.")
         else "product"
     )
-    product_identity = next(
-        (
-            str(obj.get(identity_key) or "").strip()
-            for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
-            if str(obj.get(identity_key) or "").strip()
-        ),
-        None,
-    )
     hint = EntityHint(
         entity_type=entity_type,
-        product_id=product_identity if entity_type == "product" else None,
+        product_id=product_identity if entity_type != "asset" else None,
         sku=str(obj.get("sku") or "").strip() or None,
     )
     is_child = fact.startswith(("offer.", "asset."))

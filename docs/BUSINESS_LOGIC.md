@@ -58,6 +58,24 @@ belong in `INVARIANTS.md`.
 - Ecommerce-detail LLM is evidence adjudication only. It may select/reject grounded evidence, suggest reusable locators, or abstain; it does not invent missing product values.
 - LLM failures degrade visibly and do not corrupt deterministic state.
 
+## Ecommerce-detail public fields
+
+- The detail record publishes `rating`, `review_count`, `materials`, `gender`,
+  `condition`, `style_id`, and `barcode` alongside the existing commercial fields.
+  Each is published only from source evidence and carries lineage; none is inferred
+  to fill a gap.
+- `barcode` is the public name for a product's GTIN/UPC/EAN.
+- `style_id` is the family/style identifier (schema.org `productGroupID`) and stays
+  distinct from `sku`, which is the product-level merchant SKU.
+- `gender` states the audience the source declares, either structurally or in the
+  requested PDP path; it is never inferred from query or tracking state.
+- schema.org enumerations publish as plain wording (`NewCondition` becomes `New`).
+- Trademark and service-mark symbols are legal notation and are not part of a
+  published title or brand.
+- `rating` and `review_count` are currently published as strings, like `price`.
+- A page that fails acquisition (an anti-automation shell) publishes no product
+  rather than a value derived from the URL.
+
 ## Enrichment and product intelligence
 
 - Enrichment is on-demand and separate from crawl output. It reads successful ecommerce-detail records and writes derived enrichment rows.

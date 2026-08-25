@@ -55,6 +55,39 @@ def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
     assert result.records[0]["_lineage"]["variants"][0]["price"]
 
 
+def test_declared_jsonld_size_uses_terminal_variant_name_segment() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ProductGroup",
+      "name": "Trail Mix",
+      "url": "https://shop.test/products/trail-mix/large",
+      "variesBy": ["https://schema.org/size"],
+      "hasVariant": [
+        {"@type": "Product", "name": "Trail Mix, Small bag", "url": "https://shop.test/products/trail-mix/small", "offers": {"price": "10", "priceCurrency": "USD", "availability": "https://schema.org/InStock"}},
+        {"@type": "Product", "name": "Trail Mix, Large bag", "url": "https://shop.test/products/trail-mix/large", "offers": {"price": "20", "priceCurrency": "USD", "availability": "https://schema.org/OutOfStock"}}
+      ]
+    }
+    </script>
+    """
+    result = _extract(
+        "ecommerce_detail", html, "https://shop.test/products/trail-mix/large"
+    )
+
+    assert result.records[0]["price"] == "20.00"
+    assert result.records[0]["availability"] == "out_of_stock"
+    assert (
+        result.records[0]["_lineage"]["availability"]["rule_id"]
+        == "selected_variant_availability_aggregate"
+    )
+    assert result.records[0]["size"] == "Large bag"
+    assert {row["size"] for row in result.records[0]["variants"]} == {
+        "Large bag",
+        "Small bag",
+    }
+
+
 def test_js_state_variant_sku_aliases_materialize_public_sku() -> None:
     result = _extract(
         "ecommerce_detail",

@@ -1,0 +1,1262 @@
+{
+ "metadata": {
+  "dataset": "crawlerai_improvement_defects_html_grounded",
+  "version": "3.2",
+  "purpose": "Compact Codex planning input synchronized with crawlerai_eval_html_grounded_v3_2.json."
+ },
+ "summary": {
+  "cases": 82,
+  "failing_cases": 75,
+  "defects": 257,
+  "recommended_order": [
+   "product_identity_and_page_state",
+   "selected_variant_state",
+   "commercial_fields",
+   "variants_and_options",
+   "product_identifiers",
+   "core_identity_fields",
+   "attributes",
+   "reviews"
+  ]
+ },
+ "problem_areas": [
+  {
+   "area": "product_identity_and_page_state",
+   "priority": "P0",
+   "goal": "Bind extraction to the requested PDP/product family and avoid category, related-product, or wrong-family drift.",
+   "defects": 4,
+   "affected_cases": 4,
+   "case_ids": [
+    1,
+    11,
+    47,
+    55
+   ],
+   "top_fields": [
+    {
+     "field": "title",
+     "count": 4
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "title",
+     "expected": "Nike Dunk Low Retro White Black Panda",
+     "actual": "Nike Dunk Low Retro Varsity Jacket Sail Fir University Gold",
+     "code": "WRONG_PRODUCT_OR_TITLE"
+    },
+    {
+     "id": 11,
+     "field": "title",
+     "expected": "Arizona Birko-Flor in Color Black",
+     "actual": "arizona core birkoflor 0 eva u 1",
+     "code": "WRONG_PRODUCT_OR_TITLE"
+    },
+    {
+     "id": 47,
+     "field": "title",
+     "expected": "Canon EOS R5",
+     "actual": "EOS R5 Body",
+     "code": "WRONG_PRODUCT_OR_TITLE"
+    },
+    {
+     "id": 55,
+     "field": "title",
+     "expected": "Poppi Prebiotic Soda, Punch Pop, 12 Oz, 12 Pack",
+     "actual": "Sparkling Prebiotic Beverage Vinegar Seltzer",
+     "code": "WRONG_PRODUCT_OR_TITLE"
+    }
+   ]
+  },
+  {
+   "area": "selected_variant_state",
+   "priority": "P0",
+   "goal": "Respect variant/color/fit/size selectors encoded in the URL or current page state.",
+   "defects": 49,
+   "affected_cases": 46,
+   "case_ids": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    15,
+    16,
+    19,
+    20,
+    21,
+    22,
+    23,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    35,
+    37,
+    38,
+    39,
+    43,
+    51,
+    56,
+    57,
+    60,
+    61,
+    66,
+    67,
+    70,
+    72,
+    74,
+    76,
+    78,
+    79,
+    80,
+    81,
+    82
+   ],
+   "top_fields": [
+    {
+     "field": "color",
+     "count": 42
+    },
+    {
+     "field": "size",
+     "count": 6
+    },
+    {
+     "field": "selected_fit",
+     "count": 1
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "color",
+     "expected": "White/Black",
+     "actual": null,
+     "code": "MISSING_SELECTED_STATE"
+    },
+    {
+     "id": 2,
+     "field": "color",
+     "expected": "BLACK",
+     "actual": null,
+     "code": "MISSING_SELECTED_STATE"
+    },
+    {
+     "id": 4,
+     "field": "color",
+     "expected": "Black/Red",
+     "actual": null,
+     "code": "MISSING_SELECTED_STATE"
+    },
+    {
+     "id": 5,
+     "field": "color",
+     "expected": "White",
+     "actual": null,
+     "code": "MISSING_SELECTED_STATE"
+    }
+   ]
+  },
+  {
+   "area": "commercial_fields",
+   "priority": "P0",
+   "goal": "Extract price, currency, original price, ranges and stock state from the selected/current product state.",
+   "defects": 42,
+   "affected_cases": 21,
+   "case_ids": [
+    1,
+    3,
+    21,
+    26,
+    27,
+    28,
+    31,
+    33,
+    34,
+    44,
+    46,
+    48,
+    50,
+    55,
+    61,
+    67,
+    72,
+    77,
+    78,
+    79,
+    81
+   ],
+   "top_fields": [
+    {
+     "field": "availability",
+     "count": 14
+    },
+    {
+     "field": "price",
+     "count": 13
+    },
+    {
+     "field": "currency",
+     "count": 7
+    },
+    {
+     "field": "original_price",
+     "count": 4
+    },
+    {
+     "field": "price_max",
+     "count": 2
+    },
+    {
+     "field": "price_min",
+     "count": 2
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "currency",
+     "expected": "USD",
+     "actual": null,
+     "code": "MISSING_CURRENCY"
+    },
+    {
+     "id": 1,
+     "field": "availability",
+     "expected": "in_stock",
+     "actual": null,
+     "code": "MISSING_AVAILABILITY"
+    },
+    {
+     "id": 1,
+     "field": "price",
+     "expected": "58.00",
+     "actual": null,
+     "code": "MISSING_PRICE"
+    },
+    {
+     "id": 3,
+     "field": "price",
+     "expected": "101.75",
+     "actual": null,
+     "code": "MISSING_PRICE"
+    }
+   ]
+  },
+  {
+   "area": "variants_and_options",
+   "priority": "P0",
+   "goal": "Extract complete variant dimensions/counts without collapsing or inventing options.",
+   "defects": 14,
+   "affected_cases": 12,
+   "case_ids": [
+    1,
+    11,
+    20,
+    22,
+    25,
+    34,
+    44,
+    61,
+    67,
+    72,
+    77,
+    81
+   ],
+   "top_fields": [
+    {
+     "field": "variant_count",
+     "count": 11
+    },
+    {
+     "field": "size_options",
+     "count": 3
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "variant_count",
+     "expected": 24,
+     "actual": 0,
+     "code": "WRONG_VARIANT_COUNT"
+    },
+    {
+     "id": 11,
+     "field": "variant_count",
+     "expected": 3,
+     "actual": 0,
+     "code": "WRONG_VARIANT_COUNT"
+    },
+    {
+     "id": 20,
+     "field": "variant_count",
+     "expected": 24,
+     "actual": 22,
+     "code": "WRONG_VARIANT_COUNT"
+    },
+    {
+     "id": 22,
+     "field": "size_options",
+     "expected": [
+      "UK 3",
+      "UK 7",
+      "UK 8",
+      "UK 9",
+      "UK 10",
+      "UK 11"
+     ],
+     "actual": null,
+     "code": "MISSING_SIZE_OPTIONS"
+    }
+   ]
+  },
+  {
+   "area": "product_identifiers",
+   "priority": "P1",
+   "goal": "Recover stable SKU/style/MPN/barcode/product identifiers from structured or embedded state.",
+   "defects": 13,
+   "affected_cases": 12,
+   "case_ids": [
+    1,
+    2,
+    18,
+    19,
+    25,
+    31,
+    40,
+    46,
+    48,
+    56,
+    57,
+    81
+   ],
+   "top_fields": [
+    {
+     "field": "sku",
+     "count": 5
+    },
+    {
+     "field": "barcode",
+     "count": 4
+    },
+    {
+     "field": "style_id",
+     "count": 3
+    },
+    {
+     "field": "mpn",
+     "count": 1
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "style_id",
+     "expected": "DD1391-100",
+     "actual": null,
+     "code": "MISSING_IDENTIFIER"
+    },
+    {
+     "id": 2,
+     "field": "barcode",
+     "expected": "114410600165",
+     "actual": null,
+     "code": "MISSING_IDENTIFIER"
+    },
+    {
+     "id": 18,
+     "field": "barcode",
+     "expected": "198287074163",
+     "actual": null,
+     "code": "MISSING_IDENTIFIER"
+    },
+    {
+     "id": 19,
+     "field": "style_id",
+     "expected": "8214362161218",
+     "actual": null,
+     "code": "MISSING_IDENTIFIER"
+    }
+   ]
+  },
+  {
+   "area": "core_identity_fields",
+   "priority": "P1",
+   "goal": "Normalize product title and brand without store suffixes or related-product drift.",
+   "defects": 16,
+   "affected_cases": 16,
+   "case_ids": [
+    10,
+    11,
+    20,
+    21,
+    27,
+    31,
+    34,
+    40,
+    46,
+    55,
+    56,
+    61,
+    71,
+    73,
+    79,
+    80
+   ],
+   "top_fields": [
+    {
+     "field": "brand",
+     "count": 16
+    }
+   ],
+   "examples": [
+    {
+     "id": 10,
+     "field": "brand",
+     "expected": "Levtex Home",
+     "actual": null,
+     "code": "MISSING_BRAND"
+    },
+    {
+     "id": 11,
+     "field": "brand",
+     "expected": "BIRKENSTOCK",
+     "actual": null,
+     "code": "MISSING_BRAND"
+    },
+    {
+     "id": 20,
+     "field": "brand",
+     "expected": "Nike",
+     "actual": null,
+     "code": "MISSING_BRAND"
+    },
+    {
+     "id": 21,
+     "field": "brand",
+     "expected": "adidas",
+     "actual": null,
+     "code": "MISSING_BRAND"
+    }
+   ]
+  },
+  {
+   "area": "attributes",
+   "priority": "P2",
+   "goal": "Improve color, material, gender, size and condition extraction after core commerce data is correct.",
+   "defects": 59,
+   "affected_cases": 42,
+   "case_ids": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    8,
+    9,
+    11,
+    12,
+    15,
+    19,
+    20,
+    23,
+    24,
+    26,
+    28,
+    29,
+    31,
+    33,
+    35,
+    37,
+    38,
+    39,
+    41,
+    51,
+    53,
+    56,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    65,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    79,
+    80
+   ],
+   "top_fields": [
+    {
+     "field": "material",
+     "count": 30
+    },
+    {
+     "field": "gender",
+     "count": 26
+    },
+    {
+     "field": "condition",
+     "count": 3
+    }
+   ],
+   "examples": [
+    {
+     "id": 1,
+     "field": "gender",
+     "expected": "Men",
+     "actual": null,
+     "code": "MISSING_GENDER"
+    },
+    {
+     "id": 1,
+     "field": "condition",
+     "expected": "New",
+     "actual": null,
+     "code": "MISSING_CONDITION"
+    },
+    {
+     "id": 2,
+     "field": "material",
+     "expected": "100% Cotton",
+     "actual": null,
+     "code": "MISSING_MATERIAL"
+    },
+    {
+     "id": 2,
+     "field": "gender",
+     "expected": "Men",
+     "actual": null,
+     "code": "MISSING_GENDER"
+    }
+   ]
+  },
+  {
+   "area": "reviews",
+   "priority": "P3",
+   "goal": "Capture ratings and review counts when directly exposed; treat them as volatile.",
+   "defects": 60,
+   "affected_cases": 31,
+   "case_ids": [
+    9,
+    14,
+    16,
+    25,
+    26,
+    27,
+    28,
+    31,
+    32,
+    42,
+    44,
+    47,
+    49,
+    50,
+    51,
+    53,
+    57,
+    59,
+    60,
+    61,
+    63,
+    65,
+    70,
+    71,
+    73,
+    74,
+    75,
+    76,
+    78,
+    79,
+    81
+   ],
+   "top_fields": [
+    {
+     "field": "rating",
+     "count": 30
+    },
+    {
+     "field": "review_count",
+     "count": 30
+    }
+   ],
+   "examples": [
+    {
+     "id": 9,
+     "field": "rating",
+     "expected": 4.47,
+     "actual": null,
+     "code": "MISSING_RATING"
+    },
+    {
+     "id": 9,
+     "field": "review_count",
+     "expected": 1513,
+     "actual": null,
+     "code": "MISSING_REVIEW_COUNT"
+    },
+    {
+     "id": 14,
+     "field": "rating",
+     "expected": 4.8,
+     "actual": null,
+     "code": "MISSING_RATING"
+    },
+    {
+     "id": 14,
+     "field": "review_count",
+     "expected": 1561,
+     "actual": null,
+     "code": "MISSING_REVIEW_COUNT"
+    }
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "id": 1,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_CONDITION",
+    "MISSING_CURRENCY",
+    "MISSING_GENDER",
+    "MISSING_IDENTIFIER",
+    "MISSING_PRICE",
+    "MISSING_SELECTED_STATE",
+    "WRONG_PRODUCT_OR_TITLE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 2,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_IDENTIFIER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 3,
+   "issues": [
+    "MISSING_CURRENCY",
+    "MISSING_PRICE"
+   ]
+  },
+  {
+   "id": 4,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 5,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 6,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 7,
+   "issues": [
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 8,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 9,
+   "issues": [
+    "MISSING_CONDITION",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 10,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 11,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE",
+    "WRONG_PRODUCT_OR_TITLE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 12,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 14,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 15,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 16,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 18,
+   "issues": [
+    "MISSING_IDENTIFIER"
+   ]
+  },
+  {
+   "id": 19,
+   "issues": [
+    "MISSING_IDENTIFIER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 20,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_GENDER",
+    "MISSING_SELECTED_STATE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 21,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_BRAND",
+    "MISSING_CURRENCY",
+    "MISSING_ORIGINAL_PRICE",
+    "MISSING_PRICE",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 22,
+   "issues": [
+    "MISSING_SELECTED_STATE",
+    "MISSING_SIZE_OPTIONS"
+   ]
+  },
+  {
+   "id": 23,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 24,
+   "issues": [
+    "MISSING_MATERIAL"
+   ]
+  },
+  {
+   "id": 25,
+   "issues": [
+    "INCOMPLETE_SIZE_OPTIONS",
+    "MISSING_IDENTIFIER",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 26,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_ORIGINAL_PRICE",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_AVAILABILITY"
+   ]
+  },
+  {
+   "id": 27,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_BRAND",
+    "MISSING_CURRENCY",
+    "MISSING_PRICE",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 28,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 29,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 30,
+   "issues": [
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 31,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_BRAND",
+    "MISSING_IDENTIFIER",
+    "MISSING_MATERIAL",
+    "MISSING_PRICE",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_IDENTIFIER"
+   ]
+  },
+  {
+   "id": 32,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 33,
+   "issues": [
+    "MISSING_MATERIAL",
+    "WRONG_PRICE"
+   ]
+  },
+  {
+   "id": 34,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_PRICE_MIN",
+    "WRONG_PRICE_MAX",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 35,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 37,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 38,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 39,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 40,
+   "issues": [
+    "MISSING_BRAND",
+    "WRONG_IDENTIFIER"
+   ]
+  },
+  {
+   "id": 41,
+   "issues": [
+    "MISSING_MATERIAL"
+   ]
+  },
+  {
+   "id": 42,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 43,
+   "issues": [
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 44,
+   "issues": [
+    "MISSING_PRICE_MAX",
+    "MISSING_PRICE_MIN",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 46,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_CURRENCY",
+    "MISSING_IDENTIFIER",
+    "MISSING_PRICE"
+   ]
+  },
+  {
+   "id": 47,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "WRONG_PRODUCT_OR_TITLE"
+   ]
+  },
+  {
+   "id": 48,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_IDENTIFIER"
+   ]
+  },
+  {
+   "id": 49,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 50,
+   "issues": [
+    "MISSING_REVIEW_COUNT",
+    "WRONG_PRICE"
+   ]
+  },
+  {
+   "id": 51,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 53,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 55,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_CURRENCY",
+    "MISSING_PRICE",
+    "WRONG_BRAND",
+    "WRONG_PRODUCT_OR_TITLE"
+   ]
+  },
+  {
+   "id": 56,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_CONDITION",
+    "MISSING_IDENTIFIER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 57,
+   "issues": [
+    "MISSING_IDENTIFIER",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 58,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL"
+   ]
+  },
+  {
+   "id": 59,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 60,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 61,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_BRAND",
+    "MISSING_CURRENCY",
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_ORIGINAL_PRICE",
+    "MISSING_PRICE",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "MISSING_SIZE_OPTIONS",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 62,
+   "issues": [
+    "MISSING_MATERIAL"
+   ]
+  },
+  {
+   "id": 63,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 65,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 66,
+   "issues": [
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 67,
+   "issues": [
+    "MISSING_SELECTED_STATE",
+    "WRONG_AVAILABILITY",
+    "WRONG_PRICE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 68,
+   "issues": [
+    "MISSING_GENDER"
+   ]
+  },
+  {
+   "id": 69,
+   "issues": [
+    "MISSING_GENDER"
+   ]
+  },
+  {
+   "id": 70,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 71,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_RATING"
+   ]
+  },
+  {
+   "id": 72,
+   "issues": [
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE",
+    "WRONG_AVAILABILITY",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 73,
+   "issues": [
+    "MISSING_BRAND",
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 74,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 75,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT"
+   ]
+  },
+  {
+   "id": 76,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE"
+   ]
+  },
+  {
+   "id": 77,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 78,
+   "issues": [
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_AVAILABILITY",
+    "WRONG_PRICE"
+   ]
+  },
+  {
+   "id": 79,
+   "issues": [
+    "MISSING_AVAILABILITY",
+    "MISSING_BRAND",
+    "MISSING_GENDER",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_PRICE"
+   ]
+  },
+  {
+   "id": 80,
+   "issues": [
+    "MISSING_GENDER",
+    "MISSING_MATERIAL",
+    "MISSING_SELECTED_STATE",
+    "WRONG_BRAND"
+   ]
+  },
+  {
+   "id": 81,
+   "issues": [
+    "MISSING_IDENTIFIER",
+    "MISSING_ORIGINAL_PRICE",
+    "MISSING_RATING",
+    "MISSING_REVIEW_COUNT",
+    "MISSING_SELECTED_STATE",
+    "WRONG_VARIANT_COUNT"
+   ]
+  },
+  {
+   "id": 82,
+   "issues": [
+    "MISSING_SELECTED_STATE"
+   ]
+  }
+ ]
+}

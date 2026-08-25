@@ -67,6 +67,86 @@ def test_js_state_explicit_variant_rows_are_materialized() -> None:
     ]
 
 
+def test_selected_style_family_uses_only_agreed_member_price() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "variants": [
+                {
+                    "id": "blue-s",
+                    "sku": "BLUE-S",
+                    "style": "BLUE",
+                    "size": "S",
+                    "price": "20.00",
+                    "currency": "USD",
+                },
+                {
+                    "id": "blue-m",
+                    "sku": "BLUE-M",
+                    "style": "BLUE",
+                    "size": "M",
+                    "price": "20.00",
+                    "currency": "USD",
+                },
+                {
+                    "id": "red-s",
+                    "sku": "RED-S",
+                    "style": "RED",
+                    "size": "S",
+                    "price": "10.00",
+                    "currency": "USD",
+                },
+            ]
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Family Product</h1></body></html>",
+        "https://shop.test/products/family?style=BLUE",
+        artifacts=artifacts,
+        requested_fields=("price", "currency", "variants"),
+    )
+
+    assert result.records[0]["price"] == "20.00"
+    assert result.records[0]["price_min"] == "10.00"
+    assert result.records[0]["price_max"] == "20.00"
+
+
+def test_selected_style_family_omits_disagreeing_member_price() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "variants": [
+                {
+                    "id": "blue-s",
+                    "sku": "BLUE-S",
+                    "style": "BLUE",
+                    "size": "S",
+                    "price": "20.00",
+                    "currency": "USD",
+                },
+                {
+                    "id": "blue-m",
+                    "sku": "BLUE-M",
+                    "style": "BLUE",
+                    "size": "M",
+                    "price": "25.00",
+                    "currency": "USD",
+                },
+            ]
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Family Product</h1></body></html>",
+        "https://shop.test/products/family?style=BLUE",
+        artifacts=artifacts,
+        requested_fields=("price", "currency", "variants"),
+    )
+
+    assert result.records[0].get("price") is None
+    assert result.records[0]["price_min"] == "20.00"
+    assert result.records[0]["price_max"] == "25.00"
+
+
 def test_js_state_nested_variant_options_and_offer_materialize() -> None:
     artifacts = {
         "js_state_objects": {

@@ -98,6 +98,11 @@ models/extraction_memory.py
 | Listing extraction | `extraction/listing*.py` |
 | Detail harvest | `extraction/pipeline.py`, `extraction/collectors/` |
 | Product/variant/offer/asset graph | `extraction/entities.py`, `extraction/targeting.py` |
+| Product and variant identity correlation | `core/records/product_identity.py`, `core/records/variant_identity.py`, `extraction/entities.py` |
+| Detail title display normalization (site-name suffix, marketplace prefixes, trademark notation) | `core/records/title_normalization.py` |
+| Product attribute value normalization (identifier labels, GTIN digits, schema.org enums, audience gender from URL path) | `core/records/attribute_normalization.py` |
+| JSON-LD product-level fact emission (identity, images, attributes, aggregateRating) | `extraction/collectors/jsonld_attributes.py` |
+| Detail publish/suppress policy | `extraction/publication_policy.py` |
 | Fact resolution | `extraction/resolution/` |
 | Findings and publication | `extraction/validation.py`, `result_building.py`, `publication.py` |
 | Public field coercion | `core/shared/field_coerce*.py` |

@@ -248,10 +248,7 @@ def test_embedded_variant_offers_bind_per_variant_not_collapsed() -> None:
 
 
 def test_parent_availability_rolls_up_mixed_variant_states() -> None:
-    """Slice 3: a complete catalog whose variants mix ``in_stock`` /
-    ``out_of_stock`` / ``limited_stock`` must publish a purchasable parent state
-    (``in_stock`` wins) rather than dropping availability because a non-binary
-    state (``limited_stock``, result 68) was present."""
+    """A complete unselected family reports whether any child is purchasable."""
     variants = ", ".join(
         (
             _variant_json("SKU-A", "7", price="260.00", availability="InStock"),

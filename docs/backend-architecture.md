@@ -105,8 +105,15 @@ Extraction ownership is in `app/extraction/`:
 - `listing.py`, `listing_records.py`, `listing_tier0.py`: listing extraction
 - `entities.py`, `field_states.py`, `targeting.py`: field/entity state
 - `validation.py`, `result_building.py`, `publication.py`: validation and output
+- `publication_policy.py`: whether a resolved detail fact may be published, and why not
+- `collectors/jsonld_attributes.py`: product-level JSON-LD fact emission (identity,
+  images, attributes, `aggregateRating`)
 - `contracts.py`, `surfaces.py`: typed contracts and surface rules
 - `replay.py`, `sentinel.py`: controlled replay and regression support
+
+Detail title display rules live in `core/records/title_normalization.py` and product
+attribute value normalization in `core/records/attribute_normalization.py`, so those
+contracts have one owner outside the extraction package.
 
 Acquisition produces evidence; extraction consumes it. Missing fields continue through
 all applicable deterministic tiers before any explicitly enabled surface-specific LLM

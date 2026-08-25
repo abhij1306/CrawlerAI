@@ -146,7 +146,6 @@ from app.extraction.resolution.ranking import (
 )
 from app.extraction.resolution.resolver import resolve as resolve
 from app.extraction.resolution.variant_rollup import (
-    _aggregate_partial_variant_price as _aggregate_partial_variant_price,
     _aggregate_variant_availability as _aggregate_variant_availability,
     _aggregate_variant_field as _aggregate_variant_field,
     _drop_leaf_variant_prices_conflicting_parent as _drop_leaf_variant_prices_conflicting_parent,
@@ -156,7 +155,6 @@ from app.extraction.resolution.variant_rollup import (
     _price_scale_conflicts as _price_scale_conflicts,
     _reconcile_variant_prices as _reconcile_variant_prices,
     _same_currency_variant_amount as _same_currency_variant_amount,
-    _single_variant_sku as _single_variant_sku,
 )
 from app.extraction.resolution.variants import (
     _explicit_partial_child_is_publishable as _explicit_partial_child_is_publishable,

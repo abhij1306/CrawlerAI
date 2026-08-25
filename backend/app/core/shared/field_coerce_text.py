@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from app.core.config.extraction_rules import (
     DETAIL_BRAND_PREFIX_STOP_TOKENS,
     BARE_HOST_URL_RE,
+    DETAIL_IDENTITY_TRADEMARK_SYMBOL_PATTERN,
     DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     LISTING_BRAND_MAX_WORDS,
 )
@@ -69,6 +70,10 @@ _SKU_DRAFT_PREFIX_RE = re.compile(
     str(PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN), re.IGNORECASE
 )
 _BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
+# A DOM identifier often arrives with its own field label attached
+# ("Item # 77295", "SKU: BT-1MW") because the label and value share a cell.
+# The label is page furniture, never part of the identifier.
+_IDENTIFIER_LABEL_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z.\s]{0,20}?\s*[#:]\s+(?=\S)")
 
 
 def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
@@ -102,6 +107,13 @@ def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
     return None
 
 
+def _without_trademark_symbols(value: str) -> str:
+    """The marker locates where a brand name ends; it is not part of the name."""
+    return re.sub(
+        r"\s+", " ", re.sub(DETAIL_IDENTITY_TRADEMARK_SYMBOL_PATTERN, "", value)
+    ).strip()
+
+
 def infer_brand_from_title_marker(title: object) -> str | None:
     text = clean_text(title)
     if not text:
@@ -114,7 +126,7 @@ def infer_brand_from_title_marker(title: object) -> str | None:
         brand = clean_text(f"{leading_marker}{leading_token}") if leading_token else ""
         if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
             return None
-        return brand
+        return _without_trademark_symbols(brand) or None
     marker_positions = [
         index for marker in ("\u2122", "\u00ae") if (index := text.find(marker)) >= 0
     ]
@@ -123,7 +135,7 @@ def infer_brand_from_title_marker(title: object) -> str | None:
     brand = clean_text(text[: min(marker_positions) + 1])
     if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
         return None
-    return brand
+    return _without_trademark_symbols(brand) or None
 
 
 def infer_brand_from_marked_title_path(*, url: str, title: object) -> str | None:
@@ -567,10 +579,16 @@ def coerce_barcode(value: object) -> str | None:
     return digits
 
 
+def strip_identifier_label_prefix(value: str) -> str:
+    """Drop a field label that a DOM cell carried along with its identifier."""
+    return _IDENTIFIER_LABEL_PREFIX_RE.sub("", value).strip() or value
+
+
 def coerce_sku(value: object) -> str | None:
     text = coerce_text(value)
     if not text:
         return None
+    text = strip_identifier_label_prefix(text)
     had_draft_prefix = bool(_SKU_DRAFT_PREFIX_RE.match(text))
     cleaned = _SKU_DRAFT_PREFIX_RE.sub("", text).strip()
     if cleaned.startswith(("{", "[")):

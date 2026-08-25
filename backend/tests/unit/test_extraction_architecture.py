@@ -295,7 +295,12 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
     # Audit-fix reconciliation (2026-07-22): 35 -> 42 after the resolution
     # god-package split added 7 modules (decisions/derived/lineage/offers/
     # resolver/variant_rollup/variants).
-    assert len(files) <= 42
+    # Attribute publication (2026-08-25): 42 -> 44. Publishing rating, review
+    # count, material, gender, condition, and style_id pushed jsonld.py and
+    # publication.py past their line budgets, so product-level fact emission
+    # moved to collectors/jsonld_attributes.py and the publish/suppress rule to
+    # publication_policy.py rather than growing either module.
+    assert len(files) <= 44
     assert (
         sum(_physical_line_count(path) for path in files)
         <= ratchets["physical_loc_budget"]

@@ -184,6 +184,7 @@ def _title_brand_fact(
     )
     brand = _brand_from_title(
         evidence.value,
+        marker_title=evidence.raw_value,  # pre-normalization boundary signal
         page_url=page_url,
         evidence_values=tuple(
             row.value
@@ -349,6 +350,7 @@ def _brand_from_title(
     title: object,
     *,
     page_url: str,
+    marker_title: object = None,
     evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
     allow_page_identity_replacement: bool = False,
@@ -373,6 +375,7 @@ def _brand_from_title(
         )
     return _new_title_brand(
         title,
+        marked=marker_title if str(marker_title or "").strip() else title,
         page_url=page_url,
         has_independent_product_signal=has_independent_product_signal,
     )
@@ -427,23 +430,20 @@ def _new_title_brand(
     *,
     page_url: str,
     has_independent_product_signal: bool,
+    marked: object,
 ) -> tuple[str, str] | None:
-    marker_brand = infer_brand_from_title_marker(title)
+    marker_brand = infer_brand_from_title_marker(marked)
+    marked_path = infer_brand_from_marked_title_path(url=page_url, title=marked)
     if (
         marker_brand
         and len(slug_tokens(marker_brand)) == 1
         and has_independent_product_signal
     ):
         return marker_brand, "brand_from_title_marker"
+    product_url = infer_brand_from_product_url(url=page_url, title=marked)
     for rule_id, value in (
-        (
-            "brand_from_marked_title_path",
-            infer_brand_from_marked_title_path(url=page_url, title=title),
-        ),
-        (
-            "brand_from_product_url",
-            infer_brand_from_product_url(url=page_url, title=title),
-        ),
+        ("brand_from_marked_title_path", marked_path),
+        ("brand_from_product_url", product_url),
         ("brand_from_title_marker", marker_brand),
     ):
         if value and has_independent_product_signal:

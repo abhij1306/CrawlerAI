@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse, urlsplit
 
 from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH,
@@ -12,11 +12,10 @@ from app.core.config.extraction_rules import (
     DETAIL_IDENTITY_CODE_MAX_LENGTH,
     DETAIL_IDENTITY_CODE_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
-    DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
-    DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
     DETAIL_TITLE_STYLE_ONLY_TOKENS,
+    DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_SEO_PREFIXES,
     DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
@@ -30,6 +29,19 @@ from app.core.config.extraction_rules import (
     DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS,
     DETAIL_URL_TITLE_IGNORED_SEGMENTS,
     DETAIL_URL_TITLE_LOCALE_PATTERN,
+    DETAIL_TITLE_IDENTITY_METADATA_KEYS,
+    DETAIL_URL_TARGET_FLAGS,
+    DETAIL_NON_LOWER_ALNUM_PATTERN,
+    VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
+    VARIANT_URL_AXIS_PARAMS,
+    VARIANT_URL_PATH_AXIS_MARKERS,
+)
+from app.core.records.field_url_normalization import canonical_public_record_url
+from app.core.records.title_normalization import (  # re-exported for existing importers
+    host_identity_keys as host_identity_keys,
+    normalize_detail_marketplace_title as normalize_detail_marketplace_title,
+    strip_detail_title_site_suffix as strip_detail_title_site_suffix,
+    strip_identity_trademark_symbols as strip_identity_trademark_symbols,
 )
 
 _UTILITY_TOKENS = frozenset(
@@ -70,6 +82,105 @@ _DETAIL_MARKERS = (
     "/position/",
     "/posting/",
 )
+_TITLE_OVERLAP_KEY, _TITLE_PRECISION_KEY = DETAIL_TITLE_IDENTITY_METADATA_KEYS
+_URL_MATCH_FLAG, _URL_MISMATCH_FLAG = DETAIL_URL_TARGET_FLAGS
+
+
+def selected_variant_axes(url: str) -> dict[str, str]:
+    parsed = urlsplit(url)
+    axes: dict[str, str] = {}
+    fragment = unquote(parsed.fragment).strip()
+    query_sources = (parsed.query, fragment.lstrip("#?"))
+    for key, value in (
+        pair
+        for source in query_sources
+        for pair in parse_qsl(source, keep_blank_values=False)
+    ):
+        raw_key = key.casefold()
+        axis = VARIANT_URL_AXIS_PARAMS.get(raw_key)
+        if axis is None and (
+            match := re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, raw_key, flags=re.I)
+        ):
+            axis = VARIANT_URL_AXIS_PARAMS.get(match.group("axis").casefold())
+        if axis and value.strip():
+            axes[axis] = value.strip()
+    for source in (parsed.path, fragment.split("?", 1)[0]):
+        parts = [unquote(part).strip() for part in source.split("/") if part]
+        for index, part in enumerate(parts[:-1]):
+            axis = VARIANT_URL_PATH_AXIS_MARKERS.get(part.casefold())
+            if axis and parts[index + 1]:
+                axes.setdefault(axis, parts[index + 1])
+    return axes
+
+
+def detail_identity_ranking(
+    value: object, *, fact_type: str, page_url: str
+) -> tuple[dict[str, object], set[str]]:
+    flags: set[str] = set()
+    metadata: dict[str, object] = {}
+    if fact_type == "product.url":
+        candidate = canonical_public_record_url(
+            value, surface="ecommerce_detail", field_name="url"
+        )
+        target = canonical_public_record_url(
+            page_url, surface="ecommerce_detail", field_name="url"
+        )
+        if candidate and target:
+            flags.add(_URL_MATCH_FLAG if candidate == target else _URL_MISMATCH_FLAG)
+    if fact_type != "product.title":
+        return metadata, flags
+    target_tokens = set(semantic_detail_identity_tokens(page_url))
+    title_tokens = set(semantic_identity_tokens(str(value or "")))
+    overlap = len(target_tokens & title_tokens)
+    metadata[_TITLE_OVERLAP_KEY] = overlap
+    metadata[_TITLE_PRECISION_KEY] = (
+        overlap / len(title_tokens) if title_tokens else 0.0
+    )
+    return metadata, flags
+
+
+def detail_title_rank_components(
+    flags: tuple[str, ...], metadata: dict[str, object]
+) -> tuple[object, ...]:
+    overlap = metadata.get(_TITLE_OVERLAP_KEY)
+    precision = metadata.get(_TITLE_PRECISION_KEY)
+    return (
+        int("url_derived_title" in flags),
+        -overlap if isinstance(overlap, int) else 0,
+        -float(precision) if isinstance(precision, (int, float)) else 0.0,
+    )
+
+
+def detail_url_rank_components(flags: tuple[str, ...]) -> tuple[int, int]:
+    return (int(_URL_MISMATCH_FLAG in flags), -int(_URL_MATCH_FLAG in flags))
+
+
+def detail_title_is_bare_site_identity(value: str, *, page_url: str) -> bool:
+    host = str(urlparse(page_url).hostname or "").casefold().removeprefix("www.")
+    host_key = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", host)
+    title_key = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value.casefold())
+    return bool(host_key and title_key == host_key)
+
+
+def detail_title_identity_flags(
+    value: str, *, page_url: str, url_contains_title_code: bool
+) -> set[str]:
+    flags: set[str] = set()
+    url_tokens = set(semantic_detail_identity_tokens(page_url))
+    title_tokens = set(semantic_identity_tokens(value))
+    overlap = len(url_tokens & title_tokens)
+    if len(title_tokens) == 1 and len(url_tokens) >= 2 and title_tokens < url_tokens:
+        flags.add("truncated_title")
+    if url_tokens and title_tokens:
+        required = min(
+            DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP, len(url_tokens), len(title_tokens)
+        )
+        flags.add(
+            "title_url_match"
+            if overlap >= required or url_contains_title_code
+            else "title_url_mismatch"
+        )
+    return flags
 
 
 def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
@@ -134,76 +245,15 @@ def _has_style_code_separator(value: str) -> bool:
 
 
 def detail_title_has_seo_pollution(
-    value: str, raw_value: str, words: list[str]
+    value: str, _raw_value: str, words: list[str]
 ) -> bool:
     return bool(
         re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE)
-        or re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, raw_value, re.IGNORECASE)
         or (
             len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
             and value.casefold().startswith(DETAIL_TITLE_SEO_PREFIXES)
         )
     )
-
-
-def normalize_detail_marketplace_title(value: str) -> str:
-    normalized = re.sub(
-        DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN, "", value, flags=re.IGNORECASE
-    )
-    normalized = re.sub(r"^\s*\+\s+", "", normalized)
-    pipe_parts = [part.strip() for part in normalized.split("|") if part.strip()]
-    if len(pipe_parts) >= 3:
-        # Three or more pipe segments are almost always a breadcrumb-style
-        # title ("Product | Category | Site"). The first segment is the
-        # canonical product name; the rest are taxonomy/site context.
-        normalized = pipe_parts[0]
-    elif len(pipe_parts) == 2:
-        # Two pipe segments can be either "Title | Site" or a stylistic
-        # separator within the title itself ("Foo | Limited Edition"). Only
-        # strip the trailing segment when it looks like a short site/brand
-        # suffix: ≤2 words AND shorter (in chars) than the leading segment.
-        trailing = pipe_parts[-1]
-        trailing_words = len(re.findall(r"\w+", trailing))
-        if trailing_words <= 2 and len(trailing) < len(pipe_parts[0]):
-            normalized = pipe_parts[0]
-    normalized = _strip_marketplace_site_suffix(normalized)
-    return re.sub(
-        DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
-        "",
-        normalized,
-        flags=re.IGNORECASE,
-    ).strip()
-
-
-def _strip_marketplace_site_suffix(value: str) -> str:
-    title, separator, raw_suffix = value.rpartition(" - ")
-    if not separator:
-        return value
-    suffix = raw_suffix.strip()
-    terminal = next(
-        (
-            candidate
-            for candidate in (
-                "Official Site",
-                "Watches",
-                "India",
-                "USA",
-                "US",
-                "UK",
-            )
-            if suffix.endswith(candidate)
-        ),
-        "",
-    )
-    body = suffix[: -len(terminal)] if terminal else ""
-    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789&'.- ")
-    if (
-        suffix[:1].isupper()
-        and 3 <= len(body) <= 41
-        and all(character in allowed for character in body)
-    ):
-        return title.rstrip()
-    return value
 
 
 def _detail_url_title_segment_is_code(value: str) -> bool:
@@ -341,6 +391,33 @@ def detail_url_resource_identity(url: str) -> str:
     host = str(parsed.hostname or "").casefold().strip(".")
     path = unquote(parsed.path).casefold().rstrip("/")
     return f"{host}{path}" if host and path else ""
+
+
+def detail_url_marker_identity(url: str) -> str:
+    text = str(url or "").strip()
+    if not text or not detail_url_looks_like_product(text):
+        return ""
+    parsed = urlparse(text)
+    host = str(parsed.hostname or "").casefold().strip(".")
+    parts = [unquote(part).casefold() for part in parsed.path.split("/") if part]
+    markers = {marker.strip("/") for marker in _DETAIL_MARKERS}
+    for index in range(len(parts) - 2, -1, -1):
+        if parts[index] in markers:
+            return f"{host}/{parts[index]}/{parts[index + 1]}" if host else ""
+    return ""
+
+
+def detail_url_resource_conflicts(parent_url: str, candidate_url: str) -> bool:
+    candidate = detail_url_resource_identity(candidate_url)
+    if not candidate:
+        return False
+    parent = detail_url_resource_identity(parent_url)
+    if candidate == parent:
+        return False
+    parent_marker = detail_url_marker_identity(parent_url)
+    return not parent_marker or parent_marker != detail_url_marker_identity(
+        candidate_url
+    )
 
 
 def detail_url_looks_like_product(url: str) -> bool:

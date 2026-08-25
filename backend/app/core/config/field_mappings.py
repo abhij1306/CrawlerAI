@@ -1,7 +1,3 @@
-"""Code-owned field names and aliases for the four explicit surfaces."""
-
-from __future__ import annotations
-
 import re
 from typing import Any, Literal
 
@@ -352,13 +348,6 @@ ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS = (
     "image_url",
 )
 ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS = ("price", "currency")
-# Price + currency are commercial completeness-critical for a product detail
-# record: a product page that publishes neither is incomplete, so it drives the
-# verdict to ``partial`` and the trust state below ``verified`` regardless of
-# whether any offer signal was detected. Absence alone does NOT force operator
-# review (that is gated on risk findings) — see Crawl-Run-2 §4.5. This is the
-# single contract that ``validate_selected_contract_fields`` scores so that
-# completeness, verdict, trust, and ``missing_critical_fields`` agree.
 ECOMMERCE_DETAIL_CRITICAL_CONTRACT_FIELDS = (
     *ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
     *ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
@@ -412,6 +401,7 @@ ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
     "category": "product.category",
+    "color": "product.color",
     "currency": OFFER_CURRENCY_FACT_TYPE,
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "gtin": PRODUCT_GTIN_FACT_TYPE,
@@ -428,6 +418,7 @@ ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
 ECOMMERCE_PUBLIC_FIELD_FACT_TYPES = {
     "title": PRODUCT_TITLE_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
+    "color": "product.color",
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
@@ -441,6 +432,7 @@ ECOMMERCE_TYPED_STRING_FACT_TYPES = frozenset(
         OFFER_AVAILABILITY_FACT_TYPE,
         OFFER_CURRENCY_FACT_TYPE,
         PRODUCT_BRAND_FACT_TYPE,
+        "product.color",
         "product.category",
         PRODUCT_DESCRIPTION_FACT_TYPE,
         PRODUCT_GTIN_FACT_TYPE,
@@ -470,14 +462,14 @@ INVALID_SCALAR_TYPE_EVIDENCE_FLAG = "invalid_scalar_type"
 ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     **dict.fromkeys(DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS, OFFER_PRICE_FACT_TYPE),
     **dict.fromkeys(ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS, OFFER_PRICE_FACT_TYPE),
-    "availability": OFFER_AVAILABILITY_FACT_TYPE,
-    "available": OFFER_AVAILABILITY_FACT_TYPE,
+    **dict.fromkeys(("availability", "available"), OFFER_AVAILABILITY_FACT_TYPE),
+    "advertisedPrice": OFFER_PRICE_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
     "brandName": PRODUCT_BRAND_FACT_TYPE,
     "brand_label": PRODUCT_BRAND_FACT_TYPE,
     "brandLabel": PRODUCT_BRAND_FACT_TYPE,
-    "currency": OFFER_CURRENCY_FACT_TYPE,
-    "currencyCode": OFFER_CURRENCY_FACT_TYPE,
+    "color": "product.color",
+    **dict.fromkeys(("currency", "currencyCode"), OFFER_CURRENCY_FACT_TYPE),
     "currentPrice": OFFER_PRICE_FACT_TYPE,
     "current_price": OFFER_PRICE_FACT_TYPE,
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
@@ -497,6 +489,7 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "productDescription": PRODUCT_DESCRIPTION_FACT_TYPE,
     "productName": PRODUCT_TITLE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
+    "strikeThroughPrice": OFFER_ORIGINAL_PRICE_FACT_TYPE,
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
@@ -541,6 +534,8 @@ ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
     "product_id",
     "productCode",
     "product_code",
+    "entryID",
+    "catalogEntryId",
 )
 ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
@@ -577,6 +572,7 @@ ECOMMERCE_IMAGE_SOURCE_KEYS = frozenset({"image", "imageUrl", "images"})
 ECOMMERCE_MICRODATA_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
+    "color": "product.color",
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "image": ASSET_IMAGE_URL_FACT_TYPE,
     "name": PRODUCT_TITLE_FACT_TYPE,
@@ -592,14 +588,39 @@ ECOMMERCE_OPENGRAPH_FACT_TYPES = {
     "og:title": PRODUCT_TITLE_FACT_TYPE,
     "og:url": PRODUCT_URL_FACT_TYPE,
     "product:brand": PRODUCT_BRAND_FACT_TYPE,
+    "product:color": "product.color",
     "product:price:amount": OFFER_PRICE_FACT_TYPE,
     "product:price:currency": OFFER_CURRENCY_FACT_TYPE,
     "twitter:description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "twitter:image": ASSET_IMAGE_URL_FACT_TYPE,
     "twitter:title": PRODUCT_TITLE_FACT_TYPE,
 }
+PRODUCT_STYLE_ID_FACT_TYPE = "product.style_id"
+PRODUCT_RATING_FACT_TYPE = "product.rating"
+PRODUCT_REVIEW_COUNT_FACT_TYPE = "product.review_count"
+PRODUCT_MATERIAL_FACT_TYPE = "product.material"
+PRODUCT_GENDER_FACT_TYPE = "product.gender"
+PRODUCT_CONDITION_FACT_TYPE = "product.condition"
+# schema.org product attributes that sit beside the identity fields above.
+# ``aggregateRating`` is a nested node, so the collector reads it separately.
+ECOMMERCE_JSONLD_PRODUCT_ATTRIBUTE_FACT_TYPES = {
+    "material": PRODUCT_MATERIAL_FACT_TYPE,
+    "color": "product.color",
+    "size": "product.size",
+    "itemCondition": PRODUCT_CONDITION_FACT_TYPE,
+}
+ECOMMERCE_JSONLD_RATING_KEYS = ("ratingValue",)
+ECOMMERCE_JSONLD_REVIEW_COUNT_KEYS = ("reviewCount", "ratingCount")
+ECOMMERCE_JSONLD_GENDER_KEYS = ("suggestedGender", "gender", "audienceGender")
+
 ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
     "brand": PRODUCT_BRAND_FACT_TYPE,
+    "gtin8": PRODUCT_GTIN_FACT_TYPE,
+    "gtin12": PRODUCT_GTIN_FACT_TYPE,
+    "gtin13": PRODUCT_GTIN_FACT_TYPE,
+    "gtin14": PRODUCT_GTIN_FACT_TYPE,
+    "productGroupID": PRODUCT_STYLE_ID_FACT_TYPE,
+    "color": "product.color",
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "gtin": PRODUCT_GTIN_FACT_TYPE,
     "manufacturer": PRODUCT_BRAND_FACT_TYPE,
@@ -610,10 +631,14 @@ ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
     "sku": PRODUCT_SKU_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
+# Identifier facts that a DOM cell may deliver with their field label attached.
+ECOMMERCE_LABELLED_IDENTIFIER_FACT_TYPES = frozenset(
+    {PRODUCT_SKU_FACT_TYPE, PRODUCT_MPN_FACT_TYPE, "variant.sku"}
+)
 ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
     "highPrice": "offer.price_max",
-    "lowPrice": OFFER_PRICE_FACT_TYPE,
+    "lowPrice": "offer.price_min",
     "price": OFFER_PRICE_FACT_TYPE,
     "priceCurrency": OFFER_CURRENCY_FACT_TYPE,
     "seller": "offer.seller",

@@ -4,6 +4,7 @@ import pytest
 
 from app.core.records.url_identity import (
     conflicting_product_asset_urls,
+    detail_title_has_seo_pollution,
     detail_title_from_url,
     detail_url_looks_like_product,
     detail_url_resource_identity,
@@ -48,6 +49,14 @@ def test_descriptive_html_detail_url_has_resource_identity() -> None:
     )
     assert detail_url_resource_identity(url) == (
         "www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
+    )
+
+
+def test_normalized_title_is_not_penalized_for_removed_site_suffix() -> None:
+    assert not detail_title_has_seo_pollution(
+        "Arizona Birko-Flor in Color Black",
+        "Arizona Birko-Flor in Color Black | Example Store",
+        ["arizona", "birko", "flor", "in", "color", "black"],
     )
 
 
