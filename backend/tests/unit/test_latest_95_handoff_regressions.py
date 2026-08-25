@@ -169,8 +169,13 @@ def test_jsonld_products_sharing_family_url_do_not_mix_title_and_price() -> None
         requested_fields=("title", "price", "currency"),
     )
 
+    # The point of this case is that the requested product's title must not be
+    # paired with a sibling's money. An aggregate ``lowPrice`` is a lower bound,
+    # not a current price, so it publishes as ``price_min`` and ``price`` stays
+    # absent - the same contract reference case 34 asserts for this family page.
     assert result.records[0]["title"] == "iPhone 16"
-    assert result.records[0]["price"] == "699.00"
+    assert result.records[0]["price_min"] == "699"
+    assert result.records[0].get("price") is None
     assert result.records[0]["currency"] == "USD"
 
 

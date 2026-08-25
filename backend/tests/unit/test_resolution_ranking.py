@@ -13,9 +13,14 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import field_mappings
-from app.extraction.contracts import Evidence, SourceLocator
-from app.extraction.entities import OfferEntity
-from app.extraction.resolution import _rank, _resolve_offer, _resolve_scalar
+from app.extraction.contracts import Decision, EntityHint, Evidence, SourceLocator
+from app.extraction.entities import EntitySet, OfferEntity, VariantEntity
+from app.extraction.resolution import (
+    _preferred_parent_offer_id,
+    _rank,
+    _resolve_offer,
+    _resolve_scalar,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -33,6 +38,7 @@ def _evidence(
     group_id: str | None = None,
     subject_id: str = "subject-1",
     parent_subject_id: str | None = None,
+    url: str | None = None,
 ) -> Evidence:
     return Evidence(
         evidence_id=evidence_id,
@@ -52,6 +58,7 @@ def _evidence(
         subject_id=subject_id,
         parent_subject_id=parent_subject_id,
         relation_type="product_offer" if parent_subject_id else None,
+        entity_hint=EntityHint(entity_type="offer", url=url) if url else None,
     )
 
 
@@ -137,6 +144,117 @@ def test_offer_price_currency_atomicity_rejects_incompatible_lineage() -> None:
     } == {"offer_atomic_group_incompatible"}
 
 
+def test_target_url_offer_outranks_unidentified_sibling_offer() -> None:
+    target_bound = _evidence(
+        "target-bound",
+        fact_type="offer.price_max",
+        value="219.95",
+        collector_id="jsonld",
+        group_id="target",
+        url="https://shop.test/products/kettle",
+    )
+    target_currency = _evidence(
+        "target-currency",
+        fact_type="offer.currency",
+        value="USD",
+        collector_id="jsonld",
+        group_id="target",
+        url="https://shop.test/products/kettle",
+    )
+    sibling_price = _evidence(
+        "sibling-price",
+        fact_type="offer.price",
+        value="179.95",
+        collector_id="jsonld",
+        group_id="sibling",
+    )
+    sibling_currency = _evidence(
+        "sibling-currency",
+        fact_type="offer.currency",
+        value="USD",
+        collector_id="jsonld",
+        group_id="sibling",
+    )
+    page_url = _evidence(
+        "page-url",
+        fact_type="product.url",
+        value="https://shop.test/products/kettle",
+        collector_id="url",
+    )
+    target = OfferEntity(
+        entity_id="offer-target",
+        product_entity_id="product",
+        variant_entity_id=None,
+        group_id="target",
+        request_context_id="ctx",
+        target_rank=0,
+        fact_evidence={
+            "offer.price_max": (target_bound.evidence_id,),
+            "offer.currency": (target_currency.evidence_id,),
+        },
+    )
+    sibling = OfferEntity(
+        entity_id="offer-sibling",
+        product_entity_id="product",
+        variant_entity_id=None,
+        group_id="sibling",
+        request_context_id="ctx",
+        target_rank=2,
+        fact_evidence={
+            "offer.price": (sibling_price.evidence_id,),
+            "offer.currency": (sibling_currency.evidence_id,),
+        },
+    )
+    by_id = {
+        row.evidence_id: row
+        for row in (
+            target_bound,
+            target_currency,
+            sibling_price,
+            sibling_currency,
+            page_url,
+        )
+    }
+    decisions = [
+        Decision(
+            decision_id=f"decision-{row.evidence_id}",
+            entity_id=entity_id,
+            fact_type=row.fact_type,
+            accepted_evidence_ids=(row.evidence_id,),
+            rejected=(),
+            finding_ids=(),
+            rule_id="test",
+            status="resolved",
+        )
+        for entity_id, row in (
+            (target.entity_id, target_bound),
+            (target.entity_id, target_currency),
+            (sibling.entity_id, sibling_price),
+            (sibling.entity_id, sibling_currency),
+        )
+    ]
+    selected_variant = VariantEntity(
+        entity_id="variant-selected",
+        product_entity_id="product",
+        identity_key="url:target",
+        identity_evidence_ids=(),
+        option_values={"size": "Large"},
+        attribute_evidence={},
+        offer_ids=(),
+        asset_ids=(),
+        selected=True,
+    )
+
+    assert (
+        _preferred_parent_offer_id(
+            EntitySet(variants=(selected_variant,), offers=(sibling, target)),
+            decisions,
+            by_id,
+        )
+        == target.entity_id
+    )
+
+
 def test_enum_invalid_availability_loses_to_enum_valid() -> None:
     # Both pass flag-based admissibility (neither is flagged invalid_availability);
     # the shape-only value_quality term breaks the tie toward the canonical enum.
@@ -192,6 +310,27 @@ def test_title_pollution_ranking_preserved() -> None:
         flags=("seo_title_pollution",),
     )
     assert _rank(clean) < _rank(polluted)
+
+
+def test_clean_extracted_title_outranks_url_derived_slug_on_partial_overlap() -> None:
+    extracted = _evidence(
+        "ev-extracted",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="Arizona Birko-Flor",
+        collector_id="jsonld",
+        flags=("title_url_mismatch",),
+        metadata={"title_overlap": 1, "title_precision": 0.33},
+    )
+    slug = _evidence(
+        "ev-slug",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="arizona core birkoflor 0 eva u 1",
+        collector_id="url",
+        flags=("title_url_match", "url_derived_title"),
+        metadata={"title_overlap": 4, "title_precision": 1.0},
+    )
+
+    assert _rank(extracted) < _rank(slug)
 
 
 def test_brand_derivation_ranking_preserved() -> None:

@@ -11,6 +11,7 @@ from typing import Literal, TypedDict
 from app.core.config import field_mappings
 from app.core.config.variant_policy import NON_PUBLIC_VARIANT_IDENTITY_FIELDS
 from app.core.records.output_safety import typed_detail_record
+from app.extraction.publication_policy import publication_disposition
 from app.extraction.contracts import (
     CanonicalizationTrace,
     CommerceDetailProjection,
@@ -39,7 +40,16 @@ PUBLIC_FACT_TO_FIELD = {
     "product.category": "category",
     field_mappings.PRODUCT_SKU_FACT_TYPE: "sku",
     field_mappings.PRODUCT_MPN_FACT_TYPE: "mpn",
-    field_mappings.PRODUCT_GTIN_FACT_TYPE: "gtin",
+    # Canonical detail schema names the product GTIN/UPC/EAN "barcode".
+    field_mappings.PRODUCT_GTIN_FACT_TYPE: "barcode",
+    "product.color": "color",
+    field_mappings.PRODUCT_STYLE_ID_FACT_TYPE: "style_id",
+    field_mappings.PRODUCT_MATERIAL_FACT_TYPE: "materials",
+    field_mappings.PRODUCT_RATING_FACT_TYPE: "rating",
+    field_mappings.PRODUCT_REVIEW_COUNT_FACT_TYPE: "review_count",
+    field_mappings.PRODUCT_GENDER_FACT_TYPE: "gender",
+    field_mappings.PRODUCT_CONDITION_FACT_TYPE: "condition",
+    "product.size": "size",
     field_mappings.OFFER_PRICE_FACT_TYPE: "price",
     "offer.price_min": "price_min",
     "offer.price_max": "price_max",
@@ -98,11 +108,12 @@ class _CommerceDetailPolicy:
     has_primary_currency: bool
 
     def disposition(
-        self, *, fact_type: str, value: object
+        self, *, fact_type: str, value: object, product_declared: bool = False
     ) -> tuple[Literal["publish", "suppress", "review"], str | None]:
-        return _publication_disposition(
+        return publication_disposition(
             fact_type=fact_type,
             value=value,
+            product_declared=product_declared,
             variant_skus=self.variant_skus,
             has_primary_price=self.has_primary_price,
             has_child_price=self.has_child_price,
@@ -188,7 +199,9 @@ def _decision_publication_entry(
     """One record-scoped entry from a resolved decision (derived wins over
     selected unless both carry the same value)."""
     disposition, reason = policy.disposition(
-        fact_type=decision.fact_type, value=accepted.value
+        fact_type=decision.fact_type,
+        value=accepted.value,
+        product_declared=accepted.subject_scope == "product",
     )
     derived = policy.derived_by_key.get((decision.entity_id, decision.fact_type))
     if derived is not None:
@@ -291,7 +304,6 @@ def _derived_backfill_entries(
 def _variant_publication_entries(
     resolution: ResolutionResult, evidence_by_id: dict[str, Evidence]
 ) -> list[PublicationEntry]:
-    """Variant-scoped commercial facts from eligible variant decisions."""
     entries: list[PublicationEntry] = []
     for variant in resolution.variant_decisions:
         if variant.status != "eligible":
@@ -555,30 +567,6 @@ def _collector_ids(
     )
 
 
-def _publication_disposition(
-    *,
-    fact_type: str,
-    value: object,
-    variant_skus: set[str],
-    has_primary_price: bool,
-    has_child_price: bool,
-    has_primary_currency: bool,
-) -> tuple[Literal["publish", "suppress", "review"], str | None]:
-    if (
-        fact_type == field_mappings.PRODUCT_SKU_FACT_TYPE
-        and len(variant_skus) > 1
-        and str(value) in variant_skus
-    ):
-        return "suppress", "parent_sku_is_variant_specific"
-    if fact_type in _PRICE_FACTS and not has_primary_currency:
-        return "suppress", "currency_unresolved"
-    if fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE and not (
-        has_primary_price or has_child_price
-    ):
-        return "suppress", "price_unresolved"
-    return "publish", None
-
-
 def serialize_commerce_detail_projection(
     projection: CommerceDetailProjection,
     *,
@@ -666,8 +654,7 @@ def _append_projected_variants(
         variant_sources.append(
             {"variant_entity_id": entity_id, **variant_lineages[entity_id]}
         )
-    if projection.variant_entity_ids:
-        record["variant_count"] = len(projection.variant_entity_ids)
+    record["variant_count"] = len(variant_rows)
     if variant_rows:
         record["variants"] = variant_rows
         lineages["variants"] = variant_sources

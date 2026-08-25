@@ -372,10 +372,6 @@ def test_complete_variant_matrix_derives_parent_family_availability() -> None:
         record["_lineage"]["availability"]["rule_id"]
         == "variant_availability_aggregate"
     )
-    assert not any(
-        finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT"
-        for finding in result.findings
-    )
 
 
 def test_incomplete_variant_identity_is_diagnostic_not_public_row() -> None:

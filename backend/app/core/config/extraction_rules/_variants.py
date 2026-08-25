@@ -8,12 +8,22 @@ from ._detail_sections import *
 VARIANT_SIZE_ALIAS_SUFFIXES = (" us",)
 VARIANT_URL_AXIS_PARAMS = {
     "color": "color",
+    "colorcode": "color",
+    "colorname": "color",
     "colour": "color",
     "colordisplaycode": "color",
+    "colorproductcode": "style",
+    "fit": "fit",
     "size": "size",
     "sizedisplaycode": "size",
+    "sku": "sku",
     "width": "width",
     "style": "style",
+}
+VARIANT_URL_PATH_AXIS_MARKERS = {
+    "color": "color",
+    "colour": "color",
+    "sku": "sku",
 }
 # When a second variant axis from one source carries (almost) the same value
 # set as an existing axis from another source, the two "axes" are really one
@@ -159,9 +169,7 @@ VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR = (
 )
 VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES = ("value", "data-url", "data-href", "href")
 VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE = "data-json"
-VARIANT_DOM_URL_AXIS_PARAM_PATTERN = (
-    r"^(?:dwvar_.+_|attribute_)?(?P<axis>color|colour|size|width|style)$"
-)
+VARIANT_DOM_URL_AXIS_PARAM_PATTERN = r"^(?:dwvar_.+_|attribute_)?(?P<axis>color|colorname|colour|fit|size|sku|width|style)$"
 VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS = frozenset({"variant", "variation"})
 VARIANT_DOM_NOISE_PHRASES = (
     "expand color swatches",

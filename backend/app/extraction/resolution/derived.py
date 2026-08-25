@@ -10,6 +10,7 @@ from app.core.config.locale_format_rules import (
     currency_hint_from_page_url,
 )
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+from app.core.records.title_normalization import strip_identity_trademark_symbols
 from app.core.records.url_identity import detail_style_code_from_url
 from app.core.shared.field_coerce_text import (
     infer_brand_from_marked_title_path,
@@ -184,6 +185,7 @@ def _title_brand_fact(
     )
     brand = _brand_from_title(
         evidence.value,
+        marker_title=evidence.raw_value,  # pre-normalization boundary signal
         page_url=page_url,
         evidence_values=tuple(
             row.value
@@ -297,28 +299,18 @@ def _derived_fact(
     rule_id: str,
     direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
 ) -> DerivedFact:
+    selected_id = direct_selected_ids.get(
+        (decision.fact_type, decision.accepted_evidence_ids)
+    )
     return DerivedFact(
         derived_fact_id=stable_id(
-            "derived",
-            rule_id,
-            decision.entity_id,
-            fact_type,
-            value,
+            "derived", rule_id, decision.entity_id, fact_type, value
         ),
         entity_id=decision.entity_id,
         fact_type=fact_type,
         value=value,
         input_evidence_ids=decision.accepted_evidence_ids,
-        input_selected_fact_ids=tuple(
-            filter(
-                None,
-                (
-                    direct_selected_ids.get(
-                        (decision.fact_type, decision.accepted_evidence_ids)
-                    ),
-                ),
-            )
-        ),
+        input_selected_fact_ids=(selected_id,) if selected_id else (),
         rule_id=rule_id,
     )
 
@@ -349,6 +341,7 @@ def _brand_from_title(
     title: object,
     *,
     page_url: str,
+    marker_title: object = None,
     evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
     allow_page_identity_replacement: bool = False,
@@ -372,7 +365,7 @@ def _brand_from_title(
             allow_replacement=allow_page_identity_replacement,
         )
     return _new_title_brand(
-        title,
+        marked=marker_title if str(marker_title or "").strip() else title,
         page_url=page_url,
         has_independent_product_signal=has_independent_product_signal,
     )
@@ -423,27 +416,28 @@ def _replacement_brand(
 
 
 def _new_title_brand(
-    title: object,
     *,
     page_url: str,
     has_independent_product_signal: bool,
+    marked: object,
 ) -> tuple[str, str] | None:
-    marker_brand = infer_brand_from_title_marker(title)
+    # The marker locates where the brand name ends; it is not part of the name,
+    # so the published brand drops it. The shared helper keeps the source form
+    # because product-intelligence matching compares against raw snapshots.
+    marker_brand = strip_identity_trademark_symbols(
+        infer_brand_from_title_marker(marked) or ""
+    )
+    marked_path = infer_brand_from_marked_title_path(url=page_url, title=marked)
     if (
         marker_brand
         and len(slug_tokens(marker_brand)) == 1
         and has_independent_product_signal
     ):
         return marker_brand, "brand_from_title_marker"
+    product_url = infer_brand_from_product_url(url=page_url, title=marked)
     for rule_id, value in (
-        (
-            "brand_from_marked_title_path",
-            infer_brand_from_marked_title_path(url=page_url, title=title),
-        ),
-        (
-            "brand_from_product_url",
-            infer_brand_from_product_url(url=page_url, title=title),
-        ),
+        ("brand_from_marked_title_path", marked_path),
+        ("brand_from_product_url", product_url),
         ("brand_from_title_marker", marker_brand),
     ):
         if value and has_independent_product_signal:

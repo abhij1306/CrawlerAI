@@ -480,6 +480,7 @@ AVAILABILITY_CANONICAL_ENUM = (
     "in_stock",
     "out_of_stock",
     "limited_stock",
+    "coming_soon",
     "preorder",
     "backorder",
     "discontinued",
@@ -502,6 +503,8 @@ _AVAILABILITY_SCHEMA_TERMS = {
     "limitedstock": "limited_stock",
     "lowstock": "limited_stock",
     "low_stock": "limited_stock",
+    "comingsoon": "coming_soon",
+    "coming_soon": "coming_soon",
     "preorder": "preorder",
     "pre_order": "preorder",
     "presale": "preorder",
@@ -516,13 +519,12 @@ AVAILABILITY_URL_MAP = {
     for term, canonical in _AVAILABILITY_SCHEMA_TERMS.items()
     for prefix in ("https://schema.org/", "http://schema.org/", "schema.org/", "")
 }
-# Precedence for rolling a full variant availability matrix up to a single
-# parent value: a product is purchasable if any variant is buyable, so the most
-# "available" state wins. Ordered most→least available; "out_of_stock"/
-# "discontinued" only surface when no buyable state is present.
+# Precedence for rolling a complete variant family up to a parent state when
+# no configuration is explicitly selected. Ordered most to least available.
 AVAILABILITY_PARENT_ROLLUP_PRECEDENCE = (
     "in_stock",
     "limited_stock",
+    "coming_soon",
     "preorder",
     "backorder",
     "out_of_stock",
@@ -538,6 +540,7 @@ NORMALIZER_AVAILABILITY_TOKENS = {
         "only",
         "left in stock",
     ),
+    "coming_soon": ("coming soon", "comingsoon"),
     "out_of_stock": ("out of stock", "outofstock", "oos", "sold out", "unavailable"),
     "preorder": ("pre-order", "preorder", "pre order", "pre sale", "presale"),
     "backorder": ("backorder", "back-order", "back order"),

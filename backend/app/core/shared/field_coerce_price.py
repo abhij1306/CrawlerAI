@@ -150,6 +150,25 @@ def decimal_for_shared_price(value: object) -> Decimal | None:
         return None
 
 
+def _states_fractional_digits(
+    value: object, amount: Decimal, decimal_places: int
+) -> bool:
+    """Whether the raw text printed its own fractional digits.
+
+    A trailing group of up to ``decimal_places`` digits counts only when the
+    digits before the separator already equal the parsed whole amount. That
+    accepts ``215.0`` and ``215.00`` as major units while rejecting a grouping
+    separator such as ``21.500`` (which parses to 21500).
+    """
+    match = re.search(rf"(\d+)[.,](\d{{1,{decimal_places}}})(?!\d)", str(value or ""))
+    if match is None:
+        return False
+    try:
+        return Decimal(match.group(1)) == amount.to_integral_value()
+    except (InvalidOperation, ValueError):
+        return False
+
+
 def repair_price_unit(
     value: object,
     *,
@@ -171,6 +190,12 @@ def repair_price_unit(
             return None
         return format(amount / divisor, "f"), DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG
     if decimal_places == 0 or amount != amount.to_integral_value():
+        return None
+    # A source that already printed fractional digits ("$215.00") is stating a
+    # major-unit price, so it is not a minor-unit candidate. Without this guard a
+    # correct price is rescaled again whenever some unrelated peer happens to sit
+    # within the corroboration ratio, turning 215.00 into 2.15.
+    if _states_fractional_digits(value, amount, decimal_places):
         return None
     peers = tuple(
         peer

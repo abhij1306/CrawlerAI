@@ -53,6 +53,7 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config import extraction_rules as rules
 from app.core.config import field_mappings
+from app.core.config.locale_format_rules import parse_money
 from app.core.config.field_mappings import (
     ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
     REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES,
@@ -61,6 +62,7 @@ from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, Source
 from app.extraction.documents import HtmlNode
 from app.core.shared.ids import stable_id
 from app.core.records.field_policy import normalize_field_key, normalize_requested_field
+from app.core.records.url_identity import detail_url_resource_conflicts
 from app.core.shared.url_utils import is_utility_image_url, largest_srcset_url
 
 logger = logging.getLogger(__name__)
@@ -347,7 +349,7 @@ def _product_offer_evidence(
     for node in _root_selector_nodes(
         roots, DETAIL_DOM_OFFER_SELECTORS, DETAIL_DOM_OFFER_MAX_CANDIDATES
     ):
-        offer = _admit_offer_node(node, seen)
+        offer = _admit_offer_node(node, seen, page_url=bundle.final_url)
         if offer is None:
             continue
         price, currency, availability = offer
@@ -383,11 +385,20 @@ def _product_offer_evidence(
 def _admit_offer_node(
     node: HtmlNode,
     seen: set[tuple[str, str, str]],
+    *,
+    page_url: str,
 ) -> tuple[str, str, str] | None:
     if (
         node.is_hidden()
         or _node_context_excluded(node)
         or _is_commercial_variant_control(node)
+        or any(
+            detail_url_resource_conflicts(
+                page_url, urljoin(page_url, str(current.attribute("href")))
+            )
+            for current in (node, *node.ancestors())
+            if current.tag() == "a" and current.attribute("href")
+        )
     ):
         return None
     offer = _visible_offer_values(node)
@@ -402,26 +413,13 @@ def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str] | None:
     match = re.search(DETAIL_DOM_PRICE_TEXT_PATTERN, price_text, re.IGNORECASE)
     if match is None:
         return None
-    amount = _normalize_dom_price_amount(str(match.group("amount") or ""))
-    if not amount:
+    parsed_amount = parse_money(str(match.group("amount") or ""))
+    if parsed_amount is None:
         return None
+    amount = format(parsed_amount, "f")
     currency = _offer_currency(node, match)
     availability = _offer_availability(node)
     return amount, currency, availability
-
-
-def _normalize_dom_price_amount(value: str) -> str:
-    amount = value.strip()
-    separators = [index for index, char in enumerate(amount) if char in ",."]
-    if not separators:
-        return amount
-    decimal_index = separators[-1]
-    trailing_digits = len(amount) - decimal_index - 1
-    decimal_separator = amount[decimal_index] if trailing_digits in {1, 2} else ""
-    normalized = "".join(char for char in amount if char not in ",.")
-    if not decimal_separator:
-        return normalized
-    return f"{normalized[:-trailing_digits]}.{normalized[-trailing_digits:]}"
 
 
 def _offer_price_text(node: HtmlNode) -> str:

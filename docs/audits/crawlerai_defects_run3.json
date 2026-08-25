@@ -1,0 +1,1469 @@
+{
+  "metadata": {
+    "dataset": "crawlerai_defects_run3",
+    "eval": "crawlerai_eval_html_grounded_v3_2.json",
+    "baseline_defects": "crawlerai_defects_html_grounded_v3_2.json",
+    "run": "run-3.json",
+    "generated_at": "2026-08-25",
+    "purpose": "Compact engineering defect set for Codex planning after the latest CrawlerAI fixes.",
+    "scoring": "Same v3.2 rules as the previous defect set; ratings/reviews are presence-scored and locale/volatile exceptions remain non-brittle."
+  },
+  "summary": {
+    "cases": 82,
+    "run_results": 80,
+    "failing_cases": 54,
+    "defects": 146,
+    "previous_failing_cases": 75,
+    "previous_defects": 257,
+    "defect_delta": -111,
+    "defect_reduction_pct": 43.2,
+    "failing_case_delta": -21,
+    "resolved_previous_field_defects": 121,
+    "persistent_field_defects": 131,
+    "previous_field_defects_superseded_by_missing_result": 5,
+    "new_root_or_field_defects": 15,
+    "fully_fixed_case_ids": [
+      7,
+      12,
+      14,
+      15,
+      16,
+      23,
+      24,
+      38,
+      42,
+      43,
+      49,
+      50,
+      53,
+      58,
+      59,
+      60,
+      62,
+      63,
+      65,
+      66,
+      68,
+      75
+    ],
+    "newly_failing_case_ids": [
+      45
+    ],
+    "price_drift_candidate_case_ids": [
+      9,
+      18,
+      45,
+      47,
+      71,
+      73,
+      74,
+      80
+    ]
+  },
+  "problem_areas": [
+    {
+      "area": "product_identity_and_page_state",
+      "priority": "P0",
+      "goal": "Bind extraction to the requested PDP/product family and avoid category, related-product, or wrong-family drift.",
+      "defects": 3,
+      "previous_defects": 4,
+      "delta": -1,
+      "affected_cases": 3,
+      "case_ids": [
+        11,
+        47,
+        55
+      ],
+      "top_fields": [
+        {
+          "field": "title",
+          "count": 2
+        },
+        {
+          "field": "result",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 11,
+          "field": "title",
+          "expected": "Arizona Birko-Flor in Color Black",
+          "actual": "arizona core birkoflor 0 eva u 1",
+          "code": "WRONG_PRODUCT_OR_TITLE"
+        },
+        {
+          "id": 47,
+          "field": "title",
+          "expected": "Canon EOS R5",
+          "actual": "EOS R5",
+          "code": "WRONG_PRODUCT_OR_TITLE"
+        },
+        {
+          "id": 55,
+          "field": "result",
+          "expected": "product result",
+          "actual": null,
+          "code": "MISSING_PRODUCT_RESULT"
+        }
+      ]
+    },
+    {
+      "area": "selected_variant_state",
+      "priority": "P0",
+      "goal": "Respect variant/color/fit/size selectors encoded in the URL or current page state.",
+      "defects": 29,
+      "previous_defects": 49,
+      "delta": -20,
+      "affected_cases": 28,
+      "case_ids": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        19,
+        20,
+        21,
+        26,
+        27,
+        29,
+        30,
+        35,
+        39,
+        51,
+        56,
+        57,
+        61,
+        67,
+        72,
+        76,
+        78,
+        79,
+        82
+      ],
+      "top_fields": [
+        {
+          "field": "color",
+          "count": 24
+        },
+        {
+          "field": "size",
+          "count": 4
+        },
+        {
+          "field": "selected_fit",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 9,
+          "field": "color",
+          "expected": "Black",
+          "actual": "Blue",
+          "code": "WRONG_SELECTED_STATE"
+        },
+        {
+          "id": 29,
+          "field": "color",
+          "expected": "Sixtine",
+          "actual": "blue",
+          "code": "WRONG_SELECTED_STATE"
+        },
+        {
+          "id": 30,
+          "field": "color",
+          "expected": "Ivory",
+          "actual": "White",
+          "code": "WRONG_SELECTED_STATE"
+        },
+        {
+          "id": 67,
+          "field": "color",
+          "expected": "SEA SALT with FAST TRACK",
+          "actual": "SEA SALT",
+          "code": "WRONG_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "area": "commercial_fields",
+      "priority": "P0",
+      "goal": "Extract price, currency, original price, ranges and stock state from the selected/current product state.",
+      "defects": 42,
+      "previous_defects": 42,
+      "delta": 0,
+      "affected_cases": 25,
+      "case_ids": [
+        1,
+        3,
+        5,
+        9,
+        18,
+        21,
+        26,
+        27,
+        34,
+        40,
+        41,
+        45,
+        46,
+        47,
+        61,
+        67,
+        71,
+        72,
+        73,
+        74,
+        77,
+        78,
+        79,
+        80,
+        81
+      ],
+      "top_fields": [
+        {
+          "field": "price",
+          "count": 18
+        },
+        {
+          "field": "availability",
+          "count": 11
+        },
+        {
+          "field": "currency",
+          "count": 7
+        },
+        {
+          "field": "original_price",
+          "count": 4
+        },
+        {
+          "field": "price_min",
+          "count": 1
+        },
+        {
+          "field": "price_max",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 5,
+          "field": "price",
+          "expected": "215.00",
+          "actual": "2.15",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "id": 9,
+          "field": "price",
+          "expected": "437.00",
+          "actual": "435.00",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "id": 18,
+          "field": "price",
+          "expected": "60200.00",
+          "actual": "60000.00",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "id": 26,
+          "field": "availability",
+          "expected": "coming_soon",
+          "actual": "out_of_stock",
+          "code": "WRONG_AVAILABILITY"
+        }
+      ]
+    },
+    {
+      "area": "variants_and_options",
+      "priority": "P0",
+      "goal": "Extract complete variant dimensions/counts without collapsing or inventing options.",
+      "defects": 14,
+      "previous_defects": 14,
+      "delta": 0,
+      "affected_cases": 11,
+      "case_ids": [
+        1,
+        11,
+        20,
+        22,
+        25,
+        34,
+        44,
+        61,
+        67,
+        72,
+        77
+      ],
+      "top_fields": [
+        {
+          "field": "variant_count",
+          "count": 10
+        },
+        {
+          "field": "size_options",
+          "count": 4
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "variant_count",
+          "expected": 24,
+          "actual": 0,
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "id": 11,
+          "field": "variant_count",
+          "expected": 3,
+          "actual": 0,
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "id": 20,
+          "field": "variant_count",
+          "expected": 24,
+          "actual": 25,
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "id": 25,
+          "field": "size_options",
+          "expected": [
+            "xs",
+            "s",
+            "m",
+            "l",
+            "xl",
+            "xxl",
+            "3xl"
+          ],
+          "actual": [
+            "xl"
+          ],
+          "code": "INCOMPLETE_SIZE_OPTIONS"
+        }
+      ]
+    },
+    {
+      "area": "product_identifiers",
+      "priority": "P1",
+      "goal": "Recover stable SKU/style/MPN/barcode/product identifiers from structured or embedded state.",
+      "defects": 6,
+      "previous_defects": 13,
+      "delta": -7,
+      "affected_cases": 6,
+      "case_ids": [
+        1,
+        2,
+        40,
+        46,
+        48,
+        56
+      ],
+      "top_fields": [
+        {
+          "field": "sku",
+          "count": 4
+        },
+        {
+          "field": "style_id",
+          "count": 1
+        },
+        {
+          "field": "barcode",
+          "count": 1
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "style_id",
+          "expected": "DD1391-100",
+          "actual": null,
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "id": 2,
+          "field": "barcode",
+          "expected": "114410600165",
+          "actual": null,
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "id": 40,
+          "field": "sku",
+          "expected": "tread-basics-package-ng-us",
+          "actual": null,
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "id": 46,
+          "field": "sku",
+          "expected": "7100101665",
+          "actual": null,
+          "code": "MISSING_IDENTIFIER"
+        }
+      ]
+    },
+    {
+      "area": "core_identity_fields",
+      "priority": "P1",
+      "goal": "Normalize product title and brand without store suffixes or related-product drift.",
+      "defects": 12,
+      "previous_defects": 16,
+      "delta": -4,
+      "affected_cases": 12,
+      "case_ids": [
+        10,
+        11,
+        21,
+        27,
+        31,
+        34,
+        40,
+        46,
+        71,
+        73,
+        79,
+        80
+      ],
+      "top_fields": [
+        {
+          "field": "brand",
+          "count": 12
+        }
+      ],
+      "examples": [
+        {
+          "id": 27,
+          "field": "brand",
+          "expected": "Tarte",
+          "actual": "Shape Tape Concealer",
+          "code": "WRONG_BRAND"
+        },
+        {
+          "id": 80,
+          "field": "brand",
+          "expected": "American Eagle",
+          "actual": "AE",
+          "code": "WRONG_BRAND"
+        },
+        {
+          "id": 10,
+          "field": "brand",
+          "expected": "Levtex Home",
+          "actual": null,
+          "code": "MISSING_BRAND"
+        },
+        {
+          "id": 11,
+          "field": "brand",
+          "expected": "BIRKENSTOCK",
+          "actual": null,
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "area": "attributes",
+      "priority": "P2",
+      "goal": "Improve color, material, gender, size and condition extraction after core commerce data is correct.",
+      "defects": 25,
+      "previous_defects": 59,
+      "delta": -34,
+      "affected_cases": 20,
+      "case_ids": [
+        1,
+        2,
+        4,
+        6,
+        8,
+        9,
+        11,
+        19,
+        28,
+        33,
+        37,
+        39,
+        41,
+        51,
+        56,
+        61,
+        69,
+        71,
+        72,
+        73
+      ],
+      "top_fields": [
+        {
+          "field": "material",
+          "count": 17
+        },
+        {
+          "field": "gender",
+          "count": 5
+        },
+        {
+          "field": "condition",
+          "count": 3
+        }
+      ],
+      "examples": [
+        {
+          "id": 1,
+          "field": "condition",
+          "expected": "New",
+          "actual": null,
+          "code": "MISSING_CONDITION"
+        },
+        {
+          "id": 1,
+          "field": "gender",
+          "expected": "Men",
+          "actual": null,
+          "code": "MISSING_GENDER"
+        },
+        {
+          "id": 2,
+          "field": "gender",
+          "expected": "Men",
+          "actual": null,
+          "code": "MISSING_GENDER"
+        },
+        {
+          "id": 2,
+          "field": "material",
+          "expected": "100% Cotton",
+          "actual": null,
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "area": "reviews",
+      "priority": "P3",
+      "goal": "Capture ratings and review counts when directly exposed; treat them as volatile.",
+      "defects": 15,
+      "previous_defects": 60,
+      "delta": -45,
+      "affected_cases": 8,
+      "case_ids": [
+        27,
+        32,
+        51,
+        61,
+        70,
+        71,
+        78,
+        79
+      ],
+      "top_fields": [
+        {
+          "field": "rating",
+          "count": 8
+        },
+        {
+          "field": "review_count",
+          "count": 7
+        }
+      ],
+      "examples": [
+        {
+          "id": 27,
+          "field": "rating",
+          "expected": 4.7,
+          "actual": null,
+          "code": "MISSING_RATING"
+        },
+        {
+          "id": 27,
+          "field": "review_count",
+          "expected": 37875,
+          "actual": null,
+          "code": "MISSING_REVIEW_COUNT"
+        },
+        {
+          "id": 32,
+          "field": "rating",
+          "expected": 4.453032,
+          "actual": null,
+          "code": "MISSING_RATING"
+        },
+        {
+          "id": 32,
+          "field": "review_count",
+          "expected": 10752,
+          "actual": null,
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "style_id",
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "field": "gender",
+          "code": "MISSING_GENDER"
+        },
+        {
+          "field": "condition",
+          "code": "MISSING_CONDITION"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "barcode",
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "gender",
+          "code": "MISSING_GENDER"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "issues": [
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "issues": [
+        {
+          "field": "color",
+          "code": "WRONG_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "condition",
+          "code": "MISSING_CONDITION"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "size",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "issues": [
+        {
+          "field": "title",
+          "code": "WRONG_PRODUCT_OR_TITLE"
+        },
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "gender",
+          "code": "MISSING_GENDER"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "original_price",
+          "code": "MISSING_ORIGINAL_PRICE"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "issues": [
+        {
+          "field": "size_options",
+          "code": "MISSING_SIZE_OPTIONS"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "issues": [
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "size_options",
+          "code": "INCOMPLETE_SIZE_OPTIONS"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "original_price",
+          "code": "MISSING_ORIGINAL_PRICE"
+        },
+        {
+          "field": "availability",
+          "code": "WRONG_AVAILABILITY"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "brand",
+          "code": "WRONG_BRAND"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "issues": [
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "issues": [
+        {
+          "field": "color",
+          "code": "WRONG_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "issues": [
+        {
+          "field": "color",
+          "code": "WRONG_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "issues": [
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "issues": [
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "issues": [
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "issues": [
+        {
+          "field": "price_min",
+          "code": "MISSING_PRICE_MIN"
+        },
+        {
+          "field": "price_max",
+          "code": "MISSING_PRICE_MAX"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "issues": [
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "issues": [
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "sku",
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "issues": [
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "issues": [
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "issues": [
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "sku",
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "issues": [
+        {
+          "field": "title",
+          "code": "WRONG_PRODUCT_OR_TITLE"
+        },
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "issues": [
+        {
+          "field": "sku",
+          "code": "MISSING_IDENTIFIER"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 55,
+      "issues": [
+        {
+          "field": "result",
+          "code": "MISSING_PRODUCT_RESULT"
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "sku",
+          "code": "MISSING_IDENTIFIER"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "condition",
+          "code": "MISSING_CONDITION"
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "id": 61,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "MISSING_PRICE"
+        },
+        {
+          "field": "currency",
+          "code": "MISSING_CURRENCY"
+        },
+        {
+          "field": "original_price",
+          "code": "MISSING_ORIGINAL_PRICE"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "size_options",
+          "code": "MISSING_SIZE_OPTIONS"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "gender",
+          "code": "MISSING_GENDER"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 67,
+      "issues": [
+        {
+          "field": "color",
+          "code": "WRONG_SELECTED_STATE"
+        },
+        {
+          "field": "availability",
+          "code": "WRONG_AVAILABILITY"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 69,
+      "issues": [
+        {
+          "field": "gender",
+          "code": "MISSING_GENDER"
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "issues": [
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        }
+      ]
+    },
+    {
+      "id": 72,
+      "issues": [
+        {
+          "field": "color",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "availability",
+          "code": "WRONG_AVAILABILITY"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        },
+        {
+          "field": "material",
+          "code": "MISSING_MATERIAL"
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 76,
+      "issues": [
+        {
+          "field": "size",
+          "code": "MISSING_SELECTED_STATE"
+        }
+      ]
+    },
+    {
+      "id": 77,
+      "issues": [
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "variant_count",
+          "code": "WRONG_VARIANT_COUNT"
+        },
+        {
+          "field": "size_options",
+          "code": "INCOMPLETE_SIZE_OPTIONS"
+        }
+      ]
+    },
+    {
+      "id": 78,
+      "issues": [
+        {
+          "field": "size",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "availability",
+          "code": "MISSING_AVAILABILITY"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "issues": [
+        {
+          "field": "selected_fit",
+          "code": "MISSING_SELECTED_STATE"
+        },
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "brand",
+          "code": "MISSING_BRAND"
+        },
+        {
+          "field": "rating",
+          "code": "MISSING_RATING"
+        },
+        {
+          "field": "review_count",
+          "code": "MISSING_REVIEW_COUNT"
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "issues": [
+        {
+          "field": "price",
+          "code": "WRONG_PRICE"
+        },
+        {
+          "field": "brand",
+          "code": "WRONG_BRAND"
+        }
+      ]
+    },
+    {
+      "id": 81,
+      "issues": [
+        {
+          "field": "original_price",
+          "code": "MISSING_ORIGINAL_PRICE"
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "issues": [
+        {
+          "field": "size",
+          "code": "MISSING_SELECTED_STATE"
+        }
+      ]
+    }
+  ]
+}

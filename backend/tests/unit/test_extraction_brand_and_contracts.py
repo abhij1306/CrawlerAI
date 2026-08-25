@@ -400,7 +400,9 @@ def test_registered_title_marker_recovers_product_brand() -> None:
         "https://shop.test/products/acme-trail-shoe",
     )
 
-    assert result.records[0]["brand"] == "Acme®"
+    # The marker still bounds the brand name, but it is legal notation rather
+    # than part of the name, so it is not published.
+    assert result.records[0]["brand"] == "Acme"
     assert not any(
         row.fact_type == "product.brand"
         and row.metadata.get("derived_by") == "brand_from_title_marker"
@@ -408,7 +410,7 @@ def test_registered_title_marker_recovers_product_brand() -> None:
     )
     assert any(
         row.fact_type == "product.brand"
-        and row.value == "Acme®"
+        and row.value == "Acme"
         and row.rule_id == "brand_from_title_marker"
         for row in result.derived_facts
     )

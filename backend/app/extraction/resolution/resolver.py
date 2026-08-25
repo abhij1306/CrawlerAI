@@ -33,6 +33,7 @@ from app.extraction.resolution.lineage import _resolved_product_url
 from app.extraction.resolution.offers import (
     _preferred_parent_offer_id,
     _resolve_offer,
+    sibling_offer_availability_facts,
 )
 from app.extraction.resolution.price_units import (
     _price_unit_derived_facts,
@@ -185,6 +186,12 @@ def _base_derived_facts(
     )
     return (
         *derived_facts,
+        *sibling_offer_availability_facts(
+            entities,
+            tuple(decisions),
+            by_id,
+            primary_offer_entity_id=primary_offer_entity_id,
+        ),
         *_inherit_variant_offer_facts(
             entities,
             tuple(decisions),
@@ -201,7 +208,6 @@ def _variant_decision_pipeline(
     derived_facts: tuple[DerivedFact, ...],
     *,
     primary_offer_entity_id: str | None,
-    primary_product_entity_id: str | None,
     by_id: dict[str, Evidence],
 ) -> tuple[tuple[VariantDecision, ...], tuple[DerivedFact, ...]]:
     """Resolve variants, reconcile prices, and roll parent facts up from survivors."""
@@ -214,8 +220,10 @@ def _variant_decision_pipeline(
         evidence_by_id=by_id,
     )
     parent_facts = _parent_derived_from_variants(
+        primary_product_entity_id=(
+            entities.products[0].entity_id if len(entities.products) == 1 else None
+        ),
         primary_offer_entity_id=primary_offer_entity_id,
-        primary_product_entity_id=primary_product_entity_id,
         variant_decisions=variant_decisions,
         expected_variant_count=len(entities.variants),
         selected_variant_ids=frozenset(
@@ -264,7 +272,6 @@ def resolve(
         decisions,
         derived_facts,
         primary_offer_entity_id=primary_offer_entity_id,
-        primary_product_entity_id=primary_product_entity_id,
         by_id=by_id,
     )
     asset_decisions = resolve_product_assets(

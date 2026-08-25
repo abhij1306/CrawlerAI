@@ -5,6 +5,10 @@ from urllib.parse import urlsplit
 
 from app.core.config import field_mappings
 from app.core.config.extraction_rules import AVAILABILITY_CANONICAL_ENUM
+from app.core.records.url_identity import (
+    detail_title_rank_components,
+    detail_url_rank_components,
+)
 from app.core.config.locale_format_rules import parse_money, validate_gtin
 from app.extraction.contracts import Evidence
 
@@ -34,7 +38,7 @@ def _value_quality(ev: Evidence) -> int:
 
     fact_type = ev.fact_type
     if fact_type in _PRICE_FACT_TYPES:
-        return 1 if non_positive_money(ev.value) or not _parses_money(ev.value) else 0
+        return 1 if non_positive_money(ev.value) or parse_money(ev.value) is None else 0
     if fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
         return 0 if _is_iso4217_shape(ev.value) else 1
     if fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
@@ -44,10 +48,6 @@ def _value_quality(ev: Evidence) -> int:
     if fact_type in _URL_FACT_TYPES:
         return 0 if _is_absolute_url(ev.value) else 1
     return 0
-
-
-def _parses_money(value: object) -> bool:
-    return parse_money(value) is not None
 
 
 def _is_iso4217_shape(value: object) -> bool:
@@ -78,6 +78,7 @@ def rank(ev: Evidence) -> tuple[object, ...]:
         "css_recipe": 5,
         "url": 6,
     }.get(ev.collector_id, 7)
+    default = (reliability, directness, -float(ev.confidence), ev.evidence_id)
     if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
         pollution = int(
             "seo_title_pollution" in ev.flags or "truncated_title" in ev.flags
@@ -86,34 +87,23 @@ def rank(ev: Evidence) -> tuple[object, ...]:
         return (
             quality,
             pollution,
+            *detail_title_rank_components(ev.flags, ev.metadata),
             url_disagreement,
             reliability,
             -float(ev.confidence),
             -len(str(ev.value or "")),
             ev.evidence_id,
         )
+    if ev.fact_type == field_mappings.PRODUCT_URL_FACT_TYPE:
+        return (quality, *detail_url_rank_components(ev.flags), *default)
     if ev.fact_type == "product.description":
         boundary_excerpt = int("description_hard_boundary" in ev.flags)
-        return (
-            quality,
-            boundary_excerpt,
-            reliability,
-            directness,
-            -float(ev.confidence),
-            ev.evidence_id,
-        )
+        return (quality, boundary_excerpt, *default)
     if ev.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
         inferred_from_symbol = int(
             str(ev.metadata.get("derived_by") or "") == "currency_from_price_symbol"
         )
-        return (
-            quality,
-            inferred_from_symbol,
-            reliability,
-            directness,
-            -float(ev.confidence),
-            ev.evidence_id,
-        )
+        return (quality, inferred_from_symbol, *default)
     if ev.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE:
         derived_penalty = int(bool(ev.metadata.get("derived_by")))
         role_rank = {
@@ -143,10 +133,4 @@ def rank(ev: Evidence) -> tuple[object, ...]:
             -float(ev.confidence),
             ev.evidence_id,
         )
-    return (
-        quality,
-        reliability,
-        directness,
-        -float(ev.confidence),
-        ev.evidence_id,
-    )
+    return (quality, *default)

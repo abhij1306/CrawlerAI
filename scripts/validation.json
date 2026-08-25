@@ -81,6 +81,10 @@
       ]
     },
     {
+      "sources": ["backend/app/evaluation/reference/**"],
+      "backendTests": ["tests/unit/test_artifact_quality_cases.py"]
+    },
+    {
       "sources": ["backend/app/crawl/**", "backend/app/tasks.py", "backend/app/workers/**"],
       "backendTests": [
         "tests/unit/test_crawl_*.py",

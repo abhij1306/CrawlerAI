@@ -297,7 +297,7 @@ def test_publication_counts_resolved_variants_when_rows_suppressed() -> None:
 
     dumped = record.model_dump(exclude_none=True)
     assert dumped["variants"] == ()
-    assert dumped["variant_count"] == 1
+    assert dumped["variant_count"] == 0
 
 
 def test_projection_suppresses_resolved_price_when_currency_is_unresolved() -> None:

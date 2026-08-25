@@ -307,3 +307,30 @@ def normalize_record_fields(record: dict[str, Any]) -> dict[str, Any]:
         for key, value in dict(record or {}).items()
         if value not in (None, "", [], {})
     }
+
+
+def normalize_structured_offer_values(row: dict[str, Any]) -> dict[str, Any]:
+    return _with_complete_offer_availability(_with_equal_bound_price(row))
+
+
+def _with_equal_bound_price(row: dict[str, Any]) -> dict[str, Any]:
+    low_price = str(row.get("lowPrice") or "").strip()
+    high_price = str(row.get("highPrice") or "").strip()
+    if low_price and low_price == high_price and not row.get("price"):
+        return {**row, "price": low_price}
+    return row
+
+
+def _with_complete_offer_availability(row: dict[str, Any]) -> dict[str, Any]:
+    children = row.get("offers")
+    if row.get("availability") or not isinstance(children, list):
+        return row
+    if str(row.get("offerCount") or "").strip() != str(len(children)):
+        return row
+    values = [
+        str(child.get("availability") or "").strip() if isinstance(child, dict) else ""
+        for child in children
+    ]
+    if not values or any(not value for value in values) or len(set(values)) != 1:
+        return row
+    return {**row, "availability": values[0]}

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from app.core.config.extraction_rules import (
     DETAIL_BRAND_PREFIX_STOP_TOKENS,
     BARE_HOST_URL_RE,
+    DETAIL_IDENTITY_TRADEMARK_SYMBOL_PATTERN,
     DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     LISTING_BRAND_MAX_WORDS,
 )
@@ -69,6 +70,30 @@ _SKU_DRAFT_PREFIX_RE = re.compile(
     str(PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN), re.IGNORECASE
 )
 _BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
+# A DOM identifier often arrives with its own field label attached
+# ("Item # 77295", "SKU: BT-1MW") because the label and value share a cell.
+# The label is page furniture, never part of the identifier.
+_IDENTIFIER_LABEL_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z.\s]{0,20}?\s*[#:]\s+(?=\S)")
+# Without whitespace after the delimiter only a known label word may be stripped,
+# so "SKU:BT-1MW" loses its label while an identifier that legitimately contains a
+# delimiter ("ABC:123") is preserved.
+_IDENTIFIER_LABEL_WORDS = (
+    "article",
+    "art",
+    "item",
+    "model",
+    "mpn",
+    "part",
+    "product",
+    "ref",
+    "sku",
+    "style",
+)
+_IDENTIFIER_TIGHT_LABEL_RE = re.compile(
+    rf"^(?:{'|'.join(_IDENTIFIER_LABEL_WORDS)})"
+    r"(?:\s*(?:no|number|code|id)\.?)?\s*[#:]\s*(?=\S)",
+    re.IGNORECASE,
+)
 
 
 def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
@@ -100,6 +125,13 @@ def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
             original = " ".join(original_words[start : start + size]).strip(" |-–—")
             return original or None
     return None
+
+
+def _without_trademark_symbols(value: str) -> str:
+    """The marker locates where a brand name ends; it is not part of the name."""
+    return re.sub(
+        r"\s+", " ", re.sub(DETAIL_IDENTITY_TRADEMARK_SYMBOL_PATTERN, "", value)
+    ).strip()
 
 
 def infer_brand_from_title_marker(title: object) -> str | None:
@@ -567,10 +599,19 @@ def coerce_barcode(value: object) -> str | None:
     return digits
 
 
+def strip_identifier_label_prefix(value: str) -> str:
+    """Drop a field label that a DOM cell carried along with its identifier."""
+    stripped = _IDENTIFIER_LABEL_PREFIX_RE.sub("", value, count=1)
+    if stripped == value:
+        stripped = _IDENTIFIER_TIGHT_LABEL_RE.sub("", value, count=1)
+    return stripped.strip() or value
+
+
 def coerce_sku(value: object) -> str | None:
     text = coerce_text(value)
     if not text:
         return None
+    text = strip_identifier_label_prefix(text)
     had_draft_prefix = bool(_SKU_DRAFT_PREFIX_RE.match(text))
     cleaned = _SKU_DRAFT_PREFIX_RE.sub("", text).strip()
     if cleaned.startswith(("{", "[")):

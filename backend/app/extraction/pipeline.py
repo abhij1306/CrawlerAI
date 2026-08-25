@@ -28,7 +28,6 @@ from app.core.config.locale_format_rules import (
     locale_hint_from_page_url,
     money_has_ambiguous_decimal,
     parse_money,
-    validate_gtin,
 )
 from app.core.config.extraction_rules import (
     AVAILABILITY_CANONICAL_ENUM,
@@ -63,7 +62,6 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_TRAILING_CODE_PATTERN,
     DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS,
     DETAIL_TITLE_UI_INSTRUCTION_TOKENS,
-    DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
     normalize_availability_value,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
@@ -78,16 +76,21 @@ from app.extraction.contracts import (
 from app.extraction.surfaces import Surface
 from app.core.records.url_identity import (
     detail_title_from_url,
+    detail_title_identity_flags,
+    detail_identity_ranking,
+    detail_title_is_bare_site_identity,
     detail_title_has_seo_pollution,
     detail_title_is_url_corroborated_style_code,
     detail_url_looks_like_product,
+)
+from app.core.records.title_normalization import (
     normalize_detail_marketplace_title,
-    semantic_detail_identity_tokens,
-    semantic_identity_tokens,
+    strip_identity_trademark_symbols,
 )
-from app.core.shared.field_coerce_text import (
-    coerce_brand_text,
+from app.core.records.attribute_normalization import (
+    normalize_product_attribute_value,
 )
+from app.core.shared.field_coerce_text import coerce_brand_text
 from app.core.shared.text_coerce import coerce_long_text, coerce_text
 
 
@@ -650,7 +653,14 @@ def normalize_evidence(
     )
     value = _normalize_typed_semantics(evidence, value, flags)
     value = _normalize_title_value(evidence, value, flags, page_url=page_url)
-    return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
+    identity_metadata, identity_flags = detail_identity_ranking(
+        value, fact_type=evidence.fact_type, page_url=page_url
+    )
+    flags.update(identity_flags)
+    metadata = {**evidence.metadata, **identity_metadata}
+    return evidence.model_copy(
+        update={"value": value, "flags": tuple(sorted(flags)), "metadata": metadata}
+    )
 
 
 def _normalize_text_representation(evidence: Evidence, value: object) -> object:
@@ -731,12 +741,8 @@ def _normalize_typed_semantics(
         and isinstance(value, str)
     ):
         _flag_description_value(evidence, value, flags)
-    if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(
-        value, str
-    ):
-        value = re.sub(r"\D+", "", value)
-        if value and not validate_gtin(value):
-            flags.add("invalid_gtin")
+    if isinstance(value, str):
+        value = normalize_product_attribute_value(evidence.fact_type, value, flags)
     if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
         flags.add("placeholder_text")
     return value
@@ -748,7 +754,7 @@ def _normalize_title_value(
     if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(
         value, str
     ):
-        value = normalize_detail_marketplace_title(value)
+        value = normalize_detail_marketplace_title(value, page_url=page_url)
         title_locator = str(evidence.locator.value or "").casefold()
         if any(
             token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS
@@ -777,7 +783,9 @@ def _normalize_brand_value(value: str, flags: set[str]) -> str:
         flags.add("brand_boilerplate")
     if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, normalized, re.IGNORECASE):
         flags.add("category_as_brand")
-    return normalized
+    # Strip after the boilerplate/category checks so rules that spell a symbol
+    # (``fifa world cup™``) still match the raw value.
+    return strip_identity_trademark_symbols(normalized) or normalized
 
 
 def _segment_grounded_description(value: str) -> str:
@@ -881,12 +889,14 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     )
     flags.update(_title_generic_flags(value, key=key, words=words, evidence=evidence))
     flags.update(
-        _title_identity_flags(
+        detail_title_identity_flags(
             value,
             page_url=page_url,
             url_contains_title_code=url_contains_title_code,
         )
     )
+    if detail_title_is_bare_site_identity(value, page_url=page_url):
+        flags.add(DETAIL_SHELL_TITLE_FLAG)
     return flags
 
 
@@ -952,29 +962,6 @@ def _title_generic_flags(
         >= DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS
     ):
         flags.add("generic_title")
-    return flags
-
-
-def _title_identity_flags(
-    value: str, *, page_url: str, url_contains_title_code: bool
-) -> set[str]:
-    flags: set[str] = set()
-    url_tokens = set(semantic_detail_identity_tokens(page_url))
-    title_tokens = set(semantic_identity_tokens(value))
-    overlap = len(url_tokens & title_tokens)
-    if len(title_tokens) == 1 and len(url_tokens) >= 2 and title_tokens < url_tokens:
-        flags.add("truncated_title")
-    if url_tokens and title_tokens:
-        required_overlap = min(
-            DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
-            len(url_tokens),
-            len(title_tokens),
-        )
-        flags.add(
-            "title_url_match"
-            if overlap >= required_overlap or url_contains_title_code
-            else "title_url_mismatch"
-        )
     return flags
 
 

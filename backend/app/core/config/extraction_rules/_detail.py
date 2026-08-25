@@ -310,21 +310,91 @@ DETAIL_TITLE_STYLE_ONLY_TOKENS = frozenset(
 )
 DETAIL_TITLE_STYLE_ONLY_MAX_WORDS = 2
 DETAIL_TITLE_SEO_POLLUTION_PATTERN = (
-    r"(?:\s[|\u2013\u2014]\s|\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
+    r"(?:\s[|\u2013\u2014]\s|\s+-\s+(?:boys|girls|kids|men|women)\s*$|"
+    r"\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
 )
 DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
+# Trademark/service-mark symbols are legal notation attached to a name, not part
+# of the product or brand name itself. Sources disagree on whether they appear
+# (JSON-LD often omits what the DOM heading carries), so identity values are
+# compared and published without them. Applies to identity fields only;
+# descriptions and other prose keep their source punctuation.
+DETAIL_IDENTITY_TRADEMARK_SYMBOL_PATTERN = r"[®™℠]"
+# schema.org enumerations arrive as bare words or as full enumeration URLs
+# ("https://schema.org/NewCondition", "https://schema.org/Male"). Only the final
+# token carries meaning, so it is mapped to the published vocabulary.
+DETAIL_SCHEMA_ENUM_SUFFIXES = ("condition",)
+# Audience markers a retailer puts in the PDP path ("/men/", "/womens-shoes/").
+# Ordered: an explicit unisex marker outranks a gendered browse segment, because
+# a unisex product is often reachable under a gendered department.
+DETAIL_URL_GENDER_MARKERS = (
+    (r"unisex", "Unisex"),
+    (r"women'?s?|womens|ladies", "Women"),
+    (r"men'?s?|mens", "Men"),
+    (r"girls?'?", "Girls"),
+    (r"boys?'?", "Boys"),
+    (r"kids?'?|children", "Kids"),
+)
+DETAIL_SCHEMA_GENDER_VALUES = {
+    "male": "Men",
+    "men": "Men",
+    "mens": "Men",
+    "man": "Men",
+    "female": "Women",
+    "women": "Women",
+    "womens": "Women",
+    "woman": "Women",
+    "unisex": "Unisex",
+    "kids": "Kids",
+    "boys": "Boys",
+    "girls": "Girls",
+}
+DETAIL_SCHEMA_CONDITION_VALUES = {
+    "new": "New",
+    "refurbished": "Refurbished",
+    "used": "Used",
+    "damaged": "Damaged",
+    "vintage": "Vintage",
+}
+
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
+DETAIL_TITLE_IDENTITY_METADATA_KEYS = ("title_overlap", "title_precision")
+DETAIL_URL_TARGET_FLAGS = ("target_url_match", "target_url_mismatch")
 DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
 DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
 DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN = (
     r"^\s*[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\s*:\s*"
 )
 DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN = r"\s*:\s*[^:]{2,80}\s*$"
+# A trailing separator-delimited segment naming the site itself ("... | Karen
+# Millen ROW", "... - Apple") is boilerplate, not product identity. The site name
+# is derived from the page host rather than a vocabulary list, so the rule stays
+# generic: no retailer is named, and a trailing segment that does not match the
+# host (a style code, a colourway) is preserved.
+DETAIL_TITLE_SITE_SUFFIX_SEPARATOR_PATTERN = r"\s+[|–—·-]\s+"
+DETAIL_TITLE_SITE_SUFFIX_MAX_WORDS = 5
+DETAIL_TITLE_SITE_SUFFIX_MIN_REMAINDER_WORDS = 2
+# Host labels that carry no site identity, so they never contribute match keys.
+DETAIL_HOST_GENERIC_LABELS = frozenset(
+    {
+        "co",
+        "com",
+        "shop",
+        "store",
+        "net",
+        "org",
+        "www",
+        "www1",
+        "www2",
+        "en",
+        "uk",
+    }
+)
 DETAIL_TITLE_SHORT_NAVIGATION_PATTERN = r"^(?:shop|browse|view)\s+(?:graphic\s+)?(?:t-?shirts?|shirts?|tops?|pants?|jeans?|dresses?|shoes?|sneakers?|accessories?)$"
 DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
-    {"assembly", "delivery", "faq", "faqs", "fee", "variation"}
+    {"assembly", "delivery", "faq", "help", "question", "variation"}
 )
-DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS = 3
+DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS = 2
 DETAIL_URL_TITLE_IGNORED_SEGMENTS = frozenset(
     {
         "boys",

@@ -1,11 +1,13 @@
 # CrawlerAI Ecommerce Detail Reference Evaluation
 
-These files are the canonical planning and replay references for the 82-case ecommerce-detail evaluation captured on 2026-08-23:
+These files are the canonical planning and replay references for the 82-case ecommerce-detail evaluation captured on 2026-08-23 and re-grounded against stored HTML on 2026-08-25:
 
-- `crawlerai_eval_compact.json` — independently supported expected fields and dynamic constraints.
-- `crawlerai_defects_compact.json` — 165 observed defects from the latest evaluated run, grouped by root-cause area.
+- `crawlerai_eval_html_grounded_v3_2.json` — 80 HTML-grounded cases, two explicitly identified fallback cases, and dynamic constraints.
+- `crawlerai_defects_html_grounded_v3_2.json` — 257 field defects across 75 failing cases, grouped by root-cause area.
 
 The reference data is not acquired input. Replay must use the matching ignored `backend/artifacts/runs/*/results/*/page.html` capture and any state/network artifacts that were actually captured. Never use `record.json` or `diagnose.json` as extractor input.
+
+Cases 21 and 55 have `source=fallback`. Their external reference values are planning context, not evidence available to offline replay. The harness reports them as `capture_limited`; implementation must not add site-specific logic or fabricate values to satisfy them.
 
 ## Evaluation projection
 

@@ -540,6 +540,39 @@ def test_related_product_dom_offer_is_not_attached_to_selected_product() -> None
     assert result.records[0]["price"] == "120.00"
 
 
+def test_linked_sibling_product_dom_offer_is_not_attached_to_selected_product() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Selected Boot</h1>
+          <section class="product-purchase-panel">
+            <a href="/products/selected-boot">
+              <div class="current-price">$120.00</div>
+            </a>
+          </section>
+          <section>
+            <div><div><div><div><div><div><div><div><div>
+              <a href="/products/sibling-shoe">
+                <span data-testid="price">$15.00</span>
+              </a>
+            </div></div></div></div></div></div></div></div></div>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/selected-boot",
+    )
+
+    assert result.records[0]["price"] == "120.00"
+    assert not [
+        row
+        for row in result.evidence
+        if row.collector_id == "dom"
+        and row.fact_type == "offer.price"
+        and str(row.value) == "15.00"
+    ]
+
+
 def test_hidden_recommendation_content_is_rejected() -> None:
     result = _extract(
         "ecommerce_detail",
