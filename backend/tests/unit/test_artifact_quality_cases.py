@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 from typing import Any
 
 import pytest
@@ -114,7 +115,8 @@ def _write_all_captures(backend_root: Path, references: dict[str, Any]) -> None:
 
 def _fake_result(request: object) -> SimpleNamespace:
     requested_url = str(request.capture.requested_url)
-    if "zara.com" in requested_url:
+    host = (urlsplit(requested_url).hostname or "").casefold()
+    if host == "zara.com" or host.endswith(".zara.com"):
         case_id = 24 if "v1=" in requested_url else 62
     else:
         case_id = int(requested_url.rstrip("/").split("/")[-1].split("?")[0])

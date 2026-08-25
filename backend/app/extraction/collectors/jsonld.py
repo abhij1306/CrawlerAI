@@ -851,7 +851,8 @@ def _variant_size(row: dict[str, Any], *, infer_from_name: bool) -> str:
     name = text_value(row.get("name"))
     parts = name.rsplit(VARIANT_JSONLD_NAME_OPTION_SEPARATOR, 2)
     candidate = parts[-1].strip() if len(parts) >= 3 else ""
-    if not candidate and infer_from_name:
+    if not candidate and infer_from_name and "," in name:
+        # Without a comma the tail is the whole product name, which is not a size.
         candidate = name.rsplit(",", 1)[-1].strip()
     return candidate if 0 < len(candidate) <= 40 else ""
 

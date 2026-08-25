@@ -56,13 +56,13 @@ def product_attribute_evidence(
                 if value := text_value(rating.get(key)):
                     rows.append((fact, value, f"{path}/aggregateRating/{key}"))
                     break
-    for source in (obj, obj.get("audience")):
+    for prefix, source in ((path, obj), (f"{path}/audience", obj.get("audience"))):
         if not isinstance(source, dict):
             continue
         for key in field_mappings.ECOMMERCE_JSONLD_GENDER_KEYS:
             if value := text_value(source.get(key)):
                 rows.append(
-                    (field_mappings.PRODUCT_GENDER_FACT_TYPE, value, f"{path}/{key}")
+                    (field_mappings.PRODUCT_GENDER_FACT_TYPE, value, f"{prefix}/{key}")
                 )
                 break
     return [
@@ -128,7 +128,15 @@ def product_image_evidence(
     product_subject: str,
 ) -> list[Evidence]:
     raw_image = obj.get("image")
-    images = raw_image if isinstance(raw_image, list) else [raw_image]
+    images: list[Any] = raw_image if isinstance(raw_image, list) else [raw_image]
+    is_list = isinstance(raw_image, list)
+    # Index from the source list so a skipped empty entry cannot shift the
+    # locator onto a different element; a scalar has no index at all.
+    located = [
+        (text_value(item), f"{path}/image/{index}" if is_list else f"{path}/image")
+        for index, item in enumerate(images)
+        if text_value(item)
+    ]
     return [
         evidence(
             bundle,
@@ -136,7 +144,7 @@ def product_image_evidence(
             "jsonld",
             "asset.image_url",
             url,
-            SourceLocator(kind="json_pointer", value=f"{path}/image/{idx}"),
+            SourceLocator(kind="json_pointer", value=locator),
             hint=EntityHint(entity_type="asset"),
             directness="embedded",
             confidence=0.85,
@@ -144,7 +152,5 @@ def product_image_evidence(
             parent_scope="product",
             relation_type="product_asset",
         )
-        for idx, url in enumerate(
-            text_value(item) for item in images if text_value(item)
-        )
+        for url, locator in located
     ]

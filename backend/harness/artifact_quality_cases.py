@@ -145,47 +145,59 @@ def _reference_errors(references: object) -> list[str]:
     if not isinstance(evaluation, dict) or not isinstance(defects, dict):
         return ["evaluation and defects references are required"]
     cases = evaluation.get("cases")
-    defect_cases = defects.get("cases")
-    areas = defects.get("problem_areas")
-    errors: list[str] = []
     evaluation_metadata = _first_mapping(evaluation.get("metadata"))
-    defect_metadata = _first_mapping(defects.get("metadata"))
-    summary = _first_mapping(defects.get("summary"))
-    if evaluation_metadata.get("version") != defect_metadata.get("version"):
+    errors: list[str] = []
+    if evaluation_metadata.get("version") != _first_mapping(
+        defects.get("metadata")
+    ).get("version"):
         errors.append("evaluation and defects versions must match")
-    expected_cases = int(evaluation_metadata.get("cases") or 0)
-    if expected_cases != 82 or not isinstance(cases, list) or len(cases) != 82:
+    if int(evaluation_metadata.get("cases") or 0) != 82 or not (
+        isinstance(cases, list) and len(cases) == 82
+    ):
         errors.append("evaluation must contain 82 cases")
         return errors
     ids = [int(row.get("id", 0)) for row in cases if isinstance(row, dict)]
     if len(ids) != 82 or len(set(ids)) != 82:
         errors.append("evaluation must contain 82 unique IDs")
-    expected_failing = int(summary.get("failing_cases") or 0)
-    if expected_failing != 75 or not isinstance(defect_cases, list):
-        errors.append("defects must contain the 75 failing cases")
-    elif len(defect_cases) != expected_failing:
-        errors.append("defect case count does not match its summary")
-    if not isinstance(areas, list) or {
-        str(row.get("area")) for row in areas if isinstance(row, dict)
-    } != set(AREA_FIELDS):
-        errors.append("defect partitions do not match the supported areas")
-    elif sum(int(row.get("defects") or 0) for row in areas) != int(
-        summary.get("defects") or 0
-    ):
-        errors.append("defect partition totals do not match their summary")
-    else:
-        for area in areas:
-            case_ids = area.get("case_ids") or ()
-            top_fields = area.get("top_fields") or ()
-            if len(set(case_ids)) != int(area.get("affected_cases") or 0):
-                errors.append(f"{area.get('area')} affected case count is inconsistent")
-            if sum(int(row.get("count") or 0) for row in top_fields) != int(
-                area.get("defects") or 0
-            ):
-                errors.append(f"{area.get('area')} field totals are inconsistent")
+    errors += _defect_case_errors(defects)
+    errors += _defect_partition_errors(defects)
     duplicates = _normalized_url_duplicates(cases)
     if duplicates != {(24, 62)}:
         errors.append(f"unexpected normalized URL duplicates: {sorted(duplicates)}")
+    return errors
+
+
+def _defect_case_errors(defects: dict[str, Any]) -> list[str]:
+    defect_cases = defects.get("cases")
+    expected = int(_first_mapping(defects.get("summary")).get("failing_cases") or 0)
+    if expected != 75 or not isinstance(defect_cases, list):
+        return ["defects must contain the 75 failing cases"]
+    if len(defect_cases) != expected:
+        return ["defect case count does not match its summary"]
+    return []
+
+
+def _defect_partition_errors(defects: dict[str, Any]) -> list[str]:
+    areas = defects.get("problem_areas")
+    summary = _first_mapping(defects.get("summary"))
+    if not isinstance(areas, list) or {
+        str(row.get("area")) for row in areas if isinstance(row, dict)
+    } != set(AREA_FIELDS):
+        return ["defect partitions do not match the supported areas"]
+    if sum(int(row.get("defects") or 0) for row in areas) != int(
+        summary.get("defects") or 0
+    ):
+        return ["defect partition totals do not match their summary"]
+    errors: list[str] = []
+    for area in areas:
+        declared = int(area.get("defects") or 0)
+        if len(set(area.get("case_ids") or ())) != int(area.get("affected_cases") or 0):
+            errors.append(f"{area.get('area')} affected case count is inconsistent")
+        if (
+            sum(int(row.get("count") or 0) for row in area.get("top_fields") or ())
+            != declared
+        ):
+            errors.append(f"{area.get('area')} field totals are inconsistent")
     return errors
 
 

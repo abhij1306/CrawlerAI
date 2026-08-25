@@ -82,6 +82,8 @@ from app.core.records.url_identity import (
     detail_title_has_seo_pollution,
     detail_title_is_url_corroborated_style_code,
     detail_url_looks_like_product,
+)
+from app.core.records.title_normalization import (
     normalize_detail_marketplace_title,
     strip_identity_trademark_symbols,
 )

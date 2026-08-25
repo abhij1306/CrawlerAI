@@ -37,12 +37,7 @@ from app.core.config.extraction_rules import (
     VARIANT_URL_PATH_AXIS_MARKERS,
 )
 from app.core.records.field_url_normalization import canonical_public_record_url
-from app.core.records.title_normalization import (  # re-exported for existing importers
-    host_identity_keys as host_identity_keys,
-    normalize_detail_marketplace_title as normalize_detail_marketplace_title,
-    strip_detail_title_site_suffix as strip_detail_title_site_suffix,
-    strip_identity_trademark_symbols as strip_identity_trademark_symbols,
-)
+
 
 _UTILITY_TOKENS = frozenset(
     {
