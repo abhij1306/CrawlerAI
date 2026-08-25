@@ -169,7 +169,17 @@ VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR = (
 )
 VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES = ("value", "data-url", "data-href", "href")
 VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE = "data-json"
-VARIANT_DOM_URL_AXIS_PARAM_PATTERN = r"^(?:dwvar_.+_|attribute_)?(?P<axis>color|colorname|colour|fit|size|sku|width|style)$"
+# The alternation is derived from VARIANT_URL_AXIS_PARAMS because every consumer
+# resolves the matched `axis` group back through that table. Hand-maintaining the
+# two drifted: `colorcode`, `colorproductcode`, and the `*displaycode` keys
+# resolved bare but not in their `dwvar_*`/`attribute_*` prefixed form, so a
+# prefixed style axis was dropped and variants differing only by style compared
+# equal in `target_offer_group_id`.
+VARIANT_DOM_URL_AXIS_PARAM_PATTERN = (
+    r"^(?:dwvar_.+_|attribute_)?(?P<axis>"
+    + "|".join(sorted(VARIANT_URL_AXIS_PARAMS))
+    + r")$"
+)
 VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS = frozenset({"variant", "variation"})
 VARIANT_DOM_NOISE_PHRASES = (
     "expand color swatches",

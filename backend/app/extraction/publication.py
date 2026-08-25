@@ -11,7 +11,10 @@ from typing import Literal, TypedDict
 from app.core.config import field_mappings
 from app.core.config.variant_policy import NON_PUBLIC_VARIANT_IDENTITY_FIELDS
 from app.core.records.output_safety import typed_detail_record
-from app.extraction.publication_policy import publication_disposition
+from app.extraction.publication_policy import (
+    numeric_canonicalization,
+    publication_disposition,
+)
 from app.extraction.contracts import (
     CanonicalizationTrace,
     CommerceDetailProjection,
@@ -221,6 +224,9 @@ def _decision_publication_entry(
             collector_ids=_collector_ids(
                 derived.input_evidence_ids, policy.evidence_by_id
             ),
+            canonicalization=numeric_canonicalization(
+                decision.fact_type, derived.value
+            ),
         )
     selected = policy.selected_by_decision.get(decision.decision_id)
     if selected is None:
@@ -235,6 +241,7 @@ def _decision_publication_entry(
         rule_id=selected.rule_id,
         evidence_ids=selected.evidence_ids,
         collector_ids=_collector_ids(selected.evidence_ids, policy.evidence_by_id),
+        canonicalization=numeric_canonicalization(decision.fact_type, selected.value),
     )
 
 
@@ -294,6 +301,9 @@ def _derived_backfill_entries(
                 evidence_ids=derived.input_evidence_ids,
                 collector_ids=_collector_ids(
                     derived.input_evidence_ids, policy.evidence_by_id
+                ),
+                canonicalization=numeric_canonicalization(
+                    derived.fact_type, derived.value
                 ),
             )
         )

@@ -164,6 +164,20 @@ def test_fragment_path_selected_axes_are_preserved() -> None:
     }
 
 
+def test_prefixed_style_axis_params_resolve_to_their_axis() -> None:
+    # The axis alternation is derived from VARIANT_URL_AXIS_PARAMS, so every key
+    # that table knows also resolves in its `dwvar_*`/`attribute_*` prefixed
+    # form. `colorproductcode` is the style axis: dropping it let two variants
+    # differing only by style compare equal.
+    assert selected_variant_axes(
+        "https://shop.test/p/ME988?dwvar_ME988_colorProductCode=CI939"
+        "&dwvar_ME988_colorCode=BR8825"
+    ) == {"style": "CI939", "color": "BR8825"}
+    assert selected_variant_axes(
+        "https://shop.test/p/ME988?attribute_colorProductCode=CI939"
+    ) == {"style": "CI939"}
+
+
 def test_selected_variant_values_match_alphanumeric_token_sequences() -> None:
     assert variant_values_support_selection(
         ("Classic fit", "CI939-BR8825"), ("classic", "CI939 BR8825")
@@ -398,10 +412,13 @@ def test_structured_product_attributes_are_published() -> None:
     )
     record = result.records[0]
 
-    # Published as strings today, like price; the canonical schema declares them
-    # numeric. Tracked as a contract gap in the accuracy report.
-    assert str(record["rating"]) == "4.5"
-    assert str(record["review_count"]) == "218"
+    # Published in the types the canonical schema declares: rating is a decimal
+    # field and review_count an integer one. The conversion is an authorized
+    # canonicalization with lineage, not a post-serialization alias.
+    assert record["rating"] == 4.5
+    assert isinstance(record["rating"], float)
+    assert record["review_count"] == 218
+    assert isinstance(record["review_count"], int)
     assert record["materials"] == "Suede"
     # schema.org enumerations publish as plain wording, in bare or URL form.
     assert record["gender"] == "Men"
