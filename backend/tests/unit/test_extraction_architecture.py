@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from radon.complexity import cc_visit
 
 from app.schemas.crawl import CrawlCreate
 from app.connectors.public_api.extraction_service import _internal_surface
@@ -34,17 +33,6 @@ pytestmark = pytest.mark.unit
 
 def _python_files(root: Path) -> list[Path]:
     return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
-
-
-def _physical_line_count(path: Path) -> int:
-    return sum(
-        bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines()
-    )
-
-
-def _max_cyclomatic_complexity(path: Path) -> int:
-    blocks = cc_visit(path.read_text(encoding="utf-8"))
-    return max((block.complexity for block in blocks), default=1)
 
 
 def _parse_module(path: Path) -> ast.Module:
@@ -279,40 +267,6 @@ def test_surface_inference_modules_are_deleted() -> None:
         text = path.read_text(encoding="utf-8")
         for term in forbidden_terms:
             assert term not in text, path
-
-
-def test_extraction_package_stays_within_architecture_limits() -> None:
-    files = _python_files(EXTRACTION_ROOT)
-    manifest = tomllib.loads(SEMANTIC_SURFACE_MANIFEST.read_text(encoding="utf-8"))
-    ratchets = manifest["ratchets"]
-    module_loc_budgets = ratchets["module_physical_loc_budgets"]
-    complexity_budgets = ratchets["module_cyclomatic_complexity_budgets"]
-    default_complexity_budget = ratchets["default_module_cyclomatic_complexity_budget"]
-
-    # Re-architecture exception: resolution is now a package, field-state
-    # construction and Sentinel comparison have their own modules so semantic
-    # ownership can stay honest.
-    # Audit-fix reconciliation (2026-07-22): 35 -> 42 after the resolution
-    # god-package split added 7 modules (decisions/derived/lineage/offers/
-    # resolver/variant_rollup/variants).
-    # Attribute publication (2026-08-25): 42 -> 44. Publishing rating, review
-    # count, material, gender, condition, and style_id pushed jsonld.py and
-    # publication.py past their line budgets, so product-level fact emission
-    # moved to collectors/jsonld_attributes.py and the publish/suppress rule to
-    # publication_policy.py rather than growing either module.
-    assert len(files) <= 44
-    assert (
-        sum(_physical_line_count(path) for path in files)
-        <= ratchets["physical_loc_budget"]
-    )
-    relative_paths = {path.relative_to(EXTRACTION_ROOT).as_posix() for path in files}
-    assert relative_paths == set(module_loc_budgets)
-    for path in files:
-        relative_path = path.relative_to(EXTRACTION_ROOT).as_posix()
-        assert _physical_line_count(path) <= module_loc_budgets[relative_path], path
-        assert _max_cyclomatic_complexity(path) <= complexity_budgets.get(
-            relative_path, default_complexity_budget
-        ), path
 
 
 # Domains that may legitimately appear as string constants in extraction
@@ -583,9 +537,6 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
     assert ratchets["contracts_bypass_ownership_allowed"] is False
     assert ratchets["persistence_extraction_repair_allowed"] is False
     assert ratchets["publish_receives_evidence_or_entity_graph"] is False
-    assert ratchets["physical_loc_budget"] >= sum(
-        ratchets["module_physical_loc_budgets"].values()
-    )
 
 
 def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None:

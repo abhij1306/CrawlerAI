@@ -299,28 +299,18 @@ def _derived_fact(
     rule_id: str,
     direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
 ) -> DerivedFact:
+    selected_id = direct_selected_ids.get(
+        (decision.fact_type, decision.accepted_evidence_ids)
+    )
     return DerivedFact(
         derived_fact_id=stable_id(
-            "derived",
-            rule_id,
-            decision.entity_id,
-            fact_type,
-            value,
+            "derived", rule_id, decision.entity_id, fact_type, value
         ),
         entity_id=decision.entity_id,
         fact_type=fact_type,
         value=value,
         input_evidence_ids=decision.accepted_evidence_ids,
-        input_selected_fact_ids=tuple(
-            filter(
-                None,
-                (
-                    direct_selected_ids.get(
-                        (decision.fact_type, decision.accepted_evidence_ids)
-                    ),
-                ),
-            )
-        ),
+        input_selected_fact_ids=(selected_id,) if selected_id else (),
         rule_id=rule_id,
     )
 
@@ -375,7 +365,6 @@ def _brand_from_title(
             allow_replacement=allow_page_identity_replacement,
         )
     return _new_title_brand(
-        title,
         marked=marker_title if str(marker_title or "").strip() else title,
         page_url=page_url,
         has_independent_product_signal=has_independent_product_signal,
@@ -427,7 +416,6 @@ def _replacement_brand(
 
 
 def _new_title_brand(
-    title: object,
     *,
     page_url: str,
     has_independent_product_signal: bool,
