@@ -61,6 +61,9 @@ Do not retry these blind. Each was measured against the failing cases:
 | `title` tokens for `gender` | 9 correct, 0 wrong — superseded by the URL-path rule (15 correct, 0 wrong) |
 | Preferring the longer title candidate | Reference expectations contradict each other: case 44 wants the longer, case 61 the shorter |
 | Casing normalization for `color`/`brand` | Expectations point in both directions: case 25 wants `Black` from `black`, case 12 wants `black/...` from `Black/...` |
+| Merging selected variant state only on a single unambiguous candidate (carried finding #8) | **Regression.** A style-axis selection legitimately spans a whole colourway: case 67's `dwvar_..._style=M108022W` matches 16 size groups. Skipping the merge took case 67's price from `169.99` to `199.99` and lost its colour. The match count already tracks selection specificity - a size-specific selection matches exactly one group - so the existing behaviour is correct by construction |
+| Gating the selected-variant price aggregate on `existing_fact_keys` | **Regression** in cases 25 and 67: both expect the selected variant's price, and the guard publishes the page-level price instead. The override is intentional - a selected variant's price is more specific. The unused parameter was removed and the intent documented instead |
+| Passing a page-URL locale hint to `parse_money` in the DOM collector | **Rejected on analysis.** The reviewer's example (`1.234` vs `1,234`) is already read correctly without a hint: a three-digit final group is a thousands group either way. The hint only changes mixed-separator values, where the locale-blind "last separator wins" reads the formatting the page actually used - the country rule would turn a correct `1,234.56` into `1.23456` on a `.de` host that uses US formatting |
 
 ## Inherited Review Findings (complete set from PR 1)
 
@@ -69,20 +72,20 @@ PR; the rest are carried here. Nothing was silently dropped.
 
 | # | Location | Finding | Status |
 | --: | --- | --- | --- |
-| 1 | `config/extraction_rules/_variants.py` DOM axes | `colorcode`/`colorproductcode` are absent from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN`, so the style axis is dropped and different selected variants can compare equal in `target_offer_group_id` | **Carried** |
+| 1 | `config/extraction_rules/_variants.py` DOM axes | `colorcode`/`colorproductcode` are absent from `VARIANT_DOM_URL_AXIS_PARAM_PATTERN`, so the style axis is dropped and different selected variants can compare equal in `target_offer_group_id` | **Fixed** (carried-findings PR) |
 | 2 | `core/shared/field_coerce_text.py` identifier labels | A label with no space after the delimiter (`SKU:BT-1MW`) was not stripped | Fixed in PR 1 (known label words only, so `ABC:123` survives) |
 | 3 | Reference case 71 rating constraint | `volatile` mode was price-shaped: it required a positive value **and** a currency, so a legitimate `0.0` rating could never pass | Fixed in PR 1 (constraint mode is field-aware) |
-| 4 | Reference case 79 | Asserts `rating`/`review_count` as exact values while every other case treats them as volatile, contradicting the reference's own rule | **Carried** — reference-data decision, needs the owner's call |
-| 5 | `collectors/jsonld_attributes.py` numeric types | `text_value` stringifies `rating`/`review_count`; the canonical contract declares them numeric | **Carried** — Slice 6, must be fixed at fact-value normalization (a post-serialization alias trips `PUBLIC_RESOLUTION_DIVERGENCE`) |
+| 4 | Reference case 79 | Asserts `rating`/`review_count` as exact values while every other case treats them as volatile, contradicting the reference's own rule | **Fixed** — owner chose volatile; case 79 now matches the other 24 |
+| 5 | `collectors/jsonld_attributes.py` numeric types | `text_value` stringifies `rating`/`review_count`; the canonical contract declares them numeric | **Fixed** — owner chose numeric; published via `CanonicalizationTrace`, which the divergence gate compares against |
 | 6 | `collectors/jsonld_attributes.py` locators | Gender read from `audience` pointed at the product node; image locators re-indexed after filtering; a scalar `image` addressed `/image/0` | Fixed in PR 1 (also reads `audience` in array form) |
-| 7 | `collectors/jsonld.py` offer grouping (~L275-291) | Product-scope offers with no offer URL but a hint URL normalizing to the target page all share the `offer:target` group instead of getting distinct fallback groups, merging distinct offers | **Carried** — heavy lift |
-| 8 | `extraction/entities.py` selected group merging (~L636) | Selected URL evidence is appended to every matching candidate before the source group is removed, so one selected shell can attach to several variants | **Carried** — merge only on exactly one unambiguous candidate |
-| 9 | `harness/artifact_quality_cases.py` projection | `asin` falls back to `product_id` and `style_id` to `mpn`, letting a value published under one field satisfy another field's assertion | **Carried** — weakens identifier assertions |
+| 7 | `collectors/jsonld.py` offer grouping (~L275-291) | Product-scope offers with no offer URL but a hint URL normalizing to the target page all share the `offer:target` group instead of getting distinct fallback groups, merging distinct offers | **Fixed** — the target group is claimed only when exactly one URL-less offer can claim it |
+| 8 | `extraction/entities.py` selected group merging (~L636) | Selected URL evidence is appended to every matching candidate before the source group is removed, so one selected shell can attach to several variants | **Rejected on measurement** — see the rejected-approaches table; regresses case 67 |
+| 9 | `harness/artifact_quality_cases.py` projection | `asin` falls back to `product_id` and `style_id` to `mpn`, letting a value published under one field satisfy another field's assertion | **Fixed** — fallbacks removed; unmasked two real misses (cases 16, 68) |
 | 10 | `harness/artifact_quality_cases.py` `_variant_failures` | Never ran: the gate needs `variants` in `expected`/`constraints` but it is a top-level case key, so 31 cases' variant assertions were skipped | Fixed in PR 1 — exposed **83** pre-existing failures |
 | 11 | `harness/artifact_quality_cases.py` `_numeric_path_part` | Malformed capture directory names mapped to `0` and ranked alongside real captures | Fixed in PR 1 (non-numeric directories are skipped) |
-| 12 | `docs/audits/crawlerai_defects_run3.json` case 55 | Counts anti-automation suppression as a `MISSING_PRODUCT_RESULT` defect, but no product output is the correct contract | **Carried** — the accuracy report already states the correct behaviour; the external analysis artifact was left as the record of what that tool produced. Regenerate its counts if it is reused as a baseline. |
+| 12 | `docs/audits/crawlerai_defects_run3.json` case 55 | Counts anti-automation suppression as a `MISSING_PRODUCT_RESULT` defect, but no product output is the correct contract | **Fixed** — entry removed, derivable counts regenerated (146 -> 145 defects), `corrections` block added to the artifact |
 | 13 | `core/records/url_identity.py` re-export | Compatibility re-export retained after title normalization moved to its owner | Fixed in PR 1 (removed; callers point at `title_normalization`) |
-| 14 | `docs/BUSINESS_LOGIC.md` rating/review types | Public semantics record string publication for values the canonical schema declares numeric | **Carried** — update together with #5 |
+| 14 | `docs/BUSINESS_LOGIC.md` rating/review types | Public semantics record string publication for values the canonical schema declares numeric | **Fixed** — updated with #5 |
 
 Two further suggestions were **rejected with reasons** and should not be re-applied
 blind:
@@ -98,10 +101,10 @@ before changing offer or variant selection semantics):
 
 | Location | Concern |
 | --- | --- |
-| `core/records/title_normalization.py` two-segment pipe rule | Strips a trailing segment on word count and length alone, so a genuine colour or edition can be lost before URL corroboration runs |
-| `extraction/resolution/variant_rollup.py` selected price | The selected-variant price aggregate ignores `existing_fact_keys` and can overwrite a resolved primary offer price |
-| `extraction/collectors/dom.py` `parse_money` | Called without a locale hint, so `1.234` and `1,234` both admit as `1234` before page locale is known |
-| `extraction/collectors/jsonld.py` selected variant (~L724) | Compares resource identity only, so variants differing solely by a `?style=` query can all be marked selected |
+| `core/records/title_normalization.py` two-segment pipe rule | Strips a trailing segment on word count and length alone, so a genuine colour or edition can be lost before URL corroboration runs — **Fixed** — the trailing segment is now dropped only when the page host corroborates it as the site's own name |
+| `extraction/resolution/variant_rollup.py` selected price | The selected-variant price aggregate ignores `existing_fact_keys` and can overwrite a resolved primary offer price — **Rejected on measurement** (cases 25, 67); the unused `existing_fact_keys` parameter was removed and the intent documented |
+| `extraction/collectors/dom.py` `parse_money` | Called without a locale hint, so `1.234` and `1,234` both admit as `1234` before page locale is known — **Rejected on analysis**; see the rejected-approaches table |
+| `extraction/collectors/jsonld.py` selected variant (~L724) | Compares resource identity only, so variants differing solely by a `?style=` query can all be marked selected — **Fixed** — selection now requires the URL variant axes to match, the same rule `target_offer_group_id` applies |
 
 ## Slices
 
@@ -168,5 +171,5 @@ Measure candidate sources against the failing cases **before** writing code, and
 ## Notes
 
 - Accuracy wins over fabricated coverage. Missing is acceptable when evidence is absent or ambiguous; a wrong price, stock state or sibling product is not.
-- Extraction-package LOC/complexity budgets in `backend/app/core/config/extraction_semantic_surface.toml` are downward ratchets and are currently saturated. Prefer extracting a module over growing one, and document any budget change in the architecture test.
+- Size policy is repo-wide and lives in `scripts/validation.json` (`maxLines` 800, `maxPythonComplexity` 15), enforced in CI by `scripts/check.ps1 -Mode Limits`. The per-module LOC/complexity tables that used to sit in `extraction_semantic_surface.toml`, and the per-file debt ledgers in the architecture tests, were removed in favour of that single blanket rule. Prefer extracting a module over growing one; there is no per-file budget to document any more.
 - Amazon case 55 returning no product is correct behaviour for an anti-automation shell, not a defect to fix.

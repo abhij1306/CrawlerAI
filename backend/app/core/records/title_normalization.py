@@ -108,13 +108,19 @@ def normalize_detail_marketplace_title(value: str, *, page_url: str = "") -> str
         # canonical product name; the rest are taxonomy/site context.
         normalized = pipe_parts[0]
     elif len(pipe_parts) == 2:
-        # Two pipe segments can be either "Title | Site" or a stylistic
-        # separator within the title itself ("Foo | Limited Edition"). Only
-        # strip the trailing segment when it looks like a short site/brand
-        # suffix: ≤2 words AND shorter (in chars) than the leading segment.
+        # Two pipe segments can be either "Title | Site" or part of the product
+        # name itself ("Soleil Pant | Smoked Walnut"). Shape alone cannot tell
+        # them apart - a colour or edition is also short - so the trailing
+        # segment is only dropped when the page host confirms it is the site's
+        # own name. Shape still gates it, to keep a long tail from being read
+        # as a suffix.
         trailing = pipe_parts[-1]
         trailing_words = len(re.findall(r"\w+", trailing))
-        if trailing_words <= 2 and len(trailing) < len(pipe_parts[0]):
+        if (
+            trailing_words <= 2
+            and len(trailing) < len(pipe_parts[0])
+            and _is_site_identity_segment(trailing, host_identity_keys(page_url))
+        ):
             normalized = pipe_parts[0]
     normalized = _strip_marketplace_site_suffix(normalized)
     normalized = re.sub(

@@ -41,7 +41,10 @@ from app.extraction.collectors.js_state import (
     select_product_roots,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
-from app.core.records.url_identity import detail_url_resource_identity
+from app.core.records.url_identity import (
+    detail_url_resource_identity,
+    selected_variant_axes,
+)
 from app.core.shared.ids import stable_id
 
 
@@ -255,6 +258,26 @@ def _product(
     return out
 
 
+def _hint_target_offer_group(
+    bundle: CaptureBundle, rows: list[Any], hint: EntityHint
+) -> str:
+    """The target group an offer with no URL of its own may claim.
+
+    Such an offer falls back to the page hint URL, so several of them would all
+    normalize onto the same target group and merge into one offer. The target
+    group identifies a single offer, so it is only claimed when exactly one
+    offer can claim it that way; otherwise each keeps its own identity-derived
+    group.
+    """
+    group = target_offer_group_id(bundle.final_url, hint.url or "")
+    if not group:
+        return ""
+    claimants = sum(
+        1 for row in rows if isinstance(row, dict) and not text_value(row.get("url"))
+    )
+    return group if claimants == 1 else ""
+
+
 def _offers(
     bundle: CaptureBundle,
     artifact_id: str,
@@ -267,14 +290,17 @@ def _offers(
 ) -> list[Evidence]:
     rows = offers if isinstance(offers, list) else [offers]
     out: list[Evidence] = []
+    hint_group = _hint_target_offer_group(bundle, rows, hint)
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
         offer_path = f"{path}/offers/{index}"
         offer_identity = _jsonld_identity(row) or offer_path
         offer_url = text_value(row.get("url"))
-        target_group = target_offer_group_id(
-            bundle.final_url, offer_url or hint.url or ""
+        target_group = (
+            target_offer_group_id(bundle.final_url, offer_url)
+            if offer_url
+            else hint_group
         )
         source_subject_ids = _source_subject_ids(bundle, row, include_sku=True)
         child_parent_subject_id = parent_subject_id
@@ -721,7 +747,16 @@ def _variant(
         variant_id=text_value(row.get(_JSONLD_ID_KEY)) or guarded_offer_url or None,
         sku=sku or None,
         url=variant_url or guarded_offer_url or None,
-        selected=bool(url_identity and url_identity == target_identity),
+        # Resource identity alone marks every variant on the page selected:
+        # siblings differing only by a `?style=`/`?color=` query share it. The
+        # selected variant is the one whose URL axes also match the request,
+        # the same rule `target_offer_group_id` applies to offers.
+        selected=bool(
+            url_identity
+            and url_identity == target_identity
+            and selected_variant_axes(variant_url)
+            == selected_variant_axes(bundle.final_url)
+        ),
     )
     group = f"variant:{artifact_id}:{variant_identity}"
     shared = _variant_shared_kwargs(
