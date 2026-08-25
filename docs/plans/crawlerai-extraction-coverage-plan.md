@@ -110,7 +110,15 @@ before changing offer or variant selection semantics):
 
 ### Slice 1: Selected State From the DOM (largest cluster)
 
-**Status:** TODO
+**Status:** MEASURED — implement as a *generalization*, not a rule hunt.
+Selected state is currently read only through one commerce platform's markup
+(`VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR` = `[data-attr-id][data-attr-value]`),
+so pages using the platform-neutral standards are not read at all. Fix that
+coupling. Of the 33 failing `color`/`size` assertions, 7 carry a standard
+selected marker, 23 have the value present with nothing marking it as current
+(stay open by design — guessing publishes a wrong colour), and 3 are
+capture-limited. Full measurement in
+`docs/audits/crawlerai-extraction-coverage-report.md`.
 **Owns:** `color` 29, `size` 4, part of `variant_count`
 **Why first:** 19 of 20 previously analysed missing colours encode **no** colour axis anywhere in the requested or served URL, and structured sources expose several colours at once (case 11 offers White, Black and Dark Brown under one `hasVariant`). Choosing among them requires reading which option the page marks as selected.
 **What:** Read explicit selected-option state from the rendered DOM — `aria-selected`, `aria-checked`, `[selected]`, `checked`, and the platform-neutral current-option patterns already present in the captures. Bind it to the same-product variant set and publish only when exactly one option is marked. Fail closed on zero or multiple.
@@ -147,7 +155,10 @@ before changing offer or variant selection semantics):
 
 ### Slice 6: Type Contract and Close
 
-**Status:** TODO
+**Status:** Type contract DONE (carried-findings PR: `rating` publishes as a
+float and `review_count` as an int via `CanonicalizationTrace`; the divergence
+guard compares against `canonical_value`, so serialization is not involved).
+Evidence recording remains TODO.
 **What:** `rating` and `review_count` publish as strings, like `price`, while the canonical detail schema declares them numeric. Coercing at serialization trips the `PUBLIC_RESOLUTION_DIVERGENCE` guard, so the change belongs at fact-value normalization and needs a deliberate contract decision. Then record all before/after evidence, capture-limited cases, preserved PR 1 behaviour, and timing.
 **Verify:** Full 82-case replay; `.\scripts\check.ps1`; `.\scripts\test.ps1`; `git diff --check`.
 

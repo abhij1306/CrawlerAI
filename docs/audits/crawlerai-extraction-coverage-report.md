@@ -70,3 +70,141 @@ Recorded in full in the plan's rejected-approaches table. Summary:
 - The DOM collector normalizes price text before the pipeline's
   `money_has_ambiguous_decimal` can see it, so the ambiguity flag cannot fire on
   DOM-sourced prices. Noted while rejecting the locale-hint change.
+
+## Slice 1 pre-measurement: Selected State From the DOM (2026-08-25)
+
+**Status: measured, not implemented.** The measurement is recorded as evidence
+about the *captures*, not as a target. The reference corpus is development
+guidance, not ground truth, so nothing below should be read as an assertion
+count to hit.
+
+### What the slice assumed
+
+Slice 1 owns `color` 29 and `size` 4, on the reasoning that structured sources
+expose several colours at once and that choosing among them requires reading
+which option the page marks as selected.
+
+### What the captures actually contain
+
+All 33 failing `color`/`size` assertions were measured against every standard
+selected-state marker — `aria-selected`, `aria-checked`, `aria-pressed`,
+`aria-current`, `option[selected]`, `input[checked]`, `[data-selected]`, and
+`selected`/`active` class tokens — comparing each marked node's text and value
+attributes against the expected value.
+
+| Outcome | Count | Cases |
+| --- | --: | --- |
+| Reachable via some selected marker | **7** | 10, 11, 31, 51, 61, 72, 74 |
+| Expected value present in the capture, but no selected marker carries it | 23 | 1, 2, 4, 5, 6, 8, 9, 10, 12, 19, 20, 25, 26, 27, 29, 30, 35, 38, 56, 57, 67, 78, 79 |
+| Expected value absent from the capture entirely | 3 | 39, 76, 82 — capture-limited |
+
+Per-strategy, no single marker is close to load-bearing:
+
+| Strategy | Unique hit | Hit among many | No match | Absent |
+| --- | --: | --: | --: | --: |
+| `class*=selected` | 2 | 1 | 13 | 17 |
+| `option[selected]` | 0 | 2 | 7 | 24 |
+| `aria-checked` | 0 | 2 | 0 | 31 |
+| `aria-current` | 1 | 0 | 13 | 19 |
+| `aria-selected` | 0 | 0 | 13 | 20 |
+| `input[checked]` | 0 | 0 | 10 | 23 |
+| `class*=active` | 0 | 1 | 25 | 7 |
+| `[data-selected]` | 0 | 0 | 1 | 32 |
+
+### Why the ceiling is 7, not 29
+
+The 23 "present but unmarked" cases have the expected colour somewhere in the
+HTML with **no element marking it as the current selection**. Selected state is
+what distinguishes the requested colour from its siblings, so where the capture
+does not mark a selection, no DOM rule can choose correctly — and guessing would
+publish a wrong colour, which the plan ranks worse than publishing none.
+
+The four cases that publish a *wrong* colour today (9, 29, 30, 67) are **not**
+among the 7 reachable, so DOM selected state does not fix them either.
+
+### Why the existing predicate cannot be extended into the win
+
+`_attribute_control_selected` already reads a control's `selected` JSON key and
+`selected`/`active`/`is-selected` classes, but it is only ever called on nodes
+matching `VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR`
+(`[data-attr-id][data-attr-value]`). **All seven** reachable captures contain
+zero `[data-attr-id]` elements, so no predicate change reaches them. Extending
+the predicate with the ARIA and native markers was implemented and measured at
+**+0 / -0** for exactly this reason, and was reverted rather than shipped
+unexercised.
+
+Capturing the 7 therefore requires a new collection path keyed on selected-state
+markers and bound to the same-product variant set — a materially larger piece of
+work than the slice describes, for 7 of 33 assertions.
+
+### The architectural defect this exposes
+
+The count is not the point. What the measurement surfaced is that CrawlerAI
+reads selected state through **one commerce platform's markup convention**:
+`VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR` is
+`[data-attr-id][data-attr-value], [data-attr-id][data-dvalue]`, a Salesforce
+Commerce Cloud pattern. Pages that mark selection with the platform-neutral
+standards — `aria-selected`, `aria-checked`, `aria-pressed`, `aria-current`,
+`option[selected]`, `input[checked]` — are simply not read, whatever their
+markup quality.
+
+That is site-specific coupling in generic extraction code, which this codebase
+rules out on principle. It should be fixed because it is wrong, independent of
+how many reference assertions move: a correct extractor reads the web standard
+for "this option is currently chosen", and falls back to vendor conventions,
+not the other way round.
+
+### Recommendation
+
+Implement generic selected-state reading (see the handoff prompt for the shape).
+The 3 capture-limited cases (39, 76, 82) should be recorded as capture-limited.
+The 23 unmarked cases stay open by design: where a capture does not mark a
+selection, choosing among siblings would publish a wrong colour, and a missing
+value is preferable to a wrong one.
+
+## Breadth analysis and the SKU identity defect (2026-08-25)
+
+Prioritization principle for the remaining work: **a single site missing a few
+fields is acceptable; a single field missing across many sites is not.** Breadth
+across sites, not assertion count, decides order.
+
+The 82 captures are effectively one host per case, so failing-case counts read
+directly as sites affected:
+
+| Field | Sites | Field | Sites |
+| --- | --: | --- | --: |
+| `color` | 29 | `variant_count` | 10 |
+| `title` | 24 | `availability` / `style_id` | 9 |
+| `brand` | 24 | `rating` / `review_count` | 8 / 7 |
+| `variants` | 22 | `currency` / `gender` | 6 / 5 |
+| `sku` | 19 | `size`, `size_options`, `condition`, `original_price` | 3-4 |
+| `material` | 18 | `barcode`, `mpn`, `model_options`, bounds, `product_family` | 1-2 |
+| `price` | 15 | | |
+
+This reorders the plan: `sku` affects 19 sites and is not a named slice at all,
+while several named slices are 1-4 site tails.
+
+### SKU: a bare digit run outranks the merchant SKU
+
+Of the 19 sites, 7 publish a wrong `sku`, and in **5 of those 7** the published
+value is a pure-digit string while the expected value is alphanumeric:
+
+| Case | Expected | Published | Published is all digits |
+| --- | --- | --- | --- |
+| 5 | `HQ7978-103` | `45993954738410` | yes |
+| 31 | `PE1001550` | `100155080614` | yes |
+| 66 | `395205_01` | `4099686132767` | yes |
+| 71 | `4D3032G-PCG` | `198629014314` | yes |
+| 4 | `HJ0139-045` | `21001455` | yes |
+| 2 | `DIME2SP2542BLK` | `DIME2SP2542BLK-S` | no - variant SKU on the parent |
+| 39 | `870543 4GAK3 1360` | `8705434GAK31360` | no - separator normalization |
+
+Merchant SKUs and style codes carry letters and separators; bare digit runs are
+barcodes, internal ids or database keys. Preferring an alphanumeric candidate
+over a pure-digit one is generic, needs no site knowledge, and covers 5 sites.
+
+**Measured caution against over-fitting to GTIN:** only cases 66 and 71 pass
+`validate_gtin`. Cases 5 and 31 are 14- and 12-digit values that *fail* the
+checksum - barcode-shaped internal ids, not barcodes. A GTIN-only rule would
+catch 2 of the 5; the digit-shape rule catches all 5. Use GTIN validation only to
+decide whether the rejected value should populate `barcode`.
