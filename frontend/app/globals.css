@@ -1015,11 +1015,6 @@ a.bg-success,
   overflow-y: auto;
   max-height: 320px;
   box-shadow: var(--terminal-shadow);
-}
-
-/* font-family/line-height/letter-spacing already set on .crawl-terminal and inherit down.
-   Only font-stretch/font-synthesis need forcing — no * wildcard sledgehammer needed. */
-.crawl-terminal {
   font-stretch: normal;
   font-synthesis: none;
 }

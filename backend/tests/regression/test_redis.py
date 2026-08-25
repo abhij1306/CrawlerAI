@@ -17,8 +17,8 @@ async def test_schedule_fail_open_tracks_background_tasks_until_completion(
     finished = asyncio.Event()
     release = asyncio.Event()
 
-    async def _fake_redis_fail_open(operation, *, default, operation_name):
-        del operation, default, operation_name
+    async def _fake_redis_fail_open(operation, *, default):
+        del operation, default
         started.set()
         await release.wait()
         finished.set()
@@ -28,7 +28,7 @@ async def test_schedule_fail_open_tracks_background_tasks_until_completion(
     monkeypatch.setattr(redis_module, "redis_is_enabled", lambda: True)
     monkeypatch.setattr(redis_module, "redis_fail_open", _fake_redis_fail_open)
 
-    redis_module.schedule_fail_open(lambda _: asyncio.sleep(0), operation_name="test")
+    redis_module.schedule_fail_open(lambda _: asyncio.sleep(0))
 
     await asyncio.wait_for(started.wait(), timeout=1)
     assert len(redis_module._BACKGROUND_TASKS) == 1

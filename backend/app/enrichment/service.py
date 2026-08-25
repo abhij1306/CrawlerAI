@@ -614,7 +614,7 @@ async def _run_llm_enrichment(
         "applied": bool(applied_fields),
         "category_applied": "category_path" in applied_fields,
         "applied_fields": applied_fields,
-        **build_llm_diagnostics(product, payload, applied_fields),
+        **build_llm_diagnostics(payload, applied_fields),
         "provider": result.provider or "",
         "model": result.model or "",
     }

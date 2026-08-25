@@ -33,7 +33,16 @@ export function CrawlAdvancedSettingsCard({
           <SlidersHorizontal className="size-3.5" /> Advanced Settings
         </span>
         <Tooltip content="Fine-tune fetch, limits, locality, and diagnostics for this exploratory run.">
-          <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
+          <button
+            type="button"
+            aria-label="More information"
+            className="focus-ring inline-flex rounded-sm"
+          >
+            <Info
+              aria-hidden="true"
+              className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary"
+            />
+          </button>
         </Tooltip>
       </header>
       <div className="grid gap-0 p-6 xl:grid-cols-3 xl:divide-x xl:divide-[var(--border)]">

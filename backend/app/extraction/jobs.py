@@ -204,7 +204,6 @@ def _collect_job_listing_evidence(
             _job_listing_card_evidence(
                 bundle,
                 candidate.node,
-                page_url=page_url,
                 subject_id=subject_id,
                 card_selector=candidate.selector,
                 card_index=candidate.selector_index,
@@ -219,7 +218,6 @@ def _job_listing_card_evidence(
     bundle: CaptureBundle,
     card: HtmlNode,
     *,
-    page_url: str,
     subject_id: str,
     card_selector: str,
     card_index: int,

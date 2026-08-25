@@ -511,7 +511,7 @@ async def test_product_intelligence_discovery_keeps_search_delay_while_filling_p
 
     monkeypatch.setattr(
         "app.intelligence.discovery.build_search_queries",
-        lambda product, *, source_domain_value: ["query one", "query two"],
+        lambda product: ["query one", "query two"],
     )
     monkeypatch.setattr(
         "app.intelligence.discovery._search_results",

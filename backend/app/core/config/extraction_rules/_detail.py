@@ -98,6 +98,38 @@ DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
     r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
     r"(?P<brand>[^|\n]{1,80})\s*$"
 )
+DETAIL_DOM_BASE_SELECTORS = (
+    ("h1", "product.title"),
+    ("head title", "product.title"),
+    ("[data-price]", "offer.price"),
+    ("[data-currency]", "offer.currency"),
+    ("[data-sku]", "product.sku"),
+)
+DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES = (
+    "id",
+    "class",
+    "data-testid",
+    "data-component",
+    "data-section",
+    "aria-label",
+    "role",
+)
+DETAIL_DOM_IMAGE_CANDIDATE_SELECTOR = (
+    "main img[src], main img[data-src], main img[data-lazy-src], "
+    "main img[data-original], main img[data-image], main img[srcset], "
+    "main img[data-srcset], main source[srcset], main source[data-srcset], "
+    "img[data-product-image][src], img[data-product-image][data-src]"
+)
+DETAIL_DOM_REQUESTED_VALUE_ATTRIBUTES = {
+    "product.url": ("href", "content", "value", "title", "aria-label"),
+    "asset.image_url": ("src", "data-src", "content", "href", "alt", "title"),
+}
+DETAIL_DOM_REQUESTED_DEFAULT_VALUE_ATTRIBUTES = (
+    "content",
+    "value",
+    "title",
+    "aria-label",
+)
 DETAIL_BRAND_CATEGORY_PATTERN = (
     r"^(?:men(?:'s|s)?|women(?:'s|s)?|boys?|girls?|kids?)\s+"
     r"(?:[a-z0-9&'\-]+\s+){0,5}"

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useId } from 'react';
 import { createPortal } from 'react-dom';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
 /**
@@ -14,7 +14,7 @@ export function Tooltip({
   className,
   align = 'center',
 }: Readonly<{
-  children: ReactNode;
+  children: ReactElement<React.HTMLAttributes<HTMLElement>>;
   content: string;
   className?: string;
   align?: 'center' | 'start';
@@ -28,11 +28,26 @@ export function Tooltip({
     left: 0,
     top: 0,
   });
-  const enhancedChild = React.isValidElement(child)
-    ? React.cloneElement(child, {
-        'aria-describedby': tooltipId,
-      } as React.HTMLAttributes<HTMLElement>)
-    : child;
+  const childProps = child.props;
+  const enhancedChild = React.cloneElement(child, {
+    'aria-describedby': [childProps['aria-describedby'], tooltipId].filter(Boolean).join(' '),
+    onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+      childProps.onMouseEnter?.(event);
+      setOpen(true);
+    },
+    onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
+      childProps.onMouseLeave?.(event);
+      setOpen(false);
+    },
+    onFocus: (event: React.FocusEvent<HTMLElement>) => {
+      childProps.onFocus?.(event);
+      setOpen(true);
+    },
+    onBlur: (event: React.FocusEvent<HTMLElement>) => {
+      childProps.onBlur?.(event);
+      setOpen(false);
+    },
+  });
 
   const updatePosition = React.useCallback(() => {
     if (!anchorRef.current || !tooltipRef.current) {
@@ -73,18 +88,7 @@ export function Tooltip({
   }, [open]);
 
   return (
-    <div
-      ref={anchorRef}
-      className={cn('relative flex items-center', className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setOpen(false);
-        }
-      }}
-    >
+    <div ref={anchorRef} className={cn('relative flex items-center', className)}>
       {enhancedChild}
       {open && typeof document !== 'undefined'
         ? createPortal(

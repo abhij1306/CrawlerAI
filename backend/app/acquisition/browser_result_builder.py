@@ -263,29 +263,13 @@ class BrowserAcquisitionResultBuilder:
     ) -> dict[str, object]:
         payload = self.payload
         diagnostics = self.build_browser_diagnostics(
-            browser_reason=payload.browser_reason,
-            browser_outcome=state.browser_outcome,
-            navigation_strategy=payload.navigation_strategy,
-            response_missing=state.response_missing,
-            networkidle_timed_out=payload.networkidle_timed_out,
-            networkidle_skip_reason=payload.networkidle_skip_reason,
-            readiness_policy=payload.readiness_policy,
-            phase_timings_ms=payload.phase_timings_ms,
-            html_bytes=state.html_bytes,
-            challenge_evidence=state.challenge_evidence,
-            blocked_classification=state.blocked_classification,
-            low_content_reason=state.low_content_reason,
-            readiness_probes=payload.readiness_probes,
-            capture_summary=state.capture_summary,
-            readiness_diagnostics=payload.readiness_diagnostics,
-            expansion_diagnostics=payload.expansion_diagnostics,
-            listing_recovery_diagnostics=payload.listing_recovery_diagnostics,
+            payload,
+            state,
             listing_artifact_diagnostics=listing_artifact_diagnostics,
             interstitial_diagnostics={
                 **dict(payload.interstitial_diagnostics or {}),
                 "location_required": state.location_interstitial_present,
             },
-            traversal_result=payload.traversal_result,
         )
         counts = {
             "rendered_listing_fragments": len(rendered_listing_fragments),
@@ -585,45 +569,32 @@ def _capture_status_ok(
 
 
 def build_browser_diagnostics(
+    payload: BrowserFinalizeInput,
+    state: _FinalizationState,
     *,
-    browser_reason: str | None,
-    browser_outcome: str,
-    navigation_strategy: str,
-    response_missing: bool,
-    networkidle_timed_out: bool,
-    networkidle_skip_reason: str | None,
-    readiness_policy: dict[str, object],
-    phase_timings_ms: dict[str, int],
-    html_bytes: int,
-    challenge_evidence: list[str],
-    blocked_classification,
-    low_content_reason: str | None,
-    readiness_probes: list[dict[str, object]],
-    capture_summary,
-    readiness_diagnostics: dict[str, object],
-    expansion_diagnostics: dict[str, object],
-    listing_recovery_diagnostics: dict[str, object],
     listing_artifact_diagnostics: dict[str, object],
     interstitial_diagnostics: dict[str, object],
-    traversal_result,
 ) -> dict[str, object]:
+    blocked_classification = state.blocked_classification
+    readiness_probes = payload.readiness_probes
+    capture_summary = state.capture_summary
     diagnostics = {
         "browser_attempted": True,
-        "browser_reason": str(browser_reason or "").strip().lower() or None,
-        "browser_outcome": browser_outcome,
-        "navigation_strategy": navigation_strategy,
-        "response_missing": response_missing,
-        "networkidle_timed_out": networkidle_timed_out,
-        "networkidle_wait_reason": readiness_policy.get("networkidle_reason"),
-        "networkidle_skip_reason": networkidle_skip_reason,
-        "html_bytes": html_bytes,
-        "phase_timings_ms": phase_timings_ms,
-        "challenge_evidence": challenge_evidence,
+        "browser_reason": str(payload.browser_reason or "").strip().lower() or None,
+        "browser_outcome": state.browser_outcome,
+        "navigation_strategy": payload.navigation_strategy,
+        "response_missing": state.response_missing,
+        "networkidle_timed_out": payload.networkidle_timed_out,
+        "networkidle_wait_reason": payload.readiness_policy.get("networkidle_reason"),
+        "networkidle_skip_reason": payload.networkidle_skip_reason,
+        "html_bytes": state.html_bytes,
+        "phase_timings_ms": payload.phase_timings_ms,
+        "challenge_evidence": state.challenge_evidence,
         "challenge_provider_hits": list(blocked_classification.provider_hits or []),
         "challenge_element_hits": list(
             blocked_classification.challenge_element_hits or []
         ),
-        "low_content_reason": low_content_reason,
+        "low_content_reason": state.low_content_reason,
         "readiness_probes": readiness_probes,
         "listing_discovery": next(
             (
@@ -641,17 +612,17 @@ def build_browser_diagnostics(
         "closed_network_payloads": capture_summary.closed_network_payloads,
         "skipped_oversized_network_payloads": capture_summary.skipped_oversized_network_payloads,
         "dropped_network_payload_events": capture_summary.dropped_payload_events,
-        "listing_readiness": readiness_diagnostics,
-        "listing_recovery": listing_recovery_diagnostics,
+        "listing_readiness": payload.readiness_diagnostics,
+        "listing_recovery": payload.listing_recovery_diagnostics,
         "listing_artifact_capture": listing_artifact_diagnostics,
         "interstitial": interstitial_diagnostics,
         "failure_reason": "location_required"
-        if browser_outcome == "location_required"
+        if state.browser_outcome == "location_required"
         else None,
-        "detail_expansion": expansion_diagnostics,
+        "detail_expansion": payload.expansion_diagnostics,
     }
-    if traversal_result is not None:
-        diagnostics.update(traversal_result.diagnostics())
+    if payload.traversal_result is not None:
+        diagnostics.update(payload.traversal_result.diagnostics())
     return diagnostics
 
 

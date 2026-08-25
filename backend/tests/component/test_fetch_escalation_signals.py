@@ -440,12 +440,11 @@ async def test_fetch_page_uses_browser_for_js_disabled_placeholder_shell(
     browser_calls: list[str] = []
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
-        browser_calls.append(url)
+    def _fake_browser(request):
+        browser_calls.append(request.url)
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Rendered listing</h1></body></html>",
             status_code=200,
             method="browser",
@@ -457,8 +456,10 @@ async def test_fetch_page_uses_browser_for_js_disabled_placeholder_shell(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/for-sale/mixer-truck",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/for-sale/mixer-truck",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "browser"

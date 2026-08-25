@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from functools import partial
 import logging
 import time
 from typing import Any
+
+import httpx
+from patchright.async_api import Error as PlaywrightError
 
 from app.acquisition.browser_runtime import (
     SharedBrowserRuntime,
@@ -15,6 +19,7 @@ from app.acquisition.browser_runtime import (
     real_chrome_browser_available,
     shutdown_browser_runtime,
 )
+from app.acquisition.contracts import AcquisitionRuntimeError
 from app.acquisition.host_protection_memory import (
     HostProtectionPolicy,
     load_host_protection_policy,
@@ -68,11 +73,11 @@ from app.acquisition.fetch.context_builder import (
 )
 from app.acquisition.fetch.types import FetchPageCall, FetchRuntimeContext
 from app.core.shared.url_utils import ensure_scheme
+from app.core.url_safety import SecurityError
 
 logger = logging.getLogger(__name__)
 
 _FetchRuntimeContext = FetchRuntimeContext
-_FetchPageCall = FetchPageCall
 
 
 async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
@@ -173,7 +178,6 @@ def _browser_attempt_timeout_seconds(
         and _patchright_probe_cap_applies(
             host_policy=host_policy,
             reason=reason,
-            engine_attempts=engine_attempts,
         )
     ):
         return min(
@@ -187,7 +191,6 @@ def _patchright_probe_cap_applies(
     *,
     host_policy: HostProtectionPolicy | None,
     reason: str,
-    engine_attempts: list[str],
 ) -> bool:
     expected_vendor = _extract_vendor_from_reason(reason) or ""
     if not expected_vendor:
@@ -202,55 +205,8 @@ def _patchright_probe_cap_applies(
     return expected_vendor == last_vendor
 
 
-async def fetch_page(
-    url: str,
-    *,
-    run_id: int | None = None,
-    timeout_seconds: float | None = None,
-    proxy_list: list[str] | None = None,
-    proxy_profile: dict[str, object] | None = None,
-    locality_profile: dict[str, object] | None = None,
-    fetch_mode: str = "auto",
-    prefer_browser: bool = False,
-    browser_reason: str | None = None,
-    surface: str | None = None,
-    traversal_mode: str | None = None,
-    requested_fields: list[str] | None = None,
-    listing_recovery_mode: str | None = None,
-    capture_screenshot: bool = False,
-    host_memory_ttl_seconds: int | None = None,
-    prefer_curl_handoff: bool = False,
-    handoff_cookie_engine: str | None = None,
-    forced_browser_engine: str | None = None,
-    max_pages: int = 1,
-    max_scrolls: int = 1,
-    max_records: int | None = None,
-    on_event: Any | None = None,
-) -> PageFetchResult:
-    call = _FetchPageCall(
-        url=ensure_scheme(url),
-        run_id=run_id,
-        timeout_seconds=timeout_seconds,
-        proxy_list=proxy_list,
-        proxy_profile=proxy_profile,
-        locality_profile=locality_profile,
-        fetch_mode=fetch_mode,
-        prefer_browser=prefer_browser,
-        browser_reason=browser_reason,
-        surface=surface,
-        traversal_mode=traversal_mode,
-        requested_fields=requested_fields,
-        listing_recovery_mode=listing_recovery_mode,
-        capture_screenshot=capture_screenshot,
-        host_memory_ttl_seconds=host_memory_ttl_seconds,
-        prefer_curl_handoff=prefer_curl_handoff,
-        handoff_cookie_engine=handoff_cookie_engine,
-        forced_browser_engine=forced_browser_engine,
-        max_pages=max_pages,
-        max_scrolls=max_scrolls,
-        max_records=max_records,
-        on_event=on_event,
-    )
+async def fetch_page(call: FetchPageCall) -> PageFetchResult:
+    call = replace(call, url=ensure_scheme(call.url))
     context = _build_fetch_runtime_context(call)
     context.host_policy = await load_host_protection_policy(
         call.url,
@@ -302,7 +258,7 @@ async def fetch_page(
         return await _run_final_browser_fallback(
             context, browser_reason=call.browser_reason
         )
-    raise RuntimeError(f"Failed to fetch {call.url}")
+    raise AcquisitionRuntimeError(f"Failed to fetch {call.url}")
 
 
 async def _run_http_only_acquisition(
@@ -342,13 +298,23 @@ async def _try_browser_first_acquisition(
         )
         await _update_host_result_memory(context, result=browser_result)
         return browser_result
-    except Exception as exc:
+    except (
+        httpx.HTTPError,
+        OSError,
+        TimeoutError,
+        PlaywrightError,
+        SecurityError,
+    ) as exc:
         await _record_browser_first_failure(
             context,
             exc=exc,
             resolved_browser_reason=resolved_browser_reason,
         )
         return None
+    except Exception as exc:
+        raise AcquisitionRuntimeError(
+            f"Unexpected browser acquisition failure for {context.url}"
+        ) from exc
 
 
 async def _record_browser_first_failure(

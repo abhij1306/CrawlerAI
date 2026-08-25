@@ -64,6 +64,7 @@ async def process_url_in_owned_session(
             ),
             update_run_state=False,
             persist_logs=True,
+            url_timeout_seconds=url_timeout_seconds,
         )
         if not log_start:
             await url_session.commit()
@@ -84,7 +85,6 @@ async def process_url_in_owned_session(
                         run=run,
                         url=url,
                         config=url_config,
-                        url_timeout_seconds=url_timeout_seconds,
                     ),
                     url_timeout_seconds,
                 )

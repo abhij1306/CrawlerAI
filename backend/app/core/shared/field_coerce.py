@@ -197,21 +197,11 @@ def coerce_structured_scalar(
     keys: tuple[str, ...],
 ) -> str | None:
     if isinstance(value, str):
-        stripped = value.strip()
-        if stripped.startswith("{") and stripped.endswith("}"):
-            try:
-                parsed = json.loads(stripped)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                try:
-                    parsed = ast.literal_eval(stripped)
-                except (SyntaxError, ValueError, TypeError):
-                    return _coerce_simple_string_dict_scalar(stripped, keys=keys)
-                if isinstance(parsed, (dict, list)):
-                    return coerce_structured_scalar(parsed, keys=keys)
-                return _coerce_simple_string_dict_scalar(stripped, keys=keys)
-            if isinstance(parsed, (dict, list)):
-                return coerce_structured_scalar(parsed, keys=keys)
-            return None
+        parsed, fallback = _parse_structured_scalar_text(value, keys=keys)
+        if parsed is not None:
+            return coerce_structured_scalar(parsed, keys=keys)
+        if fallback is not None:
+            return fallback
     if isinstance(value, dict):
         for key in keys:
             candidate = value.get(key)
@@ -228,6 +218,26 @@ def coerce_structured_scalar(
                 return text
         return None
     return coerce_text(value)
+
+
+def _parse_structured_scalar_text(
+    value: str,
+    *,
+    keys: tuple[str, ...],
+) -> tuple[dict | list | None, str | None]:
+    stripped = value.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None, None
+    try:
+        parsed = json.loads(stripped)
+    except (TypeError, ValueError):
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError, TypeError):
+            return None, _coerce_simple_string_dict_scalar(stripped, keys=keys)
+    if isinstance(parsed, (dict, list)):
+        return parsed, None
+    return None, _coerce_simple_string_dict_scalar(stripped, keys=keys)
 
 
 def _coerce_simple_string_dict_scalar(
@@ -445,8 +455,12 @@ def _option_value_is_invalid(field_name: str, value: str) -> bool:
 def _sanitize_color_option(value: str) -> str:
     if _color_option_is_code(value):
         return ""
-    match = re.fullmatch(r"select\s+(.+?)\s+color", value, flags=re.I)
-    cleaned = clean_text(match.group(1)) if match is not None else value
+    folded = value.casefold()
+    cleaned = (
+        clean_text(value[len("select ") : -len(" color")])
+        if folded.startswith("select ") and folded.endswith(" color")
+        else value
+    )
     cleaned = re.split(r"\bstyle\s*:", cleaned, maxsplit=1, flags=re.I)[0]
     if ":" in cleaned:
         _prefix, suffix = cleaned.rsplit(":", 1)
@@ -457,7 +471,7 @@ def _sanitize_color_option(value: str) -> str:
     cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = re.split(r"\bsize(?:\s*\([^)]*\))?\b", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = clean_text(_strip_color_value_code_pollution(cleaned))
-    return "" if re.search(r"\d+\s*x\s*\d+", cleaned) else cleaned
+    return "" if _contains_numeric_dimensions(cleaned) else cleaned
 
 
 def _color_option_is_code(value: str) -> bool:
@@ -475,11 +489,42 @@ def _color_option_is_code(value: str) -> bool:
 def _sanitize_size_option(value: str) -> str:
     cleaned = re.sub(r"^size\s*:\s*", "", value, flags=re.I)
     cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
-    cleaned = re.sub(r"\s*\(size[\s_-]*chart\)", "", cleaned, flags=re.I)
+    cleaned = _remove_size_chart_label(cleaned)
     cleaned = clean_text(cleaned)
     if re.search(r"\b(?:please\s+)?select(?:\s+size)?\b", cleaned, flags=re.I):
         return ""
     return "" if cleaned.casefold() in _SIZE_REJECT_TOKENS_NORMALIZED else cleaned
+
+
+def _contains_numeric_dimensions(value: str) -> bool:
+    for index, character in enumerate(value):
+        if character.casefold() != "x":
+            continue
+        left = value[:index].rstrip()
+        right = value[index + 1 :].lstrip()
+        if left and right and left[-1].isdigit() and right[0].isdigit():
+            return True
+    return False
+
+
+def _remove_size_chart_label(value: str) -> str:
+    folded = value.casefold()
+    start = folded.find("(size")
+    while start >= 0:
+        end = folded.find("chart)", start + len("(size"))
+        if end < 0:
+            break
+        between = value[start + len("(size") : end]
+        if all(character.isspace() or character in "_-" for character in between):
+            trim_start = start
+            while trim_start and value[trim_start - 1].isspace():
+                trim_start -= 1
+            value = value[:trim_start] + value[end + len("chart)") :]
+            folded = value.casefold()
+            start = folded.find("(size", trim_start)
+            continue
+        start = folded.find("(size", start + 1)
+    return value
 
 
 def coerce_location(value: object) -> str | None:

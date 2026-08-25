@@ -6,6 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class AcquisitionRuntimeError(RuntimeError):
+    """Unexpected acquisition failure outside known transport/browser families."""
+
+
 class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -85,9 +85,8 @@ async def test_fetch_page_browser_only_retries_proxies_in_user_order_and_stamps_
     attempted_proxies: list[str | None] = []
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
-        proxy = kwargs.get("proxy")
+    def _fake_browser_fetch(request):
+        proxy = request.proxy
         attempted_proxies.append(proxy)
         if proxy == "socks5://proxy-a":
             raise RuntimeError("proxy-a failed")
@@ -108,10 +107,12 @@ async def test_fetch_page_browser_only_retries_proxies_in_user_order_and_stamps_
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
-        proxy_list=["socks5://proxy-a", "socks5://proxy-b", "socks5://proxy-a"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+            proxy_list=["socks5://proxy-a", "socks5://proxy-b", "socks5://proxy-a"],
+        )
     )
 
     assert attempted_proxies == ["socks5://proxy-a", "socks5://proxy-b"]
@@ -151,8 +152,8 @@ async def test_run_browser_attempts_records_driver_closed_exception(
         pass
 
     @_as_async
-    def _failing_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout, kwargs
+    def _failing_browser_fetch(request):
+        del request
         raise BrowserDriverError(
             "Page.content: Connection closed while reading from the driver"
         )
@@ -188,9 +189,8 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_after_patchright
     attempted_engines: list[str] = []
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
-        attempted_engines.append(str(kwargs.get("browser_engine")))
+    def _fake_browser_fetch(request):
+        attempted_engines.append(str(request.browser_engine))
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -198,11 +198,11 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_after_patchright
             status_code=200,
             method="browser",
             browser_diagnostics={
-                "browser_engine": str(kwargs.get("browser_engine")),
+                "browser_engine": str(request.browser_engine),
                 "browser_binary": "chrome.exe",
                 "bridge_used": False,
-                "escalation_lane": str(kwargs.get("escalation_lane")),
-                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+                "escalation_lane": str(request.escalation_lane),
+                "host_policy_snapshot": dict(request.host_policy_snapshot or {}),
             },
         )
 
@@ -230,9 +230,11 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_after_patchright
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+        )
     )
 
     assert attempted_engines == ["real_chrome"]
@@ -251,9 +253,8 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_commerce_det
     attempted_engines: list[str] = []
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
-        attempted_engines.append(str(kwargs.get("browser_engine")))
+    def _fake_browser_fetch(request):
+        attempted_engines.append(str(request.browser_engine))
         return PageFetchResult(
             url="https://shop.example.com/products/widget",
             final_url="https://shop.example.com/products/widget",
@@ -261,10 +262,10 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_commerce_det
             status_code=200,
             method="browser",
             browser_diagnostics={
-                "browser_engine": str(kwargs.get("browser_engine")),
+                "browser_engine": str(request.browser_engine),
                 "bridge_used": False,
-                "escalation_lane": str(kwargs.get("escalation_lane")),
-                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+                "escalation_lane": str(request.escalation_lane),
+                "host_policy_snapshot": dict(request.host_policy_snapshot or {}),
             },
         )
 
@@ -292,9 +293,11 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_commerce_det
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://shop.example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://shop.example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+        )
     )
 
     assert attempted_engines == ["real_chrome"]
@@ -333,9 +336,8 @@ async def test_run_browser_attempts_replans_to_real_chrome_after_same_proxy_patc
     )
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
-        browser_engine = str(kwargs.get("browser_engine"))
+    def _fake_browser_fetch(request):
+        browser_engine = str(request.browser_engine)
         attempted_engines.append(browser_engine)
         return PageFetchResult(
             url="https://example.com/products/widget",
@@ -412,14 +414,13 @@ async def test_vendor_block_unready_patchright_usable_content_replans_to_real_ch
     )
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del timeout
-        browser_engine = str(kwargs.get("browser_engine"))
+    def _fake_browser_fetch(request):
+        browser_engine = str(request.browser_engine)
         attempted_engines.append(browser_engine)
         if browser_engine == "patchright":
             return PageFetchResult(
-                url=url,
-                final_url=url,
+                url=request.url,
+                final_url=request.url,
                 html="<html><body><h1>Loading</h1></body></html>",
                 status_code=200,
                 method="browser",
@@ -431,8 +432,8 @@ async def test_vendor_block_unready_patchright_usable_content_replans_to_real_ch
                 },
             )
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Rendered product</h1></body></html>",
             status_code=200,
             method="browser",
@@ -501,11 +502,10 @@ async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
         runtime_policy={},
     )
 
-    async def _fake_browser_fetch(url: str, stage_budget: float, **kwargs):
-        del url, stage_budget
-        browser_engine = str(kwargs.get("browser_engine"))
+    async def _fake_browser_fetch(request):
+        browser_engine = str(request.browser_engine)
         attempted_engines.append(browser_engine)
-        attempted_proxies.append(kwargs.get("proxy"))
+        attempted_proxies.append(request.proxy)
         if browser_engine == "patchright":
             await asyncio.sleep(0.08)
         return PageFetchResult(
@@ -559,8 +559,7 @@ async def test_fetch_page_browser_only_stamps_engine_and_lane_diagnostics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
+    def _fake_browser_fetch(request):
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -568,11 +567,11 @@ async def test_fetch_page_browser_only_stamps_engine_and_lane_diagnostics(
             status_code=200,
             method="browser",
             browser_diagnostics={
-                "browser_engine": str(kwargs.get("browser_engine")),
+                "browser_engine": str(request.browser_engine),
                 "browser_binary": "C:/Program Files/Google/Chrome/Application/chrome.exe",
                 "bridge_used": True,
-                "escalation_lane": str(kwargs.get("escalation_lane")),
-                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+                "escalation_lane": str(request.escalation_lane),
+                "host_policy_snapshot": dict(request.host_policy_snapshot or {}),
             },
         )
 
@@ -596,10 +595,12 @@ async def test_fetch_page_browser_only_stamps_engine_and_lane_diagnostics(
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
-        proxy_list=["socks5://proxy-a"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+            proxy_list=["socks5://proxy-a"],
+        )
     )
 
     assert result.browser_diagnostics["browser_engine"] == "patchright"
@@ -616,10 +617,9 @@ async def test_fetch_page_forwards_proxy_profile_to_browser_fetch(
     captured_proxy_profile: dict[str, object] = {}
 
     @_as_async
-    def _fake_browser_fetch(url: str, _timeout: float, **kwargs):
-        del url, _timeout
+    def _fake_browser_fetch(request):
         nonlocal captured_proxy_profile
-        captured_proxy_profile = dict(kwargs.get("proxy_profile") or {})
+        captured_proxy_profile = dict(request.proxy_profile or {})
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -632,11 +632,13 @@ async def test_fetch_page_forwards_proxy_profile_to_browser_fetch(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser_fetch)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
-        proxy_list=["socks5://proxy-a"],
-        proxy_profile={"enabled": True, "rotation": "rotating"},
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+            proxy_list=["socks5://proxy-a"],
+            proxy_profile={"enabled": True, "rotation": "rotating"},
+        )
     )
 
     assert result.method == "browser"
@@ -672,9 +674,8 @@ async def test_run_browser_attempts_treats_none_cooldown_as_zero(
     )
 
     @_as_async
-    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
-        del url, timeout
-        browser_engine = str(kwargs.get("browser_engine"))
+    def _fake_browser_fetch(request):
+        browser_engine = str(request.browser_engine)
         attempted_engines.append(browser_engine)
         return PageFetchResult(
             url="https://example.com/products/widget",

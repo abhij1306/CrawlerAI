@@ -510,29 +510,32 @@ def _strip_brand_marketing_tagline(text: str) -> str | None:
     """
     if not text:
         return None
-    match = _BRAND_TAGLINE_SPLIT_RE.match(text)
-    if match is None:
+    separator_index = min(
+        (index for index, character in enumerate(text) if character in "|\u2013\u2014"),
+        default=-1,
+    )
+    if separator_index < 0:
         return None
-    prefix = clean_text(match.group("prefix"))
-    suffix = clean_text(match.group("suffix"))
+    prefix = clean_text(text[:separator_index])
+    suffix = clean_text(text[separator_index + 1 :])
     if not prefix or not suffix:
         return None
-    prefix_tokens = [token for token in re.split(r"\s+", prefix) if token]
-    suffix_tokens = [token for token in re.split(r"\s+", suffix) if token]
-    if len(prefix_tokens) > LISTING_BRAND_MAX_WORDS:
-        return None
-    if not all(re.fullmatch(r"[A-Za-z0-9&'.\-]+", token) for token in prefix_tokens):
-        return None
-    if not any(re.search(r"[A-Za-z]", token) for token in prefix_tokens):
-        return None
-    if len(suffix_tokens) < 2:
+    if not _valid_brand_prefix(prefix.split()) or len(suffix.split()) < 2:
         return None
     return prefix
 
 
-_BRAND_TAGLINE_SPLIT_RE = re.compile(
-    r"^(?P<prefix>.+?)\s*[|\u2013\u2014]\s*(?P<suffix>\S.+)$"
-)
+def _valid_brand_prefix(tokens: list[str]) -> bool:
+    allowed = frozenset("&'.-")
+    return (
+        bool(tokens)
+        and len(tokens) <= LISTING_BRAND_MAX_WORDS
+        and all(
+            all(character.isalnum() or character in allowed for character in token)
+            for token in tokens
+        )
+        and any(any(character.isalpha() for character in token) for token in tokens)
+    )
 
 
 def coerce_gender(value: object) -> str | None:

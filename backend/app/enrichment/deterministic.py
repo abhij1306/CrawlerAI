@@ -446,7 +446,7 @@ def category_url_context(source_url: object) -> str | None:
             if {"camera", "cameras"} & context_tokens and "lens" in context_tokens:
                 context = clean_text(f"{context} digital cameras")
             return context or None
-    except (ValueError, UnicodeError, re.error):
+    except (ValueError, re.error):
         return None
     return None
 

@@ -79,7 +79,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
         if _is_argon2_hash(hashed_password):
             return _PASSWORD_HASHER.verify(hashed_password, password)
         return _verify_legacy_pbkdf2_sha256(password, hashed_password)
-    except (TypeError, ValueError, UnicodeError, argon2_exceptions.Argon2Error):
+    except (TypeError, ValueError, argon2_exceptions.Argon2Error):
         return False
 
 

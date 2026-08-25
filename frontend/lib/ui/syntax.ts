@@ -38,21 +38,8 @@ export function syntaxHighlightJson(json: string) {
       highlighted += escapeHtml(json.slice(lastIndex, m.index));
     }
     const match = m[0];
-    if (/^[\{\}\[\],]$/.test(match)) {
-      highlighted += `<span class="syntax-punct">${escapeHtml(match)}</span>`;
-    } else {
-      let cls = 'syntax-number';
-      let displayToken = match;
-      if (match.startsWith('"')) {
-        cls = /:$/.test(match) ? 'syntax-key' : 'syntax-string';
-        displayToken = displayJsonStringToken(match);
-      } else if (match === 'true' || match === 'false') {
-        cls = 'syntax-boolean';
-      } else if (match === 'null') {
-        cls = 'syntax-null';
-      }
-      highlighted += `<span class="${cls}">${escapeHtml(displayToken)}</span>`;
-    }
+    const token = tokenClassAndText(match);
+    highlighted += `<span class="${token.className}">${escapeHtml(token.text)}</span>`;
     lastIndex = m.index + match.length;
   }
   if (lastIndex < json.length) {
@@ -62,11 +49,17 @@ export function syntaxHighlightJson(json: string) {
   return highlighted
     .split('\n')
     .map((line) => {
-      const spaces = line.match(/^(\s*)/)![1].length;
+      const spaces = leadingWhitespaceLength(line);
       const indent = spaces + WRAP_ALIGN_EXTRA;
       return `<span style="display: block; padding-left: ${indent}ch; text-indent: -${indent}ch;">${line}</span>`;
     })
     .join('');
+}
+
+function leadingWhitespaceLength(value: string) {
+  let index = 0;
+  while (index < value.length && value[index].trim() === '') index += 1;
+  return index;
 }
 
 function tokenClassAndText(match: string): { className: string; text: string } {
@@ -118,7 +111,7 @@ function syntaxHighlightJsonLineNodes(line: string, lineIndex: number): ReactNod
 export function syntaxHighlightJsonNodes(json: string): ReactNode[] {
   if (!json) return [];
   return json.split('\n').map((line, index) => {
-    const spaces = line.match(/^(\s*)/)![1].length;
+    const spaces = leadingWhitespaceLength(line);
     const indent = spaces + WRAP_ALIGN_EXTRA;
     return createElement(
       'span',

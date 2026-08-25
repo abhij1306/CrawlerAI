@@ -64,11 +64,13 @@ async def test_real_chrome_cookie_contract_tries_curl_cffi_handoff_first(
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        url,
-        surface="ecommerce_detail",
-        prefer_curl_handoff=True,
-        handoff_cookie_engine="real_chrome",
-        forced_browser_engine="real_chrome",
+        crawl_fetch_runtime.FetchPageCall(
+            url,
+            surface="ecommerce_detail",
+            prefer_curl_handoff=True,
+            handoff_cookie_engine="real_chrome",
+            forced_browser_engine="real_chrome",
+        )
     )
 
     assert result.method == "curl_cffi"
@@ -103,15 +105,15 @@ async def test_curl_handoff_failure_falls_back_to_real_chrome(
         )
 
     @_as_async
-    def _browser_fetch(request_url, timeout_seconds, **kwargs):
-        engines.append(str(kwargs.get("browser_engine")))
+    def _browser_fetch(request):
+        engines.append(str(request.browser_engine))
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>rendered</body></html>",
             status_code=200,
             method="browser",
-            browser_diagnostics={"browser_engine": kwargs.get("browser_engine")},
+            browser_diagnostics={"browser_engine": request.browser_engine},
         )
 
     monkeypatch.setattr(
@@ -128,11 +130,13 @@ async def test_curl_handoff_failure_falls_back_to_real_chrome(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)
 
     result = await crawl_fetch_runtime.fetch_page(
-        url,
-        surface="ecommerce_detail",
-        prefer_curl_handoff=True,
-        handoff_cookie_engine="real_chrome",
-        forced_browser_engine="real_chrome",
+        crawl_fetch_runtime.FetchPageCall(
+            url,
+            surface="ecommerce_detail",
+            prefer_curl_handoff=True,
+            handoff_cookie_engine="real_chrome",
+            forced_browser_engine="real_chrome",
+        )
     )
 
     assert result.method == "browser"
@@ -203,9 +207,11 @@ async def test_fetch_page_preserves_requested_fields_on_http_to_browser_escalati
     )
 
     await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        requested_fields=["product measurements"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            requested_fields=["product measurements"],
+        )
     )
 
     assert captured_requested_fields == ["product measurements"]
@@ -252,10 +258,12 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
     )
 
     await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        prefer_browser=True,
-        requested_fields=["product measurements"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            prefer_browser=True,
+            requested_fields=["product measurements"],
+        )
     )
 
     assert captured_requested_fields == ["product measurements"]
@@ -322,9 +330,11 @@ async def test_fetch_page_does_not_use_browser_first_for_detail_requested_fields
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        requested_fields=["CAS Number", "Molecular Formula"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            requested_fields=["CAS Number", "Molecular Formula"],
+        )
     )
 
     assert result.method == "curl_cffi"
@@ -360,9 +370,11 @@ async def test_fetch_page_prefer_browser_falls_back_to_http_after_browser_timeou
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://www.harrods.com/en-gb/p/widget",
-        surface="ecommerce_detail",
-        prefer_browser=True,
+        crawl_fetch_runtime.FetchPageCall(
+            "https://www.harrods.com/en-gb/p/widget",
+            surface="ecommerce_detail",
+            prefer_browser=True,
+        )
     )
 
     assert calls == ["browser", "curl"]
@@ -392,11 +404,13 @@ async def test_fetch_page_forced_browser_only_never_falls_back_to_http(
 
     with pytest.raises(TimeoutError, match="real Chrome attempt timed out"):
         await crawl_fetch_runtime.fetch_page(
-            "https://www.mytheresa.com/int/en/women/product",
-            surface="ecommerce_detail",
-            fetch_mode="browser_only",
-            prefer_browser=True,
-            forced_browser_engine="real_chrome",
+            crawl_fetch_runtime.FetchPageCall(
+                "https://www.mytheresa.com/int/en/women/product",
+                surface="ecommerce_detail",
+                fetch_mode="browser_only",
+                prefer_browser=True,
+                forced_browser_engine="real_chrome",
+            )
         )
 
     assert calls == ["browser"]
@@ -431,9 +445,11 @@ async def test_fetch_page_kitchenaid_prefer_browser_timeout_falls_back_to_http(
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
 
     result = await crawl_fetch_runtime.fetch_page(
-        url,
-        surface="ecommerce_detail",
-        prefer_browser=True,
+        crawl_fetch_runtime.FetchPageCall(
+            url,
+            surface="ecommerce_detail",
+            prefer_browser=True,
+        )
     )
 
     assert calls == ["browser", "curl"]
@@ -576,11 +592,10 @@ async def test_fetch_page_browser_only_skips_http_fetchers(
         )
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
+    def _fake_browser(request):
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>browser</body></html>",
             status_code=200,
             method="browser",
@@ -590,9 +605,11 @@ async def test_fetch_page_browser_only_skips_http_fetchers(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="browser_only",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+        )
     )
 
     assert result.method == "browser"
@@ -621,10 +638,8 @@ async def test_fetch_page_http_only_disables_browser_escalation(
         return True
 
     @_as_async
-    def _unexpected_browser(url, timeout, **kwargs):
-        raise AssertionError(
-            f"browser should not run for http_only: {url} {timeout} {kwargs}"
-        )
+    def _unexpected_browser(request):
+        raise AssertionError(f"browser should not run for http_only: {request}")
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
     monkeypatch.setattr(
@@ -633,9 +648,11 @@ async def test_fetch_page_http_only_disables_browser_escalation(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="http_only",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="http_only",
+        )
     )
 
     assert result.method == "curl_cffi"
@@ -665,11 +682,10 @@ async def test_fetch_page_http_then_browser_escalates_after_http_result(
         return True
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
+    def _fake_browser(request):
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>browser</body></html>",
             status_code=200,
             method="browser",
@@ -682,9 +698,11 @@ async def test_fetch_page_http_then_browser_escalates_after_http_result(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="http_then_browser",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="http_then_browser",
+        )
     )
 
     assert result.method == "browser"
@@ -707,11 +725,10 @@ async def test_fetch_page_prefers_browser_from_learned_host_memory(
         return HostProtectionPolicy(host="example.com", prefer_browser=True)
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
+    def _fake_browser(request):
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>browser</body></html>",
             status_code=200,
             method="browser",
@@ -726,8 +743,10 @@ async def test_fetch_page_prefers_browser_from_learned_host_memory(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "browser"
@@ -774,10 +793,12 @@ async def test_fetch_page_preserves_proxy_list_on_browser_first_path(
     )
 
     await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        prefer_browser=True,
-        proxy_list=["http://proxy-one", "http://proxy-two"],
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            prefer_browser=True,
+            proxy_list=["http://proxy-one", "http://proxy-two"],
+        )
     )
 
     assert (captured_proxies or []) == ["http://proxy-one", "http://proxy-two"]

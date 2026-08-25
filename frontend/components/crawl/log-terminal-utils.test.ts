@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { LOG_GROUP_WINDOW_SIZE, windowLogGroups } from './log-terminal-utils';
+import { LOG_GROUP_WINDOW_SIZE, sanitizeLogMessage, windowLogGroups } from './log-terminal-utils';
+
+describe('sanitizeLogMessage', () => {
+  it('removes repeated correlation tags without changing surrounding text', () => {
+    expect(sanitizeLogMessage('Fetched [corr=abc]  page [corr=def]')).toBe('Fetched page');
+    expect(sanitizeLogMessage('Fetched [CoRr=abc] page')).toBe('Fetched page');
+  });
+
+  it('handles a long malformed correlation prefix without backtracking', () => {
+    const message = `Fetched ${'[corr='}${'x'.repeat(100_000)}`;
+    expect(sanitizeLogMessage(message)).toBe(message);
+  });
+
+  it('preserves an incomplete tag after removing earlier complete tags', () => {
+    expect(sanitizeLogMessage('Fetched [corr=abc] page [corr=incomplete')).toBe(
+      'Fetched page [corr=incomplete',
+    );
+  });
+});
 
 describe('windowLogGroups', () => {
   it('returns the same array when the count is under the limit', () => {

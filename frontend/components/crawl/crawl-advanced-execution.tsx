@@ -43,7 +43,16 @@ export function CrawlAdvancedExecution({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Execution</h3>
         <Tooltip content="Control how the crawler fetches, renders, and traverses the target.">
-          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
+          <button
+            type="button"
+            aria-label="More information"
+            className="focus-ring inline-flex rounded-sm"
+          >
+            <Info
+              aria-hidden="true"
+              className="size-3 cursor-help text-muted transition-colors hover:text-secondary"
+            />
+          </button>
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>

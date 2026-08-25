@@ -33,8 +33,12 @@ def _attempt(attempt_id: str = "http-1") -> AttemptSpec:
 
 def test_validation_tooling_changes_use_targeted_contract_tests() -> None:
     config = json.loads(_VALIDATION_CONFIG.read_text(encoding="utf-8"))
-    tooling_paths = {"scripts/check.ps1", "scripts/validation.json"}
-    assert tooling_paths.isdisjoint(config["globalTriggers"])
+    tooling_paths = {
+        "scripts/check.ps1",
+        "scripts/test.ps1",
+        "scripts/validation.json",
+    }
+    assert "globalTriggers" not in config
     tooling_rule = next(
         rule for rule in config["rules"] if set(rule["sources"]) == tooling_paths
     )

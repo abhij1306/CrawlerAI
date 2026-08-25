@@ -85,7 +85,7 @@ async def test_escalation_ladder_climbs_then_exhausts_honestly(monkeypatch) -> N
         extract_calls += 1
         return _empty_result(with_retry=True), []
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -147,7 +147,7 @@ async def test_escalation_ladder_stops_when_verdict_satisfied(monkeypatch) -> No
             [],
         )
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -243,7 +243,7 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
             [],
         )
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -307,7 +307,7 @@ async def test_escalation_skips_acquisition_when_url_budget_is_exhausted(
         acquire_calls += 1
         return _acquisition("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -355,7 +355,7 @@ async def test_failed_escalation_rung_is_recorded_with_typed_outcome(
     async def fake_acquire(request):
         raise TimeoutError("browser acquisition timed out")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -409,7 +409,7 @@ async def test_exhausted_url_budget_skips_acquisition_without_counting_rung(
         acquire_calls += 1
         return _acquisition("browser")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
@@ -456,7 +456,7 @@ async def test_failed_escalation_rung_stays_visible_in_diagnostics(
     async def fake_acquire(request):
         raise TimeoutError("browser acquisition timed out")
 
-    async def fake_log(*args, **kwargs):
+    def fake_log(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)

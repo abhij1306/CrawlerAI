@@ -46,9 +46,8 @@ async def test_acquire_returns_public_headers_as_plain_dict(
     async def _on_event(level: str, message: str) -> None:
         events.append((level, message))
 
-    async def _fake_fetch_page(*args, **kwargs):
-        del args
-        on_event = kwargs.get("on_event")
+    async def _fake_fetch_page(call):
+        on_event = call.on_event
         if on_event is not None:
             await on_event(
                 "info", "Launched headless browser (chromium, proxy: direct)"
@@ -101,14 +100,13 @@ async def test_acquire_strips_pasted_encoded_url_suffix_before_fetch(
 ) -> None:
     observed_urls: list[str] = []
 
-    async def _fake_fetch_page(url: str, *args, **kwargs):
-        del args, kwargs
-        observed_urls.append(url)
+    async def _fake_fetch_page(call):
+        observed_urls.append(call.url)
         return type(
             "FetchResult",
             (),
             {
-                "final_url": url,
+                "final_url": call.url,
                 "html": "<html></html>",
                 "method": "httpx",
                 "status_code": 200,
@@ -251,15 +249,13 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def _fake_fetch_page(url: str, *args, **kwargs):
-        del args
-        captured["url"] = url
-        captured.update(kwargs)
+    async def _fake_fetch_page(call):
+        captured["call"] = call
         return type(
             "FetchResult",
             (),
             {
-                "final_url": url,
+                "final_url": call.url,
                 "html": "<html></html>",
                 "method": "browser",
                 "status_code": 200,
@@ -299,16 +295,17 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
         )
     )
 
-    assert captured["fetch_mode"] == "browser_only"
-    assert captured["prefer_browser"] is True
-    assert captured["browser_reason"] == "thin-listing retry"
-    assert captured["listing_recovery_mode"] == "thin_listing"
-    assert captured["proxy_profile"] == {"rotation": "session"}
-    assert captured["locality_profile"] == {"country": "US"}
-    assert captured["capture_screenshot"] is True
-    assert captured["prefer_curl_handoff"] is True
-    assert captured["handoff_cookie_engine"] == "real_chrome"
-    assert captured["forced_browser_engine"] == "real_chrome"
+    call = captured["call"]
+    assert call.fetch_mode == "browser_only"
+    assert call.prefer_browser is True
+    assert call.browser_reason == "thin-listing retry"
+    assert call.listing_recovery_mode == "thin_listing"
+    assert call.proxy_profile == {"rotation": "session"}
+    assert call.locality_profile == {"country": "US"}
+    assert call.capture_screenshot is True
+    assert call.prefer_curl_handoff is True
+    assert call.handoff_cookie_engine == "real_chrome"
+    assert call.forced_browser_engine == "real_chrome"
 
 
 @pytest.mark.asyncio
@@ -397,15 +394,14 @@ async def test_browser_only_retry_bypasses_availability_api_replay(
         calls.append("replay")
         return {"url": "https://example.com/api/product/1/availability", "body": {}}
 
-    async def _fake_fetch_page(url: str, *args, **kwargs):
-        del args
+    async def _fake_fetch_page(call):
         calls.append("browser")
-        assert kwargs["fetch_mode"] == "browser_only"
+        assert call.fetch_mode == "browser_only"
         return type(
             "FetchResult",
             (),
             {
-                "final_url": url,
+                "final_url": call.url,
                 "html": "<html><body><h1>Full Product</h1></body></html>",
                 "method": "browser",
                 "status_code": 200,
@@ -485,13 +481,12 @@ def test_internal_api_replay_rejects_title_only_settings_payload() -> None:
 async def test_acquire_persists_runtime_policy_updates_on_result_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def _fake_fetch_page(url: str, *args, **kwargs):
-        del args, kwargs
+    async def _fake_fetch_page(call):
         return type(
             "FetchResult",
             (),
             {
-                "final_url": url,
+                "final_url": call.url,
                 "html": "<html></html>",
                 "method": "browser",
                 "status_code": 200,
@@ -535,15 +530,13 @@ async def test_acquire_applies_runtime_locality_defaults_without_overriding_expl
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def _fake_fetch_page(url: str, *args, **kwargs):
-        del args
-        captured["url"] = url
-        captured.update(kwargs)
+    async def _fake_fetch_page(call):
+        captured["call"] = call
         return type(
             "FetchResult",
             (),
             {
-                "final_url": url,
+                "final_url": call.url,
                 "html": "<html></html>",
                 "method": "browser",
                 "status_code": 200,
@@ -594,7 +587,7 @@ async def test_acquire_applies_runtime_locality_defaults_without_overriding_expl
         )
     )
 
-    assert captured["locality_profile"] == {
+    assert captured["call"].locality_profile == {
         "geo_country": "US",
         "language_hint": "fr-CA",
         "currency_hint": "USD",

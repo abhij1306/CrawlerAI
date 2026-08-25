@@ -259,20 +259,22 @@ def _absolute_path(node: Any) -> str:
             current = current.parent
             continue
         parent = current.parent
-        parent_tag = str(parent.tag or "").lower() if parent is not None else ""
-        index = 1
-        if parent is not None and parent_tag != "#document":
-            sibling = parent.child
-            while sibling is not None:
-                if _same_node(sibling, current):
-                    break
-                sibling_tag = str(sibling.tag or "").lower()
-                if _same_node(sibling.parent, parent) and sibling_tag == tag:
-                    index += 1
-                sibling = sibling.next
+        index = _same_tag_sibling_index(current, parent, tag)
         parts.append(f"{tag}[{index}]")
         current = parent
     return "/" + "/".join(reversed(parts))
+
+
+def _same_tag_sibling_index(current: Any, parent: Any | None, tag: str) -> int:
+    if parent is None or str(parent.tag or "").lower() == "#document":
+        return 1
+    index = 1
+    sibling = parent.child
+    while sibling is not None and not _same_node(sibling, current):
+        if _same_node(sibling.parent, parent) and str(sibling.tag or "").lower() == tag:
+            index += 1
+        sibling = sibling.next
+    return index
 
 
 def _rough_token_count(value: str) -> int:

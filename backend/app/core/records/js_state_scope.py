@@ -329,7 +329,7 @@ def _normalized_cache_item_id(path_part: str) -> str | None:
     try:
         padded = encoded + "=" * (-len(encoded) % 4)
         decoded = base64.b64decode(padded, validate=True).decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError, ValueError):
+    except (binascii.Error, ValueError):
         return None
     entity, separator, item_id = decoded.partition(":")
     if separator != ":" or entity.casefold() != "item" or not item_id.isdigit():

@@ -128,11 +128,26 @@ export type LogSiteGroup = {
 };
 
 export function sanitizeLogMessage(message: string) {
-  return String(message || '')
-    .replace(LOG_PATTERNS.URL_PREFIX, '')
-    .replace(/\s*\[corr=[^\]]+\]/gi, '')
+  return removeCorrelationTags(String(message || '').replace(LOG_PATTERNS.URL_PREFIX, ''))
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function removeCorrelationTags(message: string) {
+  const lowerMessage = message.toLowerCase();
+  let output = '';
+  let cursor = 0;
+  let start = lowerMessage.indexOf('[corr=');
+  while (start >= 0) {
+    const end = message.indexOf(']', start + 6);
+    if (end < 0) break;
+    let contentEnd = start;
+    while (contentEnd > cursor && message[contentEnd - 1].trim() === '') contentEnd -= 1;
+    output += message.slice(cursor, contentEnd);
+    cursor = end + 1;
+    start = lowerMessage.indexOf('[corr=', cursor);
+  }
+  return output + message.slice(cursor);
 }
 
 export function parseStartingLog(message: string) {
@@ -202,7 +217,10 @@ function canonicalLogMatchUrl(value: string) {
     const parsed = new URL(value);
     parsed.hash = '';
     parsed.search = '';
-    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    const pathname = parsed.pathname;
+    let end = pathname.length;
+    while (end > 1 && pathname[end - 1] === '/') end -= 1;
+    parsed.pathname = pathname.slice(0, end);
     return parsed.toString();
   } catch {
     return value.trim();

@@ -102,7 +102,7 @@ def is_title_noise(title: object) -> bool:
         return True
     if _is_rating_title_noise(cleaned, lowered):
         return True
-    cta_normalized = re.sub(r"[\s.。…]+$", "", lowered)
+    cta_normalized = lowered.rstrip(" \t\r\n\f\v.。…")
     if _is_exact_title_noise(lowered, cta_normalized):
         return True
     return _matches_title_noise_pattern(lowered)

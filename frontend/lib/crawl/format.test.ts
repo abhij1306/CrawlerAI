@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { parseOptionalClampedNumber } from './format';
+import { normalizeField, parseOptionalClampedNumber } from './format';
+
+describe('normalizeField', () => {
+  it('preserves field normalization while trimming long separator runs', () => {
+    expect(normalizeField(`${'_'.repeat(100_000)}Product Name${'_'.repeat(100_000)}`)).toBe(
+      'product_name',
+    );
+  });
+});
 
 describe('parseOptionalClampedNumber', () => {
   it('returns null for empty or whitespace-only input in both modes', () => {

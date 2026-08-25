@@ -187,7 +187,7 @@ Product Intelligence identity ladder, strongest first:
 
 ## 12. Maintainability, tests, plans, and docs
 
-- Repository validation is owned by `scripts/check.ps1` and `scripts/validation.json`. Do not bypass it, weaken gates, raise limits, or edit mappings to avoid relevant tests.
+- Static validation is owned by `scripts/check.ps1`; affected test selection is owned by `scripts/test.ps1` and `scripts/validation.json`. Do not bypass them, weaken gates, raise limits, or edit mappings to avoid relevant tests.
 - Backend callable complexity fails above 15. Frontend complexity uses the existing VitePlus/ESLint threshold. LOC uses physical source lines with narrow legacy baselines that may not grow.
 - Applied Alembic migrations are immutable history. Validation scope, exclusions, and legacy baselines live only in `scripts/validation.json`; do not add undocumented exceptions or grow a baseline.
 - Split large test modules by public behavior. Shared fixture vocabulary may live in non-test support modules; preserve collected behavior.

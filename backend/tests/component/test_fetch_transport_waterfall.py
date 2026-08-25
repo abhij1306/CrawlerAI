@@ -52,8 +52,10 @@ async def test_fetch_page_falls_back_to_httpx_after_curl_transport_errors(
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://ar.puma.com/pd/widget.html",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://ar.puma.com/pd/widget.html",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "httpx"
@@ -104,8 +106,10 @@ async def test_fetch_page_attempts_curl_once_before_httpx_fallback(
         _no_browser_escalation,
     )
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "httpx"
@@ -143,9 +147,11 @@ async def test_http_only_fetch_uses_canonical_plan_and_attempt_results(
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _http_success)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
-        fetch_mode="http_only",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="http_only",
+        )
     )
 
     canonical_result = result.acquisition_diagnostics["result"]
@@ -196,9 +202,11 @@ async def test_http_only_transport_exhaustion_does_not_fall_back_to_browser(
 
     with pytest.raises(httpx.ConnectError, match="httpx failed") as exc_info:
         await crawl_fetch_runtime.fetch_page(
-            "https://example.com/products/widget",
-            surface="ecommerce_detail",
-            fetch_mode="http_only",
+            crawl_fetch_runtime.FetchPageCall(
+                "https://example.com/products/widget",
+                surface="ecommerce_detail",
+                fetch_mode="http_only",
+            )
         )
 
     diagnostics = exc_info.value.acquisition_diagnostics
@@ -228,12 +236,11 @@ async def test_fetch_page_falls_back_to_browser_after_curl_and_httpx_transport_e
         raise httpx.ConnectError("httpx failed")
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
-        browser_calls.append(url)
+    def _fake_browser(request):
+        browser_calls.append(request.url)
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>browser-rendered</body></html>",
             status_code=200,
             method="browser",
@@ -245,8 +252,10 @@ async def test_fetch_page_falls_back_to_browser_after_curl_and_httpx_transport_e
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/widget",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "browser"
@@ -271,17 +280,19 @@ async def test_fetch_page_returns_non_retryable_404_without_browser_fallback(
         )
 
     @_as_async
-    def _unexpected_browser(url, timeout, **kwargs):
+    def _unexpected_browser(request):
         raise AssertionError(
-            f"browser fallback should not run for non-retryable status {url} {timeout} {kwargs}"
+            f"browser fallback should not run for non-retryable status {request}"
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/missing-job",
-        surface="job_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/missing-job",
+            surface="job_detail",
+        )
     )
 
     assert result.status_code == 404
@@ -310,17 +321,19 @@ async def test_fetch_page_returns_non_retryable_404_shell_without_browser_fallba
         )
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
+    def _fake_browser(request):
         raise AssertionError(
-            f"browser fallback should not run for non-retryable status {url} {timeout} {kwargs}"
+            f"browser fallback should not run for non-retryable status {request}"
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser)
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/missing-spa-route",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/missing-spa-route",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.status_code == 404
@@ -347,12 +360,11 @@ async def test_fetch_page_retries_406_detail_shell_with_browser(
     browser_calls: list[str] = []
 
     @_as_async
-    def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
-        browser_calls.append(url)
+    def _fake_browser(request):
+        browser_calls.append(request.url)
         return PageFetchResult(
-            url=url,
-            final_url=url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Pragmata</h1><span>$59.99</span></body></html>",
             status_code=200,
             method="browser",
@@ -370,8 +382,10 @@ async def test_fetch_page_retries_406_detail_shell_with_browser(
     monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://example.com/products/pragmata-switch-2",
-        surface="ecommerce_detail",
+        crawl_fetch_runtime.FetchPageCall(
+            "https://example.com/products/pragmata-switch-2",
+            surface="ecommerce_detail",
+        )
     )
 
     assert result.method == "browser"
@@ -408,10 +422,9 @@ async def test_fetch_page_stops_http_waterfall_after_vendor_confirmed_block(
         )
 
     @_as_async
-    def _failing_browser(url, timeout, **kwargs):
-        del timeout
-        browser_proxies.append(kwargs.get("proxy"))
-        raise RuntimeError(f"browser failed for {url}")
+    def _failing_browser(request):
+        browser_proxies.append(request.proxy)
+        raise RuntimeError(f"browser failed for {request.url}")
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _vendor_blocked_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _unexpected_http)
@@ -424,9 +437,11 @@ async def test_fetch_page_stops_http_waterfall_after_vendor_confirmed_block(
 
     with pytest.raises(RuntimeError, match="browser failed"):
         await crawl_fetch_runtime.fetch_page(
-            "https://example.com/products/widget",
-            proxy_list=["http://proxy-a", "http://proxy-b"],
-            surface="ecommerce_detail",
+            crawl_fetch_runtime.FetchPageCall(
+                "https://example.com/products/widget",
+                proxy_list=["http://proxy-a", "http://proxy-b"],
+                surface="ecommerce_detail",
+            )
         )
 
     assert len(curl_proxies) == 1

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
@@ -9,7 +10,7 @@ from app.acquisition.contracts import AttemptResult
 from app.acquisition.executor import AttemptExecution
 from app.acquisition.fetch import attempt_host_policy, attempt_plan
 from app.acquisition.fetch.browser_attempt import (
-    browser_fetch_kwargs,
+    browser_fetch_request,
     browser_fetch_with_wall_clock_timeout,
 )
 from app.acquisition.fetch.browser_policy import (
@@ -71,14 +72,14 @@ async def execute_browser_attempt(
         attempt_host_policy.active_host_policy(runner)
     )
     try:
-        await attempt_plan.raise_if_no_budget(
+        attempt_plan.raise_if_no_budget(
             runner, engine, engine_index, engine_attempts, "start"
         )
         await runner.deps.wait_for_host_slot(
             runner.context.url,
             ttl_seconds=runner.context.host_memory_ttl_seconds,
         )
-        await attempt_plan.raise_if_no_budget(
+        attempt_plan.raise_if_no_budget(
             runner, engine, engine_index, engine_attempts, "run"
         )
         result = await browser_fetch_result(
@@ -172,20 +173,21 @@ async def browser_fetch_result(
     )
     return await browser_fetch_with_wall_clock_timeout(
         runner.deps.browser_fetch,
-        runner.context.url,
-        timeout,
-        browser_engine=engine,
-        fetch_kwargs=browser_fetch_kwargs(
-            runner.context,
-            proxy=proxy,
-            browser_engine=engine,
-            reason=runner.reason,
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=policy_snapshot,
-            requested_fields=browser_requested_fields(runner),
-            recovery_mode=recovery_mode(runner),
-            capture_screenshot=runner.capture_screenshot,
+        replace(
+            browser_fetch_request(
+                runner.context,
+                proxy=proxy,
+                browser_engine=engine,
+                reason=runner.reason,
+                escalation_lane=escalation_lane,
+                host_policy_snapshot=policy_snapshot,
+                requested_fields=browser_requested_fields(runner),
+                recovery_mode=recovery_mode(runner),
+                capture_screenshot=runner.capture_screenshot,
+            ),
+            timeout_seconds=timeout,
         ),
+        browser_engine=engine,
     )
 
 

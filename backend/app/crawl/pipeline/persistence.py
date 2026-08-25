@@ -215,12 +215,7 @@ def _stage_extracted_record(
     preliminary_source_url = str(
         raw_record.get("source_url") or acquisition_result.final_url
     )
-    data, rejected_public_fields, variant_drops = _public_data_for_record(
-        raw_record,
-        run=state.run,
-        acquisition_result=acquisition_result,
-        preliminary_source_url=preliminary_source_url,
-    )
+    data, rejected_public_fields, variant_drops = _public_data_for_record(raw_record)
     if not data or ("listing" in str(state.run.surface or "") and not data.get("url")):
         return
     record_source_url = str(data.get("source_url") or acquisition_result.final_url)
@@ -511,10 +506,6 @@ async def _load_existing_records_by_identity(
 
 def _public_data_for_record(
     raw_record: dict[str, object],
-    *,
-    run: CrawlRun,
-    acquisition_result,
-    preliminary_source_url: str,
 ) -> tuple[dict[str, object], dict[str, object], tuple[VariantDrop, ...]]:
     unfiltered_data = {
         str(key): value

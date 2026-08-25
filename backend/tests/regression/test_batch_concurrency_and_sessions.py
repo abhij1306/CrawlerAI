@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from tests.regression.batch_runtime_test_support import (
     AsyncSession,
     CommitTrackingSession,
@@ -77,6 +79,37 @@ def test_parallel_url_concurrency_is_serial_when_celery_dispatch_is_disabled(
     )
 
     assert _parallel_url_concurrency(10, settings_view) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_parallel_execute_cancels_workers_when_coordination_fails() -> None:
+    class FailingState(batch_runtime_module._ParallelRunState):
+        def start_workers(self) -> None:
+            self.workers = [asyncio.create_task(asyncio.Event().wait())]
+
+        def raise_worker_error(self) -> None:
+            raise RuntimeError("coordination failed")
+
+    state = FailingState(
+        session=SimpleNamespace(),
+        run=SimpleNamespace(id=101),
+        pending_items=[],
+        total_urls=1,
+        progress_state=SimpleNamespace(persisted_record_count=0),
+        max_records=1,
+        record_limit=1,
+        url_timeout_seconds=1.0,
+        owner="test",
+        concurrency=1,
+        commit_gate=SimpleNamespace(),
+    )
+
+    with pytest.raises(RuntimeError, match="coordination failed"):
+        await state.execute()
+
+    assert state.stop_event.is_set()
+    assert all(worker.cancelled() for worker in state.workers)
 
 
 @pytest.mark.asyncio

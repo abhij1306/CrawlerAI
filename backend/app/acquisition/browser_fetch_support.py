@@ -54,13 +54,13 @@ class BrowserFetchRequest:
     max_scrolls: int = 1
     max_records: int | None = None
     on_event: Any = None
-    runtime_provider: Any = get_browser_runtime
-    proxied_page_factory: Any = None
 
 
 @dataclass(slots=True)
 class BrowserFetchState:
     request: BrowserFetchRequest
+    runtime_provider: Any
+    proxied_page_factory: Any
     normalized_domain: str | None
     normalized_engine: str
     normalized_surface: str
@@ -73,18 +73,25 @@ class BrowserFetchState:
     runtime_bridge_used: bool = False
 
 
-def new_browser_fetch_state(request: BrowserFetchRequest) -> BrowserFetchState:
+def new_browser_fetch_state(
+    request: BrowserFetchRequest,
+    *,
+    runtime_provider: Any = get_browser_runtime,
+    proxied_page_factory: Any = None,
+) -> BrowserFetchState:
     normalized_engine = normalize_browser_engine(request.browser_engine)
     allow_storage_state = proxy_rotation_mode(request.proxy_profile) != "rotating"
     proxy_mode = (
         "direct"
         if not request.proxy
         else "launch"
-        if request.proxied_page_factory is None
+        if proxied_page_factory is None
         else "page"
     )
     return BrowserFetchState(
         request=request,
+        runtime_provider=runtime_provider,
+        proxied_page_factory=proxied_page_factory,
         normalized_domain=normalize_domain(request.url),
         normalized_engine=normalized_engine,
         normalized_surface=str(request.surface or "").strip().lower(),

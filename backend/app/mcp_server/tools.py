@@ -29,5 +29,5 @@ async def check_domain(client: PublicApiClient, *, domain: str) -> dict[str, Any
     return await client.request("GET", f"/domains/{domain}")
 
 
-async def list_capabilities() -> dict[str, Any]:
+def list_capabilities() -> dict[str, Any]:
     return {"status": "ok", "data": capabilities()}

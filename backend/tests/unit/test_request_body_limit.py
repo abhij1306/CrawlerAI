@@ -120,6 +120,39 @@ async def test_replays_chunked_body_as_one_bounded_message(
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_disconnect_preserves_incomplete_buffered_request_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(request_body_limit.settings, "request_body_max_bytes", 5)
+    received: list[dict[str, object]] = []
+
+    async def capture_app(scope, receive, send) -> None:
+        del scope, send
+        received.extend([await receive(), await receive()])
+
+    messages = [
+        {"type": "http.request", "body": b"abc", "more_body": True},
+        {"type": "http.disconnect"},
+    ]
+
+    async def receive():
+        return messages.pop(0)
+
+    middleware = request_body_limit.RequestBodyLimitMiddleware(capture_app)
+    await middleware(
+        {"type": "http", "method": "POST", "path": "/api/crawls", "headers": []},
+        receive,
+        lambda _message: None,
+    )
+
+    assert received == [
+        {"type": "http.request", "body": b"abc", "more_body": True},
+        {"type": "http.disconnect"},
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_does_not_send_second_response_after_downstream_started(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

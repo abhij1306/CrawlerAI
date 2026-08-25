@@ -33,7 +33,7 @@ def active_host_policy(runner: AttemptRunner) -> HostProtectionPolicy:
     return runner.active_host_policy
 
 
-def engine_attempts(runner: AttemptRunner, proxy: str | None) -> list[str]:
+def engine_attempts(runner: AttemptRunner) -> list[str]:
     attempts = runner.deps.browser_engine_attempts(
         context=runner.context,
         host_policy=active_host_policy(runner),

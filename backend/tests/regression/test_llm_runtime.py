@@ -92,8 +92,8 @@ async def test_provider_retry_retries_rate_limit(
 async def test_llm_budget_allows_calls_when_redis_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_redis_fail_open(operation, *, default, operation_name):
-        del operation, operation_name
+    async def fake_redis_fail_open(operation, *, default):
+        del operation
         return default
 
     monkeypatch.setattr(llm_budget, "redis_fail_open", fake_redis_fail_open)

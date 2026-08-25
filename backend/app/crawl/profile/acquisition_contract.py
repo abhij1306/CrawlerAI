@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.acquisition.internal_api_replay import learned_internal_api_endpoints
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.db_utils import mapping_or_empty
+from app.core.records.field_policy import acquisition_contract_fields_for_surface
+from app.core.shared.field_coerce import safe_int
 from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
@@ -339,20 +342,15 @@ async def record_acquisition_contract_outcome(
     domain: str,
     surface: str,
     source_run_id: int,
-    method: object,
-    browser_engine: object,
-    browser_diagnostics: dict[str, object] | None = None,
-    requested_fields: list[str],
-    records: list[dict[str, object]],
-    persisted_count: int,
-    verdict: str,
-    blocked: bool,
-    page_url: str | None = None,
-    network_payloads: list[dict[str, object]] | None = None,
+    acquisition_result: object,
+    url_result: object,
 ) -> None:
-    stale_threshold = int(
-        crawler_runtime_settings.acquisition_contract_stale_failure_threshold
-    )
+    records = list(getattr(url_result, "records", []) or [])
+    metrics = mapping_or_empty(getattr(url_result, "url_metrics", {}))
+    metric_count = safe_int(metrics.get("record_count"), default=None)
+    persisted_count = len(records) if metric_count is None else metric_count
+    verdict = str(getattr(url_result, "verdict", "") or "")
+    blocked = bool(metrics.get("blocked"))
     quality_success = (
         persisted_count > 0
         and not blocked
@@ -365,41 +363,14 @@ async def record_acquisition_contract_outcome(
         persisted_count=persisted_count,
     )
     if quality_success:
-        found_fields = sorted(
-            {
-                str(field_name)
-                for record in records
-                if isinstance(record, dict)
-                for field_name, value in record.items()
-                if not str(field_name).startswith("_")
-                and value not in (None, "", [], {})
-            }
-        )
-        endpoints = learned_internal_api_endpoints(
-            network_payloads=network_payloads,
-            surface=surface,
-            page_url=page_url or "",
-            requested_fields=requested_fields,
-            source_run_id=source_run_id,
-        )
-        # Per-URL DB budget: contract learning and learned endpoints are merged
-        # into ONE profile upsert per URL (this used to save the same row
-        # twice when endpoints were learned).
-        await save_learned_acquisition_contract(
+        await _save_successful_acquisition_contract(
             session,
             domain=domain,
             surface=surface,
             source_run_id=source_run_id,
-            contract=build_success_acquisition_contract(
-                method=method,
-                browser_engine=browser_engine,
-                browser_diagnostics=browser_diagnostics,
-                record_count=persisted_count,
-                requested_fields=requested_fields,
-                found_fields=found_fields,
-                source_run_id=source_run_id,
-            ),
-            internal_api_endpoints=endpoints or None,
+            acquisition_result=acquisition_result,
+            records=records,
+            persisted_count=persisted_count,
         )
         return
     if not count_failure:
@@ -408,7 +379,62 @@ async def record_acquisition_contract_outcome(
         session,
         domain=domain,
         surface=surface,
-        threshold=stale_threshold,
+        threshold=int(
+            crawler_runtime_settings.acquisition_contract_stale_failure_threshold
+        ),
+    )
+
+
+async def _save_successful_acquisition_contract(
+    session: AsyncSession,
+    *,
+    domain: str,
+    surface: str,
+    source_run_id: int,
+    acquisition_result: object,
+    records: list[object],
+    persisted_count: int,
+) -> None:
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
+    request = getattr(acquisition_result, "request", None)
+    requested_fields = acquisition_contract_fields_for_surface(
+        surface, list(getattr(request, "requested_fields", []) or [])
+    )
+    found_fields = sorted(
+        {
+            str(field_name)
+            for record in records
+            if isinstance(record, dict)
+            for field_name, value in record.items()
+            if not str(field_name).startswith("_") and value not in (None, "", [], {})
+        }
+    )
+    endpoints = learned_internal_api_endpoints(
+        network_payloads=list(
+            getattr(acquisition_result, "network_payloads", []) or []
+        ),
+        surface=surface,
+        page_url=str(getattr(acquisition_result, "final_url", "") or ""),
+        requested_fields=requested_fields,
+        source_run_id=source_run_id,
+    )
+    await save_learned_acquisition_contract(
+        session,
+        domain=domain,
+        surface=surface,
+        source_run_id=source_run_id,
+        contract=build_success_acquisition_contract(
+            method=getattr(acquisition_result, "method", None),
+            browser_engine=str(diagnostics.get("browser_engine") or "").strip().lower(),
+            browser_diagnostics=dict(diagnostics),
+            record_count=persisted_count,
+            requested_fields=requested_fields,
+            found_fields=found_fields,
+            source_run_id=source_run_id,
+        ),
+        internal_api_endpoints=endpoints or None,
     )
 
 

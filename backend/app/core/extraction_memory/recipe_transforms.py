@@ -145,7 +145,7 @@ def _attribute_availability(value: Any) -> str | None:
         return value
     try:
         state = json.loads(value)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return None
     selectable = state.get("selectable") if isinstance(state, dict) else None
     if selectable in {False, "0", "false", "False"}:  # bool==int: False also matches 0

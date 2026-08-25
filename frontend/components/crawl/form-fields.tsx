@@ -77,7 +77,16 @@ export function SettingSection({
           ) : null}
           <div className="type-body-sm min-w-0 font-semibold text-foreground">{label}</div>
           <Tooltip content={description}>
-            <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
+            <button
+              type="button"
+              aria-label="More information"
+              className="focus-ring inline-flex rounded-sm"
+            >
+              <Info
+                aria-hidden="true"
+                className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary"
+              />
+            </button>
           </Tooltip>
         </div>
         <div className="flex justify-start">
@@ -135,7 +144,16 @@ export function SliderRow({
         <span className="type-body-sm font-semibold text-foreground">{label}</span>
         {description ? (
           <Tooltip content={description}>
-            <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
+            <button
+              type="button"
+              aria-label="More information"
+              className="focus-ring inline-flex rounded-sm"
+            >
+              <Info
+                aria-hidden="true"
+                className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary"
+              />
+            </button>
           </Tooltip>
         ) : null}
         <button
@@ -279,13 +297,19 @@ export function SitemapConfigFields({
         <span className="type-caption">App will auto-discover sitemap from this domain.</span>
       </label>
 
-      <label htmlFor="sitemap-filter" className="grid gap-2">
-        <span className="type-control flex items-center gap-1.5 font-medium">
-          Collection Filter
+      <div className="grid gap-2">
+        <div className="type-control flex items-center gap-1.5 font-medium">
+          <label htmlFor="sitemap-filter">Collection Filter</label>
           <Tooltip content="Only child sitemaps whose filename contains this keyword will be crawled. For Shopify use collections. For WooCommerce or Magento use category.">
-            <Info className="size-3.5 cursor-help text-muted" />
+            <button
+              type="button"
+              aria-label="More information"
+              className="focus-ring inline-flex rounded-sm"
+            >
+              <Info aria-hidden="true" className="size-3.5 cursor-help text-muted" />
+            </button>
           </Tooltip>
-        </span>
+        </div>
         <Input
           id="sitemap-filter"
           value={filterKeyword}
@@ -294,15 +318,21 @@ export function SitemapConfigFields({
           className="font-mono"
           aria-label="Sitemap filter keyword input"
         />
-      </label>
+      </div>
 
-      <label htmlFor="sitemap-max-urls" className="grid gap-2">
-        <span className="type-control flex items-center gap-1.5 font-medium">
-          Max Category URLs
+      <div className="grid gap-2">
+        <div className="type-control flex items-center gap-1.5 font-medium">
+          <label htmlFor="sitemap-max-urls">Max Category URLs</label>
           <Tooltip content="Maximum number of category URLs to crawl from the sitemap.">
-            <Info className="size-3.5 cursor-help text-muted" />
+            <button
+              type="button"
+              aria-label="More information"
+              className="focus-ring inline-flex rounded-sm"
+            >
+              <Info aria-hidden="true" className="size-3.5 cursor-help text-muted" />
+            </button>
           </Tooltip>
-        </span>
+        </div>
         <Input
           id="sitemap-max-urls"
           type="number"
@@ -316,7 +346,7 @@ export function SitemapConfigFields({
           }}
           aria-label="Sitemap max URLs input"
         />
-      </label>
+      </div>
     </div>
   );
 }

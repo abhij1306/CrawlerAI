@@ -12,10 +12,7 @@ def incr(metric_name: str, amount: int = 1) -> None:
     async def _incr(redis) -> object:
         return await redis.hincrby(_RUNTIME_METRICS_KEY, metric_name, int(amount))
 
-    schedule_fail_open(
-        _incr,
-        operation_name=f"runtime_metrics.incr:{metric_name}",
-    )
+    schedule_fail_open(_incr)
 
 
 async def snapshot() -> dict[str, int]:
@@ -32,5 +29,4 @@ async def snapshot() -> dict[str, int]:
     return await redis_fail_open(
         _snapshot,
         default={},
-        operation_name="runtime_metrics.snapshot",
     )

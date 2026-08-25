@@ -81,7 +81,16 @@ export function CrawlQuickSettingsCard({
                 <div className="flex items-center gap-1.5">
                   <div className="type-body-sm font-semibold text-foreground">Mode</div>
                   <Tooltip content="Advanced Mode exposes the full fetch, locality, diagnostics, and selector controls.">
-                    <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
+                    <button
+                      type="button"
+                      aria-label="More information"
+                      className="focus-ring inline-flex rounded-sm"
+                    >
+                      <Info
+                        aria-hidden="true"
+                        className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary"
+                      />
+                    </button>
                   </Tooltip>
                 </div>
               </div>
@@ -104,7 +113,16 @@ export function CrawlQuickSettingsCard({
                 <Sparkles className="size-4 shrink-0 text-muted" />
                 <span className="type-body-sm font-semibold text-foreground">LLM Processing</span>
                 <Tooltip content="Per-run enrichment only. This does not overwrite saved domain defaults.">
-                  <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
+                  <button
+                    type="button"
+                    aria-label="More information"
+                    className="focus-ring inline-flex rounded-sm"
+                  >
+                    <Info
+                      aria-hidden="true"
+                      className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary"
+                    />
+                  </button>
                 </Tooltip>
               </div>
               <Toggle
@@ -119,7 +137,16 @@ export function CrawlQuickSettingsCard({
                 <Globe className="size-4 shrink-0 text-muted" />
                 <span className="type-body-sm font-semibold text-foreground">Proxy List</span>
                 <Tooltip content={'Example:\nhttp://host:port\nhttp://user:pass@host:port'}>
-                  <Info className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary" />
+                  <button
+                    type="button"
+                    aria-label="More information"
+                    className="focus-ring inline-flex rounded-sm"
+                  >
+                    <Info
+                      aria-hidden="true"
+                      className="size-3.5 cursor-help text-subtle transition-colors hover:text-secondary"
+                    />
+                  </button>
                 </Tooltip>
               </div>
               <Toggle

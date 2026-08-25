@@ -53,8 +53,7 @@ def clear_url_progress_counter(run_id: int) -> None:
         lambda redis: redis.delete(
             _url_progress_counter_key(run_id),
             _db_log_counter_key(run_id),
-        ),
-        operation_name=f"clear_url_progress_counter:{run_id}",
+        )
     )
 
 
@@ -168,7 +167,6 @@ async def _should_persist_log(level: str, run_id: int, message: str) -> bool:
     redis_decision = await redis_fail_open(
         _decide,
         default=None,
-        operation_name=f"should_persist_log:{run_id}",
     )
     if redis_decision is not None:
         return redis_decision

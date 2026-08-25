@@ -13,7 +13,6 @@ def test_product_intelligence_query_uses_mpn_not_source_domain_or_sku() -> None:
             "mpn": "04511-2406",
             "sku": "BELK-ONLY-123",
         },
-        source_domain_value="belk.com",
     )
 
     assert queries
@@ -40,7 +39,6 @@ def test_product_intelligence_query_prefers_upc_over_mpn_as_identifier() -> None
             "mpn": "04511-2406",
             "sku": "BELK-ONLY-123",
         },
-        source_domain_value="belk.com",
     )
 
     assert queries
@@ -66,7 +64,6 @@ def test_product_intelligence_query_strips_repeated_brand_and_targets_brand_doma
             "title": "Wrangler\u00ae Relaxed Bootcut Jeans",
             "url": "https://www.belk.com/p/wrangler--relaxed-bootcut-jeans-/3200040112342570.html",
         },
-        source_domain_value="belk.com",
     )
 
     assert queries[0] == "site:wrangler.com wrangler Relaxed Bootcut Jeans"
@@ -81,7 +78,6 @@ def test_product_intelligence_query_targets_configured_belk_brand_domains() -> N
             "brand": "Baggallini",
             "title": "Modern Everywhere Bag",
         },
-        source_domain_value="belk.com",
     )
 
     assert queries[0] == "site:baggallini.com baggallini Modern Everywhere Bag"
@@ -99,7 +95,6 @@ def test_product_intelligence_query_keeps_brand_in_all_queries_when_brand_exists
             "mpn": "MC150G",
             "sku": "20510856",
         },
-        source_domain_value="myntra.com",
     )
 
     assert queries
@@ -139,7 +134,6 @@ def test_product_intelligence_query_prefers_clean_brand_query_before_buy_for_agg
             "mpn": "EEC50G",
             "sku": "31145778",
         },
-        source_domain_value="flipkart.com",
     )
 
     assert queries
@@ -159,7 +153,6 @@ def test_product_intelligence_query_uses_brandless_fallback_only_when_brand_miss
             "mpn": "MC150G",
             "sku": "20510856",
         },
-        source_domain_value="myntra.com",
     )
 
     assert queries
@@ -180,7 +173,6 @@ def test_product_intelligence_query_ignores_numeric_style_but_allows_alphanumeri
             "title": "Relaxed Bootcut Jeans",
             "style": "3200040112342570",
         },
-        source_domain_value="belk.com",
     )
     style_queries = build_search_queries(
         {
@@ -188,7 +180,6 @@ def test_product_intelligence_query_ignores_numeric_style_but_allows_alphanumeri
             "title": "Relaxed Bootcut Jeans",
             "style": "1123A257",
         },
-        source_domain_value="belk.com",
     )
 
     assert all("3200040112342570" not in query for query in numeric_queries)
@@ -202,7 +193,6 @@ def test_product_intelligence_query_preserves_possessives_in_title_phrases() -> 
             "brand": "Levis",
             "title": "Levi's Men's 511 Slim-Fit Jeans",
         },
-        source_domain_value="belk.com",
     )
 
     assert queries
@@ -483,7 +473,7 @@ def test_product_intelligence_query_uses_brand_and_currency_inferred_from_belk_s
             "price": "$22.50",
         }
     )
-    queries = build_search_queries(snapshot, source_domain_value="belk.com")
+    queries = build_search_queries(snapshot)
 
     assert snapshot["brand"] == "Modern Southern Home"
     assert snapshot["normalized_brand"] == "modern southern home"

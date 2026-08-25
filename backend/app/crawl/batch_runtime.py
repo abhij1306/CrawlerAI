@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import suppress
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.core.config import settings
@@ -85,10 +86,7 @@ async def resolve_category_urls_from_sitemap(
 
 
 _DEFAULT_URL_CONCURRENCY = 1
-
-
-async def _prewarm_browser_pool() -> None:
-    return None
+type URLResultItem = tuple[int, str, URLProcessingResult]
 
 
 def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
@@ -161,10 +159,6 @@ def _safe_sitemap_max_urls(value: object) -> int:
         return SITEMAP_DEFAULT_MAX_URLS
 
 
-def _allow_sitemap_homepage_fallback(run: CrawlRun, settings_view) -> bool:
-    return False
-
-
 async def _resolve_run_urls(run: CrawlRun, settings_view) -> list[str]:
     urls = settings_view.urls()
     if run.run_type in ("batch", "csv") and urls:
@@ -181,9 +175,7 @@ async def _resolve_run_urls(run: CrawlRun, settings_view) -> list[str]:
             filter_keyword=settings_view.get("sitemap_filter_keyword")
             or SITEMAP_DEFAULT_FILTER_KEYWORD,
             max_urls=_safe_sitemap_max_urls(settings_view.get("sitemap_max_urls")),
-            allow_homepage_fallback=_allow_sitemap_homepage_fallback(
-                run, settings_view
-            ),
+            allow_homepage_fallback=False,
         )
     elif run.url:
         url_list = [run.url]
@@ -347,6 +339,152 @@ async def _apply_control_checkpoint(
     return True
 
 
+@dataclass(slots=True)
+class _ParallelRunState:
+    session: AsyncSession
+    run: CrawlRun
+    pending_items: list[tuple[int, str]]
+    total_urls: int
+    progress_state: BatchRunProgressState
+    max_records: int
+    record_limit: int
+    url_timeout_seconds: float
+    owner: str
+    concurrency: int
+    commit_gate: ProgressCommitGate
+    stop_event: asyncio.Event = field(default_factory=asyncio.Event)
+    verdicts: list[str] = field(default_factory=list)
+    workers: list[asyncio.Task[None]] = field(default_factory=list)
+    record_count: int = 0
+    result_queue: asyncio.Queue[URLResultItem] = field(init=False)
+    work_iter: Iterator[tuple[int, str]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.record_count = self.progress_state.persisted_record_count
+        size_factor = max(1, crawler_runtime_settings.parallel_result_queue_size_factor)
+        self.result_queue = asyncio.Queue(maxsize=self.concurrency * size_factor)
+        self.work_iter = iter(self.pending_items)
+
+    def start_workers(self) -> None:
+        self.workers = [
+            asyncio.create_task(
+                self._worker(), name=f"crawl-run-{self.run.id}-worker-{index}"
+            )
+            for index in range(self.concurrency)
+        ]
+
+    async def _worker(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                idx, url = next(self.work_iter)
+            except StopIteration:
+                return
+            result = await process_url_in_owned_session(
+                session_factory=SessionLocal,
+                persist_failure_log=_persist_url_failure_log,
+                processor=process_single_url,
+                run_id=int(self.run.id),
+                idx=idx,
+                total_urls=self.total_urls,
+                url=url,
+                max_records=self.record_limit,
+                url_timeout_seconds=self.url_timeout_seconds,
+            )
+            await self.result_queue.put(result)
+
+    async def record_result(self, item: URLResultItem) -> None:
+        idx, url, url_result = item
+        verdict, records_count = await _record_url_result(
+            self.session,
+            run=self.run,
+            progress_state=self.progress_state,
+            idx=idx,
+            url=url,
+            url_result=url_result,
+            owner=self.owner,
+            commit_gate=self.commit_gate,
+        )
+        self.verdicts.append(verdict)
+        self.record_count += records_count
+
+    async def drain_results(self) -> None:
+        while not self.result_queue.empty():
+            await self.record_result(self.result_queue.get_nowait())
+
+    async def stop_and_join(self) -> None:
+        self.stop_event.set()
+        await self.drain_results()
+        await self.cancel_workers()
+        await self.drain_results()
+
+    async def cancel_workers(self) -> None:
+        for worker in self.workers:
+            worker.cancel()
+        await asyncio.gather(*self.workers, return_exceptions=True)
+
+    def raise_worker_error(self) -> None:
+        error = next(
+            (
+                worker.exception()
+                for worker in self.workers
+                if worker.done() and not worker.cancelled() and worker.exception()
+            ),
+            None,
+        )
+        if error is not None:
+            raise error
+
+    async def checkpoint_stops_run(self) -> bool:
+        status_value, control_request = await _run_control_checkpoint(int(self.run.id))
+        if control_request in (CONTROL_REQUEST_PAUSE, CONTROL_REQUEST_KILL):
+            await self.stop_and_join()
+            await _apply_control_checkpoint(
+                self.session, self.run, control_request, owner=self.owner
+            )
+            return True
+        if checkpoint_status_stops_run(status_value):
+            await self.stop_and_join()
+            return True
+        return False
+
+    async def stop_at_record_limit(self) -> bool:
+        if self.record_count < self.max_records:
+            return False
+        await self.stop_and_join()
+        message = f"Stopped after reaching max_records={self.max_records}"
+        await log_event(self.session, self.run.id, "info", message)
+        await self.session.commit()
+        return True
+
+    async def execute(self) -> tuple[list[str], int]:
+        self.start_workers()
+        tick_seconds = max(0.05, crawler_runtime_settings.parallel_control_tick_seconds)
+        try:
+            while not (
+                all(worker.done() for worker in self.workers)
+                and self.result_queue.empty()
+            ):
+                try:
+                    await self.record_result(
+                        await asyncio.wait_for(self.result_queue.get(), tick_seconds)
+                    )
+                    await self.drain_results()
+                except TimeoutError:
+                    pass
+                self.raise_worker_error()
+                if (
+                    await self.checkpoint_stops_run()
+                    or await self.stop_at_record_limit()
+                ):
+                    return self.verdicts, self.record_count
+        except BaseException:
+            self.stop_event.set()
+            await self.cancel_workers()
+            raise
+        self.raise_worker_error()
+        return self.verdicts, self.record_count
+
+
 async def _process_urls_in_parallel(
     session: AsyncSession,
     *,
@@ -360,7 +498,6 @@ async def _process_urls_in_parallel(
     owner: str,
 ) -> tuple[list[str], int]:
     concurrency = _parallel_url_concurrency(total_urls, settings_view)
-    record_limit = _parallel_worker_record_limit(max_records, concurrency)
     await log_event(
         session,
         run.id,
@@ -368,125 +505,19 @@ async def _process_urls_in_parallel(
         f"Processing {total_urls} URL(s) with concurrency={concurrency}",
     )
     await session.commit()
-    run_id = int(run.id)
-    commit_gate = ProgressCommitGate(settings.run_progress_commit_interval_seconds)
-    # 2.11 worker pool: shared-iterator intake (atomic under the single event
-    # loop) keeps peak live tasks at O(concurrency); stop ends intake only.
-    stop_event = asyncio.Event()
-    size_factor = max(1, crawler_runtime_settings.parallel_result_queue_size_factor)
-    result_queue: asyncio.Queue[tuple[int, str, URLProcessingResult]] = asyncio.Queue(
-        maxsize=concurrency * size_factor
-    )
-    work_iter = iter(pending_items)
-
-    async def _worker() -> None:
-        while not stop_event.is_set():
-            try:
-                idx, url = next(work_iter)
-            except StopIteration:
-                return
-            await result_queue.put(
-                await process_url_in_owned_session(
-                    session_factory=SessionLocal,
-                    persist_failure_log=_persist_url_failure_log,
-                    processor=process_single_url,
-                    run_id=run_id,
-                    idx=idx,
-                    total_urls=total_urls,
-                    url=url,
-                    max_records=record_limit,
-                    url_timeout_seconds=url_timeout_seconds,
-                )
-            )
-
-    workers = [
-        asyncio.create_task(_worker(), name=f"crawl-run-{run_id}-worker-{index}")
-        for index in range(concurrency)
-    ]
-    verdicts: list[str] = []
-    record_count = progress_state.persisted_record_count
-
-    async def _record_result(idx, url, url_result) -> None:
-        nonlocal record_count
-        verdict, records_count = await _record_url_result(
-            session,
-            run=run,
-            progress_state=progress_state,
-            idx=idx,
-            url=url,
-            url_result=url_result,
-            owner=owner,
-            commit_gate=commit_gate,
-        )
-        verdicts.append(verdict)
-        record_count += records_count
-
-    async def _drain_result_queue() -> None:
-        while True:
-            try:
-                await _record_result(*result_queue.get_nowait())
-            except asyncio.QueueEmpty:
-                return
-
-    async def _stop_and_join_workers() -> None:
-        # The queue always absorbs in-flight puts (≤ concurrency results
-        # against twice that capacity), so the join cannot deadlock.
-        stop_event.set()
-        await _drain_result_queue()
-        with suppress(BaseException):
-            await asyncio.gather(*workers, return_exceptions=True)
-        await _drain_result_queue()
-
-    def _first_worker_error() -> BaseException | None:
-        done = (w for w in workers if w.done() and not w.cancelled())
-        return next((w.exception() for w in done if w.exception()), None)
-
-    tick_seconds = max(0.05, crawler_runtime_settings.parallel_control_tick_seconds)
-    try:
-        while True:
-            if all(worker.done() for worker in workers) and result_queue.empty():
-                break
-            item: tuple[int, str, URLProcessingResult] | None = None
-            try:
-                item = await asyncio.wait_for(result_queue.get(), tick_seconds)
-            except TimeoutError:
-                # No completion arrived this tick; fall through to re-check worker state.
-                pass
-            if item is not None:
-                # Batch ready completions (mirrors the old done-set cadence).
-                await _record_result(*item)
-                await _drain_result_queue()
-            if (worker_error := _first_worker_error()) is not None:
-                raise worker_error
-            # Checkpoint per batch and idle tick; stalled runs see pause/kill.
-            status_value, control_request = await _run_control_checkpoint(run_id)
-            if control_request in (CONTROL_REQUEST_PAUSE, CONTROL_REQUEST_KILL):
-                await _stop_and_join_workers()
-                await _apply_control_checkpoint(
-                    session, run, control_request, owner=owner
-                )
-                return verdicts, record_count
-            if checkpoint_status_stops_run(status_value):
-                await _stop_and_join_workers()
-                return verdicts, record_count
-            if record_count >= max_records:
-                await _stop_and_join_workers()
-                await log_event(
-                    session,
-                    run.id,
-                    "info",
-                    f"Stopped after reaching max_records={max_records}",
-                )
-                await session.commit()
-                break
-    except BaseException:
-        stop_event.set()
-        with suppress(BaseException):
-            await asyncio.gather(*workers, return_exceptions=True)
-        raise
-    if (worker_error := _first_worker_error()) is not None:
-        raise worker_error
-    return verdicts, record_count
+    return await _ParallelRunState(
+        session=session,
+        run=run,
+        pending_items=pending_items,
+        total_urls=total_urls,
+        progress_state=progress_state,
+        max_records=max_records,
+        record_limit=_parallel_worker_record_limit(max_records, concurrency),
+        url_timeout_seconds=url_timeout_seconds,
+        owner=owner,
+        concurrency=concurrency,
+        commit_gate=ProgressCommitGate(settings.run_progress_commit_interval_seconds),
+    ).execute()
 
 
 async def _log_sequential_url_start(
@@ -681,7 +712,6 @@ async def _process_run_with_span(
         total_urls = len(url_list)
         if total_urls == 0:
             raise ValueError("No URL provided")
-        await _prewarm_browser_pool()
         run_domain = normalize_domain(url_list[0]) if url_list else ""
         set_logfire_attributes(run_span, url_count=total_urls, domain=run_domain)
 

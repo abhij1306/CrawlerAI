@@ -242,7 +242,6 @@ def _parent_derived_from_variants(
             primary_offer_entity_id,
             variants,
             expected_variant_count=expected_variant_count,
-            existing_fact_keys=existing_fact_keys,
         )
     )
     if (
@@ -486,7 +485,6 @@ def _aggregate_variant_availability(
     variants: tuple[VariantDecision, ...],
     *,
     expected_variant_count: int,
-    existing_fact_keys: frozenset[tuple[str, str]],
 ) -> tuple[DerivedFact, ...]:
     lineages = tuple(row.lineage.get("availability") for row in variants)
     if len(variants) != expected_variant_count or _has_parent_inherited_lineage(

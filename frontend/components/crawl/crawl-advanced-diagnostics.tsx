@@ -36,7 +36,16 @@ export function CrawlAdvancedDiagnostics({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Output &amp; Diagnostics</h3>
         <Tooltip content="Choose what evidence and artifacts stay attached to this run.">
-          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
+          <button
+            type="button"
+            aria-label="More information"
+            className="focus-ring inline-flex rounded-sm"
+          >
+            <Info
+              aria-hidden="true"
+              className="size-3 cursor-help text-muted transition-colors hover:text-secondary"
+            />
+          </button>
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>

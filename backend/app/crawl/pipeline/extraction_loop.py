@@ -100,17 +100,8 @@ async def process_single_url(
     session: AsyncSession,
     run: CrawlRun,
     url: str,
-    config: URLProcessingConfig | None = None,
+    config: URLProcessingConfig,
     *,
-    url_timeout_seconds: float | None = None,
-    proxy_list: list[str] | None = None,
-    traversal_mode: str | None = None,
-    max_pages: int | None = None,
-    max_scrolls: int | None = None,
-    max_records: int | None = None,
-    sleep_ms: int | None = None,
-    update_run_state: bool = True,
-    persist_logs: bool = True,
     prefetched_acquisition: PageAcquisitionResult | None = None,
 ) -> URLProcessingResult:
     settings_view = run.settings_view
@@ -119,15 +110,6 @@ async def process_single_url(
         run=run,
         url=url,
         config=config,
-        url_timeout_seconds=url_timeout_seconds,
-        proxy_list=proxy_list,
-        traversal_mode=traversal_mode,
-        max_pages=max_pages,
-        max_scrolls=max_scrolls,
-        max_records=max_records,
-        sleep_ms=sleep_ms,
-        update_run_state=update_run_state,
-        persist_logs=persist_logs,
     )
     with logfire_span(
         "pipeline.url.process",
@@ -191,7 +173,7 @@ async def _run_robots_gate(
     if context.run.settings_view.respect_robots_txt():
         robots_result = await check_url_crawlability(context.url)
         if not robots_result.allowed:
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "warning",
                 f"[ROBOTS] Blocked by robots.txt: {context.url}",
@@ -218,13 +200,13 @@ async def _run_robots_gate(
                 ),
             )
         if robots_result.outcome == ROBOTS_MISSING:
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "info",
                 f"[ROBOTS] No robots.txt found for {context.url}; continuing",
             )
         if robots_result.outcome == ROBOTS_FETCH_FAILURE:
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "warning",
                 f"[ROBOTS] robots.txt check failed for {context.url}; continuing",
@@ -276,19 +258,19 @@ async def _run_acquisition_stage(
             )
             timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
             load_ms = browser_page_load_elapsed_ms(timings) or timings.get("total", 0)
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "info",
                 _browser_launch_log_message(acquisition_result),
             )
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "info",
                 f"Page loaded in {load_ms}ms",
             )
     else:
         status = getattr(acquisition_result, "status_code", 0)
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "info",
             f"Acquired payload via {method} (status={status})",
@@ -296,7 +278,7 @@ async def _run_acquisition_stage(
 
     browser_attempted = _browser_attempted(acquisition_result)
     if _effective_blocked(acquisition_result) and not browser_attempted:
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "warning",
             f"Acquisition detected rate limiting or bot protection for {context.url}",
@@ -444,7 +426,7 @@ async def _run_persistence_stage(
         acquisition_result,
         _records_as_dicts(extracted_records),
     ):
-        await _log_pipeline_event(
+        _log_pipeline_event(
             context,
             "info",
             f"Persisted {persisted_count} record(s) for {acquisition_result.final_url}",
@@ -468,14 +450,7 @@ async def _run_persistence_stage(
         record_provenance=persisted_batch.provenance,
         verdict=verdict,
     )
-    await update_acquisition_contract_memory(
-        context,
-        acquisition_result=acquisition_result,
-        records=_records_as_dicts(extracted_records),
-        persisted_count=persisted_count,
-        verdict=verdict,
-    )
-    return URLProcessingResult(
+    processing_result = URLProcessingResult(
         records=extracted_records,
         verdict=verdict,
         url_metrics=cast(
@@ -486,6 +461,12 @@ async def _run_persistence_stage(
             ),
         ),
     )
+    await update_acquisition_contract_memory(
+        context,
+        acquisition_result=acquisition_result,
+        url_result=processing_result,
+    )
+    return processing_result
 
 
 async def _publish_url_result_artifacts(
@@ -576,7 +557,7 @@ async def _record_extraction_memory(
             )
             raise
         try:
-            await _log_pipeline_event(
+            _log_pipeline_event(
                 context,
                 "error",
                 f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",

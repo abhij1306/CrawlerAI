@@ -107,7 +107,7 @@ class BrowserAttemptRunner:
     ) -> PageFetchResult | None:
         if self.plan.retry_budget_exhausted:
             return None
-        engine_attempts = attempt_host_policy.engine_attempts(self, proxy)
+        engine_attempts = attempt_host_policy.engine_attempts(self)
         escalation_lane = browser_escalation_lane(
             context=self.context,
             reason=self.reason,

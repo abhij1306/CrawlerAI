@@ -181,7 +181,7 @@ async def test_mcp_tools_call_public_api(monkeypatch: pytest.MonkeyPatch) -> Non
         client, url="https://example.com/p/1", fields=["price"], use_cache=True
     )
     domain = await check_domain(client, domain="example.com")
-    caps = await list_capabilities()
+    caps = list_capabilities()
 
     assert product["status"] == "ok"
     assert domain["status"] == "ok"

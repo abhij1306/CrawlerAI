@@ -3,6 +3,35 @@ import type { ReactNode } from 'react';
 
 import { cn } from '../../lib/utils';
 
+function FieldLabel({ label, required }: Readonly<{ label: string; required?: boolean }>) {
+  return (
+    <>
+      {label}
+      {required ? <span className="ml-0.5 text-danger">*</span> : null}
+    </>
+  );
+}
+
+function FieldMessages({
+  hint,
+  error,
+  hintId,
+  errorId,
+}: Readonly<{ hint?: string; error?: ReactNode; hintId?: string; errorId?: string }>) {
+  if (error) {
+    return (
+      <span id={errorId} role="alert" className="text-base text-danger-text">
+        {error}
+      </span>
+    );
+  }
+  return hint ? (
+    <span id={hintId} className="text-base text-muted">
+      {hint}
+    </span>
+  ) : null;
+}
+
 /**
  * Field — wraps a control with a label, optional hint, and an inline
  * error. Supports both standard nested child elements (for CrawlerAI backwards
@@ -37,24 +66,14 @@ export function Field({
     return (
       <div className={cn('grid gap-1.5', className)}>
         <label htmlFor={id} className="text-base font-medium text-secondary">
-          {label}
-          {required ? <span className="ml-0.5 text-danger">*</span> : null}
+          <FieldLabel label={label} required={required} />
         </label>
         {children({
           id,
           'aria-invalid': error ? true : undefined,
           'aria-describedby': describedBy,
         })}
-        {hint && !error ? (
-          <span id={hintId} className="text-base text-muted">
-            {hint}
-          </span>
-        ) : null}
-        {error ? (
-          <span id={errorId} role="alert" className="text-base text-danger-text">
-            {error}
-          </span>
-        ) : null}
+        <FieldMessages hint={hint} error={error} hintId={hintId} errorId={errorId} />
       </div>
     );
   }
@@ -63,16 +82,10 @@ export function Field({
   return (
     <label className={cn('grid gap-1.5 cursor-text', className)}>
       <span className="text-base font-medium text-secondary">
-        {label}
-        {required ? <span className="ml-0.5 text-danger">*</span> : null}
+        <FieldLabel label={label} required={required} />
       </span>
       {children}
-      {hint && !error ? <span className="text-base text-muted">{hint}</span> : null}
-      {error ? (
-        <span role="alert" className="text-base text-danger-text">
-          {error}
-        </span>
-      ) : null}
+      <FieldMessages hint={hint} error={error} />
     </label>
   );
 }

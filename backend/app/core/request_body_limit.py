@@ -42,66 +42,86 @@ class RequestBodyLimitMiddleware:
         if content_length is not None and content_length > limit:
             await _too_large_response(scope, receive, send)
             return
-        buffered_messages: deque[dict[str, Any]] = deque()
-        buffered_body = bytearray()
-        request_buffered = False
-        consumed = 0
-        while True:
-            message = await receive()
-            if message.get("type") != "http.request":
-                buffered_messages.append(message)
-                break
-            request_buffered = True
-            chunk = message.get("body", b"")
-            consumed += len(chunk)
-            if consumed > limit:
-                await _too_large_response(scope, receive, send)
-                return
-            buffered_body.extend(chunk)
-            if not message.get("more_body", False):
-                break
-
-        if request_buffered:
-            buffered_messages.appendleft(
-                {
-                    "type": "http.request",
-                    "body": bytes(buffered_body),
-                    "more_body": False,
-                }
-            )
-
-        response_started = False
-
-        async def limited_receive():
-            nonlocal consumed
-            if buffered_messages:
-                return buffered_messages.popleft()
-            message = await receive()
-            if message.get("type") == "http.request":
-                consumed += len(message.get("body", b""))
-                if consumed > limit:
-                    raise RequestBodyTooLarge
-            return message
-
-        async def tracking_send(message):
-            nonlocal response_started
-            if message.get("type") == "http.response.start":
-                response_started = True
-            await send(message)
-
         try:
-            await self.app(scope, limited_receive, tracking_send)
+            buffered_messages, consumed = await _buffer_request(receive, limit)
         except RequestBodyTooLarge:
-            if not response_started:
-                await _too_large_response(scope, receive, send)
-            else:
-                await send(
-                    {
-                        "type": "http.response.body",
-                        "body": b"",
-                        "more_body": False,
-                    }
+            await _too_large_response(scope, receive, send)
+            return
+        await _call_with_limited_body(
+            self.app,
+            scope=scope,
+            receive=receive,
+            send=send,
+            buffered_messages=buffered_messages,
+            consumed=consumed,
+            limit=limit,
+        )
+
+
+async def _buffer_request(receive, limit: int) -> tuple[deque[dict[str, Any]], int]:
+    messages: deque[dict[str, Any]] = deque()
+    body = bytearray()
+    consumed = 0
+    request_buffered = False
+    while True:
+        message = await receive()
+        if message.get("type") != "http.request":
+            messages.append(message)
+            if request_buffered:
+                messages.appendleft(
+                    {"type": "http.request", "body": bytes(body), "more_body": True}
                 )
+            return messages, consumed
+        chunk = message.get("body", b"")
+        request_buffered = True
+        consumed += len(chunk)
+        if consumed > limit:
+            raise RequestBodyTooLarge
+        body.extend(chunk)
+        if not message.get("more_body", False):
+            messages.appendleft(
+                {"type": "http.request", "body": bytes(body), "more_body": False}
+            )
+            return messages, consumed
+
+
+async def _call_with_limited_body(
+    app: AsgiCallable,
+    *,
+    scope,
+    receive,
+    send,
+    buffered_messages: deque[dict[str, Any]],
+    consumed: int,
+    limit: int,
+) -> None:
+    response_started = False
+
+    async def limited_receive():
+        nonlocal consumed
+        if buffered_messages:
+            return buffered_messages.popleft()
+        message = await receive()
+        if message.get("type") == "http.request":
+            consumed += len(message.get("body", b""))
+            if consumed > limit:
+                raise RequestBodyTooLarge
+        return message
+
+    async def tracking_send(message):
+        nonlocal response_started
+        response_started = (
+            response_started or message.get("type") == "http.response.start"
+        )
+        await send(message)
+
+    try:
+        await app(scope, limited_receive, tracking_send)
+    except RequestBodyTooLarge:
+        if not response_started:
+            await _too_large_response(scope, receive, send)
+            return
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
 def request_body_limit_bytes(path: str) -> int:

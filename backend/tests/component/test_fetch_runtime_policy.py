@@ -26,7 +26,9 @@ async def test_fetch_page_requires_a_timeout_source(
     )
 
     with pytest.raises(ValueError, match="fetch_page requires timeout_seconds"):
-        await crawl_fetch_runtime.fetch_page("https://example.com/products/widget")
+        await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall("https://example.com/products/widget")
+        )
 
 
 @pytest.mark.asyncio
@@ -61,12 +63,11 @@ async def test_fetch_page_learns_browser_first_after_vendor_blocked_http_recover
         )
 
     @_as_async
-    def _browser_ok(request_url, timeout, **kwargs):
-        del timeout
-        browser_reasons.append(kwargs.get("browser_reason"))
+    def _browser_ok(request):
+        browser_reasons.append(request.browser_reason)
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Rendered</h1></body></html>",
             status_code=200,
             method="browser",
@@ -99,8 +100,12 @@ async def test_fetch_page_learns_browser_first_after_vendor_blocked_http_recover
         _fake_note_host_hard_block,
     )
     try:
-        first = await crawl_fetch_runtime.fetch_page(url, surface="job_listing")
-        second = await crawl_fetch_runtime.fetch_page(url, surface="job_listing")
+        first = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="job_listing")
+        )
+        second = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="job_listing")
+        )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
 
@@ -141,12 +146,11 @@ async def test_fetch_page_learns_browser_first_after_rate_limit_http_recovery(
         )
 
     @_as_async
-    def _browser_ok(request_url, timeout, **kwargs):
-        del timeout
-        browser_reasons.append(kwargs.get("browser_reason"))
+    def _browser_ok(request):
+        browser_reasons.append(request.browser_reason)
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Rendered</h1></body></html>",
             status_code=200,
             method="browser",
@@ -182,8 +186,12 @@ async def test_fetch_page_learns_browser_first_after_rate_limit_http_recovery(
         _fake_note_host_hard_block,
     )
     try:
-        first = await crawl_fetch_runtime.fetch_page(url, surface="ecommerce_detail")
-        second = await crawl_fetch_runtime.fetch_page(url, surface="ecommerce_detail")
+        first = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="ecommerce_detail")
+        )
+        second = await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(url, surface="ecommerce_detail")
+        )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
 
@@ -261,8 +269,10 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -298,15 +308,15 @@ async def test_explicit_browser_preference_skips_host_handoff(
         raise AssertionError("explicit browser run should not use HTTP handoff")
 
     @_as_async
-    def _browser_fetch(request_url: str, _timeout_seconds: float, **kwargs):
-        browser_engines.append(str(kwargs.get("browser_engine")))
+    def _browser_fetch(request):
+        browser_engines.append(str(request.browser_engine))
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body>rendered</body></html>",
             status_code=200,
             method="browser",
-            browser_diagnostics={"browser_engine": kwargs.get("browser_engine")},
+            browser_diagnostics={"browser_engine": request.browser_engine},
         )
 
     monkeypatch.setattr(
@@ -329,10 +339,12 @@ async def test_explicit_browser_preference_skips_host_handoff(
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
-            prefer_browser=True,
-            forced_browser_engine="real_chrome",
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+                prefer_browser=True,
+                forced_browser_engine="real_chrome",
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -367,11 +379,10 @@ async def test_fetch_page_emits_http_strategy_and_escalation_events(
         )
 
     @_as_async
-    def _fake_browser(request_url, timeout, **kwargs):
-        del timeout, kwargs
+    def _fake_browser(request):
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>Widget Prime</h1></body></html>",
             status_code=200,
             method="browser",
@@ -393,9 +404,11 @@ async def test_fetch_page_emits_http_strategy_and_escalation_events(
     )
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
-            on_event=_on_event,
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+                on_event=_on_event,
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -450,9 +463,9 @@ async def test_fetch_page_http_only_returns_retryable_status_without_hidden_retr
         return True
 
     @_as_async
-    def _unexpected_browser(request_url, timeout, **kwargs):
+    def _unexpected_browser(request):
         raise AssertionError(
-            f"browser should not run for http_only retry path: {request_url} {timeout} {kwargs}"
+            f"browser should not run for http_only retry path: {request}"
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _http_retryable_status)
@@ -465,9 +478,11 @@ async def test_fetch_page_http_only_returns_retryable_status_without_hidden_retr
 
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
-            fetch_mode="http_only",
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+                fetch_mode="http_only",
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -502,24 +517,23 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
         raise httpx.ReadTimeout("httpx timed out")
 
     @_as_async
-    def _browser_fetch(request_url, _timeout, **kwargs):
-        del _timeout
-        engine = str(kwargs.get("browser_engine") or "")
+    def _browser_fetch(request):
+        engine = str(request.browser_engine or "")
         browser_engines.append(engine)
         if engine == "patchright":
             raise PlaywrightError(
-                f"Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at {request_url}"
+                f"Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at {request.url}"
             )
         return PageFetchResult(
-            url=request_url,
-            final_url=request_url,
+            url=request.url,
+            final_url=request.url,
             html="<html><body><h1>BestBuy Widget</h1></body></html>",
             status_code=200,
             method="browser",
             blocked=False,
             browser_diagnostics={
                 "browser_engine": engine,
-                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+                "host_policy_snapshot": dict(request.host_policy_snapshot or {}),
             },
         )
 
@@ -532,9 +546,11 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
 
     try:
         result = await crawl_fetch_runtime.fetch_page(
-            url,
-            surface="ecommerce_detail",
-            on_event=_on_event,
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                surface="ecommerce_detail",
+                on_event=_on_event,
+            )
         )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()

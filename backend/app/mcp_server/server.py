@@ -33,8 +33,8 @@ def build_server(client: PublicApiClient | None = None):
         return await _check_domain(api_client, domain=domain)
 
     @mcp.tool
-    async def list_capabilities() -> dict[str, Any]:
-        return await _list_capabilities()
+    def list_capabilities() -> dict[str, Any]:
+        return _list_capabilities()
 
     return mcp
 

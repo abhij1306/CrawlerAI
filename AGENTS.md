@@ -125,24 +125,33 @@ Fix those in place before adding browser interaction or downstream fallbacks.
 
 Apply this to every implementation or code change. Repository scripts decide test scope.
 
-During implementation, after a meaningful code change, run:
-
-```powershell
-.\scripts\check.ps1 -Mode Affected
-```
-
-Do not run the full suite by default. When debugging one known failure, running that exact test
-directly is allowed. Return to the repository script before considering the change complete.
-
-Before declaring implementation complete or pushing, run:
+Do not run repository gates after each implementation step. Finish the planned implementation
+first. Before declaring implementation complete or pushing, run these once, in this order:
 
 ```powershell
 .\scripts\check.ps1
+.\scripts\test.ps1
 ```
 
-This is the canonical local gate. It applies Ruff fixes and formatting, runs mypy, runs VitePlus
-format/lint/type checks with fixes, enforces LOC and complexity, then runs affected tests. Fix every
-failure. Review and include any formatter changes.
+`check.ps1` is the canonical static/fix gate. It applies Ruff fixes and formatting, runs mypy,
+runs VitePlus format/lint/type checks with fixes, and enforces LOC and complexity. `test.ps1`
+separately selects and runs affected backend, frontend, and mapped E2E tests. Fix every failure.
+Review and include any formatter changes.
+
+If `test.ps1` fails, note every file edited while fixing that failure. Rerun the selector with only
+that retry delta, for example:
+
+```powershell
+.\scripts\test.ps1 -ChangedFiles backend/app/example.py,backend/tests/unit/test_example.py
+```
+
+Use `-ChangedFiles` only after an earlier `test.ps1` run in the same task, and include every file
+edited since that run. The first run always uses the full working diff. Agents choose changed files,
+never test files or test scope. Missing production mappings must be added to `validation.json`.
+Never replace a missing mapping with a broad or full-suite fallback.
+
+When debugging one known failure, running that exact test directly is allowed. Return to the
+repository script before considering the change complete.
 
 The pre-push hook runs `.\scripts\check.ps1 -CheckOnly`. It never mutates files. GitHub CI
 remains authoritative and runs full static, unit, integration, frontend, and E2E validation.
@@ -168,7 +177,7 @@ report it separately and change it only when the user asks or the task requires 
 - Pull request: GitHub full suite.
 - Main, release, and nightly: full E2E under GitHub workflow policy.
 
-A coding task is complete only when affected tests and `.\scripts\check.ps1` pass.
+A coding task is complete only when `.\scripts\check.ps1` and `.\scripts\test.ps1` pass.
 
 Frontend tooling is VitePlus. Do not use npm wrappers or Jest-only flags such as
 `--runTestsByPath` or `--runInBand`.

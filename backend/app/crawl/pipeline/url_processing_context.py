@@ -68,79 +68,39 @@ def resolve_run_param(
 
 
 def resolved_url_processing_config(
-    config: URLProcessingConfig | None,
+    config: URLProcessingConfig,
     *,
     surface: str,
-    proxy_list: list[str] | None,
-    traversal_mode: str | None,
-    max_pages: int,
-    max_scrolls: int,
-    max_records: int,
-    sleep_ms: int,
-    update_run_state: bool,
-    persist_logs: bool,
 ) -> URLProcessingConfig:
-    if config is not None:
-        plan = config.resolved_acquisition_plan(surface=surface)
-        resolved_proxy_list = list(
-            plan.proxy_list or config.proxy_list or proxy_list or []
-        )
-        resolved_traversal_mode = (
-            plan.traversal_mode
-            if plan.traversal_mode is not None
-            else config.traversal_mode
-            if config.traversal_mode is not None
-            else traversal_mode
-        )
-        safety_iteration_cap = int(
-            crawler_runtime_settings.traversal_max_iterations_cap
-        )
-        resolved_max_pages = min(
-            resolve_run_param(plan.max_pages, config.max_pages, max_pages),
-            safety_iteration_cap,
-        )
-        resolved_max_scrolls = min(
-            resolve_run_param(plan.max_scrolls, config.max_scrolls, max_scrolls),
-            safety_iteration_cap,
-        )
-        resolved_max_records = resolve_run_param(
-            plan.max_records,
-            config.max_records,
-            max_records,
-        )
-        resolved_sleep_ms = resolve_run_param(
-            plan.sleep_ms,
-            config.sleep_ms,
-            sleep_ms,
-            min_value=0,
-        )
-        return URLProcessingConfig.from_acquisition_plan(
-            AcquisitionIntent(
-                surface=surface,
-                proxy_list=tuple(resolved_proxy_list),
-                traversal_mode=resolved_traversal_mode,
-                max_pages=resolved_max_pages,
-                max_scrolls=resolved_max_scrolls,
-                max_records=resolved_max_records,
-                sleep_ms=resolved_sleep_ms,
-            ),
-            update_run_state=config.update_run_state,
-            persist_logs=config.persist_logs,
-            prefetch_only=config.prefetch_only,
-            record_writer=config.record_writer,
-        )
+    plan = config.resolved_acquisition_plan(surface=surface)
+    safety_iteration_cap = int(crawler_runtime_settings.traversal_max_iterations_cap)
     return URLProcessingConfig.from_acquisition_plan(
         AcquisitionIntent(
             surface=surface,
-            proxy_list=tuple(list(proxy_list or [])),
-            traversal_mode=traversal_mode,
-            max_pages=max_pages,
-            max_scrolls=max_scrolls,
-            max_records=max_records,
-            sleep_ms=sleep_ms,
+            proxy_list=tuple(plan.proxy_list or config.proxy_list),
+            traversal_mode=plan.traversal_mode or config.traversal_mode,
+            max_pages=min(
+                resolve_run_param(plan.max_pages, config.max_pages, config.max_pages),
+                safety_iteration_cap,
+            ),
+            max_scrolls=min(
+                resolve_run_param(
+                    plan.max_scrolls, config.max_scrolls, config.max_scrolls
+                ),
+                safety_iteration_cap,
+            ),
+            max_records=resolve_run_param(
+                plan.max_records, config.max_records, config.max_records
+            ),
+            sleep_ms=resolve_run_param(
+                plan.sleep_ms, config.sleep_ms, config.sleep_ms, min_value=0
+            ),
         ),
-        update_run_state=update_run_state,
-        persist_logs=persist_logs,
+        update_run_state=config.update_run_state,
+        persist_logs=config.persist_logs,
+        prefetch_only=config.prefetch_only,
+        record_writer=config.record_writer,
+        url_timeout_seconds=config.url_timeout_seconds,
     )
 
 
@@ -149,21 +109,12 @@ def build_url_processing_context(
     session: AsyncSession,
     run: CrawlRun,
     url: str,
-    config: URLProcessingConfig | None,
-    url_timeout_seconds: float | None,
-    proxy_list: list[str] | None,
-    traversal_mode: str | None,
-    max_pages: int | None,
-    max_scrolls: int | None,
-    max_records: int | None,
-    sleep_ms: int | None,
-    update_run_state: bool,
-    persist_logs: bool,
+    config: URLProcessingConfig,
 ) -> URLProcessingContext:
     settings_view = run.settings_view
     resolved_timeout = (
-        float(url_timeout_seconds)
-        if url_timeout_seconds is not None
+        float(config.url_timeout_seconds)
+        if config.url_timeout_seconds is not None
         else settings_view.url_timeout_seconds()
         if settings_view.get("url_timeout_seconds") not in (None, "")
         else crawler_runtime_settings.default_url_process_timeout_seconds()
@@ -171,20 +122,6 @@ def build_url_processing_context(
     resolved_config = resolved_url_processing_config(
         config,
         surface=run.surface,
-        proxy_list=proxy_list if proxy_list is not None else settings_view.proxy_list(),
-        traversal_mode=traversal_mode
-        if traversal_mode is not None
-        else settings_view.traversal_mode(),
-        max_pages=max_pages if max_pages is not None else settings_view.max_pages(),
-        max_scrolls=max_scrolls
-        if max_scrolls is not None
-        else settings_view.max_scrolls(),
-        max_records=max_records
-        if max_records is not None
-        else settings_view.max_records(),
-        sleep_ms=sleep_ms if sleep_ms is not None else settings_view.sleep_ms(),
-        update_run_state=update_run_state,
-        persist_logs=persist_logs,
     )
     return URLProcessingContext(
         session=session,

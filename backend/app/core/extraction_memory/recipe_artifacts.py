@@ -48,7 +48,7 @@ def read_recipe_json_artifact(
         return None
     try:
         return json.loads(nodes[index].text())
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return None
 
 
@@ -80,7 +80,7 @@ def _structured_attribute_payload(
         return None
     try:
         return json.loads(values[index])
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return None
 
 
