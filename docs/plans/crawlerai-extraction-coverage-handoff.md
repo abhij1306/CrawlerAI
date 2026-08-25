@@ -48,8 +48,12 @@ plan order.
 
 - Do not treat assertion counts as a target, a ratchet, or a definition of done.
   Do not add CI corpus gates.
-- Do use the corpus to *find* systemic defects - it is how the `sku` finding
-  below was found.
+- Do use the corpus to *find* systemic defects - it is how the pooled-subject
+  finding below was found.
+- **Publish what the site exposes and nothing else.** Do not invent a value, do
+  not suppress one the site stated, and do not add shape heuristics that decide
+  a value "looks wrong". Where the corpus wants a value the site never exposed,
+  the corpus is wrong.
 - Where the corpus contradicts itself (it does: casing and title length), decide
   the correct contract on its own merits and edit the corpus to match. It is a
   fixture; you may change it.
@@ -83,42 +87,75 @@ before and after a change to see what you moved; do not chase the total.
 
 ## Work items, most systemic first
 
-### 1. SKU vs barcode identity selection - 19 sites
+### 1. Identifier roles: publish what the site exposes, invent nothing
 
-The strongest systemic defect found so far. Of 19 sites with a wrong or missing
-`sku`, 7 publish a wrong one, and the pattern across them is clean and generic:
+**The governing rule for every identifier: show what the site exposes. Never
+create a value the site did not state, and never suppress one it did.**
 
-| Case | Expected `sku` | Published | Expected all digits? | Published all digits? |
-| --- | --- | --- | --- | --- |
-| 5 | `HQ7978-103` | `45993954738410` | no | **yes** |
-| 31 | `PE1001550` | `100155080614` | no | **yes** |
-| 66 | `395205_01` | `4099686132767` | no | **yes** |
-| 71 | `4D3032G-PCG` | `198629014314` | no | **yes** |
-| 4 | `HJ0139-045` | `21001455` | no | **yes** |
-| 2 | `DIME2SP2542BLK` | `DIME2SP2542BLK-S` | no | no |
-| 39 | `870543 4GAK3 1360` | `8705434GAK31360` | no | no |
+`sku`, `mpn`, `gtin`/`barcode`, `product_id` and `style_id` are distinct roles
+that may hold all-different, all-same, or partly-overlapping values. If a site
+declares one string as both its SKU and its MPN, publish it as both - that is
+the truth about the page, not a duplicate to clean up. Do not merge the fields,
+and do not add shape heuristics that second-guess which role a value "really"
+belongs to.
 
-**In 5 of 7, extraction chose a bare digit run over an alphanumeric merchant
-SKU.** Merchant SKUs and style codes carry letters and separators; bare digit
-runs are barcodes, internal ids, or database keys. So the generic rule is:
+Three approaches were investigated and **must not be built**. Each was measured,
+and each violates the rule above:
 
-- When candidates for `sku` include both a pure-digit string and one containing
-  letters or separators, prefer the latter.
-- Route checksum-valid GTINs to `barcode` instead of discarding them.
-  `validate_gtin()` already exists in
-  `backend/app/core/config/locale_format_rules.py`.
+- *Preferring an alphanumeric candidate over a bare digit run for `sku`.*
+  Measured +0/-0, and it is invented policy: when a site's product node says the
+  SKU is `100155080614`, that is the SKU. The reference corpus disagreeing is the
+  corpus's opinion, not a defect.
+- *Suppressing a checksum-valid GTIN from `sku`/`mpn` and routing it to
+  `barcode`.* Regresses 4 sites - cases 22 and 38 genuinely expect a GTIN **as**
+  the `sku`, and case 71 expects one **as** the `mpn`. Sites really do use a
+  trade item number as their SKU.
+- *Treating `mpn == sku` as duplication to remove.* 11 of 82 sites publish one
+  value in both roles, and in every case checked the JSON-LD declares both
+  `/sku` and `/mpn` with that value. That output is already correct.
 
-**Verified, so do not over-fit to GTIN:** only cases 66 (`4099686132767`) and 71
-(`198629014314`) actually pass `validate_gtin`. Cases 5 and 31 are 14- and
-12-digit strings that **fail** the checksum - they are internal ids that merely
-look barcode-shaped. A GTIN-only rule catches 2 of 5; the digit-shape rule
-catches all 5. Build the digit-shape rule and use GTIN validation only to decide
-where the rejected value goes.
+#### The real defect: contradictory values pooled onto one subject
 
-Case 2 is the parent/variant SKU boundary: there is already a
-`parent_sku_is_variant_specific` suppression in `publication_policy.py`, so find
-out why it did not fire. Case 39 is separator normalization - low value, do it
-only if it falls out naturally.
+Per-variant identifiers are collected at **product** scope, so a single product
+subject asserts many mutually exclusive values for a single-valued field and
+resolution then picks one by rank. Case 5 is the clearest: fourteen distinct
+`[data-sku]` swatch values all attach to subject `15125c86` at product scope, and
+`45993954738410` is published as *the product's* SKU. The site never said that.
+It said that is one variant's SKU.
+
+Measured across the corpus - one product subject carrying more than two distinct
+values for a single-valued field:
+
+| Fact | Sites | Worst single subject |
+| --- | --: | --: |
+| `product.title` | **66** | 35 distinct values |
+| `product.sku` | 4 | **82** distinct values |
+| `product.brand` | 2 | 23 distinct values |
+
+This is the highest-breadth structural defect found so far and it sits upstream
+of the `title` (24 sites) and `sku` (19 sites) gaps: resolution is choosing a
+winner from a candidate set that should never have been pooled onto one subject.
+
+Two directions, in order of preference:
+
+1. **Scope the evidence correctly at collection.** A `[data-sku]` on a swatch or
+   option control is variant evidence - emit it against that variant subject,
+   not the product. This is the fix that matches "publish what the site
+   exposes".
+2. **Fail closed on contradiction.** Where a single-valued field on one subject
+   has irreconcilable candidates and nothing distinguishes them, publish
+   nothing. A missing SKU is acceptable; another product's SKU is not.
+
+`title` behaves differently from the identifiers - a page legitimately offers
+many title candidates (`h1`, `og:title`, JSON-LD `name`) and ranking among them
+is correct. Do not apply a fail-closed rule to it blindly; first check whether
+its 66 sites are genuine alternates for one product or pooled siblings.
+
+Related and already known: case 2 publishes `DIME2SP2542BLK-S` where the parent
+SKU is `DIME2SP2542BLK`. `publication_policy.py` already has a
+`parent_sku_is_variant_specific` suppression - find out why it does not fire.
+Most likely the same root cause: the variant SKUs are labelled `product.sku`, so
+the `variant_skus` set that guard consults is empty.
 
 ### 2. Generic selected-state reading - 29 sites
 

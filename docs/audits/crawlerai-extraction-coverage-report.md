@@ -208,3 +208,47 @@ over a pure-digit one is generic, needs no site knowledge, and covers 5 sites.
 checksum - barcode-shaped internal ids, not barcodes. A GTIN-only rule would
 catch 2 of the 5; the digit-shape rule catches all 5. Use GTIN validation only to
 decide whether the rejected value should populate `barcode`.
+
+
+## Identifier roles and pooled subjects (2026-08-25, corrected)
+
+Governing rule confirmed with the owner: **publish what the site exposes; invent
+nothing and suppress nothing it stated.** `sku`, `mpn`, `gtin`/`barcode`,
+`product_id` and `style_id` are distinct roles whose values may be all
+different, all the same, or partly overlapping. Agreement between roles is a
+fact about the page, not duplication to be cleaned up.
+
+### Measured and rejected under that rule
+
+| Approach | Result |
+| --- | --- |
+| Prefer an alphanumeric `sku` candidate over a bare digit run | +0/-0, and invented policy. If the product node says the SKU is `100155080614`, that is the SKU. |
+| Suppress a checksum-valid GTIN from `sku`/`mpn`, route to `barcode` | Regresses 4 sites. Cases 22 and 38 expect a GTIN **as** the `sku`; case 71 expects one **as** the `mpn`. |
+| Treat `mpn == sku` as duplication | Not a defect. 11 of 82 sites publish one value in both roles because the JSON-LD declares both `/sku` and `/mpn` with it. |
+
+The earlier "SKU vs barcode" framing in this report is superseded: the digit-run
+pattern is real, but preferring against it is a judgement the extractor is not
+entitled to make.
+
+### The defect that survives: contradictory values pooled onto one subject
+
+Per-variant identifiers are collected at product scope, so one product subject
+asserts many mutually exclusive values for a single-valued field and resolution
+picks a winner by rank. Case 5: fourteen distinct `[data-sku]` swatch values all
+attach to one product subject, and one of them is published as the product's SKU
+- something the site never stated.
+
+One product subject carrying more than two distinct values for a single-valued
+field:
+
+| Fact | Sites | Worst single subject |
+| --- | --: | --: |
+| `product.title` | 66 | 35 distinct values |
+| `product.sku` | 4 | 82 distinct values |
+| `product.brand` | 2 | 23 distinct values |
+
+This sits upstream of the `title` (24 sites) and `sku` (19 sites) gaps. Preferred
+fix is to scope swatch/option evidence to its variant subject at collection;
+failing closed on irreconcilable candidates is the fallback. `title` is a genuine
+multi-candidate field and must be checked separately before any fail-closed rule
+is applied to it.
