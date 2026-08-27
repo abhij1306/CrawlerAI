@@ -217,22 +217,28 @@ display case is decided. No retailer aliases, no per-site casing tables.
 
 ### 5. Variant and option completeness - 22 sites
 
-The largest raw cluster, but **measure before building**: check whether the
-missing variants are in the captures at all, and in which source (JSON-LD,
-first-party JS state, DOM controls). Slice 1's premise did not match what the
-captures hold, and this rests on a similar assumption. Record the measurement
-either way - it is cheap and prevents building against absent evidence.
+**Completed 2026-08-27.** Full replay moved 70 / 284 to 70 / 257. Variant
+assertions moved 83 to 57, `variant_count` 10 to 8, and `size_options` 4 to 3.
+The extractor now preserves distinct structured siblings, links compatible
+cross-source identifiers, publishes variant GTIN as `barcode`, admits explicit
+`ProductGroup.hasVariant` child paths, and removes parent diagnostic shells.
+The remaining cases lack a captured matrix, disagree with the captured row
+count, or are the case-77 unit-normalization tail. Details and per-case counts
+are in `docs/audits/crawlerai-extraction-coverage-report.md`.
 
 ### 6. Reconcile the two variant-axis tables - correctness plumbing
 
-`VARIANT_URL_AXIS_PARAMS` and `variant_policy.canonical_variant_axis` disagree:
-`colorcode`, `colorproductcode`, `colorname` and `sku` canonicalize to `None`
-through the second while resolving correctly through the first, so
-`structured_variant_state.py` silently drops axes that `url_identity.py` reads.
-Same drift class PR #66 fixed for the regex by deriving it from the table. Derive
-or validate one against the other, with a test that fails if they diverge.
+**Completed 2026-08-27.** URL identity and structured endpoint parsing now use
+one configured raw-axis table. Public option canonicalization consumes the
+publishable subset, so `sku` remains identity rather than becoming an option.
 
 ### 7. Preserve the price ambiguity signal - correctness plumbing
+
+**Completed 2026-08-27.** DOM offers retain the matched source amount in
+evidence `raw_value` while resolution continues to use the locale-blind
+canonical amount. The ambiguity diagnostic now fires in five captures without
+changing any published commercial field. A `.de` regression proves that US
+mixed-separator formatting is not reinterpreted through page locale.
 
 `_visible_offer_values` in `collectors/dom.py` normalizes price text via
 `parse_money` and emits the normalized amount, so by the time the pipeline runs
@@ -247,12 +253,57 @@ formatting. Full reasoning in the plan.
 
 ### 8. Tail - do these last, or leave open
 
+**Audited 2026-08-27.** Cases 34, 39, 40, 76, 77, and 82 are documented in the
+evidence report. Their remaining values require absent evidence, unsafe family
+composition, a site-schema-specific multi-market join, or an unbound/approximate
+unit conversion, so they stay missing. Case 2 exposed one generic identifier
+bug: an explicitly declared, correctly shaped GTIN was suppressed solely for a
+bad checksum. Checksum failure is now diagnostic/ranking-only; malformed lengths
+still reject. Full replay moved 70 / 257 to 70 / 256 and barcode failures moved
+1 to 0.
+
 Single-site and near-single-site items: option unit normalization (case 77,
 `0.05 oz` vs `1.5 g`), Peloton case 40 (confirm whether the capture holds any
 commercial evidence before changing logic), Apple case 34 family bounds,
 `model_options`, `product_family`, `price_min`/`price_max`, and the
-capture-limited colour cases 39, 76, 82. None of these justify a generic rule.
+capture-limited attribute cases 39, 76, 82. None of these justify a generic rule.
 Record them as capture-limited or site-specific and move on.
+
+### 9. Close audit
+
+**Completed 2026-08-27.** The close audit found four generic upstream defects
+after item 8: selected `hasVariant` roots discarded their ProductGroup parent;
+option-group/default diagnostic shells counted as sellable matrix rows; a
+URL-less Product could not bind through its sole same-resource Offer URL; and a
+product-root URL conflict recursively read nested child URLs. The fixes recover
+complete source-backed fields without widening acquisition or adding a site
+schema. Final replay at that checkpoint was 70 failing cases out of 82 / 228
+fixture disagreements; unresolved values
+are absent, ambiguous, source/reference disagreements, or the documented
+single-site joins. The plan is complete.
+
+### 10. Post-close correction audit
+
+**Completed 2026-08-27.** The stricter completion audit found six remaining
+generic defects in explicit same-product data: ID-plus-option leaves were not
+sellable; nested `traits` and typed GTIN arrays were unread; selected
+ProductGroup aliases did not propagate to children; variant `gtin8/12/13/14`
+keys were ignored; valid uppercase colors and explicit colors beside malformed
+URL shade values were suppressed; and `StrikethroughPrice` was treated as a
+second current price.
+
+The fixes recover case 1's 24 explicit state variants, case 11's three declared
+ProductGroup children, case 16's complete SKU/barcode matrix, case 58 and 65
+variant barcodes, case 63 and 68 explicit colors, and case 65's current/original
+price roles. The same 82 local captures now measure **69 failing cases / 204
+fixture disagreements**. No live crawl was run. Remaining matrix differences
+are source-limited or reference/source disagreements documented in the audit
+report.
+
+Canonical verification after the correction audit passed:
+`.\scripts\check.ps1`; `.\scripts\test.ps1` selected 57 backend files and passed
+all 760 tests. Final replay remained 69 failing cases / 204 fixture
+disagreements.
 
 ## Constraints
 

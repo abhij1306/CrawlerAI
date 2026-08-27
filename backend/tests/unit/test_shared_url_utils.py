@@ -31,6 +31,15 @@ def test_opaque_terminal_detail_segment_does_not_fall_back_to_category_title() -
         )
         == ""
     )
+
+
+def test_detail_title_ignores_suffix_after_opaque_detail_identity() -> None:
+    url = (
+        "https://shop.test/zapcase-motorola-compatible-protection/"
+        "dp/B0CSP8GZ5R/ref=pd_ci_mcx_mh_mcx_views_2_image?th=1"
+    )
+
+    assert detail_title_from_url(url) == "zapcase motorola compatible protection"
     assert (
         detail_title_from_url(
             "https://shop.test/womens/categories/clothing/pants/wide-leg/ME988"

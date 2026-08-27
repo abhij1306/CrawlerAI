@@ -238,10 +238,12 @@ def test_js_state_variant_assets_and_gtin_keep_variant_ownership() -> None:
             "variant_id": "trail-9",
             "sku": "TRAIL-9",
             "image_url": "https://cdn.shop.test/trail-9.jpg",
+            "barcode": "1234567890123",
             "size": "9",
         }
     ]
     gtin = next(row for row in result.evidence if row.fact_type == "variant.gtin")
+    assert "invalid_gtin" in gtin.flags
     image = next(
         row
         for row in result.evidence
@@ -388,3 +390,38 @@ def test_nested_product_config_does_not_publish_product_fields() -> None:
 
     assert result.records[0].get("brand") is None
     assert result.records[0].get("description") is None
+
+
+def test_shopify_mcp_tool_copy_cannot_become_product_description() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Cotton Hoodie",
+          "url": "https://shop.test/products/cotton-hoodie",
+          "description": "Heavyweight cotton hoodie with ribbed cuffs."
+        }
+        </script>
+        <script>
+        window.Shopify = window.Shopify || {};
+        window.Shopify.MCP = window.Shopify.MCP || {};
+        window.Shopify.MCP.tools = [{
+          "name": "search_shop_policies_and_faqs",
+          "description": "Used to get facts about the stores policies, products, or services."
+        }];
+        </script>
+        """,
+        "https://shop.test/products/cotton-hoodie",
+        requested_fields=("description",),
+    )
+
+    assert result.records[0]["description"] == (
+        "Heavyweight cotton hoodie with ribbed cuffs."
+    )
+    assert not any(
+        row.fact_type == "product.description" and "/MCP/" in row.locator.value
+        for row in result.evidence
+    )

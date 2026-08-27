@@ -19,7 +19,7 @@ from app.core.config.extraction_rules import (
     DETAIL_URL_GENDER_MARKERS,
 )
 from app.core.shared.field_coerce_text import strip_identifier_label_prefix
-from app.core.config.locale_format_rules import validate_gtin
+from app.core.config.locale_format_rules import GTIN_LENGTHS, validate_gtin
 
 __all__ = ["audience_gender_from_path", "normalize_product_attribute_value"]
 
@@ -42,7 +42,9 @@ def _identifier_value(fact_type: str, value: str, flags: set[str]) -> str:
     if fact_type not in {"product.gtin", "variant.gtin"}:
         return value
     digits = re.sub(r"\D+", "", value)
-    if digits and not validate_gtin(digits):
+    if digits and len(digits) not in GTIN_LENGTHS:
+        flags.add(field_mappings.INVALID_GTIN_SHAPE_EVIDENCE_FLAG)
+    elif digits and not validate_gtin(digits):
         flags.add("invalid_gtin")
     return digits
 

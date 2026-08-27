@@ -96,6 +96,13 @@ endpoints plus encrypted secret references.
 Traversal is explicit. The shared browser runtime is Patchright; native Chrome is an
 explicit escalation lane when configured and available.
 
+Platform-specific deterministic source readers live in top-level connector
+modules (`app/connectors/*_adapter.py`) and register through
+`app/connectors/adapter_registry.py`.
+They produce typed adapter artifacts during the record-extraction stage. Those
+artifacts enter the normal extraction evidence cascade; adapters do not publish
+records or bypass resolver and publication policy.
+
 ## Extraction and persistence
 
 Extraction ownership is in `app/extraction/`:
@@ -108,12 +115,26 @@ Extraction ownership is in `app/extraction/`:
 - `publication_policy.py`: whether a resolved detail fact may be published, and why not
 - `collectors/jsonld_attributes.py`: product-level JSON-LD fact emission (identity,
   images, attributes, `aggregateRating`)
+- `collectors/jsonld_offer_facts.py`: JSON-LD offer and price-specification fact
+  emission, including explicit strikethrough-price semantics
+- `collectors/jsonld_targeting.py`: selected ProductGroup admission and
+  same-resource Offer ownership for URL-less JSON-LD products
+- `collectors/dom_variant_controls.py`: rendered option-control identifiers and
+  commercial/selected-state variant evidence
+- `collectors/dom_scoping.py`: reusable verified product-root and excluded-component
+  boundaries for rendered detail collectors
+- `collectors/dom_product_attributes.py`: product-root description/metadata parsing
+  for deterministic product attributes such as material
+- `product_options.py`: product option catalogs and fail-closed binding of DOM
+  selected-state signals to existing same-product variant matrices
 - `contracts.py`, `surfaces.py`: typed contracts and surface rules
 - `replay.py`, `sentinel.py`: controlled replay and regression support
 
-Detail title display rules live in `core/records/title_normalization.py` and product
-attribute value normalization in `core/records/attribute_normalization.py`, so those
-contracts have one owner outside the extraction package.
+Detail title cleanup lives in `core/records/title_normalization.py`; collectors attach
+configured semantic source roles to title evidence and `extraction/resolution/ranking.py`
+orders those roles before URL-overlap tie-breaks. Product attribute value normalization
+lives in `core/records/attribute_normalization.py`, so representation contracts keep one
+owner outside the extraction package.
 
 Acquisition produces evidence; extraction consumes it. Missing fields continue through
 all applicable deterministic tiers before any explicitly enabled surface-specific LLM

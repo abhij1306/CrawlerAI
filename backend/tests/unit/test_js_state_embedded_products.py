@@ -6,6 +6,35 @@ from __future__ import annotations
 from tests.unit.extraction_pipeline_test_support import *
 
 
+def test_embedded_product_gender_and_condition_publish_from_the_product_root() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {"pageProps": {"product": {
+              "name": "Archive Runner",
+              "styleId": "RUNNER-100",
+              "gender": "men",
+              "condition": "new",
+              "recommendation": {
+                "url": "https://shop.test/products/sibling-runner"
+              }
+            }}}
+          }
+          </script>
+        </head><body><h1>Archive Runner</h1></body></html>
+        """,
+        "https://shop.test/products/archive-runner",
+        requested_fields=("gender", "condition", "style_id"),
+    )
+
+    assert result.records[0]["gender"] == "Men"
+    assert result.records[0]["condition"] == "New"
+    assert result.records[0]["style_id"] == "RUNNER-100"
+
+
 def test_embedded_next_state_variants_materialize_without_state_artifact() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -41,6 +70,37 @@ def test_embedded_next_state_variants_materialize_without_state_artifact() -> No
             "currency": "USD",
             "availability": "in_stock",
             "size": "S",
+        }
+    ]
+
+
+def test_embedded_variant_traits_and_typed_gtins_materialize() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {"pageProps": {"product": {
+              "name": "Archive Runner",
+              "variants": [{
+                "id": "runner-9",
+                "traits": {"size": "9"},
+                "gtins": [{"type": "UPC", "identifier": "194502875966"}]
+              }]
+            }}}
+          }
+          </script>
+        </head><body><h1>Archive Runner</h1></body></html>
+        """,
+        "https://shop.test/products/archive-runner",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "runner-9",
+            "barcode": "194502875966",
+            "size": "9",
         }
     ]
 

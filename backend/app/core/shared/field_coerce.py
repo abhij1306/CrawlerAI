@@ -328,6 +328,8 @@ def _color_value_is_opaque_code(value: str) -> bool:
         return False
     if not text.isupper():
         return False
+    if _COLOR_KEYWORD_RE.fullmatch(text):
+        return False
     if text.casefold() in _SHORT_COLOR_ALLOWLIST:
         return False
     return True
@@ -446,6 +448,10 @@ def sanitize_option_scalar(field_name: str, value: object) -> str | None:
     elif field_name == WEIGHT_FIELD and re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
         return None
     if not cleaned or is_null_text(cleaned):
+        return None
+    if field_name in OPTION_SCALAR_FIELDS and _option_value_is_invalid(
+        field_name, cleaned
+    ):
         return None
     return cleaned
 

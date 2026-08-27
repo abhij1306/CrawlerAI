@@ -144,6 +144,204 @@ def test_commercial_dom_size_controls_materialize_variants() -> None:
     assert result.records[0].get("sku") is None
 
 
+def test_dom_option_data_sku_is_variant_scoped() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Everyday Tee</h1>
+          <input type="radio" name="size" value="S" data-sku="variant-101">
+          <input type="radio" name="size" value="M" data-sku="variant-102">
+        </main>
+        <script>
+        var meta = {"product":{"id":721,"title":"Everyday Tee","variants":[
+          {"id":"variant-101","sku":"TEE-S","option1":"S"},
+          {"id":"variant-102","sku":"TEE-M","option1":"M"}
+        ]}};
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert result.records[0].get("sku") is None
+    dom_skus = [
+        row
+        for row in result.evidence
+        if row.collector_id == "dom" and row.value in {"variant-101", "variant-102"}
+    ]
+    assert {row.fact_type for row in dom_skus} == {"variant.sku"}
+    assert {row.subject_scope for row in dom_skus} == {"variant"}
+    assert len({row.subject_id for row in dom_skus}) == 2
+    assert all(row.relation_type == "product_variant" for row in dom_skus)
+    assert result.graph.entity_counts["variant"] == 2
+
+
+def test_structured_endpoint_axes_share_the_url_identity_mapping() -> None:
+    assert structured_variant_state.variant_endpoint_url_axis_values(
+        "https://shop.test/Product-Variation"
+        "?dwvar_item_colorProductCode=CI939"
+        "&attribute_colorCode=BR8825"
+        "&attribute_sku=TEE-S"
+    ) == {"style": "CI939", "color": "BR8825", "sku": "TEE-S"}
+
+
+def test_standard_selected_markers_emit_tri_state_without_synthesizing_variants() -> (
+    None
+):
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Everyday Tee</h1>
+          <div role="radiogroup" aria-label="Color">
+            <button role="radio" value="Red" aria-selected="false"
+                    class="selected">Red</button>
+            <button role="radio" value="Blue" aria-pressed="true">Blue</button>
+            <button role="radio" value="Green" aria-current="page">Green</button>
+          </div>
+          <select name="color"><option selected>Black</option></select>
+          <input type="radio" name="color" value="White" checked>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    states = {
+        row.entity_hint.option_values["color"]: row.value
+        for row in result.evidence
+        if row.fact_type == "variant.selected"
+        and row.metadata.get("dom_selection_signal") is True
+        and row.entity_hint is not None
+    }
+    assert states == {
+        "Red": False,
+        "Blue": True,
+        "Green": True,
+        "Black": True,
+        "White": True,
+    }
+    assert not result.records[0].get("variants")
+    assert result.records[0].get("color") is None
+
+
+def test_one_dom_selected_option_binds_existing_variant_matrix() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org", "@type":"ProductGroup",
+          "name":"Everyday Tee", "variesBy":["https://schema.org/color"],
+          "hasVariant":[
+            {"@type":"Product", "sku":"TEE-RED", "color":"Red",
+             "offers":{"price":"10", "priceCurrency":"USD"}},
+            {"@type":"Product", "sku":"TEE-BLUE", "color":"Blue",
+             "offers":{"price":"20", "priceCurrency":"USD"}}
+          ]
+        }
+        </script>
+        <main><h1>Everyday Tee</h1>
+          <div role="radiogroup" aria-label="Color">
+            <button role="radio" value="Red" aria-checked="false">Red</button>
+            <button role="radio" value="Blue" aria-checked="true">Blue</button>
+          </div>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert result.records[0]["color"] == "Blue"
+    assert result.records[0]["price"] == "20.00"
+
+
+def test_duplicate_unlabelled_aria_options_bind_one_unique_matrix_axis() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org", "@type":"ProductGroup",
+          "name":"Everyday Tee", "variesBy":["https://schema.org/color"],
+          "hasVariant":[
+            {"@type":"Product", "sku":"TEE-RED", "color":"Red"},
+            {"@type":"Product", "sku":"TEE-BLUE", "color":"Blue"}
+          ]
+        }
+        </script>
+        <main><h1>Everyday Tee</h1>
+          <div role="radiogroup">
+            <a role="radio" title="Red" aria-checked="false"></a>
+            <a role="radio" title="Blue" aria-checked="true"></a>
+          </div>
+          <div role="radiogroup">
+            <a role="radio" title="Red" aria-checked="false"></a>
+            <a role="radio" title="Blue" aria-checked="true"></a>
+          </div>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert result.records[0]["color"] == "Blue"
+
+
+def test_multiple_dom_selected_options_fail_closed() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org", "@type":"ProductGroup",
+          "name":"Everyday Tee", "variesBy":["https://schema.org/color"],
+          "hasVariant":[
+            {"@type":"Product", "sku":"TEE-RED", "color":"Red"},
+            {"@type":"Product", "sku":"TEE-BLUE", "color":"Blue"}
+          ]
+        }
+        </script>
+        <main><h1>Everyday Tee</h1>
+          <button data-option-name="color" value="Red" aria-pressed="true">Red</button>
+          <button data-option-name="color" value="Blue" aria-pressed="true">Blue</button>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert result.records[0].get("color") is None
+
+
+def test_url_axis_wins_while_dom_selection_refines_another_axis() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org", "@type":"ProductGroup",
+          "name":"Everyday Tee",
+          "variesBy":["https://schema.org/color", "https://schema.org/size"],
+          "hasVariant":[
+            {"@type":"Product", "sku":"RED-S", "color":"Red", "size":"S",
+             "offers":{"price":"10", "priceCurrency":"USD"}},
+            {"@type":"Product", "sku":"RED-M", "color":"Red", "size":"M",
+             "offers":{"price":"12", "priceCurrency":"USD"}},
+            {"@type":"Product", "sku":"BLUE-M", "color":"Blue", "size":"M",
+             "offers":{"price":"20", "priceCurrency":"USD"}}
+          ]
+        }
+        </script>
+        <main><h1>Everyday Tee</h1>
+          <button data-option-name="color" value="Blue" aria-pressed="true">Blue</button>
+          <input type="radio" name="size" value="M" checked>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee?color=Red",
+    )
+
+    assert result.records[0]["color"] == "Red"
+    assert result.records[0]["size"] == "M"
+    assert result.records[0]["price"] == "12.00"
+
+
 def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
     html = """
     <main>

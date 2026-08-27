@@ -5,6 +5,9 @@ from decimal import Decimal, InvalidOperation
 from app.core.config import field_mappings
 from app.core.config.extraction_rules import AVAILABILITY_PARENT_ROLLUP_PRECEDENCE
 from app.core.config.variant_policy import (
+    AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON,
+    DEFAULT_VARIANT_DIAGNOSTIC_REASON,
+    SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON,
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
     DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO,
@@ -204,6 +207,16 @@ def _parent_derived_from_variants(
 ) -> tuple[DerivedFact, ...]:
     if not primary_product_entity_id:
         return ()
+    expected_variant_count -= sum(
+        row.reason_code
+        in {
+            DEFAULT_VARIANT_DIAGNOSTIC_REASON,
+            AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON,
+            SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON,
+        }
+        for row in variant_decisions
+        if row.status != "eligible"
+    )
     variants = tuple(row for row in variant_decisions if row.status == "eligible")
     leaf_variants = _leaf_variant_decisions(variants)
     out = list(

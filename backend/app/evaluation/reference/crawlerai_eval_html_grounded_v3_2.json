@@ -731,7 +731,7 @@
     "price_min": "2.98",
     "price_max": "14.90",
     "currency": "USD",
-    "availability": "in_stock",
+    "availability": "out_of_stock",
     "size_options": [
      "S",
      "M",

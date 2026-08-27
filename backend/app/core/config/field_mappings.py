@@ -459,6 +459,7 @@ ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES = frozenset(
     }
 )
 INVALID_SCALAR_TYPE_EVIDENCE_FLAG = "invalid_scalar_type"
+INVALID_GTIN_SHAPE_EVIDENCE_FLAG = "invalid_gtin_shape"
 ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     **dict.fromkeys(DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS, OFFER_PRICE_FACT_TYPE),
     **dict.fromkeys(ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS, OFFER_PRICE_FACT_TYPE),
@@ -469,6 +470,7 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "brand_label": PRODUCT_BRAND_FACT_TYPE,
     "brandLabel": PRODUCT_BRAND_FACT_TYPE,
     "color": "product.color",
+    "condition": "product.condition",
     **dict.fromkeys(("currency", "currencyCode"), OFFER_CURRENCY_FACT_TYPE),
     "currentPrice": OFFER_PRICE_FACT_TYPE,
     "current_price": OFFER_PRICE_FACT_TYPE,
@@ -476,10 +478,13 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "image": ASSET_IMAGE_URL_FACT_TYPE,
     "imageUrl": ASSET_IMAGE_URL_FACT_TYPE,
     "images": ASSET_IMAGE_URL_FACT_TYPE,
+    "gtin": PRODUCT_GTIN_FACT_TYPE,
     "inStock": OFFER_AVAILABILITY_FACT_TYPE,
+    "gender": "product.gender",
     "manufacturer": PRODUCT_BRAND_FACT_TYPE,
     "manufacturer_name": PRODUCT_BRAND_FACT_TYPE,
     "manufacturerName": PRODUCT_BRAND_FACT_TYPE,
+    "mpn": PRODUCT_MPN_FACT_TYPE,
     "designer": PRODUCT_BRAND_FACT_TYPE,
     "designer_name": PRODUCT_BRAND_FACT_TYPE,
     "designerName": PRODUCT_BRAND_FACT_TYPE,
@@ -490,6 +495,8 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "productName": PRODUCT_TITLE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
     "strikeThroughPrice": OFFER_ORIGINAL_PRICE_FACT_TYPE,
+    "styleId": "product.style_id",
+    "style_id": "product.style_id",
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
@@ -609,6 +616,7 @@ ECOMMERCE_JSONLD_PRODUCT_ATTRIBUTE_FACT_TYPES = {
     "size": "product.size",
     "itemCondition": PRODUCT_CONDITION_FACT_TYPE,
 }
+ECOMMERCE_JSONLD_ITEM_CONDITION_KEY = "itemCondition"
 ECOMMERCE_JSONLD_RATING_KEYS = ("ratingValue",)
 ECOMMERCE_JSONLD_REVIEW_COUNT_KEYS = ("reviewCount", "ratingCount")
 ECOMMERCE_JSONLD_GENDER_KEYS = ("suggestedGender", "gender", "audienceGender")
@@ -646,6 +654,10 @@ ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
 ECOMMERCE_JSONLD_VARIANT_FACT_TYPES = {
     "sku": VARIANT_SKU_FACT_TYPE,
     "gtin": VARIANT_GTIN_FACT_TYPE,
+    "gtin8": VARIANT_GTIN_FACT_TYPE,
+    "gtin12": VARIANT_GTIN_FACT_TYPE,
+    "gtin13": VARIANT_GTIN_FACT_TYPE,
+    "gtin14": VARIANT_GTIN_FACT_TYPE,
     "url": "variant.url",
     "color": "variant.option.color",
     "size": "variant.option.size",

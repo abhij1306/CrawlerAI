@@ -104,7 +104,7 @@ PUBLIC_RECORD_BRAND_HOST_SUFFIXES = (
     "store",
 )
 PUBLIC_RECORD_GENERIC_HOST_BRANDS = frozenset(
-    {"example", "invalid", "localhost", "test"}
+    {"example", "invalid", "localhost", "marketplace", "test"}
 )
 PUBLIC_RECORD_GENDER_TAXONOMY = MappingProxyType(
     {

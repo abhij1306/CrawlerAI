@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlsplit
 
+from app.core.config import field_mappings
+from app.core.config.locale_format_rules import validate_gtin
 from app.core.config.extraction_rules import (
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
     VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
@@ -13,9 +16,14 @@ from app.core.config.extraction_rules import (
     VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS,
 )
 from app.core.config.variant_policy import (
+    AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON,
     DEFAULT_VARIANT_DIAGNOSTIC_REASON,
     DEFAULT_VARIANT_PLACEHOLDER_FLAG,
-    DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
+    PUBLIC_VARIANT_AXIS_FIELDS,
+    SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON,
+    VARIANT_ID_FROM_UNIQUE_GTIN_RULE_ID,
+    VARIANT_ID_FROM_UNIQUE_SKU_RULE_ID,
+    VARIANT_SKU_FAMILY_MIN_LENGTH,
     public_variant_row_is_sellable,
 )
 from app.core.records.url_identity import (
@@ -49,10 +57,15 @@ from app.extraction.resolution.offers import _offer_rank
 
 
 def inherit_variant_id_from_sku(
-    row: dict[str, object], lineage_row: dict[str, object]
+    row: dict[str, object],
+    lineage_row: dict[str, object],
+    *,
+    barcode_is_unique: bool = False,
 ) -> None:
-    sku = row.get("sku")
-    if row.get("variant_id") not in (None, "", [], {}, ()) or sku in (
+    barcode = row.get("barcode")
+    source_field = "barcode" if barcode_is_unique and validate_gtin(barcode) else "sku"
+    identity = row.get(source_field)
+    if row.get("variant_id") not in (None, "", [], {}, ()) or identity in (
         None,
         "",
         [],
@@ -60,11 +73,15 @@ def inherit_variant_id_from_sku(
         (),
     ):
         return
-    row["variant_id"] = sku
-    sku_lineage = lineage_row.get("sku")
+    row["variant_id"] = identity
+    identity_lineage = lineage_row.get(source_field)
     lineage_row["variant_id"] = {
-        **(dict(sku_lineage) if isinstance(sku_lineage, Mapping) else {}),
-        "rule_id": "variant_id_from_unique_sku",
+        **(dict(identity_lineage) if isinstance(identity_lineage, Mapping) else {}),
+        "rule_id": (
+            VARIANT_ID_FROM_UNIQUE_GTIN_RULE_ID
+            if source_field == "barcode"
+            else VARIANT_ID_FROM_UNIQUE_SKU_RULE_ID
+        ),
     }
 
 
@@ -145,16 +162,50 @@ def _variant_candidates(
 ]:
     candidates: list[tuple[VariantEntity, dict[str, object], dict[str, object]]] = []
     rejected: list[VariantDecision] = []
-    for variant in entities.variants:
-        values, lineage = _resolved_variant_row(
+    resolved = [
+        (
             variant,
-            offer_by_variant.get(variant.entity_id),
-            asset_by_variant.get(variant.entity_id),
-            decisions,
-            derived,
-            evidence_by_id,
+            *_resolved_variant_row(
+                variant,
+                offer_by_variant.get(variant.entity_id),
+                asset_by_variant.get(variant.entity_id),
+                decisions,
+                derived,
+                evidence_by_id,
+            ),
         )
-        reason = _variant_rejection_reason(variant, values, product_url, evidence_by_id)
+        for variant in entities.variants
+    ]
+    _inherit_missing_variant_ids(resolved)
+    values_by_product = {
+        product_id: [
+            values
+            for variant, values, _lineage in resolved
+            if variant.product_entity_id == product_id
+        ]
+        for product_id in {variant.product_entity_id for variant in entities.variants}
+    }
+    for variant, values, lineage in resolved:
+        reason = _variant_rejection_reason(
+            variant,
+            values,
+            product_url,
+            evidence_by_id,
+            product_title=_resolved_product_title(
+                variant.product_entity_id, decisions, evidence_by_id
+            ),
+        )
+        if reason is None and _variant_sku_conflicts_product_family(
+            values,
+            product_sku=_resolved_product_value(
+                variant.product_entity_id,
+                field_mappings.PRODUCT_SKU_FACT_TYPE,
+                decisions,
+                evidence_by_id,
+            ),
+            sibling_values=values_by_product[variant.product_entity_id],
+        ):
+            reason = SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON
         if reason:
             rejected.append(
                 _variant_decision(variant.entity_id, values, lineage, reason)
@@ -164,13 +215,97 @@ def _variant_candidates(
     return candidates, rejected
 
 
+def _inherit_missing_variant_ids(
+    resolved: list[tuple[VariantEntity, dict[str, object], dict[str, object]]],
+) -> None:
+    product_ids = {variant.product_entity_id for variant, _values, _lineage in resolved}
+    barcode_counts_by_product = {
+        product_id: Counter(
+            str(values.get("barcode") or "").strip()
+            for variant, values, _lineage in resolved
+            if variant.product_entity_id == product_id and values.get("barcode")
+        )
+        for product_id in product_ids
+    }
+    for variant, values, lineage in resolved:
+        barcode = str(values.get("barcode") or "").strip()
+        inherit_variant_id_from_sku(
+            values,
+            lineage,
+            barcode_is_unique=bool(
+                barcode
+                and barcode_counts_by_product[variant.product_entity_id][barcode] == 1
+            ),
+        )
+
+
+def _resolved_product_title(
+    product_id: str,
+    decisions: dict[tuple[str, str], Decision],
+    evidence_by_id: dict[str, Evidence],
+) -> str:
+    return _resolved_product_value(
+        product_id,
+        field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        decisions,
+        evidence_by_id,
+    )
+
+
+def _resolved_product_value(
+    product_id: str,
+    fact_type: str,
+    decisions: dict[tuple[str, str], Decision],
+    evidence_by_id: dict[str, Evidence],
+) -> str:
+    decision = decisions.get((product_id, fact_type))
+    if not decision or not decision.accepted_evidence_ids:
+        return ""
+    evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
+    return str(evidence.value).strip() if evidence else ""
+
+
+def _variant_sku_conflicts_product_family(
+    values: Mapping[str, object],
+    *,
+    product_sku: str,
+    sibling_values: list[dict[str, object]],
+) -> bool:
+    """Reject sibling style rows when the product SKU identifies one family."""
+    parent_key = _identifier_family_key(product_sku)
+    variant_key = _identifier_family_key(values.get("sku"))
+    if len(parent_key) < VARIANT_SKU_FAMILY_MIN_LENGTH or not variant_key:
+        return False
+    sibling_keys = {_identifier_family_key(row.get("sku")) for row in sibling_values}
+    if parent_key in sibling_keys:
+        return False
+    return parent_key not in variant_key and any(
+        parent_key in sibling_key for sibling_key in sibling_keys
+    )
+
+
+def _identifier_family_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
+
 def _eligible_variant_decisions(
     candidates: list[tuple[VariantEntity, dict[str, object], dict[str, object]]],
     evidence_by_id: dict[str, Evidence],
 ) -> tuple[list[VariantDecision], list[VariantDecision]]:
     eligible: list[VariantDecision] = []
     rejected: list[VariantDecision] = []
+    candidate_values = [values for _variant, values, _lineage in candidates]
     for variant, values, lineage in candidates:
+        if _is_axis_group_variant(values, candidate_values):
+            rejected.append(
+                _variant_decision(
+                    variant.entity_id,
+                    values,
+                    lineage,
+                    AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON,
+                )
+            )
+            continue
         if (
             len(candidates) > 1
             and not _has_variant_option(values)
@@ -199,6 +334,43 @@ def _eligible_variant_decisions(
     return eligible, rejected
 
 
+def _is_axis_group_variant(
+    values: dict[str, object],
+    candidates: list[dict[str, object]],
+) -> bool:
+    """Reject an option-group shell when commercial leaf variants are explicit."""
+    options = _variant_option_values(values)
+    if not options or _has_variant_commercial_value(values):
+        return False
+    return any(
+        len(child_options := _variant_option_values(child_values)) > len(options)
+        and options.items() <= child_options.items()
+        and _has_variant_commercial_value(child_values)
+        for child_values in candidates
+        if child_values is not values
+    )
+
+
+def _variant_option_values(values: dict[str, object]) -> dict[str, object]:
+    return {
+        field: values[field]
+        for field in PUBLIC_VARIANT_AXIS_FIELDS
+        if values.get(field) not in (None, "", [], {}, ())
+    }
+
+
+def _has_variant_commercial_value(values: dict[str, object]) -> bool:
+    return any(
+        values.get(field) not in (None, "", [], {}, ())
+        for field in (
+            "price",
+            "original_price",
+            "availability",
+            "stock_quantity",
+        )
+    )
+
+
 def _resolved_variant_row(
     variant: VariantEntity,
     offer: OfferEntity | None,
@@ -212,7 +384,7 @@ def _resolved_variant_row(
     for fact, field in {
         "variant.id": "variant_id",
         "variant.sku": "sku",
-        "variant.gtin": "gtin",
+        "variant.gtin": "barcode",
         "variant.url": "url",
     }.items():
         _put_decision_value(
@@ -222,7 +394,6 @@ def _resolved_variant_row(
             decisions.get((variant.entity_id, fact)),
             evidence_by_id,
         )
-    inherit_variant_id_from_sku(values, lineage)
     _put_variant_options(values, lineage, variant, decisions, evidence_by_id)
     _put_variant_offer(
         values, lineage, variant, offer, decisions, derived, evidence_by_id
@@ -242,7 +413,7 @@ def _resolved_variant_row(
 def _put_variant_options(values, lineage, variant, decisions, evidence_by_id) -> None:
     identity_values = {
         str(values.get(field) or "").strip().casefold()
-        for field in ("variant_id", "sku", "gtin")
+        for field in ("variant_id", "sku", "barcode")
         if str(values.get(field) or "").strip()
     }
     for (entity_id, fact_type), decision in decisions.items():
@@ -336,6 +507,8 @@ def _variant_rejection_reason(
     values,
     product_url: str,
     evidence_by_id: dict[str, Evidence],
+    *,
+    product_title: str,
 ) -> str | None:
     if not variant.identity_key:
         return "variant_missing_identity"
@@ -345,21 +518,66 @@ def _variant_rejection_reason(
         if evidence_id in evidence_by_id
     ):
         return DEFAULT_VARIANT_DIAGNOSTIC_REASON
-    explicit_identity = any(
-        values.get(field) not in (None, "", [], {}, ())
-        for field in ("variant_id", "sku", "gtin")
-    )
-    commercial = any(
-        values.get(field) not in (None, "", [], {}, ())
-        for field in ("price", "availability", "stock_quantity")
-    )
-    if not _has_variant_option(values) and not (explicit_identity and commercial):
+    if not _has_variant_option(values) and not _optionless_variant_is_publishable(
+        values
+    ):
         return "variant_not_publishable"
     if not public_variant_row_is_sellable(values):
         return "variant_not_actionable"
-    if _variant_url_conflicts(product_url, str(values.get("url") or ""), values):
+    if _variant_option_repeats_product_title(values, product_title):
+        return DEFAULT_VARIANT_DIAGNOSTIC_REASON
+    if _variant_url_conflicts(
+        product_url, str(values.get("url") or ""), values
+    ) and not _has_explicit_product_variant_relation(variant, evidence_by_id):
         return "variant_url_conflicts_product"
     return None
+
+
+def _optionless_variant_is_publishable(values: Mapping[str, object]) -> bool:
+    has_identity = any(
+        values.get(field) not in (None, "", [], {}, ())
+        for field in ("variant_id", "sku", "barcode")
+    )
+    has_commercial = any(
+        values.get(field) not in (None, "", [], {}, ())
+        for field in ("price", "availability", "stock_quantity")
+    )
+    return has_identity and has_commercial
+
+
+def _variant_option_repeats_product_title(values, product_title: str) -> bool:
+    options = [
+        str(values.get(field) or "").strip()
+        for field in PUBLIC_VARIANT_AXIS_FIELDS
+        if str(values.get(field) or "").strip()
+    ]
+    return bool(
+        len(options) == 1
+        and product_title
+        and semantic_identity_tokens(options[0])
+        == semantic_identity_tokens(product_title)
+    )
+
+
+def _has_direct_variant_commercial_fact(lineage: Mapping[str, object]) -> bool:
+    return any(
+        isinstance(field_lineage := lineage.get(field), dict)
+        and bool(
+            field_lineage.get("decision_id") or field_lineage.get("selected_fact_ids")
+        )
+        for field in ("price", "availability", "stock_quantity")
+    )
+
+
+def _has_explicit_product_variant_relation(
+    variant: VariantEntity, evidence_by_id: dict[str, Evidence]
+) -> bool:
+    return any(
+        (row := evidence_by_id.get(evidence_id)) is not None
+        and row.collector_id == "jsonld"
+        and row.relation_type == "product_variant"
+        for evidence_id in variant.identity_evidence_ids
+    )
 
 
 def _explicit_partial_child_is_publishable(
@@ -375,21 +593,12 @@ def _explicit_partial_child_is_publishable(
         and row.fact_type in {"variant.id", "variant.sku", "variant.gtin"}
         for evidence_id in variant.identity_evidence_ids
     )
-    has_direct_commercial_fact = False
-    for field in ("price", "availability", "stock_quantity"):
-        field_lineage = lineage.get(field)
-        if (
-            isinstance(field_lineage, dict)
-            and field_lineage.get("rule_id") != DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
-        ):
-            has_direct_commercial_fact = True
-            break
     return (
         has_structured_child_identity
-        and has_direct_commercial_fact
+        and _has_direct_variant_commercial_fact(lineage)
         and any(
             values.get(field) not in (None, "", [], {}, ())
-            for field in ("variant_id", "sku", "gtin")
+            for field in ("variant_id", "sku", "barcode")
         )
     )
 
@@ -451,7 +660,7 @@ def _has_variant_option(values) -> bool:
     transport = {
         "variant_id",
         "sku",
-        "gtin",
+        "barcode",
         "url",
         "image_url",
         "price",

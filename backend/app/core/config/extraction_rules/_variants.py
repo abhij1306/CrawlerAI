@@ -1,25 +1,13 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 
+from app.core.config.variant_policy import VARIANT_URL_AXIS_PARAMS
+
 from ._common import *
 from ._detail import *
 from ._detail_sections import *
 
 VARIANT_SIZE_ALIAS_SUFFIXES = (" us",)
-VARIANT_URL_AXIS_PARAMS = {
-    "color": "color",
-    "colorcode": "color",
-    "colorname": "color",
-    "colour": "color",
-    "colordisplaycode": "color",
-    "colorproductcode": "style",
-    "fit": "fit",
-    "size": "size",
-    "sizedisplaycode": "size",
-    "sku": "sku",
-    "width": "width",
-    "style": "style",
-}
 VARIANT_URL_PATH_AXIS_MARKERS = {
     "color": "color",
     "colour": "color",
@@ -366,6 +354,13 @@ VARIANT_OPTION_CONTROL_SELECTOR = (
     "a[class*='swatch' i][aria-label], [data-testid='swatch' i], "
     "[data-testid*='swatch-option' i]"
 )
+# ``data-sku`` is product evidence only when it describes the product node.
+# On an actual option control it identifies that control's variant instead.
+# Derive this selector from the generic control selector so the two cannot drift.
+VARIANT_DOM_IDENTIFIER_CONTROL_SELECTOR = ", ".join(
+    f"{selector.strip()}[data-sku]"
+    for selector in VARIANT_OPTION_CONTROL_SELECTOR.split(",")
+)
 VARIANT_OPTION_CONTROL_SCAN_LIMIT = 300
 # Attributes on an option control whose value carries a join key back to an
 # extracted variant row (the option/SKU/variant value or label).
@@ -380,5 +375,34 @@ VARIANT_OPTION_CONTROL_KEY_ATTRIBUTES = (
     "aria-label",
     "title",
 )
+VARIANT_DOM_SELECTION_SIGNAL_METADATA_KEY = "dom_selection_signal"
+VARIANT_DOM_SELECTION_SOURCE_METADATA_KEY = "dom_selection_source"
+VARIANT_DOM_SELECTION_STANDARD_SOURCE = "standard"
+VARIANT_DOM_SELECTION_VENDOR_SOURCE = "vendor"
+VARIANT_DOM_SELECTION_STANDARD_CONFIDENCE = 0.72
+VARIANT_DOM_SELECTION_VENDOR_CONFIDENCE = 0.62
+VARIANT_DOM_SELECTION_CONTEXT_ANCESTOR_LIMIT = 4
+VARIANT_DOM_SELECTION_CONTEXT_ROLES = frozenset({"group", "listbox", "radiogroup"})
+VARIANT_DOM_SELECTION_AXISLESS_ROLES = frozenset({"option", "radio"})
+VARIANT_DOM_SELECTION_CONTROL_SELECTOR = (
+    VARIANT_OPTION_CONTROL_SELECTOR
+    + ", [aria-selected], [aria-checked], [aria-pressed], [aria-current], "
+    "option[selected], input[checked]"
+)
+VARIANT_DOM_SELECTION_VALUE_ATTRIBUTES = (
+    "data-option-value",
+    "data-value",
+    "data-size",
+    "value",
+    "aria-label",
+    "title",
+)
+VARIANT_DOM_SELECTION_VALUE_PREFIX_PATTERN = (
+    r"^(?:(?:select|choose)\s+)?(?:color|colour|size)\s*[:\-]?\s*"
+)
+VARIANT_DOM_SELECTION_VALUE_SUFFIX_PATTERN = (
+    r"\s*(?:[,;:\-]\s*)?(?:selected|checked|current)\s*$"
+)
+VARIANT_DOM_SELECTION_VALUE_METADATA_KEY = "dom_selection_value"
 
 __all__ = sorted(name for name in globals() if name.isupper())

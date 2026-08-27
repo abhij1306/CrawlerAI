@@ -4,7 +4,11 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 from app.core.config import field_mappings
-from app.core.config.extraction_rules import AVAILABILITY_CANONICAL_ENUM
+from app.core.config.extraction_rules import (
+    AVAILABILITY_CANONICAL_ENUM,
+    DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY,
+    DETAIL_TITLE_SOURCE_ROLE_RANKS,
+)
 from app.core.records.url_identity import (
     detail_title_rank_components,
     detail_url_rank_components,
@@ -83,13 +87,19 @@ def rank(ev: Evidence) -> tuple[object, ...]:
         pollution = int(
             "seo_title_pollution" in ev.flags or "truncated_title" in ev.flags
         )
+        source_role = str(ev.metadata.get(DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY) or "")
+        source_authority = DETAIL_TITLE_SOURCE_ROLE_RANKS.get(
+            source_role, len(DETAIL_TITLE_SOURCE_ROLE_RANKS)
+        )
         url_disagreement = int("title_url_mismatch" in ev.flags)
         return (
             quality,
             pollution,
+            source_authority,
             *detail_title_rank_components(ev.flags, ev.metadata),
             url_disagreement,
             reliability,
+            directness,
             -float(ev.confidence),
             -len(str(ev.value or "")),
             ev.evidence_id,

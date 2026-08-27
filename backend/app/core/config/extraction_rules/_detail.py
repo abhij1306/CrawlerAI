@@ -272,6 +272,7 @@ DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN = (
     r"(?:[a-z0-9]+[\s_-]+){3,}[a-z0-9]+$"
 )
 DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|jsp|php)$"
+DETAIL_TITLE_PRECEDES_ID_MARKERS = frozenset({"dp", "pd"})
 DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"
 DETAIL_TITLE_GENERIC_CATEGORY_VALUES = frozenset(
     {
@@ -546,19 +547,6 @@ DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS = frozenset(
 AVAILABILITY_IN_STOCK = "in_stock"
 AVAILABILITY_OUT_OF_STOCK = "out_of_stock"
 AVAILABILITY_UNKNOWN = "unknown"
-MATERIAL_KEYWORDS = frozenset(
-    {
-        "cotton",
-        "leather",
-        "linen",
-        "nylon",
-        "polyamide",
-        "polyester",
-        "rubber",
-        "spandex",
-        "wool",
-    }
-)
 ORG_SUFFIXES = frozenset({"co", "company", "corp", "inc", "llc", "ltd", "se"})
 NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
     tuple(_STATIC_EXPORTS.get("NOISY_PRODUCT_ATTRIBUTE_KEYS", ()) or ())

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from app.core.config import field_mappings
 from tests.unit.extraction_pipeline_test_support import *
 
 
@@ -472,6 +473,136 @@ def test_product_panel_description_beats_hard_boundary_meta_excerpt() -> None:
     assert result.records[0]["description"].startswith("Warm trail fleece")
 
 
+def test_product_detail_composition_emits_material() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Evening Wrap</h1>
+          <div class="current-price">$120</div>
+          <section class="product-description">
+            <p>A lightweight layer with a soft drape.</p>
+            <ul><li>Composition: 70% wool, 30% silk</li></ul>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/evening-wrap",
+    )
+
+    assert result.records[0]["materials"] == "70% wool, 30% silk"
+
+
+def test_material_collector_rejects_content_outside_product_details() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <nav><span class="material-label">Material: navigation wool</span></nav>
+        <main>
+          <h1>Plain Travel Bag</h1>
+          <div class="current-price">$80</div>
+          <section class="size-guide"><p>Material: guide cotton</p></section>
+          <section class="reviews"><p>Made from leather for years.</p></section>
+          <section class="recommendations">
+            <p class="product-description">Composition: 100% polyester</p>
+          </section>
+          <section class="product-description">A compact bag for short trips.</section>
+        </main>
+        """,
+        "https://shop.test/products/plain-travel-bag",
+    )
+
+    assert result.records[0].get("materials") is None
+    assert not any(row.fact_type == "product.material" for row in result.evidence)
+
+
+def test_meta_material_requires_verified_product_root() -> None:
+    meta = (
+        '<meta name="description" content="Made from premium Aegean Turkish '
+        'cotton for lasting softness.">'
+    )
+    without_root = _extract(
+        "ecommerce_detail",
+        f"<html><head>{meta}</head><body><nav>Store</nav></body></html>",
+        "https://shop.test/products/towels",
+    )
+    with_root = _extract(
+        "ecommerce_detail",
+        f"""
+        <html><head>{meta}</head><body class="modal-background">
+          <main><h1>Turkish Towels</h1><div class="current-price">$40</div></main>
+        </body></html>
+        """,
+        "https://shop.test/products/towels",
+    )
+
+    assert without_root.records[0].get("materials") is None
+    assert with_root.records[0]["materials"] == "premium Aegean Turkish cotton"
+
+
+def test_material_definition_list_uses_value_sibling() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Jersey Tee</h1><div class="current-price">$20</div>
+          <section class="product-description">
+            <dl><dt>Material:</dt><dd>Cotton, Jersey</dd></dl>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/jersey-tee",
+    )
+
+    assert result.records[0]["materials"] == "Cotton, Jersey"
+
+
+def test_material_prose_fallbacks_require_material_terms() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Everyday Carry</h1><div class="current-price">$20</div>
+          <section class="product-description">
+            <p>Save 20% with free shipping.</p>
+            <p>Crafted with care for everyday use.</p>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/everyday-carry",
+    )
+
+    assert result.records[0].get("materials") is None
+
+
+def test_related_dom_variant_controls_stay_outside_product_evidence() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Trail Shoe</h1><div class="current-price">$100</div>
+          <fieldset aria-label="Size">
+            <button data-size="9" data-sku="TRAIL-9" data-price="100">9</button>
+          </fieldset>
+          <section class="recommendations">
+            <fieldset aria-label="Size">
+              <button data-size="8" data-sku="RELATED-8" data-price="40"
+                      aria-pressed="true">8</button>
+            </fieldset>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    variant_values = {
+        str(row.value)
+        for row in result.evidence
+        if row.fact_type.startswith("variant.")
+    }
+    assert "TRAIL-9" in variant_values
+    assert "RELATED-8" not in variant_values
+
+
 def test_visible_product_offer_block_emits_atomic_dom_offer() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -518,6 +649,79 @@ def test_visible_dom_offer_normalizes_locale_price_grouping(
     )
 
     assert result.records[0]["price"] == expected
+
+
+def test_dom_offer_preserves_ambiguous_source_price_text() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Mixed Price</h1><div class='current-price'>$1,299.00</div></main>",
+        "https://shop.test/products/mixed-price",
+    )
+
+    price = next(
+        row
+        for row in result.evidence
+        if row.collector_id == "dom" and row.fact_type == "offer.price"
+    )
+    assert price.value == "1299.00"
+    assert price.raw_value == "1,299.00"
+    assert "ambiguous_decimal" in price.flags
+
+
+def test_dom_offer_mixed_separator_ignores_page_locale_during_collection() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Imported Price</h1><div class='current-price'>$1,299.56</div></main>",
+        "https://shop.de/products/imported-price",
+    )
+
+    assert result.records[0]["price"] == "1299.56"
+
+
+def test_explicit_gtin_with_bad_checksum_remains_source_backed_barcode() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Source Declared Barcode",
+          "url": "https://shop.test/products/source-declared-barcode",
+          "gtin12": "114410600165"
+        }
+        </script>
+        """,
+        "https://shop.test/products/source-declared-barcode",
+        requested_fields=("barcode",),
+    )
+
+    assert result.records[0]["barcode"] == "114410600165"
+    gtin = next(row for row in result.evidence if row.fact_type == "product.gtin")
+    assert "invalid_gtin" in gtin.flags
+
+
+def test_malformed_gtin_length_cannot_publish_as_barcode() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Malformed Barcode",
+          "url": "https://shop.test/products/malformed-barcode",
+          "gtin": "12345"
+        }
+        </script>
+        """,
+        "https://shop.test/products/malformed-barcode",
+        requested_fields=("barcode",),
+    )
+
+    assert result.records[0].get("barcode") is None
+    gtin = next(row for row in result.evidence if row.fact_type == "product.gtin")
+    assert field_mappings.INVALID_GTIN_SHAPE_EVIDENCE_FLAG in gtin.flags
 
 
 def test_related_product_dom_offer_is_not_attached_to_selected_product() -> None:

@@ -60,7 +60,8 @@ def test_frontend_image_is_non_root_static_spa_with_security_headers() -> None:
     assert "X-Content-Type-Options" in headers
     assert "Content-Security-Policy" in headers
     assert "frame-ancestors 'none'" in headers
-    assert "apk upgrade" not in dockerfile
+    assert "apk upgrade --no-cache libcrypto3 libssl3" in dockerfile
+    assert "apk upgrade --no-cache\n" not in dockerfile
 
 
 def test_container_bases_are_digest_pinned_and_backend_runtime_is_hardened() -> None:
