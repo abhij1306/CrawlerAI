@@ -99,6 +99,40 @@ async def test_amazon_shell_produces_no_adapter_artifact() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("url", "display_price", "expected_currency"),
+    (
+        ("https://www.amazon.de/dp/B08J5F3G18", "€1.299,99", "EUR"),
+        ("https://www.amazon.com.br/dp/B08J5F3G18", "R$ 1.299,99", "BRL"),
+    ),
+)
+async def test_amazon_adapter_preserves_localized_decimal_price(
+    url: str, display_price: str, expected_currency: str
+) -> None:
+    html = AMAZON_HTML.replace("$1,499.99", display_price)
+    adapter_result = await AmazonAdapter().extract(url, html, "ecommerce_detail")
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        html,
+        url,
+        artifacts={"adapter_artifacts": adapter_result.artifacts},
+    )
+
+    assert adapter_result.records[0]["price"] == display_price
+    assert adapter_result.records[0]["currency"] == expected_currency
+    adapter_ref = next(
+        ref for ref in request.capture.artifacts if ref.artifact_type == "adapter_json"
+    )
+    assert adapter_ref.metadata == {
+        "source_type": "amazon_adapter",
+        "adapter_name": "amazon",
+    }
+    record = extract(request).records[0]
+    assert record["price"] == "1299.99"
+    assert record["currency"] == expected_currency
+
+
+@pytest.mark.asyncio
 async def test_record_stage_populates_amazon_adapter_artifacts() -> None:
     acquisition = PageAcquisitionResult(
         request=AcquisitionRequest(

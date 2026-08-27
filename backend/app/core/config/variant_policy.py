@@ -575,6 +575,9 @@ DEFAULT_VARIANT_DIAGNOSTIC_REASON = "default_variant_diagnostic_only"
 DEFAULT_VARIANT_PLACEHOLDER_FLAG = "default_variant_placeholder"
 AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON = "axis_group_variant_diagnostic_only"
 SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON = "sibling_product_variant_diagnostic_only"
+VARIANT_ID_FROM_UNIQUE_GTIN_RULE_ID = "variant_id_from_unique_gtin"
+VARIANT_ID_FROM_UNIQUE_SKU_RULE_ID = "variant_id_from_unique_sku"
+VARIANT_SKU_FAMILY_MIN_LENGTH = 5
 STRUCTURED_EVIDENCE_FACT_PREFIXES = {
     "variant_options": "variant.option.",
     "variant_identity": "variant.",

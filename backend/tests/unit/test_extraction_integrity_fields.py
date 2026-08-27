@@ -556,6 +556,53 @@ def test_material_definition_list_uses_value_sibling() -> None:
     assert result.records[0]["materials"] == "Cotton, Jersey"
 
 
+def test_material_prose_fallbacks_require_material_terms() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Everyday Carry</h1><div class="current-price">$20</div>
+          <section class="product-description">
+            <p>Save 20% with free shipping.</p>
+            <p>Crafted with care for everyday use.</p>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/everyday-carry",
+    )
+
+    assert result.records[0].get("materials") is None
+
+
+def test_related_dom_variant_controls_stay_outside_product_evidence() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Trail Shoe</h1><div class="current-price">$100</div>
+          <fieldset aria-label="Size">
+            <button data-size="9" data-sku="TRAIL-9" data-price="100">9</button>
+          </fieldset>
+          <section class="recommendations">
+            <fieldset aria-label="Size">
+              <button data-size="8" data-sku="RELATED-8" data-price="40"
+                      aria-pressed="true">8</button>
+            </fieldset>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    variant_values = {
+        str(row.value)
+        for row in result.evidence
+        if row.fact_type.startswith("variant.")
+    }
+    assert "TRAIL-9" in variant_values
+    assert "RELATED-8" not in variant_values
+
+
 def test_visible_product_offer_block_emits_atomic_dom_offer() -> None:
     result = _extract(
         "ecommerce_detail",

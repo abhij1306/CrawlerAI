@@ -86,7 +86,7 @@ def price_specification_evidence(
                 bundle,
                 artifact_id,
                 row,
-                f"{path}/{index}",
+                f"{path}/{index}" if isinstance(specs, list) else path,
                 group,
                 subject_id,
                 hint,

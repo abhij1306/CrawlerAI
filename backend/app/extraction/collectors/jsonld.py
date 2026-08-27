@@ -300,7 +300,7 @@ def _offers(
     out = shared_product_offer_condition_evidence(
         bundle,
         artifact_id,
-        rows,
+        offers,
         path,
         hint,
         parent_subject_id,
@@ -310,7 +310,7 @@ def _offers(
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
-        offer_path = f"{path}/offers/{index}"
+        offer_path = _offer_path(path, index=index, is_array=isinstance(offers, list))
         offer_identity = _jsonld_identity(row) or offer_path
         offer_url = text_value(row.get("url"))
         target_group = (
@@ -380,6 +380,11 @@ def _offers(
             )
         )
     return out
+
+
+def _offer_path(path: str, *, index: int, is_array: bool) -> str:
+    base = f"{path}/offers"
+    return f"{base}/{index}" if is_array else base
 
 
 def _variants(

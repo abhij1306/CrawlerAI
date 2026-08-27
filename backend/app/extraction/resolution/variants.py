@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlsplit
 
 from app.core.config import field_mappings
+from app.core.config.locale_format_rules import validate_gtin
 from app.core.config.extraction_rules import (
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
     VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
@@ -19,6 +21,9 @@ from app.core.config.variant_policy import (
     DEFAULT_VARIANT_PLACEHOLDER_FLAG,
     PUBLIC_VARIANT_AXIS_FIELDS,
     SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON,
+    VARIANT_ID_FROM_UNIQUE_GTIN_RULE_ID,
+    VARIANT_ID_FROM_UNIQUE_SKU_RULE_ID,
+    VARIANT_SKU_FAMILY_MIN_LENGTH,
     public_variant_row_is_sellable,
 )
 from app.core.records.url_identity import (
@@ -52,9 +57,13 @@ from app.extraction.resolution.offers import _offer_rank
 
 
 def inherit_variant_id_from_sku(
-    row: dict[str, object], lineage_row: dict[str, object]
+    row: dict[str, object],
+    lineage_row: dict[str, object],
+    *,
+    barcode_is_unique: bool = False,
 ) -> None:
-    source_field = "barcode" if row.get("barcode") else "sku"
+    barcode = row.get("barcode")
+    source_field = "barcode" if barcode_is_unique and validate_gtin(barcode) else "sku"
     identity = row.get(source_field)
     if row.get("variant_id") not in (None, "", [], {}, ()) or identity in (
         None,
@@ -69,9 +78,9 @@ def inherit_variant_id_from_sku(
     lineage_row["variant_id"] = {
         **(dict(identity_lineage) if isinstance(identity_lineage, Mapping) else {}),
         "rule_id": (
-            "variant_id_from_unique_gtin"
+            VARIANT_ID_FROM_UNIQUE_GTIN_RULE_ID
             if source_field == "barcode"
-            else "variant_id_from_unique_sku"
+            else VARIANT_ID_FROM_UNIQUE_SKU_RULE_ID
         ),
     }
 
@@ -167,6 +176,7 @@ def _variant_candidates(
         )
         for variant in entities.variants
     ]
+    _inherit_missing_variant_ids(resolved)
     values_by_product = {
         product_id: [
             values
@@ -205,6 +215,30 @@ def _variant_candidates(
     return candidates, rejected
 
 
+def _inherit_missing_variant_ids(
+    resolved: list[tuple[VariantEntity, dict[str, object], dict[str, object]]],
+) -> None:
+    product_ids = {variant.product_entity_id for variant, _values, _lineage in resolved}
+    barcode_counts_by_product = {
+        product_id: Counter(
+            str(values.get("barcode") or "").strip()
+            for variant, values, _lineage in resolved
+            if variant.product_entity_id == product_id and values.get("barcode")
+        )
+        for product_id in product_ids
+    }
+    for variant, values, lineage in resolved:
+        barcode = str(values.get("barcode") or "").strip()
+        inherit_variant_id_from_sku(
+            values,
+            lineage,
+            barcode_is_unique=bool(
+                barcode
+                and barcode_counts_by_product[variant.product_entity_id][barcode] == 1
+            ),
+        )
+
+
 def _resolved_product_title(
     product_id: str,
     decisions: dict[tuple[str, str], Decision],
@@ -240,7 +274,7 @@ def _variant_sku_conflicts_product_family(
     """Reject sibling style rows when the product SKU identifies one family."""
     parent_key = _identifier_family_key(product_sku)
     variant_key = _identifier_family_key(values.get("sku"))
-    if len(parent_key) < 5 or not variant_key:
+    if len(parent_key) < VARIANT_SKU_FAMILY_MIN_LENGTH or not variant_key:
         return False
     sibling_keys = {_identifier_family_key(row.get("sku")) for row in sibling_values}
     if parent_key in sibling_keys:
@@ -360,7 +394,6 @@ def _resolved_variant_row(
             decisions.get((variant.entity_id, fact)),
             evidence_by_id,
         )
-    inherit_variant_id_from_sku(values, lineage)
     _put_variant_options(values, lineage, variant, decisions, evidence_by_id)
     _put_variant_offer(
         values, lineage, variant, offer, decisions, derived, evidence_by_id

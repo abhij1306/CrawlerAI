@@ -547,19 +547,6 @@ DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS = frozenset(
 AVAILABILITY_IN_STOCK = "in_stock"
 AVAILABILITY_OUT_OF_STOCK = "out_of_stock"
 AVAILABILITY_UNKNOWN = "unknown"
-MATERIAL_KEYWORDS = frozenset(
-    {
-        "cotton",
-        "leather",
-        "linen",
-        "nylon",
-        "polyamide",
-        "polyester",
-        "rubber",
-        "spandex",
-        "wool",
-    }
-)
 ORG_SUFFIXES = frozenset({"co", "company", "corp", "inc", "llc", "ltd", "se"})
 NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
     tuple(_STATIC_EXPORTS.get("NOISY_PRODUCT_ATTRIBUTE_KEYS", ()) or ())

@@ -5,6 +5,21 @@ from __future__ import annotations
 
 from tests.unit.extraction_pipeline_test_support import *
 from app.extraction.resolution.variants import _is_axis_group_variant
+from app.extraction.resolution.variants import inherit_variant_id_from_sku
+
+
+def test_variant_id_uses_only_valid_unique_barcode_over_sku() -> None:
+    valid = {"sku": "SKU-VALID", "barcode": "5057913931872"}
+    invalid = {"sku": "SKU-INVALID", "barcode": "114410600165"}
+    shared = {"sku": "SKU-SHARED", "barcode": "5057913931872"}
+
+    inherit_variant_id_from_sku(valid, {}, barcode_is_unique=True)
+    inherit_variant_id_from_sku(invalid, {}, barcode_is_unique=True)
+    inherit_variant_id_from_sku(shared, {}, barcode_is_unique=False)
+
+    assert valid["variant_id"] == "5057913931872"
+    assert invalid["variant_id"] == "SKU-INVALID"
+    assert shared["variant_id"] == "SKU-SHARED"
 
 
 def test_selected_has_variant_admits_its_declared_product_group() -> None:

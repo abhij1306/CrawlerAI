@@ -19,7 +19,7 @@ from app.core.config.extraction_rules import (
     AMAZON_PRICE_SYMBOL_SELECTOR,
     AMAZON_PRICE_WHOLE_SELECTOR,
 )
-from app.core.shared.field_coerce import extract_currency_code
+from app.core.shared.field_coerce import extract_currency_code, extract_price_text
 
 _DOMAINS = (
     "amazon.com",
@@ -49,14 +49,11 @@ def _clean_brand(value: str) -> str | None:
 
 def _price_text(value: object) -> str | None:
     text = _clean_text(value)
-    if not text:
-        return None
-    match = re.search(
-        r"(?:(?:[$€£₹]|[A-Z]{3})\s*)?\d[\d,]*(?:\.\d{1,3})?(?:\s*(?:[$€£₹]|[A-Z]{3}))?",
+    return extract_price_text(
         text,
-        re.I,
+        prefer_last=False,
+        allow_unmarked=True,
     )
-    return match.group(0) if match else None
 
 
 def _price_from_node(node: object) -> str | None:

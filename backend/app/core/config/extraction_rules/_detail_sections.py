@@ -362,6 +362,48 @@ DETAIL_DOM_MATERIAL_COMPONENT_PATTERN = (
     r"(?:fabric|upper|lining|insole|outsole|base)\b"
 )
 DETAIL_DOM_MATERIAL_DECORATIVE_SYMBOL_PATTERN = r"[®™℠�]"
+MATERIAL_KEYWORDS = frozenset(
+    {
+        "acrylic",
+        "aluminum",
+        "brass",
+        "canvas",
+        "cashmere",
+        "ceramic",
+        "cotton",
+        "denim",
+        "elastane",
+        "glass",
+        "gold",
+        "jersey",
+        "latex",
+        "leather",
+        "linen",
+        "lyocell",
+        "mesh",
+        "modal",
+        "nylon",
+        "paper",
+        "polyamide",
+        "polycarbonate",
+        "polyester",
+        "polyurethane",
+        "rayon",
+        "rubber",
+        "satin",
+        "silk",
+        "silver",
+        "spandex",
+        "steel",
+        "suede",
+        "synthetic",
+        "thermoplastic",
+        "titanium",
+        "viscose",
+        "wood",
+        "wool",
+    }
+)
 DETAIL_DOM_OFFER_SELECTORS = (
     "[data-price]",
     "[itemprop='price']",

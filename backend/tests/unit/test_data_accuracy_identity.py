@@ -14,6 +14,11 @@ from app.core.records.product_identity import (
 from app.core.records.url_identity import selected_variant_axes
 from app.core.records.variant_identity import variant_values_support_selection
 from app.extraction import Surface, extract
+from app.extraction.collectors.jsonld_targeting import (
+    is_product_group,
+    sole_target_offer_url,
+    target_product_owner_identity,
+)
 from app.extraction.replay import fixture_request_from_inputs
 
 
@@ -610,6 +615,77 @@ def test_sole_target_offer_url_binds_its_url_less_product_to_the_page() -> None:
     assert result.records[0]["price"] == "200.00"
     assert result.records[0]["currency"] == "USD"
     assert result.records[0]["availability"] == "in_stock"
+
+
+def test_jsonld_targeting_preserves_selected_axes_and_product_paths() -> None:
+    target = "https://shop.test/products/tee?style=RED"
+
+    assert (
+        sole_target_offer_url(
+            target, {"url": "https://shop.test/products/tee?style=BLUE"}
+        )
+        == ""
+    )
+    assert (
+        target_product_owner_identity(
+            target,
+            "https://shop.test/recommendations/tee?style=RED",
+            "",
+            "",
+            is_product_group=False,
+        )
+        == ""
+    )
+    assert (
+        target_product_owner_identity(
+            "https://shop.test/en-us/products/tee",
+            "https://shop.test/products/tee",
+            "",
+            "",
+            is_product_group=False,
+        )
+        == "https://shop.test/en-us/products/tee"
+    )
+
+
+def test_product_group_accepts_full_schema_type_iri() -> None:
+    assert is_product_group({"@type": "https://schema.org/ProductGroup"})
+
+
+def test_scalar_jsonld_offer_locators_preserve_source_shape() -> None:
+    url = "https://shop.test/products/camera"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Camera",
+        "url": url,
+        "offers": {
+            "@type": "Offer",
+            "itemCondition": "https://schema.org/NewCondition",
+            "priceSpecification": {
+                "@type": "UnitPriceSpecification",
+                "price": "100.00",
+                "priceCurrency": "USD",
+            },
+        },
+    }
+
+    result = _extract(
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        "price",
+        "currency",
+        "condition",
+    )
+    pointers = {
+        row.locator.value
+        for row in result.evidence
+        if row.collector_id == "jsonld" and row.locator.kind == "json_pointer"
+    }
+
+    assert "/offers/itemCondition" in pointers
+    assert "/offers/priceSpecification/price" in pointers
+    assert not any("/offers/0" in pointer for pointer in pointers)
 
 
 def test_url_less_product_offers_do_not_merge_into_one_offer() -> None:

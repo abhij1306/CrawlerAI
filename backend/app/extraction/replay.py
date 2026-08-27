@@ -122,7 +122,14 @@ def _append_adapter_artifacts(
         artifact_id = f"adapter_{index}"
         body = artifact.get("body", artifact)
         payloads[artifact_id] = body
-        refs.append(_json_artifact_ref(artifact_id, "adapter_json", body))
+        metadata = {
+            key: str(value)
+            for key in ("source_type", "adapter_name")
+            if (value := artifact.get(key)) not in (None, "")
+        }
+        refs.append(
+            _json_artifact_ref(artifact_id, "adapter_json", body, metadata=metadata)
+        )
 
 
 def _append_css_rules_artifact(
@@ -168,9 +175,17 @@ def _json_artifact_ref(
     artifact_id: str,
     artifact_type: Literal["js_state", "adapter_json", "network_json", "css_recipe"],
     body: object,
+    *,
+    metadata: dict[str, str] | None = None,
 ) -> ArtifactRef:
     content = json.dumps(body, sort_keys=True, default=str)
-    return _memory_artifact_ref(artifact_id, artifact_type, content, "application/json")
+    return _memory_artifact_ref(
+        artifact_id,
+        artifact_type,
+        content,
+        "application/json",
+        metadata=metadata,
+    )
 
 
 def _memory_artifact_ref(
@@ -180,6 +195,8 @@ def _memory_artifact_ref(
     ],
     content: str,
     media_type: str,
+    *,
+    metadata: dict[str, str] | None = None,
 ) -> ArtifactRef:
     return ArtifactRef(
         artifact_id=artifact_id,
@@ -187,6 +204,7 @@ def _memory_artifact_ref(
         content_sha256=content_sha256(content),
         storage_uri=f"memory://{artifact_id}",
         media_type=media_type,
+        metadata=metadata or {},
     )
 
 

@@ -80,8 +80,9 @@ class DomCollector:
         product_subject = stable_id(
             "subject", bundle.bundle_id, "product", bundle.final_url
         )
+        product_roots = _product_root_nodes(doc)
         variant_identifier_evidence, variant_identifier_control_ids = (
-            collect_dom_variant_identifiers(bundle, doc, product_subject)
+            collect_dom_variant_identifiers(bundle, doc, product_roots, product_subject)
         )
         out = _base_dom_evidence(
             bundle,
@@ -89,7 +90,6 @@ class DomCollector:
             product_subject,
             variant_identifier_control_ids=variant_identifier_control_ids,
         )
-        product_roots = _product_root_nodes(doc)
         out.extend(_product_brand_evidence(bundle, doc, product_roots, product_subject))
         out.extend(
             _product_description_evidence(bundle, product_roots, product_subject)
@@ -117,9 +117,15 @@ class DomCollector:
                     parent_scope="product",
                 )
             )
-        out.extend(collect_commercial_variant_evidence(bundle, doc, product_subject))
+        out.extend(
+            collect_commercial_variant_evidence(
+                bundle, doc, product_roots, product_subject
+            )
+        )
         out.extend(variant_identifier_evidence)
-        out.extend(collect_dom_selection_signals(bundle, doc, product_subject))
+        out.extend(
+            collect_dom_selection_signals(bundle, doc, product_roots, product_subject)
+        )
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
 

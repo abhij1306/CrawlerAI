@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from app.core.config.extraction_rules import DETAIL_URL_TITLE_LOCALE_PATTERN
 from app.core.records.js_state_scope import RootSelection, select_product_roots
 from app.core.records.product_identity import target_offer_group_id
-from app.core.records.url_identity import detail_url_resource_identity
+from app.core.records.url_identity import (
+    detail_url_resource_identity,
+    selected_variant_axes,
+)
 from app.core.shared.ids import stable_id
 
 
@@ -40,8 +45,11 @@ def sole_target_offer_url(final_url: str, offers: Any) -> str:
         and (url := row.get("url"))
         and (
             target_offer_group_id(final_url, str(url))
-            or detail_url_resource_identity(final_url)
-            == detail_url_resource_identity(str(url))
+            or (
+                not selected_variant_axes(final_url)
+                and detail_url_resource_identity(final_url)
+                == detail_url_resource_identity(str(url))
+            )
         )
     }
     return next(iter(urls)) if len(urls) == 1 else ""
@@ -148,22 +156,32 @@ def _same_host_terminal_resource(final_url: str, declared_product_url: str) -> b
     candidate = urlsplit(declared_product_url)
     target_host = str(target.hostname or "").casefold().removeprefix("www.")
     candidate_host = str(candidate.hostname or "").casefold().removeprefix("www.")
-    target_terminal = unquote(target.path).casefold().rstrip("/").rsplit("/", 1)[-1]
-    candidate_terminal = (
-        unquote(candidate.path).casefold().rstrip("/").rsplit("/", 1)[-1]
-    )
+    target_path = _product_path_without_locale(target.path)
+    candidate_path = _product_path_without_locale(candidate.path)
     return bool(
         target_host
         and target_host == candidate_host
-        and target_terminal
-        and target_terminal == candidate_terminal
+        and target_path
+        and target_path == candidate_path
+        and selected_variant_axes(final_url)
+        == selected_variant_axes(declared_product_url)
     )
+
+
+def _product_path_without_locale(path: str) -> tuple[str, ...]:
+    segments = [part.casefold() for part in unquote(path).split("/") if part.strip()]
+    while segments and re.fullmatch(DETAIL_URL_TITLE_LOCALE_PATTERN, segments[0]):
+        segments.pop(0)
+    return tuple(segments)
 
 
 def is_product_group(obj: dict[str, Any]) -> bool:
     types = obj.get("@type") or obj.get("type")
     values = types if isinstance(types, list) else [types]
-    return any(str(item).casefold() == "productgroup" for item in values)
+    return any(
+        re.split(r"[/#]", str(item).strip())[-1].casefold() == "productgroup"
+        for item in values
+    )
 
 
 def _variant_urls(row: dict[str, Any]) -> tuple[str, ...]:

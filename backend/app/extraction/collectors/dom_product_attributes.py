@@ -19,6 +19,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DOM_MATERIAL_VALUE_BOUNDARY_PATTERN,
     DETAIL_DOM_MATERIAL_VALUE_REJECT,
     DETAIL_DOM_MATERIAL_DECORATIVE_SYMBOL_PATTERN,
+    MATERIAL_KEYWORDS,
 )
 from app.extraction.collectors._helpers import evidence
 from app.extraction.collectors.dom_scoping import (
@@ -140,19 +141,49 @@ def _prose_candidates(node: HtmlNode, *, metadata: bool) -> list[_MaterialCandid
     if not text:
         return []
     offset = 0.08 if metadata else 0.0
+    values = [
+        *_inline_material_values(text, offset=offset),
+        *_fallback_material_values(text, offset=offset),
+    ]
+    return [
+        _MaterialCandidate(value, node, confidence, strategy)
+        for value, confidence, strategy in values
+    ]
+
+
+def _inline_material_values(
+    text: str, *, offset: float
+) -> list[tuple[str, float, str]]:
     values: list[tuple[str, float, str]] = []
     inline = re.search(DETAIL_DOM_MATERIAL_INLINE_LABEL_PATTERN, text, re.I)
     if inline and (value := _clean_value(inline.group("value"))):
         values.append((value, 0.82 - offset, "inline_label"))
     composition = re.search(DETAIL_DOM_MATERIAL_INLINE_COMPOSITION_PATTERN, text, re.I)
-    if composition and (value := _clean_value(composition.group("value"))):
+    if (
+        composition
+        and (value := _clean_value(composition.group("value")))
+        and _contains_material_term(value)
+    ):
         values.append((value, 0.82 - offset, "inline_composition"))
-    percentages = _pattern_values(text, DETAIL_DOM_MATERIAL_PERCENTAGE_PATTERNS)
+    return values
+
+
+def _fallback_material_values(
+    text: str, *, offset: float
+) -> list[tuple[str, float, str]]:
+    values: list[tuple[str, float, str]] = []
+    percentages = [
+        value
+        for value in _pattern_values(text, DETAIL_DOM_MATERIAL_PERCENTAGE_PATTERNS)
+        if _contains_material_term(value)
+    ]
     if percentages:
         values.append(("; ".join(percentages), 0.76 - offset, "composition"))
     for pattern in DETAIL_DOM_MATERIAL_CONSTRUCTION_PATTERNS:
         for match in re.finditer(pattern, text, re.I):
-            if value := _clean_value(match.group("value")):
+            if (
+                value := _clean_value(match.group("value"))
+            ) and _contains_material_term(value):
                 values.append((value, 0.7 - offset, "construction"))
     components = _component_values(text)
     if components:
@@ -160,10 +191,7 @@ def _prose_candidates(node: HtmlNode, *, metadata: bool) -> list[_MaterialCandid
         if len(joined) <= DETAIL_DOM_MATERIAL_MAX_VALUE_CHARS:
             confidence = 0.7 + 0.01 * min(len(components), 4) - offset
             values.append((joined, confidence, "component"))
-    return [
-        _MaterialCandidate(value, node, confidence, strategy)
-        for value, confidence, strategy in values
-    ]
+    return values
 
 
 def _pattern_values(text: str, patterns: tuple[str, ...]) -> list[str]:
@@ -185,9 +213,14 @@ def _component_values(text: str) -> list[str]:
             flags=re.I,
         ).strip()
         raw = re.sub(r"^(?:and|with|a|an|the|our|its)\s+", "", raw, flags=re.I)
-        if value := _clean_value(raw):
+        if (value := _clean_value(raw)) and _contains_material_term(value):
             values.append(value)
     return list(dict.fromkeys(values))
+
+
+def _contains_material_term(value: str) -> bool:
+    tokens = set(re.findall(r"[a-z]+", value.casefold()))
+    return bool(tokens & MATERIAL_KEYWORDS)
 
 
 def _clean_value(value: object) -> str:

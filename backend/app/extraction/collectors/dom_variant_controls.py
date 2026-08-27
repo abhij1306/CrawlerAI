@@ -37,6 +37,10 @@ from app.core.config.extraction_rules import (
 )
 from app.core.shared.ids import stable_id
 from app.extraction.collectors._helpers import evidence
+from app.extraction.collectors.dom_scoping import (
+    node_context_excluded,
+    node_within_roots,
+)
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.documents import HtmlDocument, HtmlNode
 
@@ -44,17 +48,25 @@ from app.extraction.documents import HtmlDocument, HtmlNode
 def collect_dom_variant_identifiers(
     bundle: CaptureBundle,
     doc: HtmlDocument,
+    roots: tuple[HtmlNode, ...],
     product_subject: str,
 ) -> tuple[tuple[Evidence, ...], frozenset[int]]:
-    if not doc.css("[data-sku]"):
+    if not roots or not doc.css("[data-sku]"):
         return (), frozenset()
     controls = doc.css(VARIANT_DOM_IDENTIFIER_CONTROL_SELECTOR)
+    root_ids = {root.identity() for root in roots}
     rows: list[Evidence] = []
     seen: set[tuple[int, str]] = set()
     for node in controls:
         sku = str(node.attribute("data-sku") or "").strip()
         key = (node.identity(), sku)
-        if not sku or key in seen or is_commercial_variant_control(node):
+        if (
+            not sku
+            or key in seen
+            or is_commercial_variant_control(node)
+            or not node_within_roots(node, root_ids)
+            or node_context_excluded(node)
+        ):
             continue
         seen.add(key)
         rows.append(_identifier_evidence(bundle, node, product_subject, sku))
@@ -64,11 +76,17 @@ def collect_dom_variant_identifiers(
 def collect_commercial_variant_evidence(
     bundle: CaptureBundle,
     doc: HtmlDocument,
+    roots: tuple[HtmlNode, ...],
     product_subject: str,
 ) -> list[Evidence]:
+    if not roots:
+        return []
     rows: list[Evidence] = []
+    root_ids = {root.identity() for root in roots}
     selector = "[data-size][data-sku][data-price], [data-size][data-sku][data-currency]"
     for node in doc.css(selector):
+        if not node_within_roots(node, root_ids) or node_context_excluded(node):
+            continue
         size = dom_variant_value(str(node.attribute("data-size") or ""), axis="size")
         sku = str(node.attribute("data-sku") or "").strip()
         if not size or not sku:
@@ -80,12 +98,18 @@ def collect_commercial_variant_evidence(
 def collect_dom_selection_signals(
     bundle: CaptureBundle,
     doc: HtmlDocument,
+    roots: tuple[HtmlNode, ...],
     product_subject: str,
 ) -> list[Evidence]:
+    if not roots:
+        return []
     rows: list[Evidence] = []
+    root_ids = {root.identity() for root in roots}
     for node in doc.css(VARIANT_DOM_SELECTION_CONTROL_SELECTOR)[
         :VARIANT_OPTION_CONTROL_SCAN_LIMIT
     ]:
+        if not node_within_roots(node, root_ids) or node_context_excluded(node):
+            continue
         selected = _selected_state(node)
         if selected is None:
             continue

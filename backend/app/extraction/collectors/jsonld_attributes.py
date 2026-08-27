@@ -25,7 +25,7 @@ __all__ = [
 def shared_product_offer_condition_evidence(
     bundle: CaptureBundle,
     artifact_id: str,
-    rows: list[Any],
+    offers: Any,
     path: str,
     hint: EntityHint,
     parent_subject_id: str | None,
@@ -34,6 +34,7 @@ def shared_product_offer_condition_evidence(
     """Lift an offer condition only when every stated product offer agrees."""
     if parent_scope != "product" or not parent_subject_id:
         return []
+    rows = offers if isinstance(offers, list) else [offers]
     key = field_mappings.ECOMMERCE_JSONLD_ITEM_CONDITION_KEY
     located = [
         (index, value)
@@ -43,6 +44,9 @@ def shared_product_offer_condition_evidence(
     if not located or len({value.casefold() for _index, value in located}) != 1:
         return []
     index, value = located[0]
+    offer_path = (
+        f"{path}/offers/{index}" if isinstance(offers, list) else f"{path}/offers"
+    )
     return [
         evidence(
             bundle,
@@ -50,7 +54,7 @@ def shared_product_offer_condition_evidence(
             "jsonld",
             field_mappings.PRODUCT_CONDITION_FACT_TYPE,
             value,
-            SourceLocator(kind="json_pointer", value=f"{path}/offers/{index}/{key}"),
+            SourceLocator(kind="json_pointer", value=f"{offer_path}/{key}"),
             hint=hint,
             directness="embedded",
             confidence=0.9,

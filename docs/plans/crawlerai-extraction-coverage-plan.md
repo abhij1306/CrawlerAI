@@ -244,6 +244,16 @@ Final verification:
   cases.
 - repository-selected retry delta: **1,008 passed**; no frontend or E2E tests
   were selected.
+- PR review hardening closed the remaining regression edges: selected URL axes
+  now gate singleton JSON-LD offers; same-slug recommendation URLs cannot own
+  the target; full-IRI `ProductGroup` types work; prose percentages and
+  construction require material terms; only valid, product-unique GTINs can
+  displace SKU as a derived variant ID; scalar JSON-LD pointers and replayed
+  adapter metadata preserve source provenance; and DOM variant controls must
+  sit inside verified, non-excluded product roots. The mapped retry delta passed
+  **767 tests**.
+- Amazon localized prices such as `€1.299,99` and `R$ 1.299,99` now retain the
+  full amount through the shared price-token path and normalize to `1299.99`.
 - one explicitly requested live Amazon detail crawl was run as run 7/result
   256. Global HTTP escalation reached browser acquisition, returned HTTP 200
   with usable content, and published one partial record in 10.05 seconds. The
