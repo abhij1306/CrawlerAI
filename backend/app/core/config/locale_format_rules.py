@@ -88,6 +88,7 @@ DOT_DECIMAL_COUNTRIES = frozenset(
     {"au", "ca", "gb", "hk", "in", "jp", "nz", "sg", "us", "za"}
 )
 CURRENCY_SYMBOL_TO_ISO: dict[str, str] = dict(CURRENCY_SYMBOL_MAP)
+GTIN_LENGTHS = frozenset({8, 12, 13, 14})
 PRICE_CONTEXT_TOKENS = frozenset(
     {"cost", "from", "mrp", "msrp", "now", "price", "sale", "starting"}
 )
@@ -131,7 +132,7 @@ def money_has_ambiguous_decimal(
 
 def validate_gtin(digits: object) -> bool:
     text = re.sub(r"\D+", "", str(digits or ""))
-    if len(text) not in {8, 12, 13, 14}:
+    if len(text) not in GTIN_LENGTHS:
         return False
     payload, check_digit = text[:-1], int(text[-1])
     total = 0

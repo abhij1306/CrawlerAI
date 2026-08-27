@@ -202,7 +202,11 @@ def infer_brand_from_page_identity(
     leading = _leading_existing_brand(compact_core, existing, title_words, title_tokens)
     if leading:
         return leading
-    matched = _matching_host_brand(compact_host, compact_core, corpus_words, existing)
+    matched = (
+        None
+        if generic_host and not existing
+        else _matching_host_brand(compact_host, compact_core, corpus_words, existing)
+    )
     if matched:
         return matched
     return _corroborated_page_brand(
@@ -404,6 +408,8 @@ def _tokens_before_anchor(
             continue
         brand_tokens = path_tokens[:start]
         while brand_tokens and brand_tokens[0].isdigit():
+            brand_tokens = brand_tokens[1:]
+        while brand_tokens and brand_tokens[0] in DETAIL_BRAND_PREFIX_STOP_TOKENS:
             brand_tokens = brand_tokens[1:]
         if not brand_tokens or len(brand_tokens) > LISTING_BRAND_MAX_WORDS:
             continue

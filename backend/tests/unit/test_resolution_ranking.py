@@ -13,6 +13,12 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import field_mappings
+from app.core.config.extraction_rules import (
+    DETAIL_TITLE_SOURCE_ROLE_DOCUMENT,
+    DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY,
+    DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT,
+    DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING,
+)
 from app.extraction.contracts import Decision, EntityHint, Evidence, SourceLocator
 from app.extraction.entities import EntitySet, OfferEntity, VariantEntity
 from app.extraction.resolution import (
@@ -94,6 +100,25 @@ def test_jsonld_offer_outranks_phantom_dom_price() -> None:
     )
     assert _rank(jsonld) < _rank(phantom_dom)
     assert _winner(jsonld, phantom_dom) == "ev-jsonld"
+
+
+def test_checksum_valid_gtin_outranks_invalid_declared_gtin() -> None:
+    invalid_jsonld = _evidence(
+        "ev-invalid-gtin",
+        fact_type=field_mappings.PRODUCT_GTIN_FACT_TYPE,
+        value="4006381333932",
+        collector_id="jsonld",
+        directness="embedded",
+    )
+    valid_state = _evidence(
+        "ev-valid-gtin",
+        fact_type=field_mappings.PRODUCT_GTIN_FACT_TYPE,
+        value="4006381333931",
+        collector_id="js_state",
+        directness="embedded",
+    )
+
+    assert _winner(invalid_jsonld, valid_state) == "ev-valid-gtin"
 
 
 def test_offer_price_currency_atomicity_rejects_incompatible_lineage() -> None:
@@ -310,6 +335,60 @@ def test_title_pollution_ranking_preserved() -> None:
         flags=("seo_title_pollution",),
     )
     assert _rank(clean) < _rank(polluted)
+
+
+def test_title_semantic_source_role_precedes_url_overlap() -> None:
+    structured = _evidence(
+        "ev-structured",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="Trail Running Shoe",
+        collector_id="jsonld",
+        metadata={
+            DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY: (
+                DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT
+            ),
+            "title_overlap": 1,
+            "title_precision": 0.33,
+        },
+    )
+    document = _evidence(
+        "ev-document",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="Blue Trail Running Shoe TR-100",
+        collector_id="dom",
+        metadata={
+            DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY: DETAIL_TITLE_SOURCE_ROLE_DOCUMENT,
+            "title_overlap": 5,
+            "title_precision": 1.0,
+        },
+    )
+
+    assert _winner(structured, document) == structured.evidence_id
+
+
+def test_visible_product_heading_precedes_document_title() -> None:
+    heading = _evidence(
+        "ev-heading",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="Trail Running Shoe",
+        collector_id="dom",
+        metadata={
+            DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY: (
+                DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING
+            )
+        },
+    )
+    document = _evidence(
+        "ev-document",
+        fact_type=field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        value="Trail Running Shoe - Blue | Example Store",
+        collector_id="dom",
+        metadata={
+            DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY: DETAIL_TITLE_SOURCE_ROLE_DOCUMENT
+        },
+    )
+
+    assert _winner(heading, document) == heading.evidence_id
 
 
 def test_clean_extracted_title_outranks_url_derived_slug_on_partial_overlap() -> None:

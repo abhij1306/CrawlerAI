@@ -6,6 +6,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
+from app.connectors.adapters.base import AdapterResult
+from app.connectors.adapters.registry import run_adapter
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty
@@ -74,6 +76,7 @@ async def _extract_records_for_acquisition(
     fetched: _FetchedURLStage,
 ) -> tuple[ExtractionResult, list[dict[str, object]]]:
     acquisition_result = fetched.acquisition_result
+    await _populate_adapter_artifacts(context, acquisition_result)
     _assign_platform_family(acquisition_result)
 
     fetched.url_metrics = build_url_metrics(
@@ -107,6 +110,77 @@ async def _extract_records_for_acquisition(
             result=result,
         )
     return result, selector_rules
+
+
+async def _populate_adapter_artifacts(
+    context: _URLProcessingContext,
+    acquisition_result: PageAcquisitionResult,
+) -> None:
+    acquisition_result.adapter_name = None
+    acquisition_result.adapter_source_type = None
+    artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
+    adapter_proxy = _adapter_proxy(context)
+    with logfire_span(
+        "extract.tier.adapter",
+        run_id=context.run.id,
+        domain=normalize_domain(acquisition_result.final_url),
+        surface=context.surface,
+        proxy_configured=bool(adapter_proxy),
+    ) as span:
+        adapter_result = await _run_adapter_for_capture(
+            context, acquisition_result, artifacts, adapter_proxy
+        )
+        set_logfire_attributes(
+            span,
+            adapter=(adapter_result.adapter_name if adapter_result else None),
+            artifact_count=(len(adapter_result.artifacts) if adapter_result else 0),
+        )
+    if adapter_result is None or not adapter_result.artifacts:
+        artifacts.pop("adapter_artifacts", None)
+        acquisition_result.artifacts = artifacts
+        return
+    artifacts["adapter_artifacts"] = adapter_result.artifacts
+    acquisition_result.artifacts = artifacts
+    acquisition_result.adapter_name = adapter_result.adapter_name or None
+    acquisition_result.adapter_source_type = adapter_result.source_type or None
+
+
+def _adapter_proxy(context: _URLProcessingContext) -> str | None:
+    config = getattr(context, "config", None)
+    return next(
+        (
+            str(proxy).strip()
+            for proxy in getattr(config, "proxy_list", ()) or ()
+            if str(proxy).strip()
+        ),
+        None,
+    )
+
+
+async def _run_adapter_for_capture(
+    context: _URLProcessingContext,
+    acquisition_result: PageAcquisitionResult,
+    artifacts: dict[str, object],
+    proxy: str | None,
+) -> AdapterResult | None:
+    html_inputs = dict.fromkeys(
+        value
+        for value in (
+            str(acquisition_result.html or "").strip(),
+            str(artifacts.get("full_rendered_html") or "").strip(),
+        )
+        if value
+    )
+    for html in html_inputs:
+        candidate = await run_adapter(
+            acquisition_result.final_url,
+            html,
+            context.surface,
+            proxy=proxy,
+        )
+        if candidate is not None and candidate.artifacts:
+            return candidate
+    return None
 
 
 def _browser_retry_pending(

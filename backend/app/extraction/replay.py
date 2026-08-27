@@ -122,7 +122,7 @@ def _append_adapter_artifacts(
         artifact_id = f"adapter_{index}"
         body = artifact.get("body", artifact)
         payloads[artifact_id] = body
-        refs.append(_json_artifact_ref(artifact_id, "network_json", body))
+        refs.append(_json_artifact_ref(artifact_id, "adapter_json", body))
 
 
 def _append_css_rules_artifact(
@@ -166,7 +166,7 @@ def _append_listing_artifacts(
 
 def _json_artifact_ref(
     artifact_id: str,
-    artifact_type: Literal["js_state", "network_json", "css_recipe"],
+    artifact_type: Literal["js_state", "adapter_json", "network_json", "css_recipe"],
     body: object,
 ) -> ArtifactRef:
     content = json.dumps(body, sort_keys=True, default=str)
@@ -175,7 +175,9 @@ def _json_artifact_ref(
 
 def _memory_artifact_ref(
     artifact_id: str,
-    artifact_type: Literal["rendered_html", "js_state", "network_json", "css_recipe"],
+    artifact_type: Literal[
+        "rendered_html", "js_state", "adapter_json", "network_json", "css_recipe"
+    ],
     content: str,
     media_type: str,
 ) -> ArtifactRef:

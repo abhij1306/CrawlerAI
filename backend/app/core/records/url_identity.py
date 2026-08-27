@@ -13,6 +13,7 @@ from app.core.config.extraction_rules import (
     DETAIL_IDENTITY_CODE_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    DETAIL_TITLE_PRECEDES_ID_MARKERS,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
     DETAIL_TITLE_STYLE_ONLY_TOKENS,
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
@@ -267,6 +268,7 @@ def _detail_url_title_segment_is_code(value: str) -> bool:
 def detail_title_from_url(url: str) -> str:
     parsed = urlparse(str(url or ""))
     segments = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+    segments = _title_bearing_path_segments(segments)
     if _terminal_code_has_non_title_parent(parsed.path, segments):
         return ""
     for offset, segment in enumerate(reversed(segments)):
@@ -276,6 +278,19 @@ def detail_title_from_url(url: str) -> str:
         if title:
             return title
     return ""
+
+
+def _title_bearing_path_segments(segments: list[str]) -> list[str]:
+    """Drop suffixes after an opaque detail identity when its prefix is descriptive."""
+    for index, segment in enumerate(segments[:-1]):
+        if segment.casefold() not in DETAIL_TITLE_PRECEDES_ID_MARKERS:
+            continue
+        if not _detail_url_title_segment_is_code(segments[index + 1]):
+            continue
+        prefix = segments[:index]
+        if prefix and len(semantic_identity_tokens(prefix[-1])) >= 2:
+            return prefix
+    return segments
 
 
 def _terminal_code_has_non_title_parent(path: str, segments: list[str]) -> bool:

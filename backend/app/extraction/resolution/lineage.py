@@ -129,8 +129,11 @@ def _decision_lineage(decision: Decision) -> dict[str, object]:
 
 
 def _derived_lineage(derived: DerivedFact) -> dict[str, object]:
-    return {
+    lineage: dict[str, object] = {
         "derived_fact_id": derived.derived_fact_id,
         "evidence_ids": list(derived.input_evidence_ids),
         "rule_id": derived.rule_id,
     }
+    if derived.input_selected_fact_ids:
+        lineage["selected_fact_ids"] = list(derived.input_selected_fact_ids)
+    return lineage

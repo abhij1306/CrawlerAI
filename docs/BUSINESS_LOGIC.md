@@ -65,17 +65,42 @@ belong in `INVARIANTS.md`.
   Each is published only from source evidence and carries lineage; none is inferred
   to fill a gap.
 - `barcode` is the public name for a product's GTIN/UPC/EAN.
+  A source-declared GTIN with the public digit length remains source evidence
+  when its checksum fails; checksum failure is diagnostic and lowers candidate
+  rank, but does not erase the role the source declared. Values outside the
+  supported 8/12/13/14-digit shape cannot publish as barcodes.
 - `style_id` is the family/style identifier (schema.org `productGroupID`) and stays
   distinct from `sku`, which is the product-level merchant SKU.
 - `gender` states the audience the source declares, either structurally or in the
   requested PDP path; it is never inferred from query or tracking state.
 - schema.org enumerations publish as plain wording (`NewCondition` becomes `New`).
+- A condition stated by a product publishes directly. A condition stated only
+  by offers publishes at product level only when every stated product offer
+  agrees; conflicting offer conditions remain missing.
 - Trademark and service-mark symbols are legal notation and are not part of a
   published title or brand.
+- `title` is the selected target's source-declared semantic product name, not a
+  title assembled from separate brand, colour, size, gender, condition, or
+  identifier fields. A target-confirmed structured `Product`/`ProductGroup`
+  name is authoritative; when that is absent or ambiguous, resolution falls
+  back to the product's visible heading, dedicated product metadata/document
+  title, and finally the requested product URL. Source spelling, case, and
+  punctuation are preserved apart from documented whitespace, legal-symbol,
+  and site-boilerplate cleanup. Competing source titles remain evidence even
+  though the scalar publication selects one.
+- `brand` prefers an explicit target-scoped manufacturer, designer,
+  private-label, or vendor value. Its source spelling, case, and punctuation
+  are preserved apart from legal-symbol cleanup. Page identity, title, or URL
+  derivation is allowed only when no valid explicit product brand exists and
+  independent source signals identify one unambiguously; a derived brand never
+  replaces an explicit one.
 - `rating` publishes as a decimal and `review_count` as an integer, the types the
   canonical record declares. The conversion from source text is an authorized
   canonicalization carrying its own lineage. `price` stays a string, where
   trailing-zero precision is part of the value.
+- A URL-less schema Product may bind to the requested product through its sole
+  Offer URL when that URL names the same product resource. The URL is ownership
+  evidence only; it is not copied into a product identifier field.
 - A page that fails acquisition (an anti-automation shell) publishes no product
   rather than a value derived from the URL.
 

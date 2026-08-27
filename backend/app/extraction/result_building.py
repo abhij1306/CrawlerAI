@@ -357,8 +357,7 @@ def _bucket_projection_entries(
         if entry.path.startswith("asset[") and entry.path.endswith(".url"):
             entries_by_field.setdefault("image_url", []).append(entry)
         elif entry.path.startswith("variant["):
-            # Variant-scoped commercial facts are summarized separately under
-            # ``variants.*``; they must never mark the public parent field
+            # Variant facts live under ``variants.*`` and must never mark the parent
             # (``record.*``) as published. Flattening both to the same field name
             # is the observability defect behind results 68/90, where a published
             # variant price marked page-level ``price`` as ``captured_published``

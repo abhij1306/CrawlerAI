@@ -26,12 +26,14 @@ from app.core.records.html_helpers import bounded_json_objects, embedded_state_p
 from app.core.records.structured_variant_state import (
     canonical_axis as _canonical_axis,
     configured_value_path_rows,
+    direct_url_value as _direct_url_value,
     expand_embedded_state_payload,
     first as _first,
     same_product_variant_endpoint,
     scalar_value as _scalar_value,
     source_values,
     url_value as _url_value,
+    variant_gtin_values,
     variant_axis_hints,
     with_parent_variant_axes,
 )
@@ -530,7 +532,10 @@ def _network_evidence(
         collector_id,
         fact,
         value,
-        SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
+        SourceLocator(
+            kind="adapter_path" if collector_id == "adapter" else "script_path",
+            value=f"{path}/{key}{suffix}",
+        ),
         group_id=group if fact.startswith("offer.") else None,
         hint=hint,
         directness="embedded",
@@ -572,7 +577,7 @@ def _variant_title_conflicts(page_url: str, obj: dict) -> bool:
 
 
 def _product_url_conflicts(page_url: str, obj: dict) -> bool:
-    candidate = _url_value(obj)
+    candidate = _direct_url_value(obj)
     if candidate and same_product_variant_endpoint(page_url, candidate):
         return False
     return bool(
@@ -768,17 +773,16 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
         ("id", "variant.id", _variant_identity_value(obj)),
         ("sku", "variant.sku", _first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)),
         (
-            "gtin",
-            VARIANT_GTIN_FACT_TYPE,
-            _first(obj, *variant_policy.VARIANT_GTIN_VALUE_KEYS),
-        ),
-        (
             "url",
             "variant.url",
             _first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS),
         ),
         ("selected", "variant.selected", selected),
     ]
+    raw.extend(
+        (f"gtin/{index}", VARIANT_GTIN_FACT_TYPE, value)
+        for index, value in enumerate(variant_gtin_values(obj))
+    )
     raw.extend(
         (name, f"variant.option.{axis}", value)
         for name, axis, value in _variant_options(obj)

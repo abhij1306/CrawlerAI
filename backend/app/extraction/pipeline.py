@@ -13,6 +13,7 @@ from app.extraction.collectors.dom import (
 from app.extraction.collectors.jsonld import JsonLdCollector
 from app.extraction.collectors.js_state import JsStateCollector
 from app.extraction.collectors.metadata import (
+    AdapterCollector,
     MicrodataCollector,
     NetworkCollector,
     OpenGraphCollector,
@@ -234,6 +235,7 @@ def detail_structured_collectors() -> tuple[Any, ...]:
     """Structured-source detail floor: JSON-LD / OG / microdata / JS-state /
     network-payload collectors, in resolver-priority order."""
     return (
+        AdapterCollector(),
         JsonLdCollector(),
         OpenGraphCollector(),
         MicrodataCollector(),
@@ -713,7 +715,12 @@ def _normalize_location_and_offer(
         field_mappings.OFFER_PRICE_FACT_TYPE,
         field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
     }:
-        value = _money(value, flags, locale_hint=locale_hint)
+        value = _money(
+            value,
+            flags,
+            raw_value=evidence.raw_value,
+            locale_hint=locale_hint,
+        )
     if evidence.fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
         value = _normalize_availability_value(value, flags)
     return value
@@ -965,11 +972,17 @@ def _title_generic_flags(
     return flags
 
 
-def _money(value: Any, flags: set[str], *, locale_hint: str | None = None) -> str:
+def _money(
+    value: Any,
+    flags: set[str],
+    *,
+    raw_value: object,
+    locale_hint: str | None = None,
+) -> str:
     parsed = parse_money(value, locale_hint=locale_hint)
     if parsed is None:
         flags.add("invalid_decimal")
         return str(value or "")
-    if money_has_ambiguous_decimal(value, locale_hint=locale_hint):
+    if money_has_ambiguous_decimal(raw_value, locale_hint=locale_hint):
         flags.add("ambiguous_decimal")
     return str(parsed)

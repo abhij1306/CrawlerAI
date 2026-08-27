@@ -3,17 +3,10 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from app.core.config.field_mappings import (
-    ECOMMERCE_JSONLD_OFFER_FACT_TYPES,
     ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES,
     ECOMMERCE_JSONLD_VARIANT_FACT_TYPES,
-    OFFER_CURRENCY_FACT_TYPE,
-    OFFER_ORIGINAL_PRICE_FACT_TYPE,
-    OFFER_PRICE_FACT_TYPE,
 )
 from app.core.config.extraction_price_rules import (
-    DETAIL_JSONLD_CURRENCY_FIELDS,
-    DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS,
-    DETAIL_JSONLD_PRICE_FIELDS,
     DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS,
 )
 from app.core.config.extraction_rules import (
@@ -23,11 +16,24 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config.variant_policy import canonical_variant_axis
 from app.core.records.product_identity import target_offer_group_id
-from app.core.records.normalizers import normalize_structured_offer_values
 from app.extraction.collectors.jsonld_attributes import (
     product_attribute_evidence,
     product_fact_evidence,
     product_image_evidence,
+    shared_product_offer_condition_evidence,
+)
+from app.extraction.collectors.jsonld_offer_facts import (
+    offer_fact_evidence,
+    price_specification_evidence,
+)
+from app.extraction.collectors.jsonld_targeting import (
+    hint_target_offer_group,
+    include_selected_product_group,
+    is_product_group,
+    selected_product_group_child_url,
+    sole_target_offer_url,
+    target_product_owner_identity,
+    target_product_source_aliases,
 )
 from app.extraction.collectors._helpers import (
     evidence,
@@ -36,16 +42,14 @@ from app.extraction.collectors._helpers import (
     loads_jsonish,
     text_value,
 )
-from app.extraction.collectors.js_state import (
-    root_admits_path,
-    select_product_roots,
-)
+from app.extraction.collectors.js_state import root_admits_path
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.core.records.url_identity import (
     detail_url_resource_identity,
     selected_variant_axes,
 )
 from app.core.shared.ids import stable_id
+from app.core.shared.field_coerce import sanitize_option_scalar
 
 
 _IS_VARIANT_OF_KEY = "is" + "VariantOf"
@@ -65,7 +69,7 @@ class JsonLdCollector:
             (item for _artifact_id, objects in payloads for item in objects),
         )
         for artifact_id, objects in payloads:
-            selection = select_product_roots(objects, bundle.final_url)
+            selection = include_selected_product_group(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path) and not _is_standalone_variant(
                     obj
@@ -186,10 +190,23 @@ def _product(
     path: str,
     variant_subject_ids: frozenset[str],
 ) -> list[Evidence]:
+    product_group = is_product_group(obj)
     explicit_node_id = text_value(obj.get(_JSONLD_ID_KEY))
+    declared_product_url = text_value(obj.get("url"))
+    target_offer_url = sole_target_offer_url(bundle.final_url, obj.get("offers"))
+    selected_child_url = selected_product_group_child_url(
+        bundle.final_url, obj.get("hasVariant")
+    )
     node_path_identity = explicit_node_id or f"{artifact_id}:{path}"
     product_subject_identity = (
         explicit_node_id
+        or target_product_owner_identity(
+            bundle.final_url,
+            declared_product_url,
+            target_offer_url,
+            selected_child_url,
+            is_product_group=product_group,
+        )
         or text_value(obj.get("sku"))
         or text_value(obj.get("productGroupID"))
         or text_value(obj.get("productID"))
@@ -197,11 +214,21 @@ def _product(
         or node_path_identity
     )
     source_subject_ids = _source_subject_ids(bundle, obj)
+    product_url = declared_product_url or target_offer_url
+    source_subject_ids = target_product_source_aliases(
+        source_subject_ids,
+        bundle_id=bundle.bundle_id,
+        final_url=bundle.final_url,
+        declared_product_url=declared_product_url,
+        target_offer_url=target_offer_url,
+        selected_child_url=selected_child_url,
+        is_product_group=product_group,
+    )
     hint = EntityHint(
         entity_type="product",
         product_id=text_value(obj.get("productGroupID")) or None,
         sku=text_value(obj.get("sku")) or None,
-        url=text_value(obj.get("url")) or None,
+        url=product_url or None,
     )
     product_subject = stable_id(
         "subject", bundle.bundle_id, "product", product_subject_identity
@@ -253,29 +280,10 @@ def _product(
             product_subject,
             variant_subject_ids,
             declared_axes=_declared_variant_axes(obj.get("variesBy")),
+            parent_source_subject_ids=source_subject_ids,
         )
     )
     return out
-
-
-def _hint_target_offer_group(
-    bundle: CaptureBundle, rows: list[Any], hint: EntityHint
-) -> str:
-    """The target group an offer with no URL of its own may claim.
-
-    Such an offer falls back to the page hint URL, so several of them would all
-    normalize onto the same target group and merge into one offer. The target
-    group identifies a single offer, so it is only claimed when exactly one
-    offer can claim it that way; otherwise each keeps its own identity-derived
-    group.
-    """
-    group = target_offer_group_id(bundle.final_url, hint.url or "")
-    if not group:
-        return ""
-    claimants = sum(
-        1 for row in rows if isinstance(row, dict) and not text_value(row.get("url"))
-    )
-    return group if claimants == 1 else ""
 
 
 def _offers(
@@ -289,8 +297,16 @@ def _offers(
     variant_subject_ids: frozenset[str] = frozenset(),
 ) -> list[Evidence]:
     rows = offers if isinstance(offers, list) else [offers]
-    out: list[Evidence] = []
-    hint_group = _hint_target_offer_group(bundle, rows, hint)
+    out = shared_product_offer_condition_evidence(
+        bundle,
+        artifact_id,
+        rows,
+        path,
+        hint,
+        parent_subject_id,
+        parent_scope,
+    )
+    hint_group = hint_target_offer_group(bundle.final_url, rows, hint.url or "")
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
@@ -323,7 +339,7 @@ def _offers(
             }
         )
         out.extend(
-            _offer_facts(
+            offer_fact_evidence(
                 bundle,
                 artifact_id,
                 row,
@@ -338,7 +354,7 @@ def _offers(
         )
         for spec_key in DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS:
             out.extend(
-                _price_specification_facts(
+                price_specification_evidence(
                     bundle,
                     artifact_id,
                     row.get(spec_key),
@@ -366,148 +382,6 @@ def _offers(
     return out
 
 
-def _offer_facts(
-    bundle: CaptureBundle,
-    artifact_id: str,
-    row: dict[str, Any],
-    offer_path: str,
-    group: str,
-    subject_id: str,
-    hint: EntityHint,
-    parent_subject_id: str | None,
-    parent_scope: str,
-    source_subject_ids: tuple[str, ...],
-) -> list[Evidence]:
-    row = normalize_structured_offer_values(row)
-    out: list[Evidence] = []
-    for key, fact in ECOMMERCE_JSONLD_OFFER_FACT_TYPES.items():
-        value = text_value(row.get(key))
-        if value:
-            out.append(
-                _offer_evidence(
-                    bundle,
-                    artifact_id,
-                    fact,
-                    value,
-                    f"{offer_path}/{key}",
-                    group,
-                    subject_id,
-                    hint,
-                    parent_subject_id,
-                    parent_scope,
-                    source_subject_ids,
-                )
-            )
-    return out
-
-
-def _price_specification_facts(
-    bundle: CaptureBundle,
-    artifact_id: str,
-    specs: Any,
-    path: str,
-    group: str,
-    subject_id: str,
-    hint: EntityHint,
-    parent_subject_id: str | None,
-    parent_scope: str,
-    source_subject_ids: tuple[str, ...],
-) -> list[Evidence]:
-    rows = specs if isinstance(specs, list) else [specs]
-    out: list[Evidence] = []
-    for index, row in enumerate(rows):
-        if not isinstance(row, dict):
-            continue
-        spec_path = f"{path}/{index}"
-        for key in DETAIL_JSONLD_PRICE_FIELDS:
-            value = text_value(row.get(key))
-            if value:
-                out.append(
-                    _offer_evidence(
-                        bundle,
-                        artifact_id,
-                        OFFER_PRICE_FACT_TYPE,
-                        value,
-                        f"{spec_path}/{key}",
-                        group,
-                        subject_id,
-                        hint,
-                        parent_subject_id,
-                        parent_scope,
-                        source_subject_ids,
-                    )
-                )
-        for key in DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS:
-            value = text_value(row.get(key))
-            if value:
-                out.append(
-                    _offer_evidence(
-                        bundle,
-                        artifact_id,
-                        OFFER_ORIGINAL_PRICE_FACT_TYPE,
-                        value,
-                        f"{spec_path}/{key}",
-                        group,
-                        subject_id,
-                        hint,
-                        parent_subject_id,
-                        parent_scope,
-                        source_subject_ids,
-                    )
-                )
-        for key in DETAIL_JSONLD_CURRENCY_FIELDS:
-            value = text_value(row.get(key))
-            if value:
-                out.append(
-                    _offer_evidence(
-                        bundle,
-                        artifact_id,
-                        OFFER_CURRENCY_FACT_TYPE,
-                        value,
-                        f"{spec_path}/{key}",
-                        group,
-                        subject_id,
-                        hint,
-                        parent_subject_id,
-                        parent_scope,
-                        source_subject_ids,
-                    )
-                )
-    return out
-
-
-def _offer_evidence(
-    bundle: CaptureBundle,
-    artifact_id: str,
-    fact: str,
-    value: str,
-    locator: str,
-    group: str,
-    subject_id: str,
-    hint: EntityHint,
-    parent_subject_id: str | None,
-    parent_scope: str,
-    source_subject_ids: tuple[str, ...] = (),
-) -> Evidence:
-    return evidence(
-        bundle,
-        artifact_id,
-        "jsonld",
-        fact,
-        value,
-        SourceLocator(kind="json_pointer", value=locator),
-        group_id=group,
-        hint=hint,
-        directness="embedded",
-        confidence=0.9,
-        subject_id=subject_id,
-        subject_scope="offer",
-        parent_subject_id=parent_subject_id,
-        parent_scope=parent_scope,
-        source_subject_ids=source_subject_ids,
-    )
-
-
 def _variants(
     bundle: CaptureBundle,
     artifact_id: str,
@@ -518,6 +392,7 @@ def _variants(
     variant_subject_ids: frozenset[str],
     *,
     declared_axes: tuple[str, ...] = (),
+    parent_source_subject_ids: tuple[str, ...] = (),
 ) -> list[Evidence]:
     rows = variants if isinstance(variants, list) else [variants]
     out: list[Evidence] = []
@@ -533,6 +408,7 @@ def _variants(
                     product_brand=product_brand,
                     variant_subject_ids=variant_subject_ids,
                     declared_axes=declared_axes,
+                    parent_source_subject_ids=parent_source_subject_ids,
                 )
             )
     return out
@@ -571,6 +447,7 @@ def _variant_shared_kwargs(
     hint: EntityHint,
     product_subject: str,
     source_subject_ids: tuple[str, ...],
+    parent_source_subject_ids: tuple[str, ...],
 ) -> dict[str, Any]:
     return {
         "group_id": group,
@@ -580,6 +457,7 @@ def _variant_shared_kwargs(
         "subject_id": group,
         "subject_scope": "variant",
         "parent_subject_id": product_subject,
+        "parent_source_subject_ids": parent_source_subject_ids,
         "parent_scope": "product",
         "relation_type": "product_variant",
         "source_subject_ids": source_subject_ids,
@@ -734,13 +612,17 @@ def _variant(
     product_brand: str = "",
     variant_subject_ids: frozenset[str] = frozenset(),
     declared_axes: tuple[str, ...] = (),
+    parent_source_subject_ids: tuple[str, ...] = (),
 ) -> list[Evidence]:
     sku = text_value(row.get("sku"))
     variant_url = text_value(row.get("url"))
     url_identity = detail_url_resource_identity(variant_url)
     target_identity = detail_url_resource_identity(bundle.final_url)
     guarded_offer_url = _guarded_standalone_offer_url(bundle, row)
-    variant_identity = _jsonld_identity(row) or guarded_offer_url or path
+    # A merchant may repeat a product-level SKU across several variants. Keep
+    # each declared hasVariant row distinct here; entity linking merges true
+    # duplicates later from compatible identifiers and option values.
+    variant_identity = path
     hint = EntityHint(
         entity_type="variant",
         product_id=text_value(row.get("productGroupID")) or None,
@@ -764,6 +646,7 @@ def _variant(
         hint=hint,
         product_subject=product_subject,
         source_subject_ids=_source_subject_ids(bundle, row, include_sku=True),
+        parent_source_subject_ids=parent_source_subject_ids,
     )
     out = _variant_id_row(bundle, artifact_id, row, path, hint=hint, shared=shared)
     fact_rows, emitted_axes = _variant_fact_rows(
@@ -898,7 +781,7 @@ def _variant_color(row: dict[str, Any], *, product_brand: str = "") -> str:
     shade = _shade_from_offer_url(row.get("offers")) or _shade_from_name(
         text_value(row.get("name"))
     )
-    color = shade or text_value(row.get("color"))
+    color = sanitize_option_scalar("color", shade) or text_value(row.get("color"))
     if color and product_brand and color.casefold() == product_brand.casefold():
         return ""
     return color

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 
-from app.core.config.extraction_rules import normalize_availability_value
+from app.core.config.extraction_rules import (
+    VARIANT_URL_AXIS_PARAMS,
+    normalize_availability_value,
+)
+from app.core.config.variant_policy import canonical_variant_axis
 from app.core.records.product_identity import (
     target_offer_group_id,
     target_product_owner_id,
@@ -178,6 +182,19 @@ def test_prefixed_style_axis_params_resolve_to_their_axis() -> None:
     ) == {"style": "CI939"}
 
 
+def test_url_and_structured_variant_axis_mappings_cannot_drift() -> None:
+    assert {
+        raw_axis: canonical_variant_axis(raw_axis)
+        for raw_axis, canonical_axis in VARIANT_URL_AXIS_PARAMS.items()
+        if canonical_axis != "sku"
+    } == {
+        raw_axis: canonical_axis
+        for raw_axis, canonical_axis in VARIANT_URL_AXIS_PARAMS.items()
+        if canonical_axis != "sku"
+    }
+    assert canonical_variant_axis("sku") is None
+
+
 def test_selected_variant_values_match_alphanumeric_token_sequences() -> None:
     assert variant_values_support_selection(
         ("Classic fit", "CI939-BR8825"), ("classic", "CI939 BR8825")
@@ -330,6 +347,104 @@ def test_trademark_symbol_still_bounds_url_corroborated_brand() -> None:
     assert record["brand"] == "Breville"
 
 
+def test_structured_product_name_is_the_semantic_title() -> None:
+    url = "https://shop.test/products/trail-running-shoe"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Trail Running Shoe",
+        "url": url,
+        "color": "Blue",
+        "sku": "TR-100",
+    }
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Blue Trail Running Shoe TR-100">
+      <title>Blue Trail Running Shoe TR-100 | Shop</title>
+      <script type="application/ld+json">{json.dumps(product)}</script>
+    </head><body><main><h1>Blue Trail Running Shoe</h1></main></body></html>
+    """
+
+    record = _extract(html, url, "title").records[0]
+
+    assert record["title"] == "Trail Running Shoe"
+
+
+def test_visible_heading_precedes_page_metadata_without_structured_product() -> None:
+    url = "https://shop.test/products/trail-running-shoe"
+    html = """
+    <html><head>
+      <meta property="og:title" content="Blue Trail Running Shoe TR-100">
+      <title>Blue Trail Running Shoe TR-100 | Shop</title>
+    </head><body><main><h1>Trail Running Shoe</h1></main></body></html>
+    """
+
+    record = _extract(html, url, "title").records[0]
+
+    assert record["title"] == "Trail Running Shoe"
+
+
+def test_explicit_product_brand_is_not_replaced_by_page_identity() -> None:
+    url = "https://fellowproducts.test/products/stagg-kettle"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Stagg Kettle",
+        "brand": "Fellow",
+        "url": url,
+    }
+
+    result = _extract(
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        "title",
+        "brand",
+    )
+
+    assert result.records[0]["brand"] == "Fellow"
+    assert not any(fact.fact_type == "product.brand" for fact in result.derived_facts)
+
+
+def test_dom_brand_stays_inside_product_context() -> None:
+    url = "https://shop.test/products/trail-running-shoe"
+    html = """
+    <main class="product-detail">
+      <h1>Trail Running Shoe</h1>
+      <span data-brand="Example Co"></span>
+      <section class="customer-reviews">
+        <span itemprop="brand">Review Platform</span>
+      </section>
+    </main>
+    """
+
+    result = _extract(html, url, "title", "brand")
+
+    assert result.records[0]["brand"] == "Example Co"
+    assert not any(
+        row.collector_id == "dom"
+        and row.fact_type == "product.brand"
+        and row.value == "Review Platform"
+        for row in result.evidence
+    )
+
+
+def test_review_markup_cannot_supply_the_product_brand() -> None:
+    url = "https://shop.test/products/trail-running-shoe"
+    html = """
+    <main class="product-detail">
+      <h1>Trail Running Shoe</h1>
+      <section id="reviews">
+        <span itemprop="brand">Review Platform</span>
+      </section>
+    </main>
+    """
+
+    result = _extract(html, url, "title", "brand")
+
+    assert result.records[0].get("brand") is None
+    assert not any(row.fact_type == "product.brand" for row in result.evidence)
+
+
 def test_site_name_suffix_is_stripped_using_page_host() -> None:
     """The trailing segment is identified as site boilerplate by matching the
     page host, so no retailer vocabulary is involved."""
@@ -425,6 +540,76 @@ def test_structured_product_attributes_are_published() -> None:
     assert record["condition"] == "New"
     assert record["style_id"] == "TS-100"
     assert record["barcode"] == "0123456789012"
+
+
+def test_shared_offer_condition_publishes_but_conflicting_conditions_fail_closed() -> (
+    None
+):
+    url = "https://shop.test/products/restored-camera"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Restored Camera",
+        "url": url,
+        "offers": [
+            {
+                "@type": "Offer",
+                "price": "200",
+                "priceCurrency": "USD",
+                "itemCondition": "https://schema.org/RefurbishedCondition",
+            },
+            {
+                "@type": "Offer",
+                "price": "210",
+                "priceCurrency": "USD",
+                "itemCondition": "https://schema.org/RefurbishedCondition",
+            },
+        ],
+    }
+
+    result = _extract(
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        "condition",
+    )
+    assert result.records[0]["condition"] == "Refurbished"
+
+    product["offers"][1]["itemCondition"] = "https://schema.org/NewCondition"
+    conflicting = _extract(
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        "condition",
+    )
+    assert conflicting.records[0].get("condition") is None
+
+
+def test_sole_target_offer_url_binds_its_url_less_product_to_the_page() -> None:
+    url = "https://shop.test/products/restored-camera"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Restored Camera - Silver",
+        "sku": "CAMERA-SILVER",
+        "offers": {
+            "@type": "Offer",
+            "url": f"{url}?sku=CAMERA-SILVER",
+            "price": "200",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock",
+        },
+    }
+    html = f"""
+    <meta property="og:title" content="Restored Camera">
+    <meta property="og:url" content="{url}">
+    <script type="application/ld+json">{json.dumps(product)}</script>
+    """
+
+    result = _extract(html, url, "sku", "price", "currency", "availability")
+
+    assert result.records[0]["sku"] == "CAMERA-SILVER"
+    assert result.records[0]["price"] == "200.00"
+    assert result.records[0]["currency"] == "USD"
+    assert result.records[0]["availability"] == "in_stock"
 
 
 def test_url_less_product_offers_do_not_merge_into_one_offer() -> None:

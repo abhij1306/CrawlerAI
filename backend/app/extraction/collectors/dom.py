@@ -12,15 +12,10 @@ from app.extraction.collectors._helpers import (
     text_without_non_text_descendants,
 )
 from app.core.config.extraction_rules import (
-    SELECT_CONTROL_SIGNAL_ATTRIBUTES,
-    control_signal_tokens,
-    has_product_option_signal,
-    is_rejected_control,
     CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_DOM_SELECTORS,
     DETAIL_BRAND_DOM_VALUE_ATTRIBUTES,
     DETAIL_BRAND_VISIBLE_LABEL_PATTERN,
-    DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
     DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS,
     DETAIL_DOM_CURRENCY_CODE_PATTERN,
     DETAIL_DOM_CURRENCY_CONTEXT_PATTERN,
@@ -32,23 +27,14 @@ from app.core.config.extraction_rules import (
     DETAIL_DOM_OFFER_MAX_CANDIDATES,
     DETAIL_DOM_OFFER_SELECTORS,
     DETAIL_DOM_PRICE_TEXT_PATTERN,
-    DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS,
-    DETAIL_DOM_PRODUCT_ROOT_SELECTORS,
     DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS,
     DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS,
     DETAIL_IMAGE_SRCSET_ATTRS,
     DETAIL_IMAGE_URL_ATTRS,
-    DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
-    VARIANT_DOM_MAX_LABEL_LENGTH,
     VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR,
     VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE,
     VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES,
-    VARIANT_DOM_NOISE_PHRASES,
-    VARIANT_DOM_SIZE_LABEL_PATTERN,
     VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
-    VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS,
-    VARIANT_PLACEHOLDER_PREFIXES,
-    VARIANT_PLACEHOLDER_VALUES,
     VARIANT_URL_AXIS_PARAMS,
 )
 from app.core.config import extraction_rules as rules
@@ -59,6 +45,23 @@ from app.core.config.field_mappings import (
     REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
+from app.extraction.collectors.dom_variant_controls import (
+    collect_commercial_variant_evidence,
+    collect_dom_selection_signals,
+    collect_dom_variant_identifiers,
+    dom_variant_value,
+    is_commercial_variant_control,
+    select_option_axis,
+)
+from app.extraction.collectors.dom_product_attributes import (
+    collect_product_material_evidence,
+)
+from app.extraction.collectors.dom_scoping import (
+    node_context_excluded as _node_context_excluded,
+    node_within_roots as _node_within_roots,
+    product_root_nodes as _product_root_nodes,
+    root_selector_nodes as _root_selector_nodes,
+)
 from app.extraction.documents import HtmlNode
 from app.core.shared.ids import stable_id
 from app.core.records.field_policy import normalize_field_key, normalize_requested_field
@@ -77,11 +80,24 @@ class DomCollector:
         product_subject = stable_id(
             "subject", bundle.bundle_id, "product", bundle.final_url
         )
-        out = _base_dom_evidence(bundle, doc, product_subject)
-        out.extend(_product_brand_evidence(bundle, doc, product_subject))
+        variant_identifier_evidence, variant_identifier_control_ids = (
+            collect_dom_variant_identifiers(bundle, doc, product_subject)
+        )
+        out = _base_dom_evidence(
+            bundle,
+            doc,
+            product_subject,
+            variant_identifier_control_ids=variant_identifier_control_ids,
+        )
         product_roots = _product_root_nodes(doc)
+        out.extend(_product_brand_evidence(bundle, doc, product_roots, product_subject))
         out.extend(
             _product_description_evidence(bundle, product_roots, product_subject)
+        )
+        out.extend(
+            collect_product_material_evidence(
+                bundle, doc, product_roots, product_subject
+            )
         )
         out.extend(_product_offer_evidence(bundle, product_roots, product_subject))
         for img, confidence in _product_image_nodes(doc):
@@ -101,18 +117,31 @@ class DomCollector:
                     parent_scope="product",
                 )
             )
-        out.extend(_commercial_variant_controls(bundle, doc, product_subject))
+        out.extend(collect_commercial_variant_evidence(bundle, doc, product_subject))
+        out.extend(variant_identifier_evidence)
+        out.extend(collect_dom_selection_signals(bundle, doc, product_subject))
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
 
 
 def _base_dom_evidence(
-    bundle: CaptureBundle, doc, product_subject: str
+    bundle: CaptureBundle,
+    doc,
+    product_subject: str,
+    *,
+    variant_identifier_control_ids: set[int] | frozenset[int],
 ) -> list[Evidence]:
     rows: list[Evidence] = []
     for selector, fact in rules.DETAIL_DOM_BASE_SELECTORS:
         for tag in doc.css(selector):
-            row = _base_dom_row(bundle, tag, selector, fact, product_subject)
+            row = _base_dom_row(
+                bundle,
+                tag,
+                selector,
+                fact,
+                product_subject,
+                variant_identifier_control_ids=variant_identifier_control_ids,
+            )
             if row is not None:
                 rows.append(row)
     return rows
@@ -124,8 +153,12 @@ def _base_dom_row(
     selector: str,
     fact: str,
     product_subject: str,
+    *,
+    variant_identifier_control_ids: set[int] | frozenset[int],
 ) -> Evidence | None:
-    if _is_commercial_variant_control(tag):
+    if is_commercial_variant_control(tag) or (
+        fact == "product.sku" and tag.identity() in variant_identifier_control_ids
+    ):
         return None
     attr = next(
         (
@@ -161,13 +194,21 @@ def _base_dom_row(
 
 
 def _product_brand_evidence(
-    bundle: CaptureBundle, doc, product_subject: str
+    bundle: CaptureBundle,
+    doc,
+    product_roots: tuple[HtmlNode, ...],
+    product_subject: str,
 ) -> tuple[Evidence, ...]:
     rows: list[Evidence] = []
     seen: set[str] = set()
+    root_ids = {root.identity() for root in product_roots}
     for selector in DETAIL_BRAND_DOM_SELECTORS:
         for node in doc.css(selector):
-            if node.is_hidden():
+            if (
+                node.is_hidden()
+                or (root_ids and not _node_within_roots(node, root_ids))
+                or _node_context_excluded(node)
+            ):
                 continue
             value = _brand_node_value(node)
             key = value.casefold()
@@ -260,24 +301,6 @@ def _brand_node_value(node: HtmlNode) -> str:
     return ""
 
 
-def _product_root_nodes(doc) -> tuple[HtmlNode, ...]:
-    roots: list[HtmlNode] = []
-    seen: set[int] = set()
-    for selector in DETAIL_DOM_PRODUCT_ROOT_SELECTORS:
-        for node in doc.safe_css(selector):
-            identity = node.identity()
-            if identity in seen or _node_context_excluded(node):
-                continue
-            if not any(
-                node.safe_css(positive)
-                for positive in DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS
-            ):
-                continue
-            roots.append(node)
-            seen.add(identity)
-    return tuple(roots)
-
-
 def _product_description_evidence(
     bundle: CaptureBundle, roots: tuple[HtmlNode, ...], product_subject: str
 ) -> tuple[Evidence, ...]:
@@ -304,17 +327,6 @@ def _product_description_evidence(
             )
         )
     return tuple(rows)
-
-
-def _root_selector_nodes(
-    roots: tuple[HtmlNode, ...], selectors: tuple[str, ...], limit: int | None = None
-):
-    return (
-        node
-        for root in roots
-        for selector in selectors
-        for node in root.safe_css(selector)[:limit]
-    )
 
 
 def _admit_description_node(
@@ -352,7 +364,7 @@ def _product_offer_evidence(
         offer = _admit_offer_node(node, seen, page_url=bundle.final_url)
         if offer is None:
             continue
-        price, currency, availability = offer
+        price, currency, availability, raw_price = offer
         group = f"offer:dom:{node.identity()}"
         subject_id = stable_id("subject", bundle.bundle_id, group)
         locator = _css_locator(node.stable_locator(), price)
@@ -377,6 +389,7 @@ def _product_offer_evidence(
                         parent_subject_id=product_subject,
                         parent_scope="product",
                         metadata={"component_role": "product_offer"},
+                        raw_value=raw_price if fact_type == "offer.price" else value,
                     )
                 )
     return tuple(rows)
@@ -387,11 +400,11 @@ def _admit_offer_node(
     seen: set[tuple[str, str, str]],
     *,
     page_url: str,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, str] | None:
     if (
         node.is_hidden()
         or _node_context_excluded(node)
-        or _is_commercial_variant_control(node)
+        or is_commercial_variant_control(node)
         or any(
             detail_url_resource_conflicts(
                 page_url, urljoin(page_url, str(current.attribute("href")))
@@ -402,24 +415,25 @@ def _admit_offer_node(
     ):
         return None
     offer = _visible_offer_values(node)
-    if offer is None or offer in seen:
+    if offer is None or offer[:3] in seen:
         return None
-    seen.add(offer)
+    seen.add(offer[:3])
     return offer
 
 
-def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str] | None:
+def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str, str] | None:
     price_text = _offer_price_text(node)
     match = re.search(DETAIL_DOM_PRICE_TEXT_PATTERN, price_text, re.IGNORECASE)
     if match is None:
         return None
-    parsed_amount = parse_money(str(match.group("amount") or ""))
+    raw_amount = str(match.group("amount") or "")
+    parsed_amount = parse_money(raw_amount)
     if parsed_amount is None:
         return None
     amount = format(parsed_amount, "f")
     currency = _offer_currency(node, match)
     availability = _offer_availability(node)
-    return amount, currency, availability
+    return amount, currency, availability, raw_amount
 
 
 def _offer_price_text(node: HtmlNode) -> str:
@@ -460,17 +474,6 @@ def _offer_context_text(node: HtmlNode) -> str:
     return " ".join(
         " ".join(current.text(separator=" ", strip=True) for current in nodes).split()
     )
-
-
-def _node_context_excluded(node: HtmlNode) -> bool:
-    nodes = (node, *node.ancestors()[:8])
-    context = " ".join(
-        str(current.attribute(attribute) or "").casefold()
-        for current in nodes
-        for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
-    )
-    tokens = (*DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS, *DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS)
-    return any(token in context for token in tokens)
 
 
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
@@ -542,6 +545,7 @@ def collect_requested_fields(
     )
     rows: list[Evidence] = []
     seen: set[tuple[str, str]] = set()
+    root_ids = {node.identity() for node in _product_root_nodes(doc)}
     for requested_field in requested_fields:
         rows.extend(
             _requested_field_evidence(
@@ -550,6 +554,7 @@ def collect_requested_fields(
                 normalize_requested_field(requested_field),
                 product_subject,
                 seen,
+                root_ids,
             )
         )
     return tuple(rows)
@@ -561,6 +566,7 @@ def _requested_field_evidence(
     field: str,
     product_subject: str,
     seen: set[tuple[str, str]],
+    root_ids: set[int],
 ) -> tuple[Evidence, ...]:
     fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field)
     if not fact_type:
@@ -570,7 +576,7 @@ def _requested_field_evidence(
     for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES:
         selector = template.format(field=field, dash_field=dash_field)
         for node in doc.css(selector):
-            admitted = _admit_requested_node(node, fact_type, seen)
+            admitted = _admit_requested_node(node, fact_type, seen, root_ids)
             if admitted is None:
                 continue
             value, hidden = admitted
@@ -599,7 +605,16 @@ def _admit_requested_node(
     node: HtmlNode,
     fact_type: str,
     seen: set[tuple[str, str]],
+    root_ids: set[int],
 ) -> tuple[str, bool] | None:
+    if fact_type in {
+        field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        field_mappings.PRODUCT_BRAND_FACT_TYPE,
+    } and (
+        _node_context_excluded(node)
+        or (root_ids and not _node_within_roots(node, root_ids))
+    ):
+        return None
     hidden = node.is_hidden()
     if hidden and not _hidden_product_content_allowed(node):
         return None
@@ -657,85 +672,6 @@ def _requested_node_value(node, fact_type: str) -> str:
     return " ".join(node.text().split()).strip()
 
 
-def _is_commercial_variant_control(node: HtmlNode) -> bool:
-    return bool(
-        node.attribute("data-size")
-        and node.attribute("data-sku")
-        and (node.attribute("data-price") or node.attribute("data-currency"))
-    )
-
-
-def _commercial_variant_controls(
-    bundle: CaptureBundle, doc, product_subject: str
-) -> list[Evidence]:
-    rows: list[Evidence] = []
-    selector = "[data-size][data-sku][data-price], [data-size][data-sku][data-currency]"
-    for node in doc.css(selector):
-        size = _variant_value(str(node.attribute("data-size") or ""), axis="size")
-        sku = str(node.attribute("data-sku") or "").strip()
-        if not size or not sku:
-            continue
-        hint = EntityHint(entity_type="variant", sku=sku, option_values={"size": size})
-        variant_subject = stable_id("subject", bundle.bundle_id, "dom", "variant", sku)
-        variant_group = f"variant:dom:{sku}"
-        locator = _css_locator(node.stable_locator(), size)
-        variant_fields = (
-            ("variant.sku", sku),
-            ("variant.option.size", size),
-        )
-        for fact_type, value in variant_fields:
-            rows.append(
-                evidence(
-                    bundle,
-                    "dom",
-                    "dom",
-                    fact_type,
-                    value,
-                    locator,
-                    group_id=variant_group,
-                    hint=hint,
-                    confidence=0.76,
-                    subject_id=variant_subject,
-                    parent_subject_id=product_subject,
-                    parent_scope="product",
-                )
-            )
-        offer_group = f"offer:dom:{sku}"
-        stock = str(node.attribute("data-stock") or "").strip().casefold()
-        offer_fields = (
-            ("offer.price", str(node.attribute("data-price") or "").strip()),
-            ("offer.currency", str(node.attribute("data-currency") or "").strip()),
-            (
-                "offer.availability",
-                "in_stock"
-                if stock in {"1", "true", "yes"}
-                else "out_of_stock"
-                if stock in {"0", "false", "no"}
-                else "",
-            ),
-        )
-        for fact_type, value in offer_fields:
-            if not value:
-                continue
-            rows.append(
-                evidence(
-                    bundle,
-                    "dom",
-                    "dom",
-                    fact_type,
-                    value,
-                    locator,
-                    group_id=offer_group,
-                    hint=hint,
-                    confidence=0.76,
-                    subject_id=stable_id("subject", bundle.bundle_id, offer_group),
-                    parent_subject_id=variant_subject,
-                    parent_scope="variant",
-                )
-            )
-    return rows
-
-
 def _variant_controls(
     bundle: CaptureBundle, doc, product_subject: str
 ) -> list[Evidence]:
@@ -747,7 +683,7 @@ def _variant_controls(
     # sorters, country/quantity/pagination/address selects are rejected by
     # semantic role so they can never fabricate a size axis.
     for select in doc.css("select"):
-        axis = _select_option_axis(select, doc)
+        axis = select_option_axis(select, doc)
         if axis is None:
             continue
         for option in select.css("option"):
@@ -787,50 +723,6 @@ def _variant_controls(
     return out
 
 
-def _select_option_axis(select: HtmlNode, doc: HtmlNode) -> str | None:
-    """Return the product-option axis a ``<select>`` credibly represents.
-
-    Non-product controls (sort, country, quantity, review, pagination, address)
-    are rejected by semantic role; the remaining select yields an axis only when
-    it (or its associated ``<label>``) explicitly names ``size`` or ``color`` —
-    never a bare/opaque select.
-    """
-    signal_values = [
-        select.attribute(attribute) for attribute in SELECT_CONTROL_SIGNAL_ATTRIBUTES
-    ]
-    signal_values.append(_select_label_text(select, doc))
-    tokens = control_signal_tokens(signal_values)
-    signal = " ".join(value for value in signal_values if value)
-    if is_rejected_control(tokens, signal=signal):
-        return None
-    axis = (
-        "size"
-        if "size" in tokens
-        else "color"
-        if {"color", "colour"} & tokens
-        else None
-    )
-    if axis is None or not has_product_option_signal(tokens, axis=axis):
-        return None
-    return axis
-
-
-def _select_label_text(select: HtmlNode, doc: HtmlNode) -> str:
-    """Text of the ``<label>`` bound to ``select`` (via ``for``/id or adjacency)."""
-    parent = select.parent()
-    if parent is not None and parent.tag() == "label":
-        return parent.text()
-    select_id = str(select.attribute("id") or "").strip()
-    if select_id:
-        label = next(iter(doc.safe_css(f"label[for={json.dumps(select_id)}]")), None)
-        if label is not None:
-            return label.text()
-    previous = select.previous_element()
-    if previous is not None and previous.tag() == "label":
-        return previous.text()
-    return ""
-
-
 def _emit_option_evidence(
     out: list[Evidence],
     bundle: CaptureBundle,
@@ -840,7 +732,7 @@ def _emit_option_evidence(
     *,
     selector: str,
 ) -> None:
-    value = _variant_value(raw_value, axis=axis)
+    value = dom_variant_value(raw_value, axis=axis)
     if not value:
         return
     key = value.lower()
@@ -1004,7 +896,7 @@ def _attribute_control_value(node: HtmlNode, *, axis: str) -> str | None:
         or str(node.attribute("data-id") or "").strip()
         or " ".join(node.text().split()).strip()
     )
-    return _variant_value(raw, axis=axis)
+    return dom_variant_value(raw, axis=axis)
 
 
 def _attribute_control_url(bundle: CaptureBundle, node: HtmlNode) -> str | None:
@@ -1070,30 +962,10 @@ def _variant_options_from_url(url: str) -> dict[str, str]:
         axis = VARIANT_URL_AXIS_PARAMS.get(axis_match.group("axis").casefold())
         if not axis:
             continue
-        parsed_value = _variant_value(value, axis=axis)
+        parsed_value = dom_variant_value(value, axis=axis)
         if parsed_value:
             options[axis] = parsed_value
     return options
-
-
-def _variant_value(value: str, *, axis: str) -> str | None:
-    normalized = " ".join(value.split()).strip()
-    lowered = normalized.casefold()
-    if axis == "size":
-        match = re.match(VARIANT_DOM_SIZE_LABEL_PATTERN, lowered, flags=re.I)
-        if match:
-            return match.group("value").strip().upper()
-    if (
-        not normalized
-        or len(normalized) > VARIANT_DOM_MAX_LABEL_LENGTH
-        or lowered in {"color", "colour", "size"}
-        or lowered in VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS
-        or lowered in VARIANT_PLACEHOLDER_VALUES
-        or any(lowered.startswith(prefix) for prefix in VARIANT_PLACEHOLDER_PREFIXES)
-        or any(phrase in lowered for phrase in VARIANT_DOM_NOISE_PHRASES)
-    ):
-        return None
-    return normalized
 
 
 def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:

@@ -150,6 +150,7 @@ DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS = tuple(
     )
     if str(field).strip()
 )
+DETAIL_JSONLD_ORIGINAL_PRICE_TYPES = frozenset({"strikethroughprice"})
 DETAIL_JSONLD_CURRENCY_FIELDS = tuple(
     str(field).strip()
     for field in _static_export_tuple(

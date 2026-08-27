@@ -4,6 +4,190 @@
 from __future__ import annotations
 
 from tests.unit.extraction_pipeline_test_support import *
+from app.extraction.resolution.variants import _is_axis_group_variant
+
+
+def test_selected_has_variant_admits_its_declared_product_group() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Everyday Tee",
+          "productGroupID": "TEE",
+          "audience": {
+            "@type": "PeopleAudience",
+            "suggestedGender": "Unisex"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "TEE-BLACK-S",
+              "color": "Black",
+              "size": "S",
+              "offers": {
+                "url": "https://shop.test/products/everyday-tee-black",
+                "price": "18",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock"
+              }
+            },
+            {
+              "@type": "Product",
+              "sku": "TEE-WHITE-S",
+              "color": "White",
+              "size": "S",
+              "offers": {
+                "url": "https://shop.test/products/everyday-tee-white",
+                "price": "20",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/OutOfStock"
+              }
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee-black",
+    )
+
+    record = result.records[0]
+    assert record["title"] == "Everyday Tee"
+    assert record["gender"] == "Unisex"
+    assert record["style_id"] == "TEE"
+    assert len(record["variants"]) == 2
+    assert {row["sku"] for row in record["variants"]} == {
+        "TEE-BLACK-S",
+        "TEE-WHITE-S",
+    }
+
+
+def test_selected_top_product_joins_its_matching_product_group_child() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        [
+          {
+            "@type": "Product",
+            "name": "Everyday Sandal",
+            "sku": "SANDAL-BLACK",
+            "offers": {
+              "url": "https://shop.test/products/everyday-sandal-black",
+              "price": "40",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            }
+          },
+          {
+            "@type": "ProductGroup",
+            "name": "Everyday Sandal",
+            "url": "https://shop.test/products/everyday-sandal",
+            "productGroupID": "SANDAL",
+            "audience": {
+              "@type": "PeopleAudience",
+              "suggestedGender": "Unisex"
+            },
+            "hasVariant": [
+              {
+                "@type": "Product",
+                "color": "White",
+                "offers": {
+                  "url": "https://shop.test/products/everyday-sandal-white",
+                  "price": "40",
+                  "priceCurrency": "USD"
+                }
+              },
+              {
+                "@type": "Product",
+                "color": "Black",
+                "offers": {
+                  "url": "https://shop.test/products/everyday-sandal-black",
+                  "price": "40",
+                  "priceCurrency": "USD"
+                }
+              }
+            ]
+          }
+        ]
+        </script>
+        """,
+        "https://shop.test/products/everyday-sandal-black",
+    )
+
+    record = result.records[0]
+    assert record["sku"] == "SANDAL-BLACK"
+    assert record["style_id"] == "SANDAL"
+    assert record["gender"] == "Unisex"
+    assert {row["color"] for row in record["variants"]} == {"White", "Black"}
+
+
+def test_commercial_leaf_variants_replace_incomplete_axis_group_shell() -> None:
+    shell = {
+        "variant_id": "TEE-BLACK",
+        "sku": "TEE-BLACK",
+        "currency": "USD",
+        "color": "Black",
+    }
+    leaf = {
+        "variant_id": "TEE-BLACK-S",
+        "sku": "TEE-BLACK-S",
+        "price": "18.00",
+        "currency": "USD",
+        "availability": "in_stock",
+        "color": "Black",
+        "size": "S",
+    }
+
+    assert _is_axis_group_variant(shell, [shell, leaf])
+    assert not _is_axis_group_variant(leaf, [shell, leaf])
+
+
+def test_product_sku_excludes_sibling_style_variant_families() -> None:
+    state = {
+        "product": {
+            "name": "Teddyx T-shirt",
+            "sku": "JMTS01771443",
+            "url": "https://shop.test/products/JMTS01771443/teddyx",
+            "price": "91",
+            "currency": "GBP",
+            "variants": [
+                {
+                    "id": "selected-xs",
+                    "sku": "JMTS01771443X02",
+                    "size": "XS",
+                    "price": "91",
+                    "currency": "GBP",
+                    "available": True,
+                },
+                {
+                    "id": "sibling-xs",
+                    "sku": "JMTS01771009X02",
+                    "size": "XS",
+                    "currency": "GBP",
+                },
+                {
+                    "id": "sibling-s",
+                    "sku": "JMTS01771343X03",
+                    "size": "S",
+                    "currency": "GBP",
+                },
+            ],
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        f"""
+        <script>window.__INITIAL_STATE__ = {json.dumps(state)};</script>
+        <main><h1>Teddyx T-shirt</h1></main>
+        """,
+        "https://shop.test/products/JMTS01771443/teddyx",
+        requested_fields=("sku", "variants", "price", "currency"),
+    )
+
+    assert [row["sku"] for row in result.records[0]["variants"]] == ["JMTS01771443X02"]
 
 
 def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
@@ -53,6 +237,289 @@ def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
     ]
     assert result.graph.entity_counts["variant"] == 1
     assert result.records[0]["_lineage"]["variants"][0]["price"]
+
+
+def test_target_product_group_node_id_joins_direct_state_variant() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "@id": "https://shop.test/products/everyday-tee#productgroup",
+          "name": "Everyday Tee",
+          "url": "https://shop.test/products/everyday-tee",
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "TEE-BLK-S",
+            "gtin12": "725272730706",
+            "color": "Black",
+            "size": "S"
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+        artifacts={
+            "js_state_objects": {
+                "variant": {
+                    "id": "TEE-BLK-S",
+                    "gtin": "725272730706",
+                    "size": "S",
+                    "price": "18.5",
+                    "currency": "USD",
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "TEE-BLK-S",
+            "sku": "TEE-BLK-S",
+            "price": "18.50",
+            "currency": "USD",
+            "barcode": "725272730706",
+            "color": "Black",
+            "size": "S",
+        }
+    ]
+
+
+def test_variant_strikethrough_price_specification_is_original_price() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Running Shoe",
+          "url": "https://shop.test/products/running-shoe",
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "SHOE-BLACK-8",
+            "color": "Black",
+            "size": "8",
+            "offers": {
+              "price": "69.97",
+              "priceCurrency": "USD",
+              "priceSpecification": {
+                "price": "75",
+                "priceCurrency": "USD",
+                "priceType": "StrikethroughPrice"
+              }
+            }
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/running-shoe",
+    )
+
+    assert result.records[0]["variants"][0] == {
+        "variant_id": "SHOE-BLACK-8",
+        "sku": "SHOE-BLACK-8",
+        "price": "69.97",
+        "currency": "USD",
+        "original_price": "75.00",
+        "color": "Black",
+        "size": "8",
+    }
+
+
+def test_matching_gtin_merges_sources_despite_different_source_ids() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Everyday Tee",
+          "url": "https://shop.test/products/everyday-tee",
+          "hasVariant": [{
+            "@type": "Product",
+            "@id": "https://shop.test/products/everyday-tee#small",
+            "sku": "TEE-SOURCE-A",
+            "gtin": "5057913931872",
+            "size": "S"
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+        artifacts={
+            "js_state_objects": {
+                "variant": {
+                    "id": "internal-small",
+                    "sku": "TEE-SOURCE-B",
+                    "gtin": "5057913931872",
+                    "size": "S",
+                    "price": "18.5",
+                    "currency": "USD",
+                }
+            }
+        },
+    )
+
+    assert result.graph.entity_counts["variant"] == 1
+    assert result.records[0]["variants"][0]["barcode"] == "5057913931872"
+
+
+def test_shared_product_sku_does_not_collapse_distinct_gtin_variants() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Arrival Shorts",
+          "url": "https://shop.test/products/arrival-shorts",
+          "offers": {"price": "26", "priceCurrency": "USD"},
+          "hasVariant": [
+            {"@type": "Product", "sku": "ARRIVAL", "gtin": "5057913931872", "size": "XS"},
+            {"@type": "Product", "sku": "ARRIVAL", "gtin": "5057913931865", "size": "S"}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/arrival-shorts",
+    )
+
+    variants = result.records[0]["variants"]
+
+    assert len(variants) == 2
+    assert {row["barcode"] for row in variants} == {
+        "5057913931865",
+        "5057913931872",
+    }
+    assert {row["variant_id"] for row in variants} == {
+        "5057913931865",
+        "5057913931872",
+    }
+    assert {row["sku"] for row in variants} == {"ARRIVAL"}
+
+
+def test_distinct_skus_do_not_merge_when_public_options_match() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Width Runner",
+          "url": "https://shop.test/products/width-runner",
+          "offers": {"price": "170", "priceCurrency": "USD"},
+          "hasVariant": [
+            {"@type": "Product", "sku": "RUNNER-D-10", "color": "Grey", "size": "10"},
+            {"@type": "Product", "sku": "RUNNER-2E-10", "color": "Grey", "size": "10"}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/width-runner",
+    )
+
+    variants = result.records[0]["variants"]
+
+    assert len(variants) == 2
+    assert {row["sku"] for row in variants} == {"RUNNER-D-10", "RUNNER-2E-10"}
+
+
+def test_explicit_product_group_variants_may_use_distinct_product_paths() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Iconic Cotton Chino Ball Cap",
+          "url": "https://shop.test/products/iconic-cotton-chino-ball-cap-650310",
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "CAP-PINK",
+              "url": "https://shop.test/products/iconic-cotton-chino-ball-cap-3616854279980",
+              "color": "Pink",
+              "size": "One Size",
+              "offers": {"price": "97", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "CAP-GREEN",
+              "url": "https://shop.test/products/iconic-cotton-chino-ball-cap-3616858013504",
+              "color": "Green",
+              "size": "One Size",
+              "offers": {"price": "97", "priceCurrency": "USD"}
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/iconic-cotton-chino-ball-cap-650310",
+    )
+
+    assert {row["sku"] for row in result.records[0]["variants"]} == {
+        "CAP-GREEN",
+        "CAP-PINK",
+    }
+
+
+def test_parent_title_placeholder_is_not_variant_even_with_repeated_price() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Small Eye Shadow</h1></main>",
+        "https://shop.test/products/small-eye-shadow",
+        artifacts={
+            "js_state_objects": {
+                "meta": {
+                    "product": {
+                        "name": "Small Eye Shadow",
+                        "price": "26",
+                        "currency": "USD",
+                        "variants": [
+                            {
+                                "id": "parent-style",
+                                "sku": "PARENT-STYLE",
+                                "public_title": "Small Eye Shadow",
+                                "price": "26",
+                                "currency": "USD",
+                            },
+                            {
+                                "id": "blue-small",
+                                "sku": "BLUE-SMALL",
+                                "color": "Blue",
+                                "size": "Small",
+                                "price": "26",
+                                "currency": "USD",
+                                "available": True,
+                            },
+                            {
+                                "id": "blue-large",
+                                "sku": "BLUE-LARGE",
+                                "color": "Blue",
+                                "size": "Large",
+                                "price": "26",
+                                "currency": "USD",
+                                "available": True,
+                            },
+                        ],
+                    }
+                }
+            }
+        },
+    )
+
+    assert {row["sku"] for row in result.records[0]["variants"]} == {
+        "BLUE-SMALL",
+        "BLUE-LARGE",
+    }
+    assert result.records[0]["availability"] == "in_stock"
 
 
 def test_declared_jsonld_size_uses_terminal_variant_name_segment() -> None:

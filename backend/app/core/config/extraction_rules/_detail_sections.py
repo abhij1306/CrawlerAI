@@ -10,6 +10,35 @@ DETAIL_DOM_BASE_SELECTORS = (
     ("[data-currency]", "offer.currency"),
     ("[data-sku]", "product.sku"),
 )
+DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY = "title_source_role"
+DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT = "structured_product_name"
+DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING = "visible_product_heading"
+DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_STATE = "structured_state_name"
+DETAIL_TITLE_SOURCE_ROLE_PRODUCT_METADATA = "product_metadata"
+DETAIL_TITLE_SOURCE_ROLE_DOCUMENT = "document_title"
+DETAIL_TITLE_SOURCE_ROLE_URL = "url_derived"
+DETAIL_TITLE_SOURCE_ROLE_RANKS = {
+    DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT: 0,
+    DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING: 1,
+    DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_STATE: 2,
+    DETAIL_TITLE_SOURCE_ROLE_PRODUCT_METADATA: 3,
+    DETAIL_TITLE_SOURCE_ROLE_DOCUMENT: 4,
+    DETAIL_TITLE_SOURCE_ROLE_URL: 5,
+}
+DETAIL_DOM_TITLE_SOURCE_ROLES = {
+    "h1": DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING,
+    "head title": DETAIL_TITLE_SOURCE_ROLE_DOCUMENT,
+}
+DETAIL_TITLE_COLLECTOR_SOURCE_ROLES = {
+    "adapter": DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT,
+    "jsonld": DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_PRODUCT,
+    "js_state": DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_STATE,
+    "network": DETAIL_TITLE_SOURCE_ROLE_STRUCTURED_STATE,
+    "microdata": DETAIL_TITLE_SOURCE_ROLE_PRODUCT_METADATA,
+    "opengraph": DETAIL_TITLE_SOURCE_ROLE_PRODUCT_METADATA,
+    "css_recipe": DETAIL_TITLE_SOURCE_ROLE_VISIBLE_HEADING,
+    "url": DETAIL_TITLE_SOURCE_ROLE_URL,
+}
 DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES = (
     "id",
     "class",
@@ -278,6 +307,61 @@ DETAIL_DOM_DESCRIPTION_SELECTORS = (
     "[class*='description' i]",
 )
 DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
+DETAIL_DOM_MATERIAL_EXPLICIT_SELECTOR = (
+    "li, dt, [class*='label' i], [itemprop='material'], "
+    "[data-field='material'], [data-testid*='material' i], "
+    "[class*='material' i], [class*='composition' i]"
+)
+DETAIL_DOM_MATERIAL_TEXT_BLOCK_SELECTOR = "li, p, dd"
+DETAIL_DOM_MATERIAL_META_SELECTOR = (
+    "meta[name='description'], meta[property='og:description']"
+)
+DETAIL_DOM_MATERIAL_SCAN_LIMIT = 400
+DETAIL_DOM_MATERIAL_MAX_VALUE_CHARS = 160
+DETAIL_DOM_MATERIAL_LABEL_PATTERN = (
+    r"^(?:(?:upper|outer|shell|footbed)\s+)?"
+    r"(?:material(?:s)?|fabric|composition)\s*:?\s*(?P<value>.*)$"
+)
+DETAIL_DOM_MATERIAL_INLINE_LABEL_PATTERN = (
+    r"\b(?:(?:upper|outer|shell|footbed)\s+)?"
+    r"(?:material(?:s)?|fabric|composition)\s*:\s*(?P<value>.+)"
+)
+DETAIL_DOM_MATERIAL_INLINE_COMPOSITION_PATTERN = r"\bcomposition\s+(?P<value>.+)"
+DETAIL_DOM_MATERIAL_VALUE_BOUNDARY_PATTERN = (
+    r"\s+(?:care(?:\s+instructions?)?|origin|style|color|colour|delivery|"
+    r"shipping|returns?|reviews?|lining|insole|outsole|trim|closure|"
+    r"made\s+in|internal\s+details)\s*:?(?:\s|$).*$"
+)
+DETAIL_DOM_MATERIAL_VALUE_REJECT = frozenset(
+    {
+        "",
+        "base",
+        "composition",
+        "details",
+        "fabric",
+        "insole",
+        "lining",
+        "material",
+        "materials",
+        "outsole",
+        "upper",
+    }
+)
+DETAIL_DOM_MATERIAL_PERCENTAGE_PATTERNS = (
+    r"\b\d{1,3}(?:\.\d+)?\s*%\s*[A-Za-z][A-Za-z\u00C0-\u017F\- ]{1,50}?"
+    r"(?=\s+(?:and|with|for|to|that|which)\b|[,.;]|$)",
+    r"\b[A-Za-z][A-Za-z\u00C0-\u017F\- ]{1,40}?\s+\d{1,3}(?:\.\d+)?\s*%"
+    r"(?=\s+(?:and|with|for|to|that|which)\b|[,.;]|$)",
+)
+DETAIL_DOM_MATERIAL_CONSTRUCTION_PATTERNS = (
+    r"\b(?:made|crafted|built|constructed)\s+(?:from|of|with)\s+"
+    r"(?P<value>[^.;]{2,100}?)(?=\s+(?:for|to|that|which|with)\b|[.;]|$)",
+)
+DETAIL_DOM_MATERIAL_COMPONENT_PATTERN = (
+    r"(?P<value>(?:[^,.;:]|\bwith\b){2,70}?)\s+"
+    r"(?:fabric|upper|lining|insole|outsole|base)\b"
+)
+DETAIL_DOM_MATERIAL_DECORATIVE_SYMBOL_PATTERN = r"[®™℠�]"
 DETAIL_DOM_OFFER_SELECTORS = (
     "[data-price]",
     "[itemprop='price']",
@@ -331,6 +415,9 @@ DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS = (
     "sponsored",
     "you-may-also-like",
     "you may also like",
+)
+DETAIL_TEXT_SCOPE_OVERLAY_TOKENS = frozenset(
+    {"dialog", "lightbox", "modal", "overlay", "popup"}
 )
 DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS = (
     "also-viewed",

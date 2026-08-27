@@ -11,6 +11,7 @@ from app.core.config.field_mappings import (
 )
 from app.core.config.extraction_rules import (
     VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
+    VARIANT_URL_AXIS_PARAMS,
     VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS,
 )
 from app.core.shared.url_utils import extract_urls
@@ -350,7 +351,7 @@ def variant_endpoint_url_axis_values(candidate_url: str) -> dict[str, str]:
         axis_match = re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, key, flags=re.I)
         if not axis_match:
             continue
-        axis = variant_policy.canonical_variant_axis(axis_match.group("axis"))
+        axis = VARIANT_URL_AXIS_PARAMS.get(axis_match.group("axis").casefold())
         if axis:
             out.setdefault(axis, value)
     return out
@@ -362,6 +363,60 @@ def url_value(obj: dict) -> str:
         candidate = first(candidate, *variant_policy.VARIANT_NESTED_URL_VALUE_KEYS)
     scalar = scalar_value(candidate)
     return scalar.strip() if isinstance(scalar, str) else ""
+
+
+def direct_url_value(obj: dict) -> str:
+    candidate = next(
+        (
+            obj[key]
+            for key in variant_policy.VARIANT_URL_VALUE_KEYS
+            if obj.get(key) not in (None, "", [], {})
+        ),
+        None,
+    )
+    if isinstance(candidate, dict):
+        candidate = next(
+            (
+                candidate[key]
+                for key in variant_policy.VARIANT_NESTED_URL_VALUE_KEYS
+                if candidate.get(key) not in (None, "", [], {})
+            ),
+            None,
+        )
+    scalar = scalar_value(candidate)
+    return scalar.strip() if isinstance(scalar, str) else ""
+
+
+def variant_gtin_values(obj: dict) -> tuple[object, ...]:
+    values = [
+        value
+        for key in variant_policy.VARIANT_GTIN_VALUE_KEYS
+        if (value := scalar_value(obj.get(key))) not in (None, "", [], {})
+    ]
+    for key in variant_policy.VARIANT_GTIN_CONTAINER_KEYS:
+        container = obj.get(key)
+        rows = container if isinstance(container, list) else [container]
+        values.extend(
+            identifier
+            for row in rows
+            if isinstance(row, dict)
+            and _gtin_container_row_is_typed(key, row)
+            and (
+                identifier := scalar_value(
+                    first(row, *variant_policy.VARIANT_GTIN_IDENTIFIER_KEYS)
+                )
+            )
+            not in (None, "", [], {})
+        )
+    return tuple(dict.fromkeys(values))
+
+
+def _gtin_container_row_is_typed(key: str, row: dict) -> bool:
+    if key not in variant_policy.VARIANT_GTIN_TYPED_CONTAINER_KEYS:
+        return True
+    raw_type = scalar_value(first(row, *variant_policy.VARIANT_GTIN_TYPE_KEYS))
+    normalized = re.sub(r"[^a-z0-9]+", "", str(raw_type or "").casefold())
+    return normalized in variant_policy.VARIANT_GTIN_TYPES
 
 
 def first(obj: dict, *keys: str, depth: int = 0):

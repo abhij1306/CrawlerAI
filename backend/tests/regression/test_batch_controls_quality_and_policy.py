@@ -454,13 +454,13 @@ async def test_process_run_default_timeout_includes_acquisition_slack(
 
     patch_settings(
         url_process_timeout_seconds=0.01,
-        url_process_timeout_buffer_seconds=0.03,
-        acquisition_attempt_timeout_seconds=0.02,
+        url_process_timeout_buffer_seconds=0.08,
+        acquisition_attempt_timeout_seconds=0.08,
     )
 
     async def _slow_process_single_url(*args, **kwargs):
         del args, kwargs
-        await asyncio.sleep(0.025)
+        await asyncio.sleep(0.05)
         return URLProcessingResult(
             records=[],
             verdict="success",

@@ -51,7 +51,7 @@ from tests.unit.extraction_contract_test_support import (
             "Karen Millen tailored trouser.",
             "https://media.karenmillen.com/trouser.jpg",
             "Karen",
-            "Karen Millen",
+            "Karen",
         ),
         (
             "https://www.phase-eight.com/product/lucinda-dress.html",
@@ -59,7 +59,7 @@ from tests.unit.extraction_contract_test_support import (
             "Phase Eight occasion dress.",
             "https://www.phase-eight.com/images/lucinda.jpg",
             "Phase",
-            "Phase Eight",
+            "Phase",
         ),
         (
             "https://www.calvinklein.us/bags/structured-commuter-bag.html",
@@ -67,7 +67,7 @@ from tests.unit.extraction_contract_test_support import (
             "Calvin Klein commuter bag.",
             "https://calvinklein.scene7.com/is/image/CalvinKlein/bag",
             "Calvin",
-            "Calvin Klein",
+            "Calvin",
         ),
         (
             "https://www.asos.com/asos-curve/asos-design-curve-pants/prd/1",
@@ -75,7 +75,7 @@ from tests.unit.extraction_contract_test_support import (
             "ASOS DESIGN curve pants.",
             "https://images.asos-media.com/products/asos-design-curve-pants/1.jpg",
             "ASOS",
-            "ASOS DESIGN",
+            "ASOS",
         ),
         (
             "https://www.williams-sonoma.com/products/breville-the-bambino-plus/",
@@ -83,7 +83,7 @@ from tests.unit.extraction_contract_test_support import (
             "Breville Bambino Plus espresso machine.",
             "https://assets.wsimgs.com/breville-bambino.jpg",
             "Breville Bambino",
-            "Breville",
+            "Breville Bambino",
         ),
         (
             "https://www.firstcry.com/babyhug/babyhug-denim-top/1/product-detail",
@@ -119,7 +119,7 @@ from tests.unit.extraction_contract_test_support import (
         ),
     ],
 )
-def test_page_identity_replaces_known_weak_or_partial_brand_shapes(
+def test_page_identity_only_replaces_invalid_explicit_brand_shapes(
     url: str,
     title: str,
     description: str,
@@ -295,6 +295,76 @@ def test_explicit_visible_product_brand_label_is_collected() -> None:
         and row.collector_id == "dom"
         for row in result.evidence
     )
+
+
+def test_page_title_site_identity_beats_uncorroborated_product_title_token() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <head>
+          <title>Secret Halo Diamond Ring | Brilliant Earth</title>
+          <meta property="og:title" content="Secret Halo Diamond Ring">
+          <meta property="og:site_name" content="Brilliant Earth">
+        </head>
+        <main>
+          <h1>Secret Halo Diamond Ring</h1>
+          <p data-description="A refined diamond ring with a hidden halo."></p>
+        </main>
+        """,
+        "https://www.brilliantearth.com/Secret-Halo-Diamond-Ring-BE1D13065/",
+        requested_fields=("brand",),
+    )
+
+    assert result.records[0]["brand"] == "Brilliant Earth"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "Brilliant Earth"
+        and row.rule_id == "page_identity"
+        for row in result.derived_facts
+    )
+
+
+def test_locale_prefixed_jsonld_product_keeps_target_identifiers_and_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "url": "https://shop.test/secret-halo-BE1D13065.html",
+          "name": "Secret Halo Ring"
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "url": "https://shop.test/en-gb/secret-halo-BE1D13065.html",
+          "name": "Secret Halo Ring",
+          "brand": {"@type": "Brand", "name": "Example Jeweller"},
+          "sku": "BE1D13065-14KY",
+          "mpn": "BE1D13065-14KY",
+          "offers": {
+            "@type": "Offer",
+            "price": "1090",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/secret-halo-BE1D13065.html",
+        requested_fields=("brand", "sku", "mpn", "price", "currency", "availability"),
+    )
+
+    record = result.records[0]
+    assert record["brand"] == "Example Jeweller"
+    assert record["sku"] == "BE1D13065-14KY"
+    assert record["mpn"] == "BE1D13065-14KY"
+    assert record["price"] == "1090.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
 
 
 def test_designed_by_data_attribute_recovers_product_brand() -> None:
@@ -545,6 +615,62 @@ def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
             "size": ".05 oz / 1.5 g",
         }
     ]
+
+
+def test_jsonld_variant_prefers_explicit_color_over_malformed_url_shade() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Trail Pants",
+          "url": "https://shop.test/products/trail-pants?color=2EL",
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "PANTS-CEDAR-M",
+            "color": "Cedar",
+            "size": "M",
+            "offers": {
+              "url": "https://shop.test/products/trail-pants?color=2EL?color=2EL&size=M",
+              "price": "91",
+              "priceCurrency": "USD"
+            }
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-pants?color=2EL",
+    )
+
+    assert result.records[0]["variants"][0]["color"] == "Cedar"
+
+
+def test_jsonld_variant_keeps_uppercase_named_color() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Linen Shirt",
+          "url": "https://shop.test/products/linen-shirt",
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "SHIRT-BROWN-M",
+            "color": "BROWN",
+            "size": "M",
+            "offers": {"price": "49.9", "priceCurrency": "USD"}
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/linen-shirt",
+    )
+
+    assert result.records[0]["variants"][0]["color"] == "BROWN"
 
 
 def test_gender_microdata_title_and_brand_as_variant_color_are_rejected() -> None:

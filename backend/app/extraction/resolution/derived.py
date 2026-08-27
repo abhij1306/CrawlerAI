@@ -172,6 +172,8 @@ def _title_brand_fact(
     existing_brand = resolved_values.get(
         (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
     )
+    if existing_brand:
+        return ()
     brand_candidates = tuple(
         row
         for row in evidence_by_id.values()
@@ -188,9 +190,10 @@ def _title_brand_fact(
         marker_title=evidence.raw_value,  # pre-normalization boundary signal
         page_url=page_url,
         evidence_values=tuple(
-            row.value
+            source_value
             for row in evidence_by_id.values()
             if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
+            for source_value in (row.value, row.raw_value)
         ),
         existing_brands=existing_brands,
         allow_page_identity_replacement=(
@@ -364,6 +367,8 @@ def _brand_from_title(
             page_identity,
             allow_replacement=allow_page_identity_replacement,
         )
+    if page_identity:
+        return page_identity, "page_identity"
     return _new_title_brand(
         marked=marker_title if str(marker_title or "").strip() else title,
         page_url=page_url,

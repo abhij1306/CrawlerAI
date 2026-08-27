@@ -55,9 +55,6 @@ class RequestContext(FrozenModel):
     session_fingerprint: str | None = None
 
 
-ExecutionContext = RequestContext
-
-
 class ArtifactRef(FrozenModel):
     artifact_id: str
     artifact_type: Literal[
@@ -67,6 +64,7 @@ class ArtifactRef(FrozenModel):
         "microdata",
         "opengraph",
         "js_state",
+        "adapter_json",
         "network_json",
         "css_recipe",
         "screenshot",

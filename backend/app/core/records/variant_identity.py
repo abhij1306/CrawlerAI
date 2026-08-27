@@ -94,6 +94,68 @@ def variant_identity_keys(rows: Iterable[VariantEvidence]) -> set[str]:
     return keys
 
 
+def variant_identity_keys_overlap(left: set[str], right: set[str]) -> bool:
+    option_conflict = _variant_option_keys_conflict(left, right)
+    for prefix in ("id:", "gtin:"):
+        left_values = _prefixed_values(left, prefix)
+        right_values = _prefixed_values(right, prefix)
+        if left_values & right_values:
+            return True
+    left_skus = _prefixed_values(left, "sku:")
+    right_skus = _prefixed_values(right, "sku:")
+    if left_skus & right_skus and not option_conflict:
+        return True
+    if option_conflict:
+        return False
+    # Identifier roles stay distinct facts. Their exact values can still identify
+    # one variant across sources (for example, DOM data-sku == structured id).
+    if _variant_identifier_values(left) & _variant_identifier_values(right):
+        return True
+    if any(
+        _prefixed_values(left, prefix)
+        and _prefixed_values(right, prefix)
+        and _prefixed_values(left, prefix).isdisjoint(_prefixed_values(right, prefix))
+        for prefix in ("id:", "gtin:", "sku:")
+    ):
+        return False
+    if left & right:
+        return True
+    return False
+
+
+def _variant_option_keys_conflict(left: set[str], right: set[str]) -> bool:
+    left_options = _option_identity_values(left)
+    right_options = _option_identity_values(right)
+    return bool(
+        any(
+            left_options[axis].isdisjoint(right_options[axis])
+            for axis in left_options.keys() & right_options.keys()
+        )
+    )
+
+
+def _prefixed_values(keys: set[str], prefix: str) -> set[str]:
+    return {key.removeprefix(prefix) for key in keys if key.startswith(prefix)}
+
+
+def _option_identity_values(keys: set[str]) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = {}
+    for key in keys:
+        if not key.startswith("options:"):
+            continue
+        for pair in key.removeprefix("options:").split("|"):
+            axis, separator, value = pair.partition("=")
+            if separator and axis and value:
+                values.setdefault(axis, set()).add(value)
+    return values
+
+
+def _variant_identifier_values(keys: set[str]) -> set[str]:
+    return {
+        key.split(":", 1)[1] for key in keys if key.startswith(("id:", "sku:", "gtin:"))
+    }
+
+
 def variant_options(rows: Iterable[VariantEvidence]) -> dict[str, str]:
     return {
         row.fact_type.removeprefix("variant.option."): str(row.value).strip()
@@ -103,7 +165,7 @@ def variant_options(rows: Iterable[VariantEvidence]) -> dict[str, str]:
 
 
 def preferred_variant_key(keys: set[str]) -> str:
-    for prefix in ("id:", "sku:", "gtin:", "url:", "options:"):
+    for prefix in ("id:", "gtin:", "sku:", "url:", "options:"):
         if match := sorted(key for key in keys if key.startswith(prefix)):
             return match[0]
     return sorted(keys)[0]

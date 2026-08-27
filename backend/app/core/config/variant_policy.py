@@ -184,6 +184,20 @@ PUBLIC_VARIANT_AXIS_FIELDS: tuple[str, ...] = (
     "usage_limit",
     "tier",
 )
+VARIANT_URL_AXIS_PARAMS = {
+    "color": COLOR_FIELD,
+    "colorcode": COLOR_FIELD,
+    "colorname": COLOR_FIELD,
+    "colour": COLOR_FIELD,
+    "colordisplaycode": COLOR_FIELD,
+    "colorproductcode": "style",
+    "fit": "fit",
+    "size": SIZE_FIELD,
+    "sizedisplaycode": SIZE_FIELD,
+    SKU_FIELD: SKU_FIELD,
+    "width": "width",
+    "style": "style",
+}
 ECOMMERCE_VARIANT_FACT_TYPES = frozenset(
     {
         *(f"variant.{field}" for field in ("id", "sku", "gtin", "url", "selected")),
@@ -279,6 +293,13 @@ AXIS_NAME_ALIASES = {
     )
     if normalized_alias and normalized_canonical
 }
+AXIS_NAME_ALIASES.update(
+    {
+        raw_axis: canonical_axis
+        for raw_axis, canonical_axis in VARIANT_URL_AXIS_PARAMS.items()
+        if canonical_axis in PUBLIC_VARIANT_AXIS_FIELDS
+    }
+)
 
 
 def canonical_variant_axis(value: object) -> str | None:
@@ -405,6 +426,7 @@ VARIANT_DIRECT_OPTION_FIELD_AXES = {
 }
 VARIANT_OPTION_CONTAINER_KEYS = (
     "attributes",
+    "traits",
     "variationValues",
     "variationAttributes",
     "selectedOptions",
@@ -505,6 +527,13 @@ VARIANT_GTIN_VALUE_KEYS = (
     "upc",
     "ean",
 )
+VARIANT_GTIN_CONTAINER_KEYS = ("gtins", "barcodes", "identifiers")
+VARIANT_GTIN_TYPED_CONTAINER_KEYS = frozenset({"identifiers"})
+VARIANT_GTIN_IDENTIFIER_KEYS = ("identifier", "value", "code")
+VARIANT_GTIN_TYPE_KEYS = ("type", "kind", "scheme")
+VARIANT_GTIN_TYPES = frozenset(
+    {"gtin", "gtin8", "gtin12", "gtin13", "gtin14", "upc", "ean"}
+)
 
 STRUCTURED_EVIDENCE_PRIORITY_RANKS = {
     "identity": 1,
@@ -544,6 +573,8 @@ STRUCTURED_EVIDENCE_BUDGET_REASON = "evidence_per_source_object_budget_exhausted
 CHILD_JOIN_FAILED_RULE_ID = "CHILD_JOIN_FAILED"
 DEFAULT_VARIANT_DIAGNOSTIC_REASON = "default_variant_diagnostic_only"
 DEFAULT_VARIANT_PLACEHOLDER_FLAG = "default_variant_placeholder"
+AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON = "axis_group_variant_diagnostic_only"
+SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON = "sibling_product_variant_diagnostic_only"
 STRUCTURED_EVIDENCE_FACT_PREFIXES = {
     "variant_options": "variant.option.",
     "variant_identity": "variant.",

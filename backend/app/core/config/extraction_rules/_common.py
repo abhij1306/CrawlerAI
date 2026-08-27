@@ -100,6 +100,7 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "listings",
         "lookproducts",
         "looks",
+        "mcp",
         "peoplealsobought",
         "people_also_bought",
         "recommendations",

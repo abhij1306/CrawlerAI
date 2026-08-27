@@ -237,9 +237,15 @@ def test_evidence_requires_subject_id() -> None:
     assert Evidence.model_fields["subject_id"].is_required()
 
 
-def test_legacy_record_producing_adapters_are_deleted() -> None:
+def test_platform_adapters_cannot_bypass_evidence_publication() -> None:
+    legacy_adapter_dir = APP_ROOT / "services" / "adapters"
+    assert not any(legacy_adapter_dir.glob("*.py"))
+
     adapter_dir = APP_ROOT / "connectors" / "adapters"
-    assert not any(adapter_dir.glob("*.py"))
+    for path in adapter_dir.glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "app.persistence" not in source
+        assert "app.extraction.publication" not in source
 
 
 def test_surface_inference_modules_are_deleted() -> None:

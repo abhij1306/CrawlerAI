@@ -8,6 +8,11 @@ from app.core.config.field_mappings import (
     ECOMMERCE_OPENGRAPH_FACT_TYPES,
 )
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
+from app.extraction.collectors.dom_scoping import (
+    node_context_excluded,
+    node_within_roots,
+    product_root_nodes,
+)
 from app.extraction.collectors.js_state import (
     StructuredHarvestResult,
     budget_outcome,
@@ -38,8 +43,14 @@ class MicrodataCollector:
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         _, doc = html_doc(bundle, artifacts)
         out: list[Evidence] = []
+        root_ids = {node.identity() for node in product_root_nodes(doc)}
         for prop, fact in ECOMMERCE_MICRODATA_FACT_TYPES.items():
             for tag in doc.css(f'[itemprop="{prop}"]'):
+                if fact.startswith("product.") and (
+                    node_context_excluded(tag)
+                    or (root_ids and not node_within_roots(tag, root_ids))
+                ):
+                    continue
                 value = str(
                     tag.attribute("content") or tag.attribute("src") or tag.text()
                 ).strip()
@@ -81,9 +92,10 @@ class OpenGraphCollector:
         return tuple(out)
 
 
-class NetworkCollector:
+class _JsonArtifactCollector:
     collector_id = "network"
     collector_version = "1"
+    artifact_type = "network_json"
 
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         return self.harvest(bundle, artifacts).evidence
@@ -99,7 +111,7 @@ class NetworkCollector:
         outcomes: list[CollectorOutcome] = []
         admitted_source_objects = 0
         for ref in bundle.artifacts:
-            if ref.artifact_type != "network_json":
+            if ref.artifact_type != self.artifact_type:
                 continue
             objects = tuple(json_objects(artifacts.read_json(ref)))
             axis_hints = variant_axis_hints(objects)
@@ -123,7 +135,7 @@ class NetworkCollector:
                             ref.artifact_id,
                             path,
                             enriched,
-                            collector_id="network",
+                            collector_id=self.collector_id,
                         ),
                         requested_fields=requested_fields,
                         limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
@@ -152,6 +164,15 @@ class NetworkCollector:
             outcomes=tuple(outcomes),
             admitted_source_objects=admitted_source_objects,
         )
+
+
+class AdapterCollector(_JsonArtifactCollector):
+    collector_id = "adapter"
+    artifact_type = "adapter_json"
+
+
+class NetworkCollector(_JsonArtifactCollector):
+    pass
 
 
 def _metadata_evidence(

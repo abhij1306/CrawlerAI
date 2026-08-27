@@ -4,10 +4,7 @@ from collections import defaultdict
 
 from pydantic import Field
 
-from app.core.config.extraction_rules import (
-    DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
-    is_rejected_option_value,
-)
+from app.core.config.extraction_rules import DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP
 from app.core.records.url_identity import (
     detail_title_from_url,
     detail_url_resource_identity,
@@ -25,6 +22,7 @@ from app.core.records.variant_identity import (
     preferred_variant_key,
     selected_variant_values,
     variant_identity_keys,
+    variant_identity_keys_overlap,
     variant_options,
     variant_values_support_selection,
 )
@@ -34,9 +32,12 @@ from app.extraction.contracts import (
     CaptureBundle,
     Evidence,
     FrozenModel,
-    OptionAxis,
-    OptionValue,
     ProductOptionCatalog,
+)
+from app.extraction.product_options import (
+    apply_dom_variant_selection,
+    build_option_catalogs,
+    is_dom_selection_signal,
 )
 
 type ProductIds = set[tuple[str, str]]
@@ -98,8 +99,11 @@ def build_entities(bundle: CaptureBundle, evidence: tuple[Evidence, ...]) -> Ent
     if not products:
         return EntitySet()
     product_by_subject = _product_by_subject(products, evidence)
-    option_catalogs = _option_catalogs(evidence, product_by_subject)
+    option_catalogs = build_option_catalogs(evidence, product_by_subject)
     variants = _link_variants(evidence, product_by_subject)
+    variants = apply_dom_variant_selection(
+        bundle, evidence, variants, product_by_subject
+    )
     offers = _link_offers(bundle, evidence, product_by_subject, variants)
     assets = _link_assets(evidence, product_by_subject, variants)
     products = tuple(
@@ -692,7 +696,8 @@ def _variant_groups(
             (
                 index
                 for index, existing in enumerate(group_keys)
-                if product_ids[index] == product_id and existing & keys
+                if product_ids[index] == product_id
+                and variant_identity_keys_overlap(existing, keys)
             ),
             None,
         )
@@ -716,7 +721,7 @@ def _provisional_variant_rows(
 ) -> dict[str, list[Evidence]]:
     provisional: dict[str, list[Evidence]] = defaultdict(list)
     for row in evidence:
-        if row.fact_type.startswith("variant."):
+        if row.fact_type.startswith("variant.") and not is_dom_selection_signal(row):
             provisional[row.subject_id].append(row)
     return provisional
 
@@ -757,6 +762,9 @@ def _variant_group_input(
     keys = variant_identity_keys(rows)
     has_sellable_identity = any(
         key.startswith(("sku:", "gtin:", "url:")) for key in keys
+    ) or (
+        any(key.startswith("id:") for key in keys)
+        and any(row.fact_type.startswith("variant.option.") for row in rows)
     )
     if (
         not product_id
@@ -983,49 +991,3 @@ def _owner_product_id(
     if len(product_ids) != 1:
         return None
     return next(iter(product_ids))
-
-
-def _option_catalogs(
-    evidence: tuple[Evidence, ...],
-    product_by_subject: dict[str, str],
-) -> tuple[ProductOptionCatalog, ...]:
-    by_product: dict[str, dict[str, dict[str, list[str]]]] = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(list))
-    )
-    for ev in evidence:
-        if not ev.fact_type.startswith("option."):
-            continue
-        product_id = product_by_subject.get(ev.subject_id)
-        if not product_id:
-            continue
-        value = str(ev.value)
-        if is_rejected_option_value(value):
-            continue
-        axis = ev.fact_type.removeprefix("option.")
-        by_product[product_id][axis][value].append(ev.evidence_id)
-    catalogs: list[ProductOptionCatalog] = []
-    for product_id, axes in sorted(by_product.items()):
-        catalogs.append(
-            ProductOptionCatalog(
-                product_entity_id=product_id,
-                axes=tuple(
-                    OptionAxis(
-                        axis=axis,
-                        values=tuple(
-                            OptionValue(value=value, evidence_ids=tuple(sorted(ids)))
-                            for value, ids in sorted(values.items())
-                        ),
-                    )
-                    for axis, values in sorted(axes.items())
-                ),
-                evidence_ids=tuple(
-                    sorted(
-                        evidence_id
-                        for values in axes.values()
-                        for ids in values.values()
-                        for evidence_id in ids
-                    )
-                ),
-            )
-        )
-    return tuple(catalogs)

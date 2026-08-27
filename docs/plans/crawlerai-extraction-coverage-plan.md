@@ -1,9 +1,9 @@
 # Plan: CrawlerAI Source-Backed Extraction Coverage
 
 **Created:** 2026-08-25
-**Revised:** 2026-08-25 after the data-accuracy PR merged and run 3 was analysed
+**Revised:** 2026-08-27 after the run-5 version comparison and Amazon regression analysis
 **Agent:** Codex
-**Status:** QUEUED — start in a fresh session from updated `main`
+**Status:** COMPLETE — core slices and run-5 regression hardening verified
 **Branch:** `codex/crawlerai-extraction-coverage`
 **Base:** updated `main` after the data-accuracy PR merges
 **Touches buckets:** deterministic collectors, variants/options, product identifiers, attributes, ratings/reviews, offer/commercial completion, publication, diagnostics, focused tests
@@ -110,7 +110,9 @@ before changing offer or variant selection semantics):
 
 ### Slice 1: Selected State From the DOM (largest cluster)
 
-**Status:** MEASURED — implement as a *generalization*, not a rule hunt.
+**Status:** DONE (2026-08-27). Generic DOM selected-state markers now bind
+only to an existing same-product matrix and fail closed on ambiguity. Cases 51
+and 61 recovered; unmarked and matrix-less captures remain missing.
 Selected state is currently read only through one commerce platform's markup
 (`VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR` = `[data-attr-id][data-attr-value]`),
 so pages using the platform-neutral standards are not read at all. Fix that
@@ -127,45 +129,151 @@ capture-limited. Full measurement in
 
 ### Slice 2: Variant and Option Completeness
 
-**Status:** TODO
+**Status:** DONE (2026-08-27). The full replay moved from 70 failing cases /
+284 assertions to 70 / 257. Variant assertions moved 83 to 57,
+`variant_count` 10 to 8, and `size_options` 4 to 3; `model_options` stayed at
+1. The remaining mismatches lack a captured same-product matrix, disagree with
+the source row count, or are the single-site case-77 unit conversion. See the
+audit report for the per-case evidence.
 **Owns:** `variants` 83, `variant_count` 10, `size_options` 4, `model_options` 1
 **What:** Nike is 25 vs 24, H&M 10 vs 50, New Balance 48 vs 146, and case 25 collapses seven sizes to one. Recover complete same-product matrices from structured and first-party state; allow one-axis DOM controls only when each option is purchasable with option-level evidence. Add option **unit** normalization (MAC case 77 returns `0.05 oz` where the reference expects `1.5 g`).
 **Verify:** Variant resolution/publication tests plus the affected cases and existing correct variant cases.
 
 ### Slice 3: Material and Remaining Attributes
 
-**Status:** TODO
+**Status:** DONE (2026-08-27). The scoped rendered-detail collector recovered
+eight material cases while rejecting navigation, guides, reviews,
+recommendations, and unrelated overlays. Structured product condition/gender
+and unanimous JSON-LD offer condition are wired; ambiguous or merely textual
+condition/gender remains missing.
 **Owns:** `material` 18, `condition` 3, `gender` 5
 **What:** Material's real sources are product-description bullet lists and meta-description prose. Build a **scoped product-description collector** (product root section only) rather than the page-wide regex that already measured 1 correct / 14 wrong. Reject navigation, size guides, reviews and recommendations.
 **Verify:** Focused scope tests proving the collector cannot read outside the product section, plus the attribute partition.
 
 ### Slice 4: Commercial Completion
 
-**Status:** TODO
+**Status:** DONE (2026-08-27). Raw DOM price provenance is preserved. URL-less
+schema Products bind through one same-resource Offer URL. Selected ProductGroup
+children admit their parent matrix. Remaining commercial disagreements are
+source drift, absent/unbound evidence, or ambiguous selection; no acquisition
+or site-schema join was added.
 **Owns:** `price` 15, `availability` 9, `currency` 6, `original_price` 3, bounds 2
 **What:** Peloton (case 40) publishes no price, currency, availability or SKU because its capture holds no commercial evidence — confirm whether that is a capture gap or an unread first-party payload before changing logic. Apple case 34 family bounds remain unresolved. Re-capture the price-drift cases (9, 18, 45, 47, 71, 73, 74, 80) before treating them as defects; they are live retail changes, not extraction faults.
 **Verify:** Offer/commercial tests plus the commercial partition, with the PR 1 sibling-availability and price-rescale guards intact.
 
 ### Slice 5: Identity Display Contract
 
-**Status:** TODO
+**Status:** DONE (2026-08-27). The semantic title and explicit-brand contract is
+documented and implemented. Source spelling/case is preserved; no retailer
+aliases or fixture-driven display synthesis was added.
 **Owns:** `title` 25, `brand` 25
 **What:** These need a **generic display/semantic contract**, not more rules. The reference expectations contradict each other on casing and on title length, so the contract must state which source is authoritative for a product name and how display case is decided, before any code changes. Produce the contract first; if no truthful generic contract exists, record these as permanently capture-limited rather than adding retailer aliases or casing tables.
 **Verify:** Whatever the contract specifies, plus no regression in the trademark, site-suffix and identifier-label rules from PR 1.
 
 ### Slice 6: Type Contract and Close
 
-**Status:** Type contract DONE (carried-findings PR: `rating` publishes as a
-float and `review_count` as an int via `CanonicalizationTrace`; the divergence
-guard compares against `canonical_value`, so serialization is not involved).
-Evidence recording remains TODO.
+**Status:** DONE (2026-08-27). `rating` publishes as a float and `review_count`
+as an int via `CanonicalizationTrace`; the divergence guard compares against
+`canonical_value`. All slice evidence, rejected approaches, capture/source
+limits, replay measurements, and final repository gates are recorded in the
+companion report.
 **What:** `rating` and `review_count` publish as strings, like `price`, while the canonical detail schema declares them numeric. Coercing at serialization trips the `PUBLIC_RESOLUTION_DIVERGENCE` guard, so the change belongs at fact-value normalization and needs a deliberate contract decision. Then record all before/after evidence, capture-limited cases, preserved PR 1 behaviour, and timing.
 **Verify:** Full 82-case replay; `.\scripts\check.ps1`; `.\scripts\test.ps1`; `git diff --check`.
+
+### Post-close correction audit
+
+**Status:** DONE (2026-08-27). A requirement-by-requirement audit after the
+original close found additional generic source-reading defects. Direct product
+state now materializes ID-plus-option leaves and nested `traits`/typed GTINs;
+selected ProductGroup ownership propagates to child relations; JSON-LD variant
+`gtin8/12/13/14` keys publish as barcodes; explicit named colors survive opaque
+code filtering and malformed URL shade values; and schema.org
+`StrikethroughPrice` is original price rather than current price.
+
+The same existing 82 local captures moved from **70 failing cases / 228 fixture
+disagreements** to **69 / 204**. This was deterministic replay, not a new crawl.
+The remaining variant differences are absent/blank evidence, commercial data
+declared only for one color, unrelated offer families, explicit source row-count
+differences, or capture-time price/availability changes. No value was filled
+from the reference.
+
+### Post-close run-5 regression hardening
+
+**Status:** DONE and verified (2026-08-27).
+
+The corrected 81-to-79 version comparison uses **78 aligned products**. It
+shows a real aggregate improvement, not a broad rollback:
+
+- average populated top-level fields: **9.88 -> 12.88** (**+30.4%**)
+- products with variants: **39 -> 45**
+- total variant rows: **561 -> 751** (**+33.9%**)
+- brand: **64 -> 69**; price: **68 -> 70**; currency: **69 -> 71**
+- availability: **62 -> 66**; description: **71 -> 74**; SKU: **43 -> 49**
+- newly broad fields include materials (34 products), colors (32), and
+  ratings/reviews (28)
+
+This pass fixes only reproduced regressions:
+
+- Shopify MCP tool metadata could become a product description. MCP paths are
+  now rejected as context noise. Sneaker Politics and Technics replay with
+  their real product descriptions again.
+- Zadig admitted sibling style families as variants (5 -> 15). Explicit parent
+  SKU family evidence now excludes sibling SKU families; replay returns the
+  five requested-style variants.
+- Brilliant Earth lost explicit brand, SKU, MPN, offer price, currency, and
+  availability because locale-prefixed JSON-LD ownership was rejected and
+  title-derived `Secret` beat the site identity. Same-host locale-prefixed
+  product URLs now retain target ownership; page-title site identity is
+  available to brand resolution. Replay restores `Brilliant Earth`,
+  `BE1D13065-14KY`, and the explicit offer.
+- Amazon repeatedly acquired a title-only semantic shell. The extraction
+  rebuild had also deleted platform-adapter production while leaving adapter
+  config and artifact contracts behind. The Amazon platform adapter is restored
+  as an evidence producer; its output still passes through Harvest -> Resolve
+  -> Publish. Acquisition remains owned by the global curl -> Patchright ->
+  Chrome ladder; the adapter adds no Amazon-specific browser policy. Exact
+  run-5 result 229 replay remains correctly empty, while synthetic rich Amazon
+  HTML proves adapter-to-publication coverage.
+
+Final verification:
+
+- `scripts/check.ps1`: passed Ruff, formatting, mypy, frontend checks, LOC, and
+  complexity.
+- focused regression coverage includes Amazon evidence publication, adapter
+  architecture, brand identity, and both retained and excluded variant-family
+  cases.
+- repository-selected retry delta: **1,008 passed**; no frontend or E2E tests
+  were selected.
+- one explicitly requested live Amazon detail crawl was run as run 7/result
+  256. Global HTTP escalation reached browser acquisition, returned HTTP 200
+  with usable content, and published one partial record in 10.05 seconds. The
+  adapter supplied SKU `B0CSP8GZ5R`, brand `ZAP CASE`, price `289.00`, currency
+  `INR`, and the primary image. No Amazon-specific acquisition override ran.
+  The live run exposed a generic URL-title bug: a suffix after `/dp/<opaque-id>`
+  was treated as product identity. Offline replay of the saved live page after
+  the route fix publishes `Zapcase Back Case Cover for Motorola Moto G62 5G`
+  instead of `ref=pd ci mcx mh mcx views 2 image`.
+
+Not changed in this regression-only pass:
+
+- StockX changed input target, so it is not a same-product regression.
+- live price/stock differences and ROAM availability are observations, not code
+  regressions.
+- the large New Balance, H&M, and Ralph Lauren variant expansions need source
+  validation before any reduction.
+- five reported parent-SKU losses were `not_requested`; variant SKU promotion
+  was not widened. North Face already replays with its captured SKU.
+- `product_id` coverage remains separate new work; it was not used to inflate
+  this pass.
+- Uniqlo remains a separate missing acquisition result. No Uniqlo-specific
+  behavior was added while the active request was Amazon.
 
 ## Do Not Touch
 
 - `frontend/**`, endpoints, database schema, listing, jobs, automobiles, downstream value repair, enrichment cleanup, or LLM value generation.
-- Acquisition/browser/traversal and option clicking. Report absent source artifacts; do not expand capture scope inside this PR.
+- Acquisition/browser/traversal and option clicking, except the explicitly
+  requested generic Amazon regression restoration above. Report other absent
+  source artifacts; do not expand capture scope further inside this pass.
 - Site-specific branches in generic extraction, a generic metadata blob collector, parallel eval runners, scheduled replay, or CI corpus gates.
 - PR 1 targeting, selected-state, title/brand, commercial, and attribute rules except to fix a directly reproduced regression without weakening their tests.
 
@@ -175,12 +283,14 @@ Measure candidate sources against the failing cases **before** writing code, and
 
 ## Doc Updates Required
 
-- [ ] `docs/audits/crawlerai-extraction-coverage-report.md` — before/after evidence, including measured-and-rejected approaches.
-- [ ] `docs/BUSINESS_LOGIC.md` — only if public field semantics change, e.g. the rating/review-count numeric type decision.
-- [ ] `docs/backend-architecture.md` and `docs/CODEBASE_MAP.md` — only for real ownership moves.
+- [x] `docs/audits/crawlerai-extraction-coverage-report.md` — before/after evidence, including measured-and-rejected approaches.
+- [x] `docs/BUSINESS_LOGIC.md` — only if public field semantics change, e.g. the rating/review-count numeric type decision.
+- [x] `docs/backend-architecture.md` and `docs/CODEBASE_MAP.md` — only for real ownership moves.
 
 ## Notes
 
 - Accuracy wins over fabricated coverage. Missing is acceptable when evidence is absent or ambiguous; a wrong price, stock state or sibling product is not.
 - Size policy is repo-wide and lives in `scripts/validation.json` (`maxLines` 800, `maxPythonComplexity` 15), enforced in CI by `scripts/check.ps1 -Mode Limits`. The per-module LOC/complexity tables that used to sit in `extraction_semantic_surface.toml`, and the per-file debt ledgers in the architecture tests, were removed in favour of that single blanket rule. Prefer extracting a module over growing one; there is no per-file budget to document any more.
-- Amazon case 55 returning no product is correct behaviour for an anti-automation shell, not a defect to fix.
+- An Amazon anti-automation shell must still publish no product. The restored
+  adapter consumes successful global acquisition output; it does not own or
+  alter acquisition escalation.

@@ -43,6 +43,7 @@ All paths below are relative to `backend/app/`.
 | URL-result, record, export, and extraction-memory persistence | `persistence/` |
 | Operator review | `crawl/review/` |
 | LLM connectors and runtime | `connectors/llm/` |
+| Platform-specific deterministic evidence adapters | `connectors/adapters/` |
 | Product Intelligence | `intelligence/` |
 | Data enrichment | `enrichment/` |
 | Diagnosis, reports, metrics | `observability/` |
@@ -102,6 +103,8 @@ models/extraction_memory.py
 | Detail title display normalization (site-name suffix, marketplace prefixes, trademark notation) | `core/records/title_normalization.py` |
 | Product attribute value normalization (identifier labels, GTIN digits, schema.org enums, audience gender from URL path) | `core/records/attribute_normalization.py` |
 | JSON-LD product-level fact emission (identity, images, attributes, aggregateRating) | `extraction/collectors/jsonld_attributes.py` |
+| JSON-LD offer and price-specification fact emission | `extraction/collectors/jsonld_offer_facts.py` |
+| JSON-LD selected-root and sole-offer target ownership | `extraction/collectors/jsonld_targeting.py` |
 | Detail publish/suppress policy | `extraction/publication_policy.py` |
 | Fact resolution | `extraction/resolution/` |
 | Findings and publication | `extraction/validation.py`, `result_building.py`, `publication.py` |

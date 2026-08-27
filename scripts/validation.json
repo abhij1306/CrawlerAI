@@ -149,6 +149,13 @@
       "backendTests": ["tests/unit/test_request_body_limit.py"]
     },
     {
+      "sources": ["backend/app/connectors/adapters/**"],
+      "backendTests": [
+        "tests/unit/test_amazon_adapter.py",
+        "tests/unit/test_extraction_*.py"
+      ]
+    },
+    {
       "sources": ["backend/app/connectors/llm/**"],
       "backendTests": ["tests/component/test_llm_*.py", "tests/regression/test_llm_*.py"]
     },

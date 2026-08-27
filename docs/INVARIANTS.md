@@ -51,7 +51,9 @@ Field and identity rules:
 - Requested fields plus configured canonical defaults define the contract. Missing fields require deterministic recovery or a visible reason.
 - Candidate admission rejects breadcrumb categories, installment prices, promo values, system IDs/SKUs, structural tokens, placeholder types, related-product variants, sibling products, and non-product guide/glossary text before ranking.
 - Network/embedded JSON is untrusted until URL, product ID, SKU, or selected-root evidence links it to the requested product.
-- Locale, price parsing, currency inference, availability vocabulary, and GTIN validation use their config owners. Integral price strings mean whole currency units unless a transform explicitly enables cents. Negative decimal values are rejected.
+- Product-root URL conflict checks inspect the root's own URL, never an arbitrary nested child, breadcrumb, recommendation, or asset URL.
+- A URL-less schema Product may use its sole same-resource Offer URL as target-ownership evidence. Several or cross-resource offer URLs do not authorize the binding.
+- Locale, price parsing, currency inference, availability vocabulary, and GTIN validation use their config owners. GTIN checksum failure is diagnostic and lowers rank; it does not suppress an explicitly declared GTIN whose digit length is valid. Integral price strings mean whole currency units unless a transform explicitly enables cents. Negative decimal values are rejected.
 - Retailer identity and manufacturer identity are separate. Reject host-derived brand evidence during Resolve when product evidence identifies another brand.
 - Public `barcode` is digits-only and length 8/12/13/14. `gender` is one of Men/Women/Unisex/Kids/Boys/Girls. Brand loses region/site suffixes. Product identity fields reject structural tokens.
 - Asset dedupe uses canonical asset identity, not delivery URL equality. Preserve URL grammar such as commas inside `srcset` candidates.
@@ -59,6 +61,7 @@ Field and identity rules:
 Variant rules:
 
 - Variant and offer facts stay entity-scoped. Parent facts may be derived only from resolved variants with explicit lineage.
+- A selected JSON-LD `hasVariant` child admits its declared ProductGroup parent. Incomplete option-group and parent/default diagnostic shells are not sellable rows and do not make the explicit leaf matrix incomplete.
 - Public variants are flat rows with `variant_id`, transport fields, configured public axes, and top-level `variant_count`.
 - Never publish `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, nested `option_values`, or variant `title`.
 - Variant IDs are unique. Do not delete explicit inherited offer fields because they equal parent values.

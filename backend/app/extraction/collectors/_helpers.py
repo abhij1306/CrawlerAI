@@ -4,7 +4,12 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from app.core.config.extraction_rules import AVAILABILITY_URL_MAP
+from app.core.config.extraction_rules import (
+    AVAILABILITY_URL_MAP,
+    DETAIL_DOM_TITLE_SOURCE_ROLES,
+    DETAIL_TITLE_COLLECTOR_SOURCE_ROLES,
+    DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY,
+)
 from app.extraction.documents import DocumentStore, HtmlDocument, HtmlNode
 from app.extraction.contracts import (
     BRAND_ROLES,
@@ -80,6 +85,17 @@ def evidence(
         parent_scope=kwargs.get("parent_scope"),
     )
     explicit_brand_role = _validated_brand_role(kwargs.get("brand_role"))
+    metadata = dict(kwargs.get("metadata") or {})
+    if fact_type == "product.title" and not metadata.get(
+        DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY
+    ):
+        source_role = (
+            DETAIL_DOM_TITLE_SOURCE_ROLES.get(locator.value)
+            if collector_id == "dom"
+            else DETAIL_TITLE_COLLECTOR_SOURCE_ROLES.get(collector_id)
+        )
+        if source_role:
+            metadata[DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY] = source_role
     return Evidence(
         evidence_id=eid,
         bundle_id=bundle.bundle_id,
@@ -87,7 +103,7 @@ def evidence(
         collector_id=collector_id,
         collector_version="1",
         fact_type=fact_type,
-        raw_value=value,
+        raw_value=kwargs.get("raw_value", value),
         value=canonical_value,
         locator=locator,
         entity_hint=hint,
@@ -95,7 +111,7 @@ def evidence(
         directness=directness,  # type: ignore[arg-type]
         confidence=confidence,
         flags=tuple(kwargs.get("flags") or ()),
-        metadata=dict(kwargs.get("metadata") or {}),
+        metadata=metadata,
         brand_role=explicit_brand_role
         or _brand_role(fact_type, locator.value, kwargs.get("metadata")),
         subject_id=subject_id,
