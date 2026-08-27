@@ -43,7 +43,7 @@ All paths below are relative to `backend/app/`.
 | URL-result, record, export, and extraction-memory persistence | `persistence/` |
 | Operator review | `crawl/review/` |
 | LLM connectors and runtime | `connectors/llm/` |
-| Platform-specific deterministic evidence adapters | `connectors/adapters/` |
+| Platform-specific deterministic evidence adapters | `connectors/*_adapter.py`, `connectors/adapter_registry.py` |
 | Product Intelligence | `intelligence/` |
 | Data enrichment | `enrichment/` |
 | Diagnosis, reports, metrics | `observability/` |

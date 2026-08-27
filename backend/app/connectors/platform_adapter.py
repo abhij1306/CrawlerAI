@@ -1,3 +1,5 @@
+"""Contract shared by deterministic platform evidence adapters."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

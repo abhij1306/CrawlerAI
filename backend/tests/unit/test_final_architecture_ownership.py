@@ -206,6 +206,9 @@ def test_intelligence_and_enrichment_are_top_level_packages() -> None:
 
 def test_connectors_are_owned_by_top_level_package() -> None:
     assert (APP_ROOT / "connectors" / "llm" / "provider_client.py").is_file()
+    assert (APP_ROOT / "connectors" / "amazon_adapter.py").is_file()
+    assert (APP_ROOT / "connectors" / "adapter_registry.py").is_file()
+    assert (APP_ROOT / "connectors" / "platform_adapter.py").is_file()
     adapter_dir = APP_ROOT / "connectors" / "adapters"
     assert not any(adapter_dir.glob("*.py"))
     assert not (APP_ROOT / "services" / "adapters").exists()

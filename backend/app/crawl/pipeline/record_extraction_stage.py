@@ -6,8 +6,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
-from app.connectors.adapters.base import AdapterResult
-from app.connectors.adapters.registry import run_adapter
+from app.connectors.adapter_registry import run_adapter
+from app.connectors.platform_adapter import AdapterResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty

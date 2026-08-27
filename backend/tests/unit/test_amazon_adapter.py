@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
-from app.connectors.adapters.amazon import AmazonAdapter
+from app.connectors.amazon_adapter import AmazonAdapter
 from app.crawl.pipeline import record_extraction_stage
 from app.extraction import Surface, extract
 from app.extraction.replay import fixture_request_from_inputs

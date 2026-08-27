@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 from selectolax.lexbor import LexborHTMLParser
 
-from app.connectors.adapters.base import BaseAdapter, node_attr, node_text
+from app.connectors.platform_adapter import BaseAdapter, node_attr, node_text
 from app.core.config.extraction_rules import (
     AMAZON_DETAIL_PRICE_SELECTORS,
     AMAZON_DETAIL_TABLE_IGNORED_LABELS,

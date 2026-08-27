@@ -241,8 +241,13 @@ def test_platform_adapters_cannot_bypass_evidence_publication() -> None:
     legacy_adapter_dir = APP_ROOT / "services" / "adapters"
     assert not any(legacy_adapter_dir.glob("*.py"))
 
-    adapter_dir = APP_ROOT / "connectors" / "adapters"
-    for path in adapter_dir.glob("*.py"):
+    adapter_paths = (
+        APP_ROOT / "connectors" / "platform_adapter.py",
+        APP_ROOT / "connectors" / "amazon_adapter.py",
+        APP_ROOT / "connectors" / "adapter_registry.py",
+    )
+    assert all(path.is_file() for path in adapter_paths)
+    for path in adapter_paths:
         source = path.read_text(encoding="utf-8")
         assert "app.persistence" not in source
         assert "app.extraction.publication" not in source

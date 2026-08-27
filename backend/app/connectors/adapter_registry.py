@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from app.connectors.adapters.amazon import AmazonAdapter
-from app.connectors.adapters.base import AdapterResult, BaseAdapter
+from app.connectors.amazon_adapter import AmazonAdapter
+from app.connectors.platform_adapter import AdapterResult, BaseAdapter
 
 logger = logging.getLogger(__name__)
 

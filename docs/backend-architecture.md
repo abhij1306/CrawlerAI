@@ -96,7 +96,9 @@ endpoints plus encrypted secret references.
 Traversal is explicit. The shared browser runtime is Patchright; native Chrome is an
 explicit escalation lane when configured and available.
 
-Platform-specific deterministic source readers live in `app/connectors/adapters/`.
+Platform-specific deterministic source readers live in top-level connector
+modules (`app/connectors/*_adapter.py`) and register through
+`app/connectors/adapter_registry.py`.
 They produce typed adapter artifacts during the record-extraction stage. Those
 artifacts enter the normal extraction evidence cascade; adapters do not publish
 records or bypass resolver and publication policy.
