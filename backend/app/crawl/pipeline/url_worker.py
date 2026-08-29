@@ -127,6 +127,9 @@ async def process_url_in_owned_session(
             ),
             update_run_state=False,
             persist_logs=True,
+            url_index=idx,
+            url_count=total_urls,
+            url_scope_id=f"url:{idx}",
             url_timeout_seconds=url_timeout_seconds,
         )
         if not log_start:
