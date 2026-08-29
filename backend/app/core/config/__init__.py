@@ -112,10 +112,6 @@ class Settings(BaseSettings):
     nvidia_api_key: str = ""
     openrouter_api_key: str = ""
     request_id_header: str = "X-Request-ID"
-    crawl_log_db_min_level: str = "info"
-    crawl_log_db_url_progress_sample_rate: int = 4
-    crawl_log_db_max_rows_per_run: int = 1000
-    crawl_log_file_enabled: bool = True
     logfire_enabled: bool = False
     logfire_token: str = Field(
         default="",

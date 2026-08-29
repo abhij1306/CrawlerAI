@@ -1,15 +1,15 @@
 import type { RefObject } from 'react';
 import { ChevronsDown, Clock } from 'lucide-react';
 
-import type { CrawlLog, CrawlRecord, CrawlRun } from '../../lib/api/types';
+import type { CrawlRecord, CrawlRun, RunEvent } from '../../lib/api/types';
 import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';
 import { Card } from '../ui/primitives';
 import { ActionButton } from '../ui/action-button';
-import { LogTerminal } from './log-terminal';
+import { RunEventTerminal } from './run-event-terminal';
 
 type RunLiveWorkspaceProps = {
   run: CrawlRun | undefined;
-  logs: CrawlLog[];
+  events: RunEvent[];
   records: CrawlRecord[];
   elapsedLabel: string;
   nowMs: number;
@@ -23,7 +23,7 @@ type RunLiveWorkspaceProps = {
 
 export function RunLiveWorkspace({
   run,
-  logs,
+  events,
   records,
   elapsedLabel,
   nowMs,
@@ -38,7 +38,7 @@ export function RunLiveWorkspace({
     <Card className="section-card overflow-hidden">
       <header className="flex h-9 items-center justify-between border-b border-border bg-background px-4">
         <span className="type-label-mono flex items-center gap-2 text-muted">
-          Live Log Stream
+          Live Run Events
           {socketOnline ? (
             <span
               className="inline-block size-1.5 animate-pulse rounded-full bg-success"
@@ -77,8 +77,8 @@ export function RunLiveWorkspace({
           />
         </div>
       </header>
-      <LogTerminal
-        logs={logs}
+      <RunEventTerminal
+        events={events}
         records={records}
         requestedFields={run?.requested_fields ?? []}
         live

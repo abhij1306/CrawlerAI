@@ -11,7 +11,10 @@ belong in `INVARIANTS.md`.
 - Single URLs, bulk input, CSV input, and discovered category URLs enter the same per-URL crawl pipeline.
 - Category discovery returns candidate same-origin URLs. Selected URLs become normal batch inputs; discovery does not create records itself.
 - `max_records` is a traversal stop target, not a post-extraction database cap.
-- Pause, resume, kill, progress, logs, records, review, and exports remain scoped to the requesting user.
+- Pause, resume, kill, progress, Run Events, records, review, and exports remain scoped to the requesting user.
+- Run Events are immutable operator-visible facts, optionally scoped to one URL-processing occurrence. Run and URL-result rows remain authoritative for current state and outcomes.
+- The backend owns each Run Event's kind, stage, severity, outcome, URL scope, reason code, and factual payload. The frontend owns labels, icons, colours, grouping layout, and other presentation.
+- Run Event delivery is ordered by a per-run sequence. REST and WebSocket use the same event envelope and exclusive sequence cursor.
 - Acceptance/evaluation preserves the declared surface and checks record quality, identity, and integrity; a `success` verdict alone is insufficient.
 
 ## Acquisition

@@ -23,7 +23,7 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
+from app.models.crawl_run import CrawlRecord, CrawlRun, CrawlUrlResult, RunEvent
 from app.models.llm import LLMCostLog
 from app.models.user import User
 from app.acquisition.host_protection_memory import (
@@ -198,7 +198,20 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
             source_trace={},
         )
     )
-    db_session.add(CrawlLog(run_id=run.id, level="info", message="hello"))
+    db_session.add(
+        RunEvent(
+            run_id=run.id,
+            sequence=1,
+            kind="run.started",
+            stage=None,
+            url=None,
+            url_scope_id=None,
+            severity="info",
+            outcome="progress",
+            reason_code=None,
+            facts={"seed_url_count": 1},
+        )
+    )
     db_session.add(
         ReviewPromotion(
             label_kind="review_promotion",
@@ -275,18 +288,18 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
         "crawl_runs_deleted": 1,
         "crawl_url_results_deleted": 1,
         "crawl_records_deleted": 1,
-        "crawl_logs_deleted": 1,
+        "run_events_deleted": 1,
         "review_promotions_deleted": 1,
         "llm_cost_logs_deleted": 1,
     }
     assert {key: result[key] for key in expected_deletions} == expected_deletions
     assert (list(artifacts_dir.iterdir()), list(cookies_dir.iterdir())) == ([], [])
     assert await _model_row_counts(
-        db_session, (CrawlRecord, CrawlUrlResult, CrawlLog, LLMCostLog)
+        db_session, (CrawlRecord, CrawlUrlResult, RunEvent, LLMCostLog)
     ) == {
         "CrawlRecord": 0,
         "CrawlUrlResult": 0,
-        "CrawlLog": 0,
+        "RunEvent": 0,
         "LLMCostLog": 0,
     }
     promotions = (

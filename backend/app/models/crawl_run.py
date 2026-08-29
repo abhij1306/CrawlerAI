@@ -342,17 +342,6 @@ class CrawlRecord(CreatedAtMixin, Base):
     )
 
 
-class CrawlLog(CreatedAtMixin, Base):
-    __tablename__ = "crawl_logs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    run_id: Mapped[int] = mapped_column(
-        ForeignKey(CRAWL_RUN_FK, ondelete=CASCADE), index=True
-    )
-    level: Mapped[str] = mapped_column(String(20), default="info")
-    message: Mapped[str] = mapped_column(Text)
-
-
 class RunEvent(CreatedAtMixin, Base):
     __tablename__ = "run_events"
     __table_args__ = (

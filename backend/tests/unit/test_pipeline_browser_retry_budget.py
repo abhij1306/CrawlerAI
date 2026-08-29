@@ -9,8 +9,11 @@ from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
+from app.core.config.run_events import RunEventKind
 from app.crawl.pipeline import extraction_loop
 from app.crawl.pipeline.retry import stage
+from app.crawl.pipeline.types import URLProcessingConfig
+from app.crawl.pipeline.url_processing_context import build_url_processing_context
 
 
 def _request() -> AcquisitionRequest:
@@ -32,6 +35,26 @@ def _result(method: str = "curl_cffi") -> PageAcquisitionResult:
     )
 
 
+@pytest.mark.unit
+def test_url_processing_context_replaces_blank_scope_with_index() -> None:
+    context = build_url_processing_context(
+        session=SimpleNamespace(),
+        run=SimpleNamespace(
+            settings_view=SimpleNamespace(),
+            surface="ecommerce_detail",
+            requested_fields=[],
+        ),
+        url="https://example.com/item",
+        config=URLProcessingConfig(
+            url_index=3,
+            url_scope_id="   ",
+            url_timeout_seconds=30,
+        ),
+    )
+
+    assert context.config.url_scope_id == "url:3"
+
+
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_browser_retry_result_honors_configured_rung_bound(monkeypatch) -> None:
@@ -47,13 +70,13 @@ async def test_browser_retry_result_honors_configured_rung_bound(monkeypatch) ->
         calls += 1
         return _result("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://example.com/item",
@@ -99,13 +122,13 @@ async def test_browser_retry_climbs_to_configured_bound(monkeypatch) -> None:
         calls += 1
         return _result("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://example.com/item",
@@ -164,13 +187,13 @@ async def test_browser_retry_network_rung_preserves_authorized_plan(
         requests.append(request)
         return _result("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://example.com/jobs",
@@ -225,13 +248,13 @@ async def test_browser_retry_failure_preserves_original_http_result(
             "Page.evaluate: Connection closed while reading from the driver"
         )
 
-    def fake_log(_context, _level, message, **_kwargs):
-        logged.append(message)
+    async def fake_record_pipeline_event(_context, **kwargs):
+        logged.append(kwargs)
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     original = _result()
     context = SimpleNamespace(
@@ -254,7 +277,17 @@ async def test_browser_retry_failure_preserves_original_http_result(
     assert fetched.acquisition_result is original
     assert fetched.acquisition_result.method == "curl_cffi"
     assert context.browser_escalation_count == 1
-    assert any("using the original HTTP payload" in message for message in logged)
+    assert logged == [
+        {"kind": RunEventKind.BROWSER_RETRY_PRECOMMIT_UNAVAILABLE},
+        {
+            "kind": RunEventKind.BROWSER_RETRY_RESULT,
+            "reason_code": "failed",
+            "facts": {
+                "exception_type": "RuntimeError",
+                "reason": "empty_extraction",
+            },
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -271,13 +304,13 @@ async def test_initial_browser_without_network_payloads_runs_network_retry(
         requests.append(request)
         return _result("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
     context = SimpleNamespace(
         url="https://example.com/item",
         url_timeout_seconds=120.0,
@@ -323,12 +356,12 @@ async def test_initial_browser_skips_when_required_artifacts_already_present(
         calls += 1
         return _result("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
     context = SimpleNamespace(
         url="https://example.com/item",
         url_timeout_seconds=120.0,

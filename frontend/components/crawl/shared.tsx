@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
 import type { FieldRow, FieldRowMessageTone } from './form-fields';
-import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
-import type { CrawlDomain, CrawlLog, CrawlRun, CrawlSurface } from '../../lib/api/types';
+import { buildRunEventSiteGroups } from './run-event-terminal-utils';
+import type { CrawlDomain, CrawlRun, CrawlSurface, RunEvent } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { SURFACE_DISPATCH } from './domain-surface-config';
 import {
@@ -52,7 +52,7 @@ export {
   uniqueStrings,
   validateAdditionalFieldName,
 };
-export { buildLogSiteGroups, getLogStage, scrollViewportToBottom };
+export { buildRunEventSiteGroups, scrollViewportToBottom };
 export type { FieldRow, FieldRowMessageTone };
 
 export type CrawlTab = 'category' | 'pdp';
@@ -67,7 +67,7 @@ export type PendingDispatch = {
   additionalFields: string[];
   csvFile: File | null;
 };
-export type OutputTabKey = 'table' | 'json' | 'logs' | 'learning';
+export type OutputTabKey = 'table' | 'json' | 'events' | 'learning';
 
 export function selectorWinnerLabel(selectorKind: string | null | undefined): string {
   const normalized = String(selectorKind || '')
@@ -79,29 +79,29 @@ export function selectorWinnerLabel(selectorKind: string | null | undefined): st
   return `${selectorKind} winner`;
 }
 
-export function mergeLogs(current: CrawlLog[], incoming: CrawlLog[]) {
-  const byId = new Map<number, CrawlLog>();
-  for (const row of current) byId.set(row.id, row);
-  for (const row of incoming) byId.set(row.id, row);
-  return Array.from(byId.values())
-    .sort((a, b) => a.id - b.id)
-    .slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
+export function mergeRunEvents(current: RunEvent[], incoming: RunEvent[]) {
+  const bySequence = new Map<number, RunEvent>();
+  for (const row of current) bySequence.set(row.sequence, row);
+  for (const row of incoming) bySequence.set(row.sequence, row);
+  return Array.from(bySequence.values())
+    .sort((a, b) => a.sequence - b.sequence)
+    .slice(-CRAWL_DEFAULTS.MAX_LIVE_EVENTS);
 }
 
-export function appendLiveLog(current: CrawlLog[], incoming: CrawlLog) {
-  const existingIndex = current.findIndex((row) => row.id === incoming.id);
+export function appendLiveRunEvent(current: RunEvent[], incoming: RunEvent) {
+  const existingIndex = current.findIndex((row) => row.sequence === incoming.sequence);
   if (existingIndex >= 0) {
     const next = [...current];
     next[existingIndex] = incoming;
     return next;
   }
-  if (!current.length || current[current.length - 1].id < incoming.id) {
-    return [...current, incoming].slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
+  if (!current.length || current[current.length - 1].sequence < incoming.sequence) {
+    return [...current, incoming].slice(-CRAWL_DEFAULTS.MAX_LIVE_EVENTS);
   }
-  const insertionIndex = current.findIndex((row) => row.id > incoming.id);
+  const insertionIndex = current.findIndex((row) => row.sequence > incoming.sequence);
   const next = [...current];
   next.splice(insertionIndex === -1 ? next.length : insertionIndex, 0, incoming);
-  return next.slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
+  return next.slice(-CRAWL_DEFAULTS.MAX_LIVE_EVENTS);
 }
 
 export function parseRequestedCrawlTab(value: string | null): CrawlTab | null {

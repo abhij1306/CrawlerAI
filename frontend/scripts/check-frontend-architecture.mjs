@@ -15,9 +15,8 @@ const scannedRoots = ['app', 'components', 'lib', 'src'];
 // Measured 2026-07-22 (wc -l) + ~5% headroom. Raise-only; split the owner instead.
 const lineBudgetExceptions = new Map([
   ['lib/api/types.ts', 525],
-  ['components/crawl/log-terminal.tsx', 820],
+  ['components/crawl/run-event-terminal.tsx', 680],
   ['components/crawl/form-fields.tsx', 630],
-  ['components/crawl/log-terminal-utils.ts', 520],
   ['components/crawl/crawl-config-logic.ts', 465],
   ['components/crawl/records-table.tsx', 425],
 ]);

@@ -166,7 +166,7 @@ test('large run record lists remain visible', async ({ page }) => {
       }),
     });
   });
-  await page.route('http://127.0.0.1:8001/api/crawls/101/logs**', async (route) => {
+  await page.route('http://127.0.0.1:8001/api/crawls/101/events**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
 

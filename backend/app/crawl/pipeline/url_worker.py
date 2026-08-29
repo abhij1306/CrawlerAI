@@ -9,8 +9,9 @@ from app.core.config.runtime_settings import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
+from app.core.config.run_events import RunEventKind
 from app.models.crawl_run import CrawlRun
-from app.crawl.pipeline.runtime_helpers import log_event
+from app.crawl.run_events import RunEventFact, run_event_timeline, url_scope_id
 from app.crawl.pipeline.types import URLProcessingConfig, URLProcessingResult
 from app.crawl.pipeline.url_failure_recovery import (
     URLProcessingDeadlineExceeded,
@@ -74,6 +75,10 @@ def parallel_url_concurrency(total_urls: int, settings_view) -> int:
     return max(1, min(limits))
 
 
+def should_process_urls_in_parallel(total_urls: int, settings_view) -> bool:
+    return total_urls > 1 and parallel_url_concurrency(total_urls, settings_view) > 1
+
+
 def parallel_worker_record_limit(max_records: int, concurrency: int) -> int:
     total_budget = max(1, int(max_records or 1))
     worker_count = max(1, int(concurrency or 1))
@@ -89,16 +94,10 @@ def url_metric(
     return metrics.get(key, default)
 
 
-def url_start_message(*, url: str, idx: int, total_urls: int) -> str:
-    if idx == 1:
-        return f"Starting crawl run for {url}"
-    return f"Starting crawl run for {url} ({idx}/{total_urls})"
-
-
 async def process_url_in_owned_session(
     *,
     session_factory: async_sessionmaker,
-    persist_failure_log,
+    persist_failure_event,
     processor,
     run_id: int,
     idx: int,
@@ -113,27 +112,27 @@ async def process_url_in_owned_session(
         if run is None:
             raise RuntimeError(f"Run {run_id} disappeared before URL processing")
         if log_start:
-            await log_event(
-                url_session,
-                run.id,
-                "info",
-                url_start_message(url=url, idx=idx, total_urls=total_urls),
+            await run_event_timeline.record(
+                run_id=run.id,
+                fact=RunEventFact(
+                    kind=RunEventKind.URL_STARTED,
+                    url=url,
+                    url_scope_id=url_scope_id(idx),
+                    facts={"index": idx, "total": total_urls},
+                ),
             )
-            await url_session.commit()
         url_config = URLProcessingConfig.from_acquisition_plan(
             run.settings_view.acquisition_plan(
                 surface=run.surface,
                 max_records=max(1, max_records),
             ),
             update_run_state=False,
-            persist_logs=True,
+            persist_run_events=True,
             url_index=idx,
             url_count=total_urls,
             url_scope_id=f"url:{idx}",
             url_timeout_seconds=url_timeout_seconds,
         )
-        if not log_start:
-            await url_session.commit()
         try:
             with logfire_span(
                 "pipeline.url",
@@ -173,15 +172,13 @@ async def process_url_in_owned_session(
             run, url_result = await recover_url_failure(
                 url_session,
                 session_factory=session_factory,
-                persist_failure_log=persist_failure_log,
+                persist_failure_event=persist_failure_event,
                 run=run,
                 run_id=run.id,
                 url=url,
+                url_scope_id=f"url:{idx}",
+                timeout_seconds=url_timeout_seconds,
                 exc=exc,
-                log_message=(
-                    f"URL processing timed out for {url} "
-                    f"(timeout_seconds={url_timeout_seconds})"
-                ),
             )
             url_result.url_metrics["error"] = (
                 f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
@@ -190,11 +187,12 @@ async def process_url_in_owned_session(
             run, url_result = await recover_url_failure(
                 url_session,
                 session_factory=session_factory,
-                persist_failure_log=persist_failure_log,
+                persist_failure_event=persist_failure_event,
                 run=run,
                 run_id=run.id,
                 url=url,
+                url_scope_id=f"url:{idx}",
+                timeout_seconds=url_timeout_seconds,
                 exc=exc,
-                log_message=f"URL processing failed for {url}: {type(exc).__name__}: {exc}",
             )
         return idx, url, url_result

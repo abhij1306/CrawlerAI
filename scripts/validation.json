@@ -192,6 +192,13 @@
       "backendTests": ["tests/component/test_llm_*.py", "tests/regression/test_llm_*.py"]
     },
     {
+      "sources": ["backend/app/connectors/public_api/**"],
+      "backendTests": [
+        "tests/component/test_public_api_resources.py",
+        "tests/unit/test_resolution_split_public_api.py"
+      ]
+    },
+    {
       "sources": ["backend/app/intelligence/**"],
       "backendTests": ["tests/unit/test_matching_*.py", "tests/component/test_product_intelligence_*.py"]
     },

@@ -37,6 +37,7 @@ describe('contract drift helpers', () => {
           UserResponse: { properties: {} },
           CrawlRunResponse: { properties: {} },
           CrawlRecordResponse: { properties: {} },
+          RunEventResponse: { properties: {} },
           DomainRunProfilePayload: { properties: {} },
         },
       },
@@ -50,6 +51,7 @@ describe('contract drift helpers', () => {
       userSchema: 'UserResponse',
       crawlRunSchema: 'CrawlRunResponse',
       crawlRecordSchema: 'CrawlRecordResponse',
+      runEventSchema: 'RunEventResponse',
       domainRunProfileSchema: 'DomainRunProfilePayload',
     } as const;
     for (const [schemaName, componentName] of Object.entries(mappings)) {

@@ -1,43 +1,45 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
+import type { CrawlRecord, RunEvent } from '../../lib/api/types';
 import { parseApiDate } from '../../lib/crawl/format';
 import { cleanRecordForDisplay } from '../../lib/crawl/record-utils';
 import {
-  buildLogSiteGroups,
-  LOG_GROUP_WINDOW_SIZE,
-  sanitizeLogMessage,
+  buildRunEventSiteGroups,
+  RUN_EVENT_GROUP_WINDOW_SIZE,
   siteDomId,
-  windowLogGroups,
-} from './log-terminal-utils';
-import type { LogSiteGroup } from './log-terminal-utils';
+  windowRunEventGroups,
+} from './run-event-terminal-utils';
+import type { RunEventSiteGroup } from './run-event-terminal-utils';
 
-const URL_TERMINAL_MESSAGE_PATTERN =
-  /\b(processing failed|timed out|stopped after reaching max_records|(?:extracted|yielded)\s+0\s+records?|no (?:public )?records? extracted|rejected detail extraction)\b/i;
 const AUTO_EXPAND_GROUP = Symbol('auto-expand-group');
 
-function groupHasTerminalOutcome(group: LogSiteGroup) {
+function groupHasTerminalOutcome(group: RunEventSiteGroup) {
   return (
     !group.url ||
     group.records.length > 0 ||
-    group.stageLogs.persistence.length > 0 ||
+    group.stageEvents.persistence.length > 0 ||
     group.hasError ||
-    group.logs.some((log) => URL_TERMINAL_MESSAGE_PATTERN.test(sanitizeLogMessage(log.message)))
+    group.events.some(
+      (event) =>
+        event.kind.startsWith('url.') &&
+        event.outcome !== 'progress' &&
+        event.outcome !== 'requested',
+    )
   );
 }
 
-function activeSiteGroupKeys(groups: LogSiteGroup[], live: boolean) {
+function activeSiteGroupKeys(groups: RunEventSiteGroup[], live: boolean) {
   const activeKeys = new Set<string>();
   if (!live) {
     return activeKeys;
   }
 
-  let latestSerialGroup: LogSiteGroup | null = null;
+  let latestSerialGroup: RunEventSiteGroup | null = null;
   for (const group of groups) {
     if (groupHasTerminalOutcome(group)) {
       continue;
     }
-    if (group.key.startsWith('site:prefixed:')) {
+    if (group.key.startsWith('scope:')) {
       activeKeys.add(group.key);
     } else {
       latestSerialGroup = group;
@@ -49,18 +51,18 @@ function activeSiteGroupKeys(groups: LogSiteGroup[], live: boolean) {
   return activeKeys;
 }
 
-function serialGroupEndMsByKey(groups: LogSiteGroup[]) {
+function serialGroupEndMsByKey(groups: RunEventSiteGroup[]) {
   const endMsByKey = new Map<string, number>();
   let nextStartMs: number | null = null;
   for (let index = groups.length - 1; index >= 0; index -= 1) {
     const group = groups[index];
-    if (!group.url || group.key.startsWith('site:prefixed:')) {
+    if (!group.url) {
       continue;
     }
     if (nextStartMs !== null) {
       endMsByKey.set(group.key, nextStartMs);
     }
-    const createdAt = group.logs[0]?.created_at;
+    const createdAt = group.events[0]?.created_at;
     const startMs = createdAt ? parseApiDate(createdAt).getTime() : Number.NaN;
     if (Number.isFinite(startMs)) {
       nextStartMs = startMs;
@@ -69,13 +71,13 @@ function serialGroupEndMsByKey(groups: LogSiteGroup[]) {
   return endMsByKey;
 }
 
-export function useLogTerminalState({
-  logs,
+export function useRunEventTerminalState({
+  events,
   records,
   live,
   nowMs,
 }: Readonly<{
-  logs: CrawlLog[];
+  events: RunEvent[];
   records: CrawlRecord[];
   live: boolean;
   nowMs?: number;
@@ -91,15 +93,15 @@ export function useLogTerminalState({
   >(AUTO_EXPAND_GROUP);
   const [triageCursor, setTriageCursor] = useState(0);
 
-  const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
+  const groups = useMemo(() => buildRunEventSiteGroups(events, records), [events, records]);
   const deferredGroups = useDeferredValue(groups);
-  const [visibleGroupCount, setVisibleGroupCount] = useState(LOG_GROUP_WINDOW_SIZE);
+  const [visibleGroupCount, setVisibleGroupCount] = useState(RUN_EVENT_GROUP_WINDOW_SIZE);
   const { visible: visibleGroups, hiddenCount: hiddenGroupCount } = useMemo(
-    () => windowLogGroups(deferredGroups, visibleGroupCount),
+    () => windowRunEventGroups(deferredGroups, visibleGroupCount),
     [deferredGroups, visibleGroupCount],
   );
   const showEarlierGroups = () => {
-    setVisibleGroupCount((current) => current + LOG_GROUP_WINDOW_SIZE);
+    setVisibleGroupCount((current) => current + RUN_EVENT_GROUP_WINDOW_SIZE);
   };
   // Absolute index of each group in the full list — stable identity for parity
   // and window math, unlike the window-relative render index.
@@ -182,16 +184,18 @@ export function useLogTerminalState({
     if (!groups.length) {
       return [];
     }
-    const start = parseApiDate(groups[0].logs[0]?.created_at ?? new Date().toISOString()).getTime();
+    const start = parseApiDate(
+      groups[0].events[0]?.created_at ?? new Date().toISOString(),
+    ).getTime();
     const lastGroup = groups.at(-1);
     const end = parseApiDate(
-      lastGroup?.logs.at(-1)?.created_at ??
-        groups[0].logs[0]?.created_at ??
+      lastGroup?.events.at(-1)?.created_at ??
+        groups[0].events[0]?.created_at ??
         new Date().toISOString(),
     ).getTime();
     const range = Math.max(1, end - start);
     return groups.map((group) => {
-      const createdAt = group.logs[0]?.created_at ?? new Date().toISOString();
+      const createdAt = group.events[0]?.created_at ?? new Date().toISOString();
       const percent = ((parseApiDate(createdAt).getTime() - start) / range) * 100;
       let tone = 'bg-white/15';
       if (group.hasError) {

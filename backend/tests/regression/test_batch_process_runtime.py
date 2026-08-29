@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from app.core.config.run_events import RunEventKind
 from tests.regression.batch_runtime_test_support import (
     AsyncSession,
-    CrawlLog,
     PageAcquisitionResult,
     URLProcessingResult,
     _detail_html,
@@ -16,8 +16,15 @@ from tests.regression.batch_runtime_test_support import (
     get_run_records,
     process_run,
     pytest,
-    select,
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_run_event_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _record(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
 
 @pytest.mark.asyncio
@@ -459,24 +466,18 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
         expire_on_commit=False,
     )
     monkeypatch.setattr("app.crawl.batch_runtime.SessionLocal", session_factory)
+    recorded: list[tuple[int, object]] = []
+
+    async def _record(*, run_id: int, fact, **_kwargs) -> None:
+        recorded.append((run_id, fact))
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
     await process_run(db_session, run.id)
-    logs = (
-        (
-            await db_session.execute(
-                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    messages = [log.message for log in logs]
+    failures = [
+        fact for _run_id, fact in recorded if fact.kind == RunEventKind.URL_FAILED
+    ]
 
-    assert any(
-        f"URL processing failed for {failing_url}: TimeoutError: "
-        "Browser navigation stage exceeded timeout_seconds=45.00" in message
-        for message in messages
-    )
-    assert not any(
-        f"URL processing timed out for {failing_url}" in message for message in messages
-    )
+    assert [event.url for event in failures] == [failing_url]
+    assert failures[0].reason_code == "exception"
+    assert failures[0].facts == {"exception_type": "TimeoutError"}

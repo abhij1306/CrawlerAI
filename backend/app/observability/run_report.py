@@ -60,15 +60,13 @@ def ensure_run_report_registered() -> None:
 
 
 async def write_run_report(run_id: int) -> None:
-    """Run-complete entry point. Never raises into the pipeline.
+    """Run-complete entry point.
 
     The disk scan + serialization + write is fully synchronous; we hop to a
-    worker thread so a large run cannot block the event loop.
+    worker thread so a large run cannot block the event loop. Failures return
+    to the callback owner so the Run Event timeline can record them.
     """
-    try:
-        await asyncio.to_thread(_build_and_write_report, run_id)
-    except Exception:
-        logger.exception("Run report failed for run=%s", run_id)
+    await asyncio.to_thread(_build_and_write_report, run_id)
 
 
 def _build_and_write_report(run_id: int) -> None:

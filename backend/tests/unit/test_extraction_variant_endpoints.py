@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from app.core.config.run_events import RunEventKind
 from tests.unit.extraction_pipeline_test_support import *
 
 
@@ -562,17 +563,17 @@ async def test_sfcc_variant_endpoint_expansion_failure_is_best_effort(
         expansion_kwargs.update(kwargs)
         raise RuntimeError("endpoint unavailable")
 
-    events: list[tuple[str, str]] = []
+    events: list[dict[str, object]] = []
 
-    def record_event(_context, level: str, message: str) -> None:
-        events.append((level, message))
+    async def record_event(_context, **kwargs) -> None:
+        events.append(kwargs)
 
     monkeypatch.setattr(
         record_extraction_stage,
         "expand_sfcc_variant_endpoints",
         fail_expansion,
     )
-    monkeypatch.setattr(record_extraction_stage, "_log_pipeline_event", record_event)
+    monkeypatch.setattr(record_extraction_stage, "_record_pipeline_event", record_event)
     context = SimpleNamespace(
         surface="ecommerce_detail",
         url="https://shop.test/products/ABC123",
@@ -599,7 +600,12 @@ async def test_sfcc_variant_endpoint_expansion_failure_is_best_effort(
         == "RuntimeError"
     )
     assert expansion_kwargs["proxy"] == "http://run-proxy.test:8080"
-    assert events and events[0][0] == "warning"
+    assert events == [
+        {
+            "kind": RunEventKind.EXTRACTION_VARIANT_EXPANSION_FAILED,
+            "facts": {"exception_type": "RuntimeError"},
+        }
+    ]
 
 
 @pytest.mark.asyncio

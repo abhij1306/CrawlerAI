@@ -176,10 +176,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_accessibility_snapshot_timeout_seconds: float = 0.5
     browser_capture_queue_join_timeout_ms: int = 2000
     browser_artifact_capture_timeout_ms: int = 4000
-    crawl_event_counter_ttl_seconds: int = 86400
-    # Bound for the in-process fallback log-cap counters (2.10); oldest runs are
-    # evicted first, mirroring the pacing host-cache pattern.
-    crawl_log_fallback_counter_max_entries: int = 1024
     browser_first_nav_pause_ms: int = 0
     platform_detection_html_search_limit: int = 500000
     browser_real_chrome_enabled: bool = True
@@ -226,9 +222,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_context_permissions: tuple[str, ...] = ("geolocation",)
     browser_readiness_visible_text_min: int = 120
     cooperative_sleep_poll_ms: int = 250
-    # Upper bound for the adaptive log-stream websocket poll backoff (2.9):
+    # Upper bound for adaptive Run Event websocket poll backoff.
     # empty polls double the interval from cooperative_sleep_poll_ms up to this.
-    log_stream_max_poll_ms: int = 5000
+    run_event_stream_max_poll_ms: int = 5000
     traversal_locator_visible_timeout_ms: int = 250
     traversal_scroll_into_view_timeout_ms: int = 2000
     traversal_cookie_consent_visible_timeout_ms: int = 200

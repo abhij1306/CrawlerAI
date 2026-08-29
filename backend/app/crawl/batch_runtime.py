@@ -29,7 +29,7 @@ from app.crawl.state import (
     update_run_status,
 )
 from app.crawl.sitemap_resolver import resolve_category_urls_with_site_links
-from app.crawl.utils import normalize_target_url, parse_csv_urls_async
+from app.crawl.utils import normalize_target_url
 from app.core.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
     SITEMAP_DEFAULT_MAX_URLS,
@@ -37,6 +37,7 @@ from app.core.config.sitemap import (
 from app.core.config.runtime_settings import (
     crawler_runtime_settings,
 )
+from app.core.config.run_events import RunEventKind
 from app.core.domain_utils import normalize_domain
 from app.crawl.pipeline.extraction_loop import process_single_url
 from app.crawl.pipeline.run_complete_callbacks import on_run_complete
@@ -49,16 +50,20 @@ from app.crawl.pipeline.run_progress import (
 from app.crawl.pipeline.runtime_helpers import (
     STAGE_ACQUIRE,
     STAGE_PERSIST,
-    log_event,
     mark_run_failed,
     set_stage,
 )
+from app.crawl.run_events import RunEventFact, run_event_timeline, url_scope_id
 from app.crawl.pipeline.types import URLProcessingResult
-from app.crawl.pipeline.url_failure_recovery import rollback_url_session
+from app.crawl.pipeline.url_failure_recovery import (
+    URLProcessingDeadlineExceeded,
+    rollback_url_session,
+)
 from app.crawl.pipeline.url_worker import (
     parallel_url_concurrency,
     parallel_worker_record_limit,
     process_url_in_owned_session,
+    should_process_urls_in_parallel,
     url_metric,
 )
 from app.persistence.publish import VERDICT_ERROR, aggregate_verdict
@@ -100,13 +105,8 @@ def _safe_sitemap_max_urls(value: object) -> int:
 async def _resolve_run_urls(run: CrawlRun, settings_view) -> list[str]:
     urls = settings_view.urls()
     if run.run_type in ("batch", "csv") and urls:
-        # CSV ingestion persists the parsed URL list (not the raw CSV), so csv
-        # runs resolve identically to batch runs.
+        # CSV ingestion persists parsed URLs, so CSV and batch runs resolve alike.
         url_list = urls
-    elif run.run_type == "csv" and settings_view.get("csv_content"):
-        # Legacy fallback for runs created before csv_content stopped being
-        # persisted in settings.
-        url_list = await parse_csv_urls_async(settings_view.get("csv_content"))
     elif settings_view.get("sitemap_domain"):
         url_list = await resolve_category_urls_from_sitemap(
             domain=settings_view.get("sitemap_domain"),
@@ -165,8 +165,7 @@ def _url_timeout_seconds(settings_view) -> float:
             float(crawler_runtime_settings.max_url_process_timeout_seconds),
         )
     base_timeout = crawler_runtime_settings.default_url_process_timeout_seconds()
-    # Extend timeout when traversal is active — pagination/scroll can take
-    # significantly longer than a single-page fetch+extract cycle.
+    # Traversal needs more time than a single-page fetch and extraction.
     traversal_mode = settings_view.traversal_mode()
     if traversal_mode:
         raw_max_pages = settings_view.max_pages()
@@ -174,7 +173,6 @@ def _url_timeout_seconds(settings_view) -> float:
         max_pages = int(raw_max_pages) if raw_max_pages is not None else 1
         max_scrolls = int(raw_max_scrolls) if raw_max_scrolls is not None else 1
         traversal_pages = max(max_pages, max_scrolls)
-        # Allow ~30s per traversal page on top of the base timeout, capped at max.
         traversal_budget = traversal_pages * 30.0
         extended = base_timeout + traversal_budget
         return min(
@@ -183,13 +181,14 @@ def _url_timeout_seconds(settings_view) -> float:
     return base_timeout
 
 
-async def _persist_url_failure_log(
+async def _persist_url_failure_event(
     session: AsyncSession,
     *,
     run_id: int,
     url: str,
+    url_scope_id: str,
+    timeout_seconds: float,
     exc: BaseException,
-    log_message: str,
 ) -> CrawlRun:
     run = await session.get(CrawlRun, run_id, populate_existing=True)
     if run is None:
@@ -197,11 +196,22 @@ async def _persist_url_failure_log(
     logger.warning(
         "URL processing failed for run=%s url=%s", run_id, url, exc_info=True
     )
-    event_message = log_message
-    if not event_message.startswith("[url:"):
-        event_message = f"[url:{url}] {event_message}"
-    await log_event(session, run.id, "warning", event_message)
-    await session.commit()
+    reason_code = (
+        "timeout" if isinstance(exc, URLProcessingDeadlineExceeded) else "exception"
+    )
+    facts: dict[str, str | float] = {"exception_type": type(exc).__name__}
+    if reason_code == "timeout":
+        facts["timeout_seconds"] = float(timeout_seconds)
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.URL_FAILED,
+            url=url,
+            url_scope_id=url_scope_id,
+            reason_code=reason_code,
+            facts=facts,
+        ),
+    )
     return run
 
 
@@ -222,6 +232,22 @@ async def _record_url_result(
 ) -> tuple[str, int]:
     verdict = str(url_result.verdict or VERDICT_ERROR)
     records_count = _url_result_record_count(url_result)
+    final_url = str(url_metric(url_result, "final_url", "") or "").strip()
+    completion_facts: dict[str, str | int] = {
+        "record_count": records_count,
+        "verdict": verdict,
+    }
+    if final_url:
+        completion_facts["final_url"] = final_url
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.URL_COMPLETED,
+            url=url,
+            url_scope_id=url_scope_id(idx),
+            facts=completion_facts,
+        ),
+    )
     progress_state.record_url_result(
         idx=idx - 1,
         records_count=records_count,
@@ -229,12 +255,10 @@ async def _record_url_result(
         url_metrics=url_result.url_metrics,
     )
     if not commit_gate.due():
-        # Throttled: the durable outcome already lives in crawl_url_results
-        # (committed by the URL session); this patch lands on the next commit point.
+        # URL session already committed the outcome; summary waits for the next gate.
         return verdict, records_count
     await renew_run_lease(session, run_id=int(run.id), owner=owner)
-    # Reload only the (now small) summary column so this merge cannot clobber
-    # control requests written by other sessions since the last commit.
+    # Reload the small summary column to avoid clobbering newer control requests.
     await session.refresh(run, attribute_names=["result_summary"])
     run.update_summary(
         **progress_state.build_progress_patch(
@@ -272,7 +296,14 @@ async def _apply_control_checkpoint(
     update_run_status(run, new_status)
     set_control_request(run, None)
     signal_word = "paused" if control_request == CONTROL_REQUEST_PAUSE else "killed"
-    await log_event(session, run.id, "warning", f"Run {signal_word} at checkpoint")
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_CONTROL_APPLIED,
+            reason_code=signal_word,
+        ),
+        session=session,
+    )
     await session.commit()
     return True
 
@@ -319,7 +350,7 @@ class _ParallelRunState:
                 return
             result = await process_url_in_owned_session(
                 session_factory=SessionLocal,
-                persist_failure_log=_persist_url_failure_log,
+                persist_failure_event=_persist_url_failure_event,
                 processor=process_single_url,
                 run_id=int(self.run.id),
                 idx=idx,
@@ -389,9 +420,13 @@ class _ParallelRunState:
         if self.record_count < self.max_records:
             return False
         await self.stop_and_join()
-        message = f"Stopped after reaching max_records={self.max_records}"
-        await log_event(self.session, self.run.id, "info", message)
-        await self.session.commit()
+        await run_event_timeline.record(
+            run_id=self.run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_LIMIT_REACHED,
+                facts={"limit_name": "max_records", "limit_value": self.max_records},
+            ),
+        )
         return True
 
     async def execute(self) -> tuple[list[str], int]:
@@ -436,13 +471,13 @@ async def _process_urls_in_parallel(
     owner: str,
 ) -> tuple[list[str], int]:
     concurrency = parallel_url_concurrency(total_urls, settings_view)
-    await log_event(
-        session,
-        run.id,
-        "info",
-        f"Processing {total_urls} URL(s) with concurrency={concurrency}",
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_CONCURRENCY_SELECTED,
+            facts={"url_count": total_urls, "concurrency": concurrency},
+        ),
     )
-    await session.commit()
     return await _ParallelRunState(
         session=session,
         run=run,
@@ -458,7 +493,7 @@ async def _process_urls_in_parallel(
     ).execute()
 
 
-async def _log_sequential_url_start(
+async def _record_sequential_url_start(
     session: AsyncSession,
     *,
     run: CrawlRun,
@@ -466,17 +501,15 @@ async def _log_sequential_url_start(
     total_urls: int,
     url: str,
 ) -> None:
-    if idx == 1:
-        await log_event(session, run.id, "info", f"Starting crawl run for {url}")
-        await log_event(
-            session,
-            run.id,
-            "info",
-            f"Resolved {total_urls} seed URL(s), domain policy: standard",
-        )
-        return
-    await log_event(
-        session, run.id, "info", f"Starting crawl run for {url} ({idx}/{total_urls})"
+    del session
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.URL_STARTED,
+            url=url,
+            url_scope_id=url_scope_id(idx),
+            facts={"index": idx, "total": total_urls},
+        ),
     )
 
 
@@ -503,7 +536,7 @@ async def _process_urls_sequential(
             return verdicts, record_count
         if await _apply_control_checkpoint(session, run, control_request, owner=owner):
             return verdicts, record_count
-        await _log_sequential_url_start(
+        await _record_sequential_url_start(
             session,
             run=run,
             idx=idx,
@@ -521,7 +554,7 @@ async def _process_urls_sequential(
         await session.commit()
         _, _, url_result = await process_url_in_owned_session(
             session_factory=SessionLocal,
-            persist_failure_log=_persist_url_failure_log,
+            persist_failure_event=_persist_url_failure_event,
             processor=process_single_url,
             run_id=run.id,
             idx=idx,
@@ -549,13 +582,13 @@ async def _process_urls_sequential(
             last_url_verdict=verdict,
         )
         if record_count >= max_records:
-            await log_event(
-                session,
-                run.id,
-                "info",
-                f"Stopped after reaching max_records={max_records}",
+            await run_event_timeline.record(
+                run_id=run.id,
+                fact=RunEventFact(
+                    kind=RunEventKind.RUN_LIMIT_REACHED,
+                    facts={"limit_name": "max_records", "limit_value": max_records},
+                ),
             )
-            await session.commit()
             break
         if sleep_ms > 0 and idx < last_pending_idx:
             await asyncio.sleep(sleep_ms / 1000)
@@ -594,20 +627,29 @@ async def _finalize_completed_run(
         current_stage=STAGE_PERSIST,
         duration_ms=_current_duration_ms(run),
     )
-    finished_message = (
-        f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}"
-    )
-    await log_event(session, run.id, "info", finished_message)
-    await session.commit()
     try:
-        await on_run_complete(run.id)
+        callback_failure_types = await on_run_complete(run.id)
     except Exception as exc:
-        logger.exception("Run-complete callback failed for run=%s", run.id)
-        try:
-            await log_event(session, run.id, "error", f"on_run_complete failure: {exc}")
-        except Exception:
-            logger.debug("Failed to log on_run_complete failure to DB", exc_info=True)
-            await rollback_url_session(session, context="failed complete log recovery")
+        logger.exception("Run-complete callback dispatch failed for run=%s", run.id)
+        callback_failure_types = (type(exc).__name__,)
+    for exception_type in callback_failure_types:
+        await run_event_timeline.record(
+            run_id=run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CALLBACK_FAILED,
+                facts={"exception_type": exception_type},
+            ),
+            session=session,
+        )
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_COMPLETED,
+            facts={"record_count": record_count, "verdict": aggregate_verdict_value},
+        ),
+        session=session,
+    )
+    await session.commit()
 
 
 async def process_run(session: AsyncSession, run_id: int) -> None:
@@ -689,11 +731,27 @@ async def _process_run_with_span(
         run.update_summary(**initial_patch, current_stage=STAGE_ACQUIRE)
         await session.commit()
 
+        if not completed_entries:
+            await run_event_timeline.record(
+                run_id=run.id,
+                fact=RunEventFact(
+                    kind=RunEventKind.RUN_STARTED,
+                    facts={"seed_url_count": total_urls},
+                ),
+            )
+            await run_event_timeline.record(
+                run_id=run.id,
+                fact=RunEventFact(
+                    kind=RunEventKind.RUN_SEED_URLS_RESOLVED,
+                    facts={
+                        "seed_url_count": total_urls,
+                        "domain_policy": "standard",
+                    },
+                ),
+            )
+
         if pending_items:
-            if (
-                total_urls > 1
-                and parallel_url_concurrency(total_urls, settings_view) > 1
-            ):
+            if should_process_urls_in_parallel(total_urls, settings_view):
                 await _process_urls_in_parallel(
                     session,
                     run=run,
@@ -735,4 +793,7 @@ async def _process_run_with_span(
     except (RuntimeError, ValueError, TypeError, SQLAlchemyError) as exc:
         logger.exception("Run-level failure for run=%s", run_id)
         await rollback_url_session(session, context="run failure marking")
-        await mark_run_failed(session, run_id, f"{type(exc).__name__}: {exc}")
+        error_msg = f"{type(exc).__name__}: {exc}"
+        await mark_run_failed(
+            session, run_id, error_msg, exception_type=type(exc).__name__
+        )

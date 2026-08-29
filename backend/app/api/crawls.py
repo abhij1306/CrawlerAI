@@ -13,7 +13,7 @@ from app.api.run_access import (
 from app.core.dependencies import get_current_user, get_db
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
-from app.schemas.common import LogEntryResponse, PaginatedResponse, PaginationMeta
+from app.schemas.common import PaginatedResponse, PaginationMeta, RunEventResponse
 from app.schemas.crawl import (
     CategoryDiscoveryRequest,
     CategoryDiscoveryResponse,
@@ -30,18 +30,17 @@ from app.crawl.category_discovery import discover_category_urls
 from app.crawl.crud import (
     commit_selected_fields,
     delete_run,
-    get_run_logs,
     list_runs,
 )
-from app.crawl.events import serialize_log_event
+from app.crawl.run_events import run_event_timeline
 from app.crawl.ingestion_service import (
     create_crawl_run_from_csv,
     create_crawl_run_from_payload,
 )
-from app.crawl.log_stream import (
-    load_accessible_log_run,
-    load_log_stream_snapshot,
-    resolve_log_stream_user,
+from app.crawl.run_event_stream import (
+    load_accessible_run_event_run,
+    load_run_event_stream_snapshot,
+    resolve_run_event_stream_user,
 )
 from app.crawl.service import kill_run, pause_run, resume_run
 from app.crawl.state import TERMINAL_STATUSES
@@ -82,7 +81,7 @@ RUN_CONFLICT_RESPONSE: ResponseSpec = {
 _WEBSOCKET_PROTOCOL_TRANSFER_TASK_ATTR = "transfer_data_task"
 
 
-def _log_stream_sleep_seconds() -> float:
+def _run_event_stream_sleep_seconds() -> float:
     try:
         return max(
             0.001,
@@ -90,22 +89,22 @@ def _log_stream_sleep_seconds() -> float:
         )
     except (TypeError, ValueError):
         logger.warning(
-            "Invalid cooperative_sleep_poll_ms=%r; using 0.001s log stream poll interval",
+            "Invalid cooperative_sleep_poll_ms=%r; using 0.001s Run Event stream poll interval",
             crawler_runtime_settings.cooperative_sleep_poll_ms,
         )
         return 0.001
 
 
-def _log_stream_max_poll_seconds() -> float:
+def _run_event_stream_max_poll_seconds() -> float:
     try:
         return max(
             0.001,
-            float(crawler_runtime_settings.log_stream_max_poll_ms) / 1000,
+            float(crawler_runtime_settings.run_event_stream_max_poll_ms) / 1000,
         )
     except (TypeError, ValueError):
         logger.warning(
-            "Invalid log_stream_max_poll_ms=%r; using 5s log stream max poll interval",
-            crawler_runtime_settings.log_stream_max_poll_ms,
+            "Invalid run_event_stream_max_poll_ms=%r; using 5s Run Event stream max poll interval",
+            crawler_runtime_settings.run_event_stream_max_poll_ms,
         )
         return 5.0
 
@@ -382,53 +381,58 @@ async def crawls_kill(
     )
 
 
-@router.get("/{run_id:int}/logs", responses=RUN_NOT_FOUND_RESPONSE)
-async def crawls_logs(
+@router.get("/{run_id:int}/events", responses=RUN_NOT_FOUND_RESPONSE)
+async def crawls_events(
     run_id: int,
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    after_id: Annotated[int | None, Query(ge=0)] = None,
+    after_sequence: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=2000)] = 500,
-) -> list[LogEntryResponse]:
+) -> list[RunEventResponse]:
     try:
         await require_accessible_run(session, run_id=run_id, user=user)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
-    rows = await get_run_logs(session, run_id, after_id=after_id, limit=limit)
-    return [LogEntryResponse.model_validate(row, from_attributes=True) for row in rows]
+    rows = await run_event_timeline.list_after(
+        run_id=run_id, after_sequence=after_sequence, limit=limit
+    )
+    return [RunEventResponse.model_validate(row, from_attributes=True) for row in rows]
 
 
-@router.websocket("/{run_id:int}/logs/ws")
-async def crawls_logs_ws(
-    websocket: WebSocket, run_id: int, after_id: int | None = None
+@router.websocket("/{run_id:int}/events/ws")
+async def crawls_events_ws(
+    websocket: WebSocket, run_id: int, after_sequence: int | None = None
 ) -> None:
     if not _websocket_origin_allowed(websocket):
         await _close_websocket_safely(websocket, code=1008, reason="Origin not allowed")
         return
-    user = await resolve_log_stream_user(_websocket_token(websocket))
+    if after_sequence is not None and after_sequence < 0:
+        await _close_websocket_safely(websocket, code=1008, reason="Invalid cursor")
+        return
+    user = await resolve_run_event_stream_user(_websocket_token(websocket))
     if user is None:
         await _close_websocket_safely(websocket, code=1008, reason="Not authenticated")
         return
 
     try:
-        run = await load_accessible_log_run(run_id=run_id, user=user)
+        run = await load_accessible_run_event_run(run_id=run_id, user=user)
     except ValueError:
         await _close_websocket_safely(websocket, code=1008, reason=RUN_NOT_FOUND_DETAIL)
         return
 
     await websocket.accept()
-    cursor = after_id
-    base_poll_interval_seconds = _log_stream_sleep_seconds()
+    cursor = after_sequence
+    base_poll_interval_seconds = _run_event_stream_sleep_seconds()
     max_poll_interval_seconds = max(
-        base_poll_interval_seconds, _log_stream_max_poll_seconds()
+        base_poll_interval_seconds, _run_event_stream_max_poll_seconds()
     )
     poll_interval_seconds = base_poll_interval_seconds
     missing_run_snapshots = 0
-    log_run_id = int(run_id)
+    event_run_id = int(run_id)
     try:
-        await _stream_log_snapshots(
+        await _stream_run_event_snapshots(
             websocket,
             run_id=run_id,
             cursor=cursor,
@@ -445,8 +449,8 @@ async def crawls_logs_ws(
         if _is_websocket_disconnect_compat_error(exc):
             return
         logger.exception(
-            "Run logs websocket stream failed",
-            extra={"run_id": log_run_id},
+            "Run Event websocket stream failed",
+            extra={"run_id": event_run_id},
         )
         try:
             await websocket.close(
@@ -456,7 +460,7 @@ async def crawls_logs_ws(
             logger.debug("Failed to close websocket after stream error", exc_info=True)
 
 
-async def _stream_log_snapshots(
+async def _stream_run_event_snapshots(
     websocket: WebSocket,
     *,
     run_id: int,
@@ -469,15 +473,20 @@ async def _stream_log_snapshots(
 ) -> None:
     last_status_value = run.status_value
     while True:
-        rows, next_run = await load_log_stream_snapshot(run_id=run_id, after_id=cursor)
+        rows, next_run = await load_run_event_stream_snapshot(
+            run_id=run_id, after_sequence=cursor
+        )
         for row in rows:
-            await websocket.send_json(serialize_log_event(row))
-            cursor = row.id
+            payload = RunEventResponse.model_validate(
+                row, from_attributes=True
+            ).model_dump(mode="json")
+            await websocket.send_json(payload)
+            cursor = row.sequence
         status_changed = False
         if next_run is None:
             missing_run_snapshots += 1
             logger.warning(
-                "Run logs snapshot did not reload run; retrying",
+                "Run Event snapshot did not reload run; retrying",
                 extra={"run_id": int(run_id)},
             )
             if missing_run_snapshots >= 3:

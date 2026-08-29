@@ -102,7 +102,7 @@ function emptyRecordsState(verdict: string) {
     return {
       title: 'Access blocked',
       description:
-        'The target site blocked acquisition for this run. Check Logs or browser diagnostics for challenge details.',
+        'The target site blocked acquisition for this run. Check Run Events or browser diagnostics for challenge details.',
     };
   }
   return {
@@ -162,7 +162,7 @@ export function RunOutputTabs({
       options={[
         { value: 'table', label: `Table (${recordCount})` },
         { value: 'json', label: 'JSON' },
-        { value: 'logs', label: 'Logs' },
+        { value: 'events', label: 'Run Events' },
         ...(showLearning ? [{ value: 'learning', label: 'Learning' }] : []),
       ]}
     />

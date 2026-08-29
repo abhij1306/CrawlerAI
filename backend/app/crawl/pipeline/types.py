@@ -121,8 +121,8 @@ class URLMetrics(TypedDict, total=False):
     acquisition_termination_reason: object
     # Short-circuit payloads (robots gate / URL failure recovery).
     robots: dict[str, object]
-    failure_log_persistence_error: str
-    failure_log_persisted: bool
+    failure_event_persistence_error: str
+    failure_event_persisted: bool
 
 
 @dataclass(slots=True)
@@ -147,7 +147,7 @@ class URLProcessingConfig:
     max_records: int = crawler_runtime_settings.default_max_records
     sleep_ms: int = crawler_runtime_settings.default_sleep_ms
     update_run_state: bool = True
-    persist_logs: bool = True
+    persist_run_events: bool = True
     url_index: int = 1
     url_count: int = 1
     url_scope_id: str | None = None
@@ -174,7 +174,7 @@ class URLProcessingConfig:
         plan: AcquisitionIntent,
         *,
         update_run_state: bool = True,
-        persist_logs: bool = True,
+        persist_run_events: bool = True,
         url_index: int = 1,
         url_count: int = 1,
         url_scope_id: str | None = None,
@@ -185,7 +185,7 @@ class URLProcessingConfig:
         return cls(
             acquisition_plan=plan,
             update_run_state=update_run_state,
-            persist_logs=persist_logs,
+            persist_run_events=persist_run_events,
             url_index=max(1, int(url_index)),
             url_count=max(1, int(url_count)),
             url_scope_id=url_scope_id,

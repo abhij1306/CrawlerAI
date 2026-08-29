@@ -2,12 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vite-plus/test';
 
-import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
+import type { CrawlRecord, CrawlRun, DomainRecipe, RunEvent } from '../../lib/api/types';
 import { TopBarProvider } from '../layout/top-bar-context';
 import { CrawlRunScreen } from './crawl-run-screen';
 
 export { QueryClient };
-export type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe };
+export type { CrawlRecord, CrawlRun, DomainRecipe, RunEvent };
 
 const sharedMocks = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -17,7 +17,7 @@ const sharedMocks = vi.hoisted(() => ({
     getCrawl: vi.fn(),
     listCrawls: vi.fn(),
     getRecords: vi.fn(),
-    getCrawlLogs: vi.fn(),
+    getRunEvents: vi.fn(),
     killCrawl: vi.fn(),
     getDomainRecipe: vi.fn(),
     saveGroundedCorrection: vi.fn(),
@@ -83,7 +83,7 @@ vi.mock('../../lib/api/crawls', () => ({
     getCrawl: sharedMocks.apiMock.getCrawl,
     listCrawls: sharedMocks.apiMock.listCrawls,
     getRecords: sharedMocks.apiMock.getRecords,
-    getCrawlLogs: sharedMocks.apiMock.getCrawlLogs,
+    getRunEvents: sharedMocks.apiMock.getRunEvents,
     killCrawl: sharedMocks.apiMock.killCrawl,
     saveGroundedCorrection: sharedMocks.apiMock.saveGroundedCorrection,
     exportCsv: sharedMocks.apiMock.exportCsv,
@@ -156,12 +156,24 @@ export function makeRecord(id: number): CrawlRecord {
   };
 }
 
-export function makeLog(id: number, message: string, level = 'info'): CrawlLog {
+export function makeRunEvent(
+  sequence: number,
+  overrides: Partial<Omit<RunEvent, 'id' | 'run_id' | 'sequence' | 'created_at'>> = {},
+): RunEvent {
   return {
-    id,
-    level,
-    message,
+    id: sequence,
+    run_id: 101,
+    sequence,
+    kind: 'run.progress',
+    stage: null,
+    url: null,
+    url_scope_id: null,
+    severity: 'info',
+    outcome: 'progress',
+    reason_code: null,
+    facts: {},
     created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
+    ...overrides,
   };
 }
 
@@ -364,7 +376,7 @@ export function registerCrawlRunScreenTestLifecycle() {
         };
       },
     );
-    apiMock.getCrawlLogs.mockResolvedValue([]);
+    apiMock.getRunEvents.mockResolvedValue([]);
     apiMock.killCrawl.mockResolvedValue({ run_id: 101, status: 'killed' });
     apiMock.getDomainRecipe.mockResolvedValue(makeDomainRecipe());
     apiMock.saveGroundedCorrection.mockResolvedValue({

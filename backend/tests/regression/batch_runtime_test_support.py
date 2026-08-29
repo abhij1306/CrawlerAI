@@ -35,7 +35,7 @@ from app.acquisition.acquirer import PageAcquisitionResult
 
 from app.crawl.crud import create_crawl_run, get_run_records
 
-from app.models.crawl_run import CrawlLog, CrawlRecord
+from app.models.crawl_run import CrawlRecord
 
 from app.crawl.pipeline.types import URLProcessingResult
 
@@ -97,7 +97,6 @@ __all__ = [
     "SITEMAP_DEFAULT_MAX_URLS",
     "AsyncSession",
     "CommitTrackingSession",
-    "CrawlLog",
     "CrawlRecord",
     "CrawlRunSettings",
     "CrawlStatus",

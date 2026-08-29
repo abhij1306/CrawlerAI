@@ -1,11 +1,11 @@
 import { apiClient, getApiBaseUrl } from '@/api/client';
 import type { ApiRequestOptions } from '@/api/client';
 
-import { crawlRecordSchema, crawlRunSchema, strictValidate } from './schemas';
+import { crawlRecordSchema, crawlRunSchema, runEventSchema, strictValidate } from './schemas';
 import { definedQuery, paginationQuery, withQuery } from './shared';
 import type {
   CrawlCreatePayload,
-  CrawlLog,
+  RunEvent,
   CrawlRecord,
   CrawlRecordProvenance,
   CrawlRun,
@@ -121,13 +121,17 @@ export const crawlsApi = {
   },
   getRecordProvenance: (recordId: number) =>
     apiClient.get<CrawlRecordProvenance>(`/api/records/${recordId}/provenance`),
-  getCrawlLogs: (
+  getRunEvents: async (
     runId: number,
-    params?: { afterId?: number; limit?: number },
+    params?: { afterSequence?: number; limit?: number },
     options?: ApiRequestOptions,
   ) => {
-    const query = definedQuery({ after_id: params?.afterId, limit: params?.limit });
-    return apiClient.get<CrawlLog[]>(withQuery(`/api/crawls/${runId}/logs`, query), options);
+    const query = definedQuery({ after_sequence: params?.afterSequence, limit: params?.limit });
+    const rows = await apiClient.get<RunEvent[]>(
+      withQuery(`/api/crawls/${runId}/events`, query),
+      options,
+    );
+    return rows.map((row) => strictValidate(runEventSchema, row, `getRunEvents(${runId})`));
   },
   downloadCsv: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/csv`),
   downloadJson: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/json`),

@@ -6,6 +6,7 @@ import time
 
 from app.models.crawl_settings import CrawlRunSettings
 from app.core.config.domain_profiles import CAPTURE_NETWORK_ALL_SMALL_JSON
+from app.core.config.run_events import RunEventKind
 from app.acquisition.acquirer import (
     AcquisitionRequest,
     PageEvidence,
@@ -23,9 +24,9 @@ from app.crawl.pipeline.record_extraction_stage import (
     extract_records_for_acquisition as _extract_records_for_acquisition,
 )
 from app.crawl.pipeline.runtime_helpers import (
-    log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
     pipeline_acquisition_event_logger as _pipeline_acquisition_event_logger,
+    record_pipeline_event as _record_pipeline_event,
 )
 from app.persistence.publish import build_acquisition_profile, build_url_metrics
 from app.crawl.pipeline.url_processing_context import (
@@ -197,10 +198,9 @@ async def _commit_before_browser_rung(context: _URLProcessingContext) -> None:
     if callable(commit):
         await commit()
     else:
-        _log_pipeline_event(
+        await _record_pipeline_event(
             context,
-            "warning",
-            "Skipping browser retry pre-acquire commit: context.session is missing or has no async commit API",
+            kind=RunEventKind.BROWSER_RETRY_PRECOMMIT_UNAVAILABLE,
         )
 
 
@@ -211,7 +211,7 @@ def _classify_rung_outcome(exc: BaseException) -> str:
     )
 
 
-def _handle_failed_browser_rung(
+async def _handle_failed_browser_rung(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     attempt: EscalationAttemptDiagnostics,
@@ -250,13 +250,14 @@ def _handle_failed_browser_rung(
         acquisition_result,
         requested_fields=list(context.requested_fields),
     )
-    _log_pipeline_event(
+    await _record_pipeline_event(
         context,
-        "warning",
-        (
-            f"Browser retry failed for {context.url}: "
-            f"{type(exc).__name__}: {exc}; using the original HTTP payload"
-        ),
+        kind=RunEventKind.BROWSER_RETRY_RESULT,
+        reason_code="failed",
+        facts={
+            "exception_type": type(exc).__name__,
+            "reason": retry_reason,
+        },
     )
 
 
@@ -294,7 +295,7 @@ async def _attempt_browser_rung(
         )
         raise
     except Exception as exc:  # noqa: BLE001 - retry rung records arbitrary browser failures
-        _handle_failed_browser_rung(
+        await _handle_failed_browser_rung(
             context,
             fetched,
             attempt,
@@ -335,10 +336,11 @@ async def _acquire_browser_retry_result(
         forced_browser_engine=forced_browser_engine,
     )
     if plan.skip_reason is not None:
-        _log_pipeline_event(
+        await _record_pipeline_event(
             context,
-            "info",
-            f"Skipping browser retry for {context.url}: {plan.skip_reason}",
+            kind=RunEventKind.BROWSER_RETRY_RESULT,
+            reason_code="skipped",
+            facts={"reason": plan.skip_reason},
         )
         return None
     request = replace(

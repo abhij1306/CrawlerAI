@@ -1,12 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
-import { crawlRecordSchema, crawlRunSchema, domainRunProfileSchema, userSchema } from './schemas';
+import {
+  crawlRecordSchema,
+  crawlRunSchema,
+  domainRunProfileSchema,
+  runEventSchema,
+  userSchema,
+} from './schemas';
 
 const contractSchemas = {
   userSchema,
   crawlRunSchema,
   crawlRecordSchema,
+  runEventSchema,
   domainRunProfileSchema,
 };
 
@@ -14,6 +21,7 @@ const CONTRACT_SCHEMA_MAP = {
   userSchema: 'UserResponse',
   crawlRunSchema: 'CrawlRunResponse',
   crawlRecordSchema: 'CrawlRecordResponse',
+  runEventSchema: 'RunEventResponse',
   domainRunProfileSchema: 'DomainRunProfilePayload',
 } as const;
 

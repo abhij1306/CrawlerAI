@@ -1,6 +1,6 @@
 import {
   apiMock,
-  makeLog,
+  makeRunEvent,
   makeRecord,
   pushMock,
   registerCrawlRunScreenTestLifecycle,
@@ -9,22 +9,42 @@ import {
 } from './crawl-run-screen.test-support';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { LogTerminal } from './log-terminal';
+import { RunEventTerminal } from './run-event-terminal';
 
 describe('CrawlRunScreen', () => {
   registerCrawlRunScreenTestLifecycle();
 
-  it('stops a serial URL timer when the next URL starts', () => {
+  it('stops a scoped URL timer when a terminal Run Event closes it', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-08T10:00:10Z'));
 
     render(
-      <LogTerminal
+      <RunEventTerminal
         live
-        logs={[
-          makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/2)'),
+        events={[
+          makeRunEvent(1, {
+            kind: 'url.started',
+            url: 'https://example.com/p/1',
+            url_scope_id: 'p1',
+            facts: { index: 1, total: 2 },
+          }),
           {
-            ...makeLog(2, 'Starting crawl run for https://example.com/p/2 (2/2)'),
+            ...makeRunEvent(2, {
+              kind: 'persistence.succeeded',
+              stage: 'persistence',
+              url: 'https://example.com/p/1',
+              url_scope_id: 'p1',
+              outcome: 'succeeded',
+            }),
+            created_at: new Date('2026-04-08T10:00:06Z').toISOString(),
+          },
+          {
+            ...makeRunEvent(3, {
+              kind: 'url.started',
+              url: 'https://example.com/p/2',
+              url_scope_id: 'p2',
+              facts: { index: 2, total: 2 },
+            }),
             created_at: new Date('2026-04-08T10:00:06Z').toISOString(),
           },
         ]}
@@ -39,16 +59,50 @@ describe('CrawlRunScreen', () => {
     vi.setSystemTime(new Date('2026-04-08T10:00:10Z'));
 
     render(
-      <LogTerminal
+      <RunEventTerminal
         live
-        logs={[
-          makeLog(1, '[url:https://example.com/p/1] Acquiring page'),
-          makeLog(2, '[url:https://example.com/p/2] Acquiring page'),
+        events={[
+          makeRunEvent(1, {
+            kind: 'acquisition.started',
+            stage: 'acquisition',
+            url: 'https://example.com/p/1',
+            url_scope_id: 'p1',
+          }),
+          makeRunEvent(2, {
+            kind: 'acquisition.started',
+            stage: 'acquisition',
+            url: 'https://example.com/p/2',
+            url_scope_id: 'p2',
+          }),
         ]}
       />,
     );
 
     expect(screen.getAllByText('0m 10s')).toHaveLength(2);
+  });
+
+  it('infers an inactive scoped group end from the next scoped group start', () => {
+    render(
+      <RunEventTerminal
+        events={[
+          makeRunEvent(1, {
+            kind: 'url.started',
+            url: 'https://example.com/p/1',
+            url_scope_id: 'p1',
+          }),
+          {
+            ...makeRunEvent(2, {
+              kind: 'url.started',
+              url: 'https://example.com/p/2',
+              url_scope_id: 'p2',
+            }),
+            created_at: new Date('2026-04-08T10:00:06Z').toISOString(),
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('0m 6s')).toBeInTheDocument();
   });
 
   it('prefills batch crawl with the originating jobs domain from listing runs', async () => {
@@ -83,7 +137,7 @@ describe('CrawlRunScreen', () => {
     );
   });
 
-  it('keeps batch crawl result URLs available after switching from table to logs', async () => {
+  it('keeps batch crawl result URLs available after switching from table to Run Events', async () => {
     apiMock.getCrawl.mockResolvedValue({
       ...terminalRun(101),
       surface: 'ecommerce_listing',
@@ -117,8 +171,8 @@ describe('CrawlRunScreen', () => {
 
     renderRunScreen();
 
-    const logsTab = await screen.findByRole('button', { name: 'Logs' });
-    fireEvent.click(logsTab);
+    const eventsTab = await screen.findByRole('button', { name: 'Run Events' });
+    fireEvent.click(eventsTab);
 
     const batchButton = await screen.findByRole('button', { name: 'Batch Crawl (2)' });
     fireEvent.click(batchButton);

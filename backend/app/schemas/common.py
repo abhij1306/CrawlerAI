@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
+
+from app.core.config.run_events import (
+    RunEventKind,
+    RunEventOutcome,
+    RunEventSeverity,
+    RunEventStage,
+)
 
 T = TypeVar("T")
 
@@ -20,8 +27,16 @@ class PaginatedResponse(BaseModel, Generic[T]):
     meta: PaginationMeta
 
 
-class LogEntryResponse(BaseModel):
+class RunEventResponse(BaseModel):
     id: int
-    level: str
-    message: str
+    run_id: int
+    sequence: int
+    kind: RunEventKind
+    stage: RunEventStage | None
+    url: str | None
+    url_scope_id: str | None
+    severity: RunEventSeverity
+    outcome: RunEventOutcome
+    reason_code: str | None
+    facts: dict[str, Any]
     created_at: datetime

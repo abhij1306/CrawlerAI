@@ -85,14 +85,14 @@ async def test_escalation_ladder_climbs_then_exhausts_honestly(monkeypatch) -> N
         extract_calls += 1
         return _empty_result(with_retry=True), []
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
     monkeypatch.setattr(stage, "_extract_records_for_acquisition", fake_extract)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -147,14 +147,14 @@ async def test_escalation_ladder_stops_when_verdict_satisfied(monkeypatch) -> No
             [],
         )
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
     monkeypatch.setattr(stage, "_extract_records_for_acquisition", fake_extract)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -243,14 +243,14 @@ async def test_escalation_network_rung_reaches_network_json_bundle(monkeypatch) 
             [],
         )
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
     monkeypatch.setattr(stage, "_extract_records_for_acquisition", fake_extract)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -307,13 +307,13 @@ async def test_escalation_skips_acquisition_when_url_budget_is_exhausted(
         acquire_calls += 1
         return _acquisition("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -355,13 +355,13 @@ async def test_failed_escalation_rung_is_recorded_with_typed_outcome(
     async def fake_acquire(request):
         raise TimeoutError("browser acquisition timed out")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -409,13 +409,13 @@ async def test_exhausted_url_budget_skips_acquisition_without_counting_rung(
         acquire_calls += 1
         return _acquisition("browser")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",
@@ -456,13 +456,13 @@ async def test_failed_escalation_rung_stays_visible_in_diagnostics(
     async def fake_acquire(request):
         raise TimeoutError("browser acquisition timed out")
 
-    def fake_log(*args, **kwargs):
+    async def fake_record_pipeline_event(*args, **kwargs):
         return None
 
     monkeypatch.setattr(stage, "build_acquisition_request", fake_build_request)
     monkeypatch.setattr(stage, "acquire", fake_acquire)
     monkeypatch.setattr(extraction_loop, "acquire", fake_acquire)
-    monkeypatch.setattr(stage, "_log_pipeline_event", fake_log)
+    monkeypatch.setattr(stage, "_record_pipeline_event", fake_record_pipeline_event)
 
     context = SimpleNamespace(
         url="https://jobs.test/j/1",

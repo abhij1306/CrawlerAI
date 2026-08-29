@@ -115,10 +115,33 @@ export type CrawlRecordProvenance = {
   created_at: string;
 };
 
-export type CrawlLog = {
+export type RunEventStage = 'acquisition' | 'extraction' | 'normalization' | 'persistence' | null;
+
+type RunEventSeverity = 'info' | 'warning' | 'error';
+
+type RunEventOutcome =
+  | 'progress'
+  | 'succeeded'
+  | 'partial'
+  | 'failed'
+  | 'blocked'
+  | 'skipped'
+  | 'cancelled'
+  | 'requested'
+  | 'limited';
+
+export type RunEvent = {
   id: number;
-  level: string;
-  message: string;
+  run_id: number;
+  sequence: number;
+  kind: string;
+  stage: RunEventStage;
+  url: string | null;
+  url_scope_id: string | null;
+  severity: RunEventSeverity;
+  outcome: RunEventOutcome;
+  reason_code: string | null;
+  facts: Record<string, unknown>;
   created_at: string;
 };
 

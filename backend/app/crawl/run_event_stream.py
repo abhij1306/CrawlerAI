@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from app.core.database import SessionLocal
 from app.core.security import TokenDecodeError, decode_access_token
-from app.models.crawl_run import CrawlLog, CrawlRun
-from app.models.user import User
 from app.crawl.access_service import require_accessible_run
-from app.crawl.crud import get_run_and_logs
+from app.crawl.run_events import run_event_timeline
+from app.models.crawl_run import CrawlRun, RunEvent
+from app.models.user import User
 
 
-async def resolve_log_stream_user(token: str | None) -> User | None:
+async def resolve_run_event_stream_user(token: str | None) -> User | None:
     if not token:
         return None
     try:
@@ -28,25 +28,26 @@ async def resolve_log_stream_user(token: str | None) -> User | None:
         return user
 
 
-async def load_log_stream_snapshot(
+async def load_run_event_stream_snapshot(
     *,
     run_id: int,
-    after_id: int | None,
-) -> tuple[list[CrawlLog], CrawlRun | None]:
+    after_sequence: int | None,
+) -> tuple[list[RunEvent], CrawlRun | None]:
+    events = await run_event_timeline.list_after(
+        run_id=run_id, after_sequence=after_sequence, limit=500
+    )
     async with SessionLocal() as session:
-        run, rows = await get_run_and_logs(
-            session, run_id, after_id=after_id, limit=500
-        )
-    return rows, run
+        run = await session.get(CrawlRun, run_id)
+    return events, run
 
 
-async def load_accessible_log_run(*, run_id: int, user: User) -> CrawlRun:
+async def load_accessible_run_event_run(*, run_id: int, user: User) -> CrawlRun:
     async with SessionLocal() as session:
         return await require_accessible_run(session, run_id=run_id, user=user)
 
 
 __all__ = [
-    "load_accessible_log_run",
-    "load_log_stream_snapshot",
-    "resolve_log_stream_user",
+    "load_accessible_run_event_run",
+    "load_run_event_stream_snapshot",
+    "resolve_run_event_stream_user",
 ]

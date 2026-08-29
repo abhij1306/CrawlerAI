@@ -20,7 +20,7 @@ export const queryKeys = {
       ['runs', 'records', runId, 'table-pages', pageSize] as const,
     jsonRecords: (runId: number, pageSize: number) =>
       ['runs', 'records', runId, 'json-pages', pageSize] as const,
-    logs: (runId: number) => ['runs', 'logs', runId] as const,
+    events: (runId: number) => ['runs', 'events', runId] as const,
     recipe: (runId: number) => ['runs', 'recipe', runId] as const,
     terminalRecordSync: (syncKey: string | null) =>
       ['runs', 'terminal-record-sync', syncKey] as const,

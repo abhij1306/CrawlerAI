@@ -13,21 +13,22 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.acquisition.events import AcquisitionEvent
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.extraction_memory import EXTRACTION_RELEASE_VERSION
+from app.core.config.run_events import RunEventKind
+from app.acquisition.events import AcquisitionEvent
 from app.crawl.pipeline import persistence as record_persistence
 from app.crawl.pipeline import record_extraction_stage
-from app.crawl.pipeline import runtime_helpers as runtime_helpers_module
+from app.crawl.pipeline import runtime_helpers
 from app.crawl.pipeline.runtime_helpers import (
-    log_pipeline_event,
     pipeline_acquisition_event_logger,
+    record_pipeline_event,
 )
 from app.crawl.pipeline.url_processing_context import URLProcessingContext
 from app.crawl.profile import acquisition_contract
 from app.crawl.profile import repository as profile_repository
 from app.crawl.profile.acquisition_contract import build_success_acquisition_contract
-from app.models.crawl_run import CrawlLog, CrawlRecord
+from app.models.crawl_run import CrawlRecord
 from app.models.extraction_memory import ExtractionReleaseSnapshot
 from app.persistence.extraction_memory import reset_release_payload_cache
 
@@ -302,60 +303,16 @@ async def test_non_admin_source_run_cannot_persist_global_profile(
     )
 
 
-async def test_log_pipeline_event_batches_rows_until_url_commit(
+async def test_record_pipeline_event_persists_structured_url_events(
     db_session: AsyncSession, create_test_run, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run = await create_test_run(url="https://example.com/a", surface="ecommerce_detail")
     context = SimpleNamespace(
-        config=SimpleNamespace(persist_logs=True),
-        url="https://example.com/a",
-        run=run,
-        session=db_session,
-    )
-    counts = {"commit": 0, "flush": 0}
-    real_commit = db_session.commit
-    real_flush = db_session.flush
-
-    async def _commit():
-        counts["commit"] += 1
-        return await real_commit()
-
-    async def _flush():
-        counts["flush"] += 1
-        return await real_flush()
-
-    monkeypatch.setattr(db_session, "commit", _commit)
-    monkeypatch.setattr(db_session, "flush", _flush)
-
-    for index in range(3):
-        log_pipeline_event(context, "info", f"event {index}")
-    # No per-event flush or commit: rows ride the URL's single final commit.
-    assert counts == {"commit": 0, "flush": 0}
-
-    context.config.persist_logs = False
-    log_pipeline_event(context, "info", "dropped")
-
-    await db_session.commit()
-    rows = (
-        (
-            await db_session.execute(
-                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert [row.message for row in rows] == ["event 0", "event 1", "event 2"]
-
-
-async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
-    db_session: AsyncSession,
-    create_test_run,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = await create_test_run(url="https://example.com/a", surface="ecommerce_detail")
-    context = SimpleNamespace(
-        config=SimpleNamespace(persist_logs=True),
+        config=SimpleNamespace(
+            persist_run_events=True,
+            url_index=1,
+            url_scope_id="url:1",
+        ),
         url="https://example.com/a",
         run=run,
         session=db_session,
@@ -365,16 +322,50 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
     async def _record(*, run_id: int, fact, **_kwargs) -> None:
         recorded.append((run_id, fact))
 
-    monkeypatch.setattr(runtime_helpers_module.run_event_timeline, "record", _record)
+    monkeypatch.setattr(runtime_helpers.run_event_timeline, "record", _record)
+
+    for _ in range(3):
+        await record_pipeline_event(
+            context,
+            kind=RunEventKind.ACQUISITION_STARTED,
+        )
+
+    context.config.persist_run_events = False
+    await record_pipeline_event(context, kind=RunEventKind.ACQUISITION_STARTED)
+
+    assert [
+        (run_id, fact.kind, fact.url, fact.url_scope_id) for run_id, fact in recorded
+    ] == [
+        (run.id, RunEventKind.ACQUISITION_STARTED, context.url, "url:1"),
+        (run.id, RunEventKind.ACQUISITION_STARTED, context.url, "url:1"),
+        (run.id, RunEventKind.ACQUISITION_STARTED, context.url, "url:1"),
+    ]
+
+
+async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
+    db_session: AsyncSession, create_test_run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = await create_test_run(url="https://example.com/a", surface="ecommerce_detail")
+    context = SimpleNamespace(
+        config=SimpleNamespace(
+            persist_run_events=True,
+            url_index=1,
+            url_scope_id="url:1",
+        ),
+        url="https://example.com/a",
+        run=run,
+        session=db_session,
+    )
+
+    recorded: list[tuple[int, object]] = []
+
+    async def _record(*, run_id: int, fact, **_kwargs) -> None:
+        recorded.append((run_id, fact))
+
+    monkeypatch.setattr(runtime_helpers.run_event_timeline, "record", _record)
 
     await pipeline_acquisition_event_logger(context)(
-        AcquisitionEvent.browser_launched(
-            launch_mode="headless",
-            engine="chromium",
-            profile="default",
-            proxy_mode="direct",
-            binary="bundled",
-        )
+        AcquisitionEvent.started(url=context.url)
     )
     await pipeline_acquisition_event_logger(context)(
         AcquisitionEvent.browser_escalated(
@@ -383,44 +374,32 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
             reason_code="blocked_status",
         )
     )
-    await db_session.commit()
-
-    rows = (
-        (
-            await db_session.execute(
-                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert [(row.level, row.message) for row in rows] == [
-        (
-            "info",
-            "browser launched: launch_mode=headless, engine=chromium, "
-            "profile=default, proxy_mode=direct, binary=bundled",
-        ),
-        (
-            "info",
-            "browser escalated: status_code=403, method=httpx, "
-            "reason_code=blocked_status",
-        ),
-    ]
     assert [
-        (run_id, fact.kind.value, fact.url, fact.url_scope_id)
+        (
+            run_id,
+            fact.kind,
+            fact.url,
+            fact.url_scope_id,
+            fact.reason_code,
+            fact.facts,
+        )
         for run_id, fact in recorded
     ] == [
         (
             run.id,
-            "acquisition.browser_launched",
-            "https://example.com/a",
+            RunEventKind.ACQUISITION_STARTED,
+            context.url,
             "url:1",
+            None,
+            {},
         ),
         (
             run.id,
-            "acquisition.browser_escalated",
-            "https://example.com/a",
+            RunEventKind.ACQUISITION_BROWSER_ESCALATED,
+            context.url,
             "url:1",
+            "blocked_status",
+            {"status_code": 403, "prior_method": "httpx", "reason": "blocked_status"},
         ),
     ]
 

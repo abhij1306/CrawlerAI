@@ -5,6 +5,7 @@ import logging
 from typing import Literal, cast
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
+from app.core.config.run_events import RunEventKind
 from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.acquisition.acquirer import acquire as _acquire
@@ -47,13 +48,12 @@ from .runtime_helpers import (
     STAGE_NORMALIZE,
     STAGE_PERSIST,
     browser_attempted as _browser_attempted,
-    browser_launch_log_message as _browser_launch_log_message,
     browser_outcome as _browser_outcome,
     effective_blocked as _effective_blocked,
     mark_run_failed,
     record_detail_expansion_extraction_outcome as _record_detail_expansion_extraction_outcome,
-    suppress_empty_downstream_record_logs as _suppress_empty_downstream_record_logs,
-    log_pipeline_event as _log_pipeline_event,
+    suppress_empty_downstream_record_events as _suppress_empty_downstream_record_events,
+    record_pipeline_event as _record_pipeline_event,
     set_stage,
 )
 from .types import PublicRecord, URLMetrics, URLProcessingConfig, URLProcessingResult
@@ -173,10 +173,10 @@ async def _run_robots_gate(
     if context.run.settings_view.respect_robots_txt():
         robots_result = await check_url_crawlability(context.url)
         if not robots_result.allowed:
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "warning",
-                f"[ROBOTS] Blocked by robots.txt: {context.url}",
+                kind=RunEventKind.ROBOTS_CHECKED,
+                reason_code="blocked",
             )
             return URLProcessingResult(
                 records=[],
@@ -200,16 +200,22 @@ async def _run_robots_gate(
                 ),
             )
         if robots_result.outcome == ROBOTS_MISSING:
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "info",
-                f"[ROBOTS] No robots.txt found for {context.url}; continuing",
+                kind=RunEventKind.ROBOTS_CHECKED,
+                reason_code="missing",
             )
         if robots_result.outcome == ROBOTS_FETCH_FAILURE:
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "warning",
-                f"[ROBOTS] robots.txt check failed for {context.url}; continuing",
+                kind=RunEventKind.ROBOTS_CHECKED,
+                reason_code="fetch_failed",
+            )
+        if robots_result.outcome not in {ROBOTS_MISSING, ROBOTS_FETCH_FAILURE}:
+            await _record_pipeline_event(
+                context,
+                kind=RunEventKind.ROBOTS_CHECKED,
+                reason_code="allowed",
             )
         return None
     return None
@@ -258,30 +264,42 @@ async def _run_acquisition_stage(
             )
             timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
             load_ms = browser_page_load_elapsed_ms(timings) or timings.get("total", 0)
-            _log_pipeline_event(
+            try:
+                elapsed_ms = int(str(load_ms or 0))
+            except (TypeError, ValueError):
+                elapsed_ms = 0
+            await _record_pipeline_event(
                 context,
-                "info",
-                _browser_launch_log_message(acquisition_result),
+                kind=RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
+                facts={
+                    "engine": str(diagnostics.get("browser_engine") or "chromium"),
+                    "launch_mode": str(
+                        diagnostics.get("browser_launch_mode") or "headless"
+                    ),
+                    "profile": str(diagnostics.get("browser_profile") or ""),
+                },
             )
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "info",
-                f"Page loaded in {load_ms}ms",
+                kind=RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
+                facts={"elapsed_ms": elapsed_ms},
             )
-    else:
-        status = getattr(acquisition_result, "status_code", 0)
-        _log_pipeline_event(
-            context,
-            "info",
-            f"Acquired payload via {method} (status={status})",
-        )
+    status = getattr(acquisition_result, "status_code", None)
+    completed_facts: dict[str, str | int] = {"method": str(method)}
+    if status is not None:
+        completed_facts["status_code"] = int(status)
+    await _record_pipeline_event(
+        context,
+        kind=RunEventKind.ACQUISITION_COMPLETED,
+        facts=completed_facts,
+    )
 
     browser_attempted = _browser_attempted(acquisition_result)
     if _effective_blocked(acquisition_result) and not browser_attempted:
-        _log_pipeline_event(
+        await _record_pipeline_event(
             context,
-            "warning",
-            f"Acquisition detected rate limiting or bot protection for {context.url}",
+            kind=RunEventKind.ACQUISITION_PROTECTION_DETECTED,
+            facts={"status_code": int(status)} if status is not None else {},
         )
 
     return _FetchedURLStage(
@@ -422,15 +440,17 @@ async def _run_persistence_stage(
             persisted_count=persisted_count,
         )
     verdict = cast(UrlVerdict, extraction_result.verdict)
-    if not _suppress_empty_downstream_record_logs(
+    if not _suppress_empty_downstream_record_events(
         acquisition_result,
         _records_as_dicts(extracted_records),
     ):
-        _log_pipeline_event(
+        await _record_pipeline_event(
             context,
-            "info",
-            f"Persisted {persisted_count} record(s) for {acquisition_result.final_url}",
-            commit=False,
+            kind=RunEventKind.PERSISTENCE_RECORDS_PERSISTED,
+            facts={
+                "record_count": persisted_count,
+                "final_url": str(acquisition_result.final_url or context.url),
+            },
         )
     if (
         verdict == VERDICT_EMPTY
@@ -557,11 +577,10 @@ async def _record_extraction_memory(
             )
             raise
         try:
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "error",
-                f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",
-                commit=False,
+                kind=RunEventKind.EXTRACTION_MEMORY_OBSERVATION_FAILED,
+                facts={"exception_type": type(exc).__name__},
             )
         except Exception as log_exc:
             logger.warning(

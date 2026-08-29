@@ -17,9 +17,12 @@ def register_run_complete_callback(
     _run_complete_callbacks[callback_key] = cb
 
 
-async def on_run_complete(run_id: int) -> None:
+async def on_run_complete(run_id: int) -> tuple[str, ...]:
+    failure_types: list[str] = []
     for cb in tuple(_run_complete_callbacks.values()):
         try:
             await cb(run_id)
-        except Exception:
+        except Exception as exc:
             logger.exception("Run-complete callback failed for run=%s", run_id)
+            failure_types.append(type(exc).__name__)
+    return tuple(failure_types)

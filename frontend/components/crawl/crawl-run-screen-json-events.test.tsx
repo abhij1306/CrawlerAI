@@ -1,6 +1,6 @@
 import {
   apiMock,
-  makeLog,
+  makeRunEvent,
   makeRecord,
   MockWebSocket,
   registerCrawlRunScreenTestLifecycle,
@@ -34,49 +34,64 @@ describe('CrawlRunScreen', () => {
       ],
       meta: { page: 1, limit: 100, total: 1 },
     });
-    apiMock.getCrawlLogs.mockResolvedValue([
-      makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/1)'),
-      makeLog(2, 'Persisted 1 record(s) for https://example.com/p/1'),
+    apiMock.getRunEvents.mockResolvedValue([
+      makeRunEvent(1, { kind: 'url.started', url: 'https://example.com/p/1', url_scope_id: 'p1' }),
+      makeRunEvent(2, {
+        kind: 'persistence.succeeded',
+        stage: 'persistence',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
     ]);
 
     renderRunScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Logs' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Events' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Peek' }));
 
     expect(await screen.findByText('Payload Peek')).toBeInTheDocument();
     expect(screen.getByText(/"title": "Item 1"/)).toBeInTheDocument();
-    expect(screen.queryByText(/raw_record/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/raw_data/)).not.toBeInTheDocument();
     expect(screen.queryByText(/source_trace/)).not.toBeInTheDocument();
     expect(screen.queryByText(/_confidence/)).not.toBeInTheDocument();
     expect(screen.queryByText(/_internal_metric/)).not.toBeInTheDocument();
   });
 
-  it('does not reopen the log websocket when incoming messages advance the log cursor', async () => {
+  it('does not reopen the Run Event websocket when incoming events advance the sequence cursor', async () => {
     apiMock.getCrawl.mockResolvedValue(runningRun(101));
-    apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
+    apiMock.getRunEvents.mockResolvedValue([makeRunEvent(1, { kind: 'run.started' })]);
 
     renderRunScreen();
 
     await waitFor(() => {
       expect(MockWebSocket.instances).toHaveLength(1);
     });
-    expect(MockWebSocket.instances[0].url).toContain('after_id=1');
+    expect(MockWebSocket.instances[0].url).toContain('after_sequence=1');
 
     MockWebSocket.instances[0].onmessage?.({
-      data: JSON.stringify(makeLog(2, 'Second log line')),
+      data: JSON.stringify(makeRunEvent(2, { kind: 'run.resumed' })),
     });
 
-    expect(await screen.findByText('Second log line')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(MockWebSocket.instances).toHaveLength(1);
+    expect(await screen.findByText('Run Resumed')).toBeInTheDocument();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    vi.useFakeTimers();
+    act(() => {
+      MockWebSocket.instances[0].onopen?.();
+      MockWebSocket.instances[0].onclose?.();
     });
+    await act(async () => {
+      vi.advanceTimersByTime(WEBSOCKET_RECONNECT.MIN_DELAY_MS);
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(MockWebSocket.instances[1].url).toContain('after_sequence=2');
   });
 
-  it('reconnects the log websocket after a transient close while polling remains available', async () => {
+  it('reconnects the Run Event websocket after a transient close while polling remains available', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     apiMock.getCrawl.mockResolvedValue(runningRun(101));
-    apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
+    apiMock.getRunEvents.mockResolvedValue([makeRunEvent(1, { kind: 'run.started' })]);
 
     renderRunScreen();
 
@@ -90,20 +105,20 @@ describe('CrawlRunScreen', () => {
       MockWebSocket.instances[0].onclose?.();
     });
 
-    expect(apiMock.getCrawlLogs).toHaveBeenCalledTimes(2);
+    expect(apiMock.getRunEvents).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       vi.advanceTimersByTime(WEBSOCKET_RECONNECT.MIN_DELAY_MS);
     });
 
     expect(MockWebSocket.instances).toHaveLength(2);
-    expect(MockWebSocket.instances[1].url).toContain('after_id=1');
+    expect(MockWebSocket.instances[1].url).toContain('after_sequence=1');
   });
 
-  it('does not reconnect the log websocket after unmount', async () => {
+  it('does not reconnect the Run Event websocket after unmount', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     apiMock.getCrawl.mockResolvedValue(runningRun(101));
-    apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
+    apiMock.getRunEvents.mockResolvedValue([makeRunEvent(1, { kind: 'run.started' })]);
 
     const { unmount } = renderRunScreen();
 
@@ -146,14 +161,20 @@ describe('CrawlRunScreen', () => {
       ],
       meta: { page: 1, limit: 100, total: 1 },
     });
-    apiMock.getCrawlLogs.mockResolvedValue([
-      makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/1)'),
-      makeLog(2, 'Persisted 1 record(s) for https://example.com/p/1'),
+    apiMock.getRunEvents.mockResolvedValue([
+      makeRunEvent(1, { kind: 'url.started', url: 'https://example.com/p/1', url_scope_id: 'p1' }),
+      makeRunEvent(2, {
+        kind: 'persistence.succeeded',
+        stage: 'persistence',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
     ]);
 
     renderRunScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Logs' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Events' }));
 
     expect(await screen.findByText('40%')).toBeInTheDocument();
     expect(screen.getByText('0m 42s')).toBeInTheDocument();

@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import type { CrawlRecord } from '../../lib/api/types';
+import type { CrawlRecord, RunEvent } from '../../lib/api/types';
 import {
-  buildLogSiteGroups,
+  buildRunEventSiteGroups,
   cleanRecordForDisplay,
   decodeUrlsForDisplay,
   estimateDataQuality,
   formatCellDisplay,
-  getLogStage,
   scoreFieldQuality,
   scoreRecordQuality,
   validateAdditionalFieldName,
@@ -27,12 +26,24 @@ function makeRecord(id: number, data: Record<string, unknown>): CrawlRecord {
   };
 }
 
-function makeLog(id: number, message: string, level = 'info') {
+function makeRunEvent(
+  sequence: number,
+  overrides: Partial<Omit<RunEvent, 'id' | 'run_id' | 'sequence' | 'created_at'>> = {},
+): RunEvent {
   return {
-    id,
-    level,
-    message,
+    id: sequence,
+    run_id: 1,
+    sequence,
+    kind: 'run.progress',
+    stage: null,
+    url: null,
+    url_scope_id: null,
+    severity: 'info',
+    outcome: 'progress',
+    reason_code: null,
+    facts: {},
     created_at: '2026-01-01T00:00:00Z',
+    ...overrides,
   };
 }
 
@@ -189,39 +200,68 @@ describe('cleanRecordForDisplay', () => {
   });
 });
 
-describe('getLogStage', () => {
-  it('keeps normalize and persistence distinct from extraction', () => {
-    expect(getLogStage('Extracted 1 records using nike adapter')).toBe('extraction');
-    expect(getLogStage('Normalized 1 record(s) for persistence')).toBe('normalize');
-    expect(getLogStage('Persisted 1 record(s) for https://example.com/p/1')).toBe('persistence');
-  });
-});
-
-describe('buildLogSiteGroups', () => {
-  it('groups logs per site and assigns fixed stages', () => {
+describe('buildRunEventSiteGroups', () => {
+  it('groups Run Events by URL scope and structured stages', () => {
     const records = [
       makeRecord(1, { title: 'Trail Shoe', url: 'https://example.com/p/1' }),
       makeRecord(2, { title: 'Road Shoe', url: 'https://example.com/p/2' }),
     ];
-    const logs = [
-      makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/2)'),
-      makeLog(2, 'Acquiring https://example.com/p/1'),
-      makeLog(3, 'Extracted 1 records using generic extraction path'),
-      makeLog(4, 'Normalized 1 record(s) for persistence'),
-      makeLog(5, 'Persisted 1 record(s) for https://example.com/p/1'),
-      makeLog(6, 'Starting crawl run for https://example.com/p/2 (2/2)'),
-      makeLog(7, 'Acquiring https://example.com/p/2'),
-      makeLog(8, 'Extraction yielded 0 records (generic extraction path)', 'warning'),
+    const events = [
+      makeRunEvent(1, { kind: 'url.started', url: 'https://example.com/p/1', url_scope_id: 'p1' }),
+      makeRunEvent(2, {
+        kind: 'acquisition.succeeded',
+        stage: 'acquisition',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(3, {
+        kind: 'extraction.succeeded',
+        stage: 'extraction',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(4, {
+        kind: 'normalization.succeeded',
+        stage: 'normalization',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(5, {
+        kind: 'persistence.succeeded',
+        stage: 'persistence',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(6, { kind: 'url.started', url: 'https://example.com/p/2', url_scope_id: 'p2' }),
+      makeRunEvent(7, {
+        kind: 'acquisition.succeeded',
+        stage: 'acquisition',
+        url: 'https://example.com/p/2',
+        url_scope_id: 'p2',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(8, {
+        kind: 'extraction.partial',
+        stage: 'extraction',
+        url: 'https://example.com/p/2',
+        url_scope_id: 'p2',
+        severity: 'warning',
+        outcome: 'partial',
+      }),
     ];
 
-    const groups = buildLogSiteGroups(logs, records);
+    const groups = buildRunEventSiteGroups(events, records);
 
     expect(groups).toHaveLength(2);
     expect(groups[0].url).toBe('https://example.com/p/1');
-    expect(groups[0].stageLogs.acquisition).toHaveLength(1);
-    expect(groups[0].stageLogs.extraction).toHaveLength(1);
-    expect(groups[0].stageLogs.normalize).toHaveLength(1);
-    expect(groups[0].stageLogs.persistence).toHaveLength(1);
+    expect(groups[0].stageEvents.acquisition).toHaveLength(1);
+    expect(groups[0].stageEvents.extraction).toHaveLength(1);
+    expect(groups[0].stageEvents.normalization).toHaveLength(1);
+    expect(groups[0].stageEvents.persistence).toHaveLength(1);
     expect(groups[0].recordCount).toBe(1);
     expect(groups[1].hasWarning).toBe(true);
     expect(groups[1].recordCount).toBe(1);
@@ -234,65 +274,113 @@ describe('buildLogSiteGroups', () => {
         url: 'https://www.nordstrom.com/s/canonical-product-name/7507996?origin=category-personalizedsort',
       }),
     ];
-    const logs = [
-      makeLog(
-        1,
-        'Starting crawl run for https://www.nordstrom.com/s/old-product-name/7507996 (1/1)',
-      ),
-      makeLog(2, 'Persisted 1 record(s) for https://www.nordstrom.com/s/old-product-name/7507996'),
+    const events = [
+      makeRunEvent(1, {
+        kind: 'url.started',
+        url: 'https://www.nordstrom.com/s/old-product-name/7507996',
+        url_scope_id: 'p1',
+      }),
+      makeRunEvent(2, {
+        kind: 'persistence.succeeded',
+        stage: 'persistence',
+        url: 'https://www.nordstrom.com/s/old-product-name/7507996',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
     ];
 
-    const groups = buildLogSiteGroups(logs, records);
+    const groups = buildRunEventSiteGroups(events, records);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].recordCount).toBe(1);
   });
 
-  it('attaches truncated leading site logs to the first URL-bearing log', () => {
-    const logs = [
-      makeLog(1, 'Normalized 1 record(s) for persistence'),
-      makeLog(2, 'Persisted 1 record(s) for https://example.com/p/1'),
-      makeLog(3, 'Starting crawl run for https://example.com/p/2 (2/2)'),
-      makeLog(4, 'Acquiring https://example.com/p/2'),
+  it('keeps run-scoped events separate from URL-scoped events', () => {
+    const events = [
+      makeRunEvent(1, { kind: 'run.started' }),
+      makeRunEvent(2, {
+        kind: 'persistence.succeeded',
+        stage: 'persistence',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(3, { kind: 'url.started', url: 'https://example.com/p/2', url_scope_id: 'p2' }),
     ];
 
-    const groups = buildLogSiteGroups(logs);
+    const groups = buildRunEventSiteGroups(events);
 
-    expect(groups).toHaveLength(2);
-    expect(groups[0].url).toBe('https://example.com/p/1');
-    expect(groups[0].stageLogs.normalize).toHaveLength(1);
-    expect(groups[0].stageLogs.persistence).toHaveLength(1);
-    expect(groups[1].url).toBe('https://example.com/p/2');
+    expect(groups).toHaveLength(3);
+    expect(groups[0].url).toBe('');
+    expect(groups[1].stageEvents.persistence).toHaveLength(1);
+    expect(groups[2].url).toBe('https://example.com/p/2');
   });
 
   it('keeps repeated runs for the same URL in separate groups', () => {
-    const logs = [
-      makeLog(1, 'Starting crawl run for https://example.com/p/1'),
-      makeLog(2, 'Extracted 1 records using generic extraction path'),
-      makeLog(3, 'Starting crawl run for https://example.com/p/1'),
-      makeLog(4, 'Extraction yielded 0 records (generic extraction path)', 'warning'),
+    const events = [
+      makeRunEvent(1, {
+        kind: 'url.started',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'attempt-1',
+      }),
+      makeRunEvent(2, {
+        kind: 'extraction.succeeded',
+        stage: 'extraction',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'attempt-1',
+        outcome: 'succeeded',
+      }),
+      makeRunEvent(3, {
+        kind: 'url.started',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'attempt-2',
+      }),
+      makeRunEvent(4, {
+        kind: 'extraction.partial',
+        stage: 'extraction',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'attempt-2',
+        severity: 'warning',
+        outcome: 'partial',
+      }),
     ];
 
-    const groups = buildLogSiteGroups(logs);
+    const groups = buildRunEventSiteGroups(events);
 
     expect(groups).toHaveLength(2);
     expect(groups[0].url).toBe('https://example.com/p/1');
     expect(groups[1].url).toBe('https://example.com/p/1');
-    expect(groups[0].stageLogs.extraction).toHaveLength(1);
-    expect(groups[1].stageLogs.extraction).toHaveLength(1);
+    expect(groups[0].stageEvents.extraction).toHaveLength(1);
+    expect(groups[1].stageEvents.extraction).toHaveLength(1);
   });
 
-  it('keeps non-prefixed parallel logs with the active site group', () => {
-    const logs = [
-      makeLog(1, 'Starting crawl run for https://example.com/p/1'),
-      makeLog(2, '[url:https://example.com/p/1] Extracted 1 records using generic extraction path'),
-      makeLog(3, 'Normalized 1 record(s) for persistence'),
+  it('uses severity and outcome without prose parsing', () => {
+    const events = [
+      makeRunEvent(1, { kind: 'url.started', url: 'https://example.com/p/1', url_scope_id: 'p1' }),
+      makeRunEvent(2, {
+        kind: 'extraction.failed',
+        stage: 'extraction',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        severity: 'error',
+        outcome: 'failed',
+      }),
+      makeRunEvent(3, {
+        kind: 'persistence.skipped',
+        stage: 'persistence',
+        url: 'https://example.com/p/1',
+        url_scope_id: 'p1',
+        severity: 'warning',
+        outcome: 'skipped',
+      }),
     ];
 
-    const groups = buildLogSiteGroups(logs);
+    const groups = buildRunEventSiteGroups(events);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].stageLogs.extraction).toHaveLength(1);
-    expect(groups[0].stageLogs.normalize).toHaveLength(1);
+    expect(groups[0].hasError).toBe(true);
+    expect(groups[0].hasWarning).toBe(false);
+    expect(groups[0].stageEvents.extraction).toHaveLength(1);
+    expect(groups[0].stageEvents.persistence).toHaveLength(1);
   });
 });

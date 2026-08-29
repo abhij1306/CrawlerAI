@@ -69,14 +69,6 @@ ACQUISITION_EVENT_REQUIRED_FACTS: dict[AcquisitionEventKind, frozenset[str]] = {
     ),
 }
 
-LEGACY_ACQUISITION_WARNING_EVENT_KINDS = frozenset(
-    {
-        AcquisitionEventKind.HTTP_FAILED,
-        AcquisitionEventKind.BROWSER_FIRST_FALLBACK,
-        AcquisitionEventKind.PROTECTION_DETECTED,
-    }
-)
-
 
 class RunEventKind(StrEnum):
     RUN_PUBLIC_HTTP_STARTED = "run.public_http_started"
@@ -159,6 +151,7 @@ class RunEventDefinition:
     required_facts: frozenset[str] = frozenset()
     optional_facts: frozenset[str] = frozenset()
     reason_codes: frozenset[str] = frozenset()
+    allows_open_reason_code: bool = False
 
 
 def _run(
@@ -189,6 +182,7 @@ def _url(
     required: tuple[str, ...] = (),
     optional: tuple[str, ...] = (),
     reasons: tuple[str, ...] = (),
+    allows_open_reason_code: bool = False,
 ) -> RunEventDefinition:
     return RunEventDefinition(
         stage=stage,
@@ -198,6 +192,7 @@ def _url(
         required_facts=frozenset(required),
         optional_facts=frozenset(optional),
         reason_codes=frozenset(reasons),
+        allows_open_reason_code=allows_open_reason_code,
     )
 
 
@@ -270,6 +265,7 @@ RUN_EVENT_DEFINITIONS: dict[RunEventKind, RunEventDefinition] = {
     RunEventKind.ACQUISITION_STARTED: _url(RunEventStage.ACQUISITION),
     RunEventKind.ACQUISITION_STRATEGY_SELECTED: _url(
         RunEventStage.ACQUISITION,
+        allows_open_reason_code=True,
         required=("strategy",),
         optional=(
             "reason",
@@ -314,6 +310,7 @@ RUN_EVENT_DEFINITIONS: dict[RunEventKind, RunEventDefinition] = {
         RunEventStage.ACQUISITION,
         severity=RunEventSeverity.WARNING,
         optional=("status_code", "prior_method", "reason"),
+        allows_open_reason_code=True,
     ),
     RunEventKind.ACQUISITION_COMPLETED: _url(
         RunEventStage.ACQUISITION,
@@ -372,6 +369,7 @@ RUN_EVENT_DEFINITIONS: dict[RunEventKind, RunEventDefinition] = {
         RunEventStage.EXTRACTION,
         severity=RunEventSeverity.WARNING,
         outcome=RunEventOutcome.PARTIAL,
+        required=("exception_type",),
     ),
     RunEventKind.EXTRACTION_LISTING_FALLBACK: _url(
         RunEventStage.EXTRACTION,
@@ -436,7 +434,6 @@ RUN_EVENT_VERDICT_OUTCOMES: dict[str, RunEventOutcome] = {
 
 __all__ = [
     "ACQUISITION_EVENT_REQUIRED_FACTS",
-    "LEGACY_ACQUISITION_WARNING_EVENT_KINDS",
     "RUN_EVENT_DEFINITIONS",
     "RUN_EVENT_REASON_OUTCOMES",
     "RUN_EVENT_REASON_SEVERITIES",
