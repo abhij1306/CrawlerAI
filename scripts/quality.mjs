@@ -56,7 +56,7 @@ function step(name, command, commandArgs, cwd, env = process.env) {
 
 function vp(name, commandArgs, env = process.env) {
   if (process.platform === 'win32') {
-    step(name, process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'vp', ...commandArgs], frontendRoot, env);
+    step(name, 'cmd.exe', ['/d', '/s', '/c', 'vp', ...commandArgs], frontendRoot, env);
     return;
   }
   step(name, 'vp', commandArgs, frontendRoot, env);

@@ -512,9 +512,9 @@ async def _response_headers_dict(response: object | None) -> dict[str, str]:
         except TypeError:
             try:
                 resolved = candidate()
-            except Exception:  # noqa: BLE001,S112 - try next browser binding shape
+            except Exception:  # noqa: BLE001,S112  # nosec B112 - try next binding
                 continue
-        except Exception:  # noqa: BLE001,S112 - try next browser binding shape
+        except Exception:  # noqa: BLE001,S112  # nosec B112 - try next binding
             continue
         if isinstance(resolved, dict):
             return {str(key): str(value) for key, value in resolved.items()}
@@ -575,7 +575,7 @@ async def _target_browser_payload(
         for state, timeout_ms in (("load", 10000), ("networkidle", 8000)):
             try:
                 await page.wait_for_load_state(state, timeout=timeout_ms)
-            except Exception:  # noqa: BLE001,S112 - load states are best-effort
+            except Exception:  # noqa: BLE001,S112  # nosec B112 - best-effort state
                 continue
         await page.wait_for_timeout(int(BROWSER_SURFACE_PROBE_POST_NAVIGATION_WAIT_MS))
         html = await page.content()
@@ -700,7 +700,7 @@ async def _navigate_probe_target(page, url: str) -> None:
     for state, timeout_ms in (("load", 10000), ("networkidle", 8000)):
         try:
             await page.wait_for_load_state(state, timeout=timeout_ms)
-        except Exception:  # noqa: BLE001,S112 - load states are best-effort
+        except Exception:  # noqa: BLE001,S112  # nosec B112 - best-effort state
             continue
     await page.wait_for_timeout(int(BROWSER_SURFACE_PROBE_POST_NAVIGATION_WAIT_MS))
 
@@ -708,11 +708,11 @@ async def _navigate_probe_target(page, url: str) -> None:
 async def _capture_probe_artifacts(page, artifacts: dict[str, Path]) -> None:
     try:
         await page.screenshot(path=str(artifacts["screenshot"]), full_page=True)
-    except Exception:  # noqa: BLE001,S110 - optional screenshot artifact
+    except Exception:  # noqa: BLE001,S110  # nosec B110 - optional artifact
         # Screenshot artifact is diagnostic-only; ignore capture failures.
         pass
     try:
         artifacts["html"].write_text(await page.content(), encoding="utf-8")
-    except Exception:  # noqa: BLE001,S110 - optional HTML artifact
+    except Exception:  # noqa: BLE001,S110  # nosec B110 - optional artifact
         # HTML artifact is diagnostic-only; ignore capture failures.
         pass

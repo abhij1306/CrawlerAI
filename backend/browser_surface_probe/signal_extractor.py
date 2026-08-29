@@ -325,7 +325,7 @@ async def _collect_behavioral_smoke(page) -> dict[str, object]:
         await page.wait_for_timeout(50)
         await page.mouse.click(24, 24, delay=50)
         await page.wait_for_timeout(50)
-    except Exception:  # noqa: BLE001,S110 - trust probe is explicitly best-effort
+    except Exception:  # noqa: BLE001,S110  # nosec B110 - best-effort trust probe
         # Trust-probe input is best-effort; evaluation below reports actual state.
         pass
     try:
