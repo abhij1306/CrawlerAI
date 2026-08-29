@@ -13,7 +13,7 @@ export function SourceRecordList({
   records,
 }: Readonly<{ records: DataEnrichmentSourceRecordInput[] }>) {
   return (
-    <div className="divide-y divide-divider overflow-auto">
+    <div className="overflow-auto">
       {records.map((record, index) => {
         const badgeValue = record.id ?? record.source_url;
         return (

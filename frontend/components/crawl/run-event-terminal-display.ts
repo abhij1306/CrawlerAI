@@ -155,13 +155,17 @@ type ExpandedRunEventRow = {
   payloadAction?: boolean;
 };
 
+export function isVisibleRunEvent(event: RunEvent) {
+  return event.kind !== 'acquisition.started';
+}
+
 export function buildExpandedRows(
   group: RunEventSiteGroup,
   coverage: ReturnType<typeof groupFieldCoverage>,
   confidence: ReturnType<typeof groupConfidence>,
   durationMs: number | null,
 ): ExpandedRunEventRow[] {
-  const rows: ExpandedRunEventRow[] = group.events.map((event) => ({
+  const rows: ExpandedRunEventRow[] = group.events.filter(isVisibleRunEvent).map((event) => ({
     key: `event-${event.sequence}`,
     stage: event.stage ?? 'system',
     event,
@@ -210,19 +214,118 @@ export function groupSummaryMessage(
     return fallbackEvent ? runEventSummary(fallbackEvent) : 'No public record extracted';
   const persistenceEvent = group.stageEvents.persistence.at(-1);
   if (persistenceEvent) return runEventSummary(persistenceEvent);
+  if (fallbackEvent?.kind === 'url.started' || fallbackEvent?.kind === 'acquisition.started') {
+    return 'In progress…';
+  }
   return fallbackEvent ? runEventSummary(fallbackEvent) : TERMINAL_STRINGS.PENDING;
 }
 
-function runEventSummary(event: RunEvent) {
-  const label = event.kind
-    .split('.')
-    .map((part) => humanizeFieldName(part))
-    .join(' ');
+function readableWords(value: unknown) {
+  const text = String(value ?? '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+}
+
+function countLabel(value: unknown, singular: string) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return null;
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+function conciseStrategy(event: RunEvent) {
+  const facts = event.facts;
+  const details = [
+    readableWords(facts.fetch_mode),
+    facts.browser_first === true ? 'Browser first' : null,
+    facts.prefer_browser === true && facts.browser_first !== true ? 'Browser preferred' : null,
+    typeof facts.primary_http_fetcher === 'string' ? facts.primary_http_fetcher : null,
+    typeof facts.http_timeout_seconds === 'number'
+      ? `${facts.http_timeout_seconds}s timeout`
+      : null,
+    facts.host_preference_enabled === true ? 'Host preference enabled' : null,
+  ].filter((value): value is string => Boolean(value));
+  return `Strategy selected${details.length ? `: ${details.join(' · ')}` : ''}`;
+}
+
+function conciseHttpAttempt(event: RunEvent) {
+  const facts = event.facts;
+  const details = [
+    facts.fetcher,
+    facts.proxy_mode ? `${readableWords(facts.proxy_mode)} proxy` : null,
+    typeof facts.timeout_seconds === 'number' ? `${facts.timeout_seconds}s timeout` : null,
+  ].filter(Boolean);
+  return `HTTP request${details.length ? `: ${details.join(' · ')}` : ''}`;
+}
+
+function conciseBrowserLaunch(event: RunEvent) {
+  const facts = event.facts;
+  const details = [facts.engine, facts.launch_mode, facts.profile, facts.proxy_mode]
+    .filter((value): value is string => typeof value === 'string' && Boolean(value))
+    .map(readableWords);
+  return `Browser launched${details.length ? `: ${details.join(' · ')}` : ''}`;
+}
+
+function concisePageLoad(event: RunEvent) {
+  const facts = event.facts;
+  const elapsed = Number(facts.elapsed_ms);
+  const details = [
+    Number.isFinite(elapsed) ? `in ${formatDurationMs(elapsed)}` : null,
+    facts.page_title ? String(facts.page_title) : null,
+  ].filter(Boolean);
+  return `Page loaded${details.length ? ` ${details.join(' · ')}` : ''}`;
+}
+
+function conciseRecordsPersisted(event: RunEvent) {
+  const count = countLabel(event.facts.record_count, 'record');
+  return count ? `Saved ${count}` : 'Records saved';
+}
+
+function conciseAcquisitionCompleted(event: RunEvent) {
+  const facts = event.facts;
+  const details = [
+    facts.method ? readableWords(facts.method) : null,
+    typeof facts.status_code === 'number' ? `status ${facts.status_code}` : null,
+  ].filter(Boolean);
+  return `HTTP completed${details.length ? `: ${details.join(' · ')}` : ''}`;
+}
+
+function conciseUrlCompleted(event: RunEvent) {
+  const facts = event.facts;
+  const details = [
+    readableWords(facts.verdict ?? event.outcome),
+    countLabel(facts.record_count, 'record'),
+  ].filter(Boolean);
+  return details.length ? `Result: ${details.join(' · ')}` : 'Result ready';
+}
+
+const CONCISE_EVENT_FORMATTERS: Record<string, (event: RunEvent) => string> = {
+  'url.started': () => 'Processing started',
+  'acquisition.strategy_selected': conciseStrategy,
+  'acquisition.http_attempted': conciseHttpAttempt,
+  'acquisition.browser_launched': conciseBrowserLaunch,
+  'acquisition.browser_page_loaded': concisePageLoad,
+  'acquisition.completed': conciseAcquisitionCompleted,
+  'persistence.records_persisted': conciseRecordsPersisted,
+  'url.completed': conciseUrlCompleted,
+};
+
+export function runEventSummary(event: RunEvent) {
+  const formatter = CONCISE_EVENT_FORMATTERS[event.kind];
+  if (formatter) return formatter(event);
+
+  const kindParts = event.stage ? [event.kind.split('.').at(-1)] : event.kind.split('.');
+  const label = kindParts.map(readableWords).join(' ');
   const details = Object.entries(event.facts).flatMap(([key, value]) => {
-    if (value === null || value === '' || key === 'index' || key === 'total') return [];
-    return [`${humanizeFieldName(key)} ${String(value)}`];
+    if (value === null || value === '' || key === 'index' || key === 'total' || key === 'url')
+      return [];
+    return [
+      `${readableWords(key)}: ${typeof value === 'boolean' ? (value ? 'yes' : 'no') : readableWords(value)}`,
+    ];
   });
-  if (event.reason_code) details.unshift(humanizeFieldName(event.reason_code));
+  if (event.reason_code) details.unshift(readableWords(event.reason_code));
   return details.length ? `${label}: ${details.join(' · ')}` : label;
 }
 

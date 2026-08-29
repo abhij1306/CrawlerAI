@@ -174,7 +174,7 @@ function ResultsBody({ controller }: ProductIntelligenceResultsProps) {
   }
   if (controller.groupedCandidates.length) {
     return (
-      <div className="divide-y divide-[var(--divider)]">
+      <div>
         {controller.groupedCandidates.map((group) => (
           <CandidateGroupSection
             key={group.sourceIndex}
@@ -212,7 +212,7 @@ function ResultsBody({ controller }: ProductIntelligenceResultsProps) {
 
 function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
   return (
-    <div className="divide-y divide-[var(--divider)]">
+    <div>
       {controller.visibleSourceRecords.map((record, index) => {
         const data = isRecord(record.data) ? record.data : {};
         const title = stringField(data.title ?? data.name ?? data.product_title);

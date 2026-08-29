@@ -32,6 +32,7 @@ import {
   groupDurationMs,
   groupFieldCoverage,
   groupSummaryMessage,
+  isVisibleRunEvent,
   normalizeConfidenceScore,
   payloadSnapshot,
   severityTone,
@@ -102,29 +103,8 @@ function StageChip({ stage, showIcon = true }: { stage: RunEventGroupStage; show
   );
 }
 
-function ShortenedUrl({ url }: { url: string }) {
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-info underline decoration-info/20 underline-offset-4 transition-colors hover:text-accent"
-      title={url}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {formatShortUrlLabel(url)}
-    </a>
-  );
-}
-
-function renderRunEventContent(summary: string, event: RunEvent | null): React.ReactNode {
-  return event?.url ? (
-    <>
-      {summary} · <ShortenedUrl url={event.url} />
-    </>
-  ) : (
-    summary
-  );
+function renderRunEventContent(summary: string, _event: RunEvent | null): React.ReactNode {
+  return summary;
 }
 
 function GroupIdentity({ group, runEvent }: { group: RunEventSiteGroup; runEvent: boolean }) {
@@ -463,7 +443,7 @@ export const RunEventTerminal = memo(function RunEventTerminal({
                 inferredSerialEndMsByKey.get(group.key),
               );
               const lastEvent = group.events.at(-1);
-              const recentEvents = [...group.events].reverse();
+              const recentEvents = [...group.events].filter(isVisibleRunEvent).reverse();
               const summaryEvent =
                 recentEvents.find((event) => event.severity !== 'info') ??
                 recentEvents.find((event) => event.stage !== 'persistence') ??

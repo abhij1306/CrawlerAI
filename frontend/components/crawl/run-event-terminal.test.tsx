@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import type { RunEvent } from '../../lib/api/types';
+import { runEventSummary } from './run-event-terminal-display';
 import { RunEventTerminal } from './run-event-terminal';
 import { RUN_EVENT_GROUP_WINDOW_SIZE } from './run-event-terminal-utils';
 
@@ -73,9 +74,7 @@ describe('RunEventTerminal group windowing', () => {
 
     render(<RunEventTerminal events={events} />);
 
-    expect(screen.getByTitle('persistence.failed')).toHaveTextContent(
-      /Persistence Failed:.*IntegrityError/,
-    );
+    expect(screen.getByTitle('persistence.failed')).toHaveTextContent(/Failed:.*Integrity Error/);
   });
 
   it('keeps zebra striping stable when the sliding window drops a group', () => {
@@ -148,5 +147,66 @@ describe('RunEventTerminal group windowing', () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe('Run Event messages', () => {
+  it('shows one logical start when acquisition restarts for browser fallback', () => {
+    const events: RunEvent[] = [
+      makeUrlEvents(1)[0],
+      {
+        ...makeUrlEvents(1)[0],
+        id: 2,
+        sequence: 2,
+        kind: 'acquisition.started',
+        stage: 'acquisition',
+        facts: { url: 'https://example.com/p/1' },
+      },
+      {
+        ...makeUrlEvents(1)[0],
+        id: 3,
+        sequence: 3,
+        kind: 'acquisition.started',
+        stage: 'acquisition',
+        facts: { url: 'https://example.com/p/1' },
+      },
+    ];
+
+    render(<RunEventTerminal events={events} live />);
+
+    expect(screen.getAllByText('Processing started')).toHaveLength(1);
+    expect(screen.queryByText('Started')).not.toBeInTheDocument();
+  });
+
+  it('formats strategy facts without repeated acquisition or reason text', () => {
+    const event: RunEvent = {
+      ...makeUrlEvents(1)[0],
+      kind: 'acquisition.strategy_selected',
+      stage: 'acquisition',
+      reason_code: 'fetch_mode:browser_only',
+      facts: {
+        fetch_mode: 'browser_only',
+        browser_first: true,
+        prefer_browser: true,
+        host_preference_enabled: false,
+        http_timeout_seconds: 10,
+        primary_http_fetcher: 'curl',
+      },
+    };
+
+    expect(runEventSummary(event)).toBe(
+      'Strategy selected: Browser only · Browser first · curl · 10s timeout',
+    );
+  });
+
+  it('uses readable words and omits the repeated scoped URL for generic events', () => {
+    const event: RunEvent = {
+      ...makeUrlEvents(1)[0],
+      kind: 'acquisition.browser_first_fallback',
+      stage: 'acquisition',
+      facts: { url: 'https://example.com/p/1', exception_type: 'TimeoutError' },
+    };
+
+    expect(runEventSummary(event)).toBe('Browser first fallback: Exception type: Timeout Error');
   });
 });
