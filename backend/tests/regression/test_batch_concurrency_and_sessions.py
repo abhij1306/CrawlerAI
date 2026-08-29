@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
+from app.core.config.run_events import RunEventKind
 from tests.regression.batch_runtime_test_support import (
     AsyncSession,
     CommitTrackingSession,
-    CrawlLog,
     CrawlRunSettings,
     PageAcquisitionResult,
     PendingRollbackError,
@@ -20,9 +20,16 @@ from tests.regression.batch_runtime_test_support import (
     parallel_url_concurrency,
     parallel_worker_record_limit,
     record_extraction_stage,
-    select,
     url_worker,
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_run_event_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _record(**_kwargs) -> object:
+        return object()
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
 
 @pytest.mark.unit
@@ -125,7 +132,7 @@ async def test_acquisition_stage_releases_db_session_before_fetch(
         url="https://example.com/products/widget",
         surface="ecommerce_detail",
         requested_fields=[],
-        config=SimpleNamespace(persist_logs=False),
+        config=SimpleNamespace(persist_run_events=False),
     )
 
     async def _fake_build_acquisition_request(ctx):
@@ -164,6 +171,68 @@ async def test_acquisition_stage_releases_db_session_before_fetch(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_prefetched_browser_acquisition_records_lifecycle_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = CommitTrackingSession()
+    context = SimpleNamespace(
+        session=session,
+        run=SimpleNamespace(id=101),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        requested_fields=[],
+        config=SimpleNamespace(persist_run_events=True),
+    )
+
+    async def _unused_event_callback(_event) -> None:
+        return None
+
+    async def _fake_build_acquisition_request(ctx):
+        return SimpleNamespace(url=ctx.url, on_event=_unused_event_callback)
+
+    recorded_kinds: list[RunEventKind] = []
+
+    async def _fake_record_pipeline_event(_context, *, kind, **_kwargs) -> None:
+        recorded_kinds.append(kind)
+
+    monkeypatch.setattr(
+        extraction_loop,
+        "build_acquisition_request",
+        _fake_build_acquisition_request,
+    )
+    monkeypatch.setattr(
+        extraction_loop,
+        "_record_pipeline_event",
+        _fake_record_pipeline_event,
+    )
+    request = SimpleNamespace(url=context.url)
+    prefetched = PageAcquisitionResult(
+        request=request,
+        final_url=context.url,
+        html="<html></html>",
+        method="browser",
+        status_code=200,
+        browser_diagnostics={
+            "browser_engine": "chromium",
+            "browser_launch_mode": "headless",
+            "phase_timings_ms": {"navigation": 25},
+        },
+    )
+
+    await extraction_loop._run_acquisition_stage(
+        context,
+        prefetched_acquisition=prefetched,
+    )
+
+    assert recorded_kinds == [
+        RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
+        RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
+        RunEventKind.ACQUISITION_COMPLETED,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_extraction_memory_pending_rollback_is_not_swallowed() -> None:
     class _Nested:
         async def __aenter__(self):
@@ -189,7 +258,7 @@ async def test_extraction_memory_pending_rollback_is_not_swallowed() -> None:
         run=SimpleNamespace(id=101, extraction_release_snapshot_id=None),
         url="https://example.com/products/widget",
         surface="ecommerce_detail",
-        config=SimpleNamespace(persist_logs=True),
+        config=SimpleNamespace(persist_run_events=True),
     )
     extracted = SimpleNamespace(
         fetched=SimpleNamespace(
@@ -279,9 +348,10 @@ async def test_extraction_stage_releases_db_session_after_selector_read(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_persist_url_failure_log_prefixes_url_for_parallel_ui(
+async def test_persist_url_failure_event_is_url_scoped_for_parallel_ui(
     db_session: AsyncSession,
     test_user,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = await create_crawl_run(
         db_session,
@@ -293,26 +363,32 @@ async def test_persist_url_failure_log_prefixes_url_for_parallel_ui(
         },
     )
     url = "https://example.com/products/missing-widget"
+    recorded: list[tuple[int, object]] = []
 
-    await batch_runtime_module._persist_url_failure_log(
+    async def _record(*, run_id: int, fact, **_kwargs) -> object:
+        recorded.append((run_id, fact))
+        return object()
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
+
+    await batch_runtime_module._persist_url_failure_event(
         db_session,
         run_id=run.id,
         url=url,
+        url_scope_id="url:1",
+        timeout_seconds=30.0,
         exc=RuntimeError("navigation failed"),
-        log_message=f"URL processing failed for {url}: RuntimeError: navigation failed",
     )
-    logs = (
+    assert [
+        (run_id, fact.kind, fact.url, fact.url_scope_id, fact.reason_code, fact.facts)
+        for run_id, fact in recorded
+    ] == [
         (
-            await db_session.execute(
-                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
-            )
+            run.id,
+            RunEventKind.URL_FAILED,
+            url,
+            "url:1",
+            "exception",
+            {"exception_type": "RuntimeError"},
         )
-        .scalars()
-        .all()
-    )
-
-    if logs[-1].level != "warning":
-        pytest.fail(f"expected warning log, got {logs[-1].level!r}")
-    expected_prefix = f"[url:{url}] URL processing failed for {url}"
-    if not logs[-1].message.startswith(expected_prefix):
-        pytest.fail(f"expected URL-prefixed failure log, got {logs[-1].message!r}")
+    ]

@@ -32,7 +32,7 @@ const requiredOwnerFiles = [
   'crawl-advanced-execution.tsx',
   'crawl-advanced-limits.tsx',
   'crawl-advanced-diagnostics.tsx',
-  'use-run-log-stream.ts',
+  'use-run-event-stream.ts',
   'records-table.tsx',
 ];
 

@@ -1,12 +1,12 @@
 import React from 'react';
 import type {
   CrawlRecord,
-  CrawlLog,
   DomainRecipe,
   DomainRecipeFieldLearningItem,
+  RunEvent,
 } from '../../lib/api/types';
 import { JSON_PREVIEW_INCREMENT, RunJsonOutput, RunTableOutput } from './run-records-output';
-import { RunLogsOutput } from './run-logs-output';
+import { RunEventsOutput } from './run-events-output';
 import { RunLearningPanel } from './run-learning-panel';
 import type { RecipeActionPendingKey } from './use-run-recipe-actions';
 
@@ -33,11 +33,11 @@ interface JsonTabModel {
   setJsonVisibleCount: React.Dispatch<React.SetStateAction<number>>;
 }
 
-interface LogsTabModel {
-  logs: CrawlLog[];
+interface EventsTabModel {
+  events: RunEvent[];
   batchSourceRecords: CrawlRecord[];
   requestedFields: string[];
-  logViewportRef: React.RefObject<HTMLDivElement | null>;
+  eventViewportRef: React.RefObject<HTMLDivElement | null>;
   nowMs: number;
 }
 
@@ -54,7 +54,7 @@ export interface CrawlTerminalTabContentProps {
   emptyRecordsState: { title: string; description: string };
   table: TableTabModel;
   json: JsonTabModel;
-  logs: LogsTabModel;
+  events: EventsTabModel;
   learning: LearningTabModel;
 }
 
@@ -63,7 +63,7 @@ export function CrawlTerminalTabContent({
   emptyRecordsState,
   table,
   json,
-  logs,
+  events,
   learning,
 }: Readonly<CrawlTerminalTabContentProps>) {
   if (outputTab === 'table') {
@@ -99,14 +99,14 @@ export function CrawlTerminalTabContent({
     );
   }
 
-  if (outputTab === 'logs') {
+  if (outputTab === 'events') {
     return (
-      <RunLogsOutput
-        logs={logs.logs}
-        records={logs.batchSourceRecords}
-        requestedFields={logs.requestedFields}
-        viewportRef={logs.logViewportRef}
-        nowMs={logs.nowMs}
+      <RunEventsOutput
+        events={events.events}
+        records={events.batchSourceRecords}
+        requestedFields={events.requestedFields}
+        viewportRef={events.eventViewportRef}
+        nowMs={events.nowMs}
       />
     );
   }

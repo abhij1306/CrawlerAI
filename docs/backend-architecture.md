@@ -24,7 +24,7 @@ Routers are registered in `app/main.py`:
 | Surface | Owner |
 | --- | --- |
 | auth, users, dashboard | `app/api/auth.py`, `users.py`, `dashboard.py` |
-| crawl creation/control/logs/records | `app/api/crawls.py`, `records.py`, `run_access.py` |
+| crawl creation/control/Run Events/records | `app/api/crawls.py`, `records.py`, `run_access.py` |
 | domain profiles, recipes, selector learning, cookie memory | `app/api/crawl_domain.py` |
 | review and artifacts | `app/api/review.py` |
 | selectors | `app/api/selectors.py` |
@@ -48,6 +48,12 @@ API -> crawl/ingestion_service.py -> crawl/crud.py/service.py
 `crawl/batch_runtime.py` owns URL-level orchestration. Each URL uses an owned
 SQLAlchemy session. A URL failure rolls back its transaction, records diagnostics,
 and does not poison later URLs. Mixed-result runs remain exportable.
+
+`crawl/run_events.py` owns the immutable operator timeline. Producers submit closed
+facts; the module derives semantic metadata, allocates a reconnect-safe per-run
+sequence, and persists each event in a short transaction. REST and WebSocket are
+transport adapters over the same ordered Run Event interface. Timeline persistence
+failure does not change crawl state or verdict.
 
 `category_discovery.py`, `sitemap_resolver.py`, and `site_link_discovery.py` discover
 URLs; they do not create crawl records directly.

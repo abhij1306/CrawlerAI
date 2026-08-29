@@ -52,7 +52,7 @@ not add retry loops.
 ### Crawl Studio
 
 `components/crawl/crawl-config-screen.tsx` owns the form surface. Focused hooks own
-route sync, domain memory, field actions, submission, polling, and log streams.
+route sync, domain memory, field actions, submission, polling, and Run Event streams.
 `lib/crawl/run-profile.ts` owns merging persisted profile sections.
 
 The UI sends the backend’s nested `fetch_profile`, `locality_profile`, and
@@ -62,9 +62,9 @@ controls. `max_records` is a traversal stop target, not a row-cap implementation
 ### Run workspace
 
 `components/crawl/crawl-run-screen.tsx` and `use-run-*` hooks own run state, records,
-logs, websocket fallback, pause/resume/kill, provenance, and exports. TanStack Query
+Run Events, websocket fallback, pause/resume/kill, provenance, and exports. TanStack Query
 owns server polling; URL search params own the output tab; temporary interaction state
-stays local. Log websocket reconnect uses capped backoff with jitter and polling fills
+stays local. Run Event websocket reconnect uses capped backoff with jitter and polling fills
 the disconnected interval.
 
 ### Operator surfaces
@@ -95,7 +95,7 @@ and native controls are global; primitive overrides stay local.
 ## Backend contracts
 
 Domain API modules call auth, dashboard, crawls, records, provenance, exports,
-logs/websocket, selectors, Knowledge Graph, users, LLM, jobs, enrichment, product
+Run Events/websocket, selectors, Knowledge Graph, users, LLM, jobs, enrichment, product
 intelligence, API keys, and `/api/v1/capabilities`. Update the owning module and this
 document together when a contract changes.
 

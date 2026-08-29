@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { User, CrawlRun, CrawlRecord, DomainRunProfile } from './types';
+import type { User, CrawlRun, CrawlRecord, DomainRunProfile, RunEvent } from './types';
 
 export const userSchema: z.ZodSchema<User> = z.object({
   id: z.number(),
@@ -78,6 +78,40 @@ export const crawlRecordSchema: z.ZodSchema<CrawlRecord> = z.object({
   enriched_at: z.string().nullable().optional(),
   created_at: z.string(),
 });
+
+export const runEventSchema: z.ZodSchema<RunEvent> = z
+  .object({
+    id: z.number().int().nonnegative(),
+    run_id: z.number().int().positive(),
+    sequence: z.number().int().positive(),
+    kind: z.string().min(1),
+    stage: z.enum(['acquisition', 'extraction', 'normalization', 'persistence']).nullable(),
+    url: z.string().url().nullable(),
+    url_scope_id: z.string().min(1).nullable(),
+    severity: z.enum(['info', 'warning', 'error']),
+    outcome: z.enum([
+      'progress',
+      'succeeded',
+      'partial',
+      'failed',
+      'blocked',
+      'skipped',
+      'cancelled',
+      'requested',
+      'limited',
+    ]),
+    reason_code: z.string().min(1).nullable(),
+    facts: z.record(z.string(), z.unknown()),
+    created_at: z.string(),
+  })
+  .superRefine((event, context) => {
+    if ((event.url === null) !== (event.url_scope_id === null)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Run Event URL and URL scope must be present together',
+      });
+    }
+  });
 
 export const domainRunProfileSchema: z.ZodSchema<DomainRunProfile> = z.object({
   version: z.number().default(1),

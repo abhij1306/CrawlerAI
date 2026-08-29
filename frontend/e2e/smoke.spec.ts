@@ -106,7 +106,7 @@ test('smoke: login to crawl and see exports', async ({ page }) => {
     });
   });
 
-  await page.route('**/api/crawls/101/logs**', async (route) => {
+  await page.route('**/api/crawls/101/events**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

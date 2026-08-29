@@ -26,6 +26,7 @@ from app.core.config.public_api import (
     PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
     PUBLIC_API_SURFACE_ECOMMERCE,
 )
+from app.core.config.run_events import RunEventKind
 from app.crawl.crud import create_crawl_run
 from app.crawl.state import CrawlStatus, update_run_status
 from app.extraction.surfaces import parse_surface, public_surface_for_internal
@@ -34,7 +35,8 @@ from app.core.records.field_policy import (
     normalize_field_key,
 )
 from app.crawl.pipeline.extraction_loop import process_single_url
-from app.crawl.pipeline.runtime_helpers import log_event, mark_run_failed
+from app.crawl.pipeline.runtime_helpers import mark_run_failed
+from app.crawl.run_events import RunEventFact, run_event_timeline
 from app.crawl.pipeline.types import URLProcessingConfig, URLProcessingResult
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 from app.persistence.publish import VERDICT_BLOCKED, VERDICT_ERROR, VERDICT_EMPTY
@@ -73,6 +75,29 @@ async def extract_public_product(
     record = await _load_public_record_or_fail(session, run=run, result=result)
     update_run_status(run, CrawlStatus.COMPLETED)
     record_artifacts = await load_record_artifacts(session, record)
+    verdict = str(result.verdict or VERDICT_EMPTY)
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.URL_COMPLETED,
+            url=url,
+            url_scope_id="url:1",
+            facts={
+                "record_count": 1,
+                "verdict": verdict,
+                "final_url": record.source_url,
+            },
+        ),
+        session=session,
+    )
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_COMPLETED,
+            facts={"record_count": 1, "verdict": verdict},
+        ),
+        session=session,
+    )
     await session.commit()
     return _shape_record_response(
         record,
@@ -106,8 +131,14 @@ async def _create_public_run(
         },
     )
     update_run_status(run, CrawlStatus.RUNNING)
-    await log_event(session, run.id, "info", "Starting public HTTP-only extraction")
     await session.commit()
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_PUBLIC_HTTP_STARTED,
+            facts={"surface": surface},
+        ),
+    )
     return run
 
 
@@ -120,10 +151,19 @@ async def _run_public_extraction(
     surface: str,
 ) -> URLProcessingResult:
     try:
+        await run_event_timeline.record(
+            run_id=run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.URL_STARTED,
+                url=url,
+                url_scope_id="url:1",
+                facts={"index": 1, "total": 1},
+            ),
+        )
         config = URLProcessingConfig.from_acquisition_plan(
             run.settings_view.acquisition_plan(surface=surface, max_records=1),
             update_run_state=True,
-            persist_logs=True,
+            persist_run_events=True,
         )
         result = await asyncio.wait_for(
             process_single_url(session=session, run=run, url=url, config=config),
@@ -134,6 +174,7 @@ async def _run_public_extraction(
             session,
             run.id,
             f"Public extraction timed out after {max_wait_seconds}s",
+            exception_type=type(exc).__name__,
         )
         raise PublicApiError(
             PUBLIC_API_ERROR_TIMEOUT,
@@ -141,14 +182,21 @@ async def _run_public_extraction(
             status_code=504,
         ) from exc
     except ValueError as exc:
-        await mark_run_failed(session, run.id, str(exc))
+        await mark_run_failed(
+            session, run.id, str(exc), exception_type=type(exc).__name__
+        )
         raise PublicApiError(
             PUBLIC_API_ERROR_URL_UNREACHABLE,
             str(exc),
             status_code=422,
         ) from exc
     except Exception as exc:
-        await mark_run_failed(session, run.id, f"{type(exc).__name__}: {exc}")
+        await mark_run_failed(
+            session,
+            run.id,
+            f"{type(exc).__name__}: {exc}",
+            exception_type=type(exc).__name__,
+        )
         raise PublicApiError(
             PUBLIC_API_ERROR_EXTRACTION_FAILED,
             "Extraction failed.",
@@ -191,7 +239,9 @@ async def _load_public_record_or_fail(
                 status_code=422,
             )
     except PublicApiError as exc:
-        await mark_run_failed(session, run.id, exc.message)
+        await mark_run_failed(
+            session, run.id, exc.message, exception_type=type(exc).__name__
+        )
         raise
     return record
 

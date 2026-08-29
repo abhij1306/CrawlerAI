@@ -89,6 +89,7 @@ models/extraction_memory.py
 | Concern | Owner |
 | --- | --- |
 | Crawl settings normalization | `crawl/ingestion_service.py`, `schemas/crawl.py`, `models/crawl_settings*.py` |
+| Immutable operator Run Event timeline | `crawl/run_events.py`, `core/config/run_events.py`, `models/crawl_run.py` |
 | URL orchestration and isolation | `crawl/batch_runtime.py` |
 | Fetch policy and attempt execution | `acquisition/policy.py`, `acquisition/executor.py`, `acquisition/fetch/` |
 | Shared HTTP clients and redirect handling | `acquisition/runtime.py`, `core/url_safety.py` |
@@ -136,7 +137,7 @@ All paths below are relative to `frontend/`.
 | Shell, sidebar, theme, session | `components/layout/` |
 | UI primitives and operator patterns | `components/ui/` |
 | Crawl Studio form and dispatch | `components/crawl/crawl-config-screen.tsx`, focused crawl hooks |
-| Run workspace, polling, logs, records, exports | `components/crawl/crawl-run-screen.tsx`, `components/crawl/use-run-*` |
+| Run workspace, polling, Run Events, records, exports | `components/crawl/crawl-run-screen.tsx`, `components/crawl/use-run-*` |
 | Crawl settings/profile helpers | `lib/crawl/` |
 | Dashboard and run history | `app/dashboard/`, `app/runs/` |
 | Jobs and enrichment | `app/jobs/`, `app/data-enrichment/` |

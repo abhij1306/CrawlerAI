@@ -17,7 +17,7 @@ export const WEBSOCKET_RECONNECT = {
   JITTER_RATIO: 0.25,
 } as const;
 
-export const LOG_STREAM = {
+export const RUN_EVENT_STREAM = {
   FLUSH_INTERVAL_MS: 150,
 } as const;
 

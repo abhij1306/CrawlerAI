@@ -33,7 +33,7 @@ const checks = [
     maxLines: 170,
   },
   {
-    file: 'components/crawl/use-run-log-stream.ts',
+    file: 'components/crawl/use-run-event-stream.ts',
     maxLines: 330,
   },
   {

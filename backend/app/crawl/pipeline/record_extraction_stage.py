@@ -9,6 +9,7 @@ from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
 from app.connectors.adapter_registry import run_adapter
 from app.connectors.platform_adapter import AdapterResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
+from app.core.config.run_events import RunEventKind
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty
 from app.crawl.domain_memory_service import (
@@ -21,8 +22,8 @@ from app.extraction import extract, parse_surface
 from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import request_from_acquisition_result
 from app.crawl.pipeline.runtime_helpers import (
-    log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
+    record_pipeline_event as _record_pipeline_event,
 )
 from app.acquisition.platform_policy import detect_platform_family
 from app.acquisition.variant_endpoint_expansion import expand_sfcc_variant_endpoints
@@ -381,10 +382,10 @@ async def _expand_variant_endpoint_payloads(
         acquisition_result.acquisition_diagnostics = diagnostics
         logger.warning("SFCC variant endpoint expansion failed", exc_info=True)
         try:
-            _log_pipeline_event(
+            await _record_pipeline_event(
                 context,
-                "warning",
-                "SFCC variant endpoint expansion failed; continuing deterministic extraction",
+                kind=RunEventKind.EXTRACTION_VARIANT_EXPANSION_FAILED,
+                facts={"exception_type": type(exc).__name__},
             )
         except Exception:
             logger.warning(
@@ -433,10 +434,11 @@ async def _extract_records_from_preserved_browser_html(
     finally:
         acquisition_result.html = original_html
     if not fallback_result.records:
-        _log_pipeline_event(
+        await _record_pipeline_event(
             context,
-            "warning",
-            "Traversal yielded no extractable listing records; fallback extraction on full rendered HTML also returned 0 records",
+            kind=RunEventKind.EXTRACTION_LISTING_FALLBACK,
+            reason_code="empty",
+            facts={"record_count": 0},
         )
         _merge_browser_diagnostics(
             acquisition_result,
@@ -454,10 +456,11 @@ async def _extract_records_from_preserved_browser_html(
     artifacts["traversal_composed_html"] = str(acquisition_result.html or "")
     acquisition_result.artifacts = artifacts
     acquisition_result.html = rendered_html
-    _log_pipeline_event(
+    await _record_pipeline_event(
         context,
-        "info",
-        f"Traversal yielded 0 extractable records; recovered {len(fallback_result.records)} record(s) from full rendered HTML",
+        kind=RunEventKind.EXTRACTION_LISTING_FALLBACK,
+        reason_code="recovered",
+        facts={"record_count": len(fallback_result.records)},
     )
     _merge_browser_diagnostics(
         acquisition_result,

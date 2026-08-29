@@ -62,9 +62,9 @@ describe('CrawlRunScreen', () => {
 
     renderRunScreen();
 
-    await screen.findByText('Live Log Stream');
+    await screen.findByText('Live Run Events');
     expect(screen.getByRole('button', { name: 'Hard Kill' })).toBeInTheDocument();
-    expect(screen.getByText('activity_stream.log')).toBeInTheDocument();
+    expect(screen.getByText('activity_stream.events')).toBeInTheDocument();
   });
 
   it('supports progressive table loading for large result sets', async () => {

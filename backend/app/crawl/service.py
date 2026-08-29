@@ -12,6 +12,7 @@ from app.core.config.runtime_settings import (
     CELERY_TASK_ID_KEY,
     crawler_runtime_settings,
 )
+from app.core.config.run_events import RunEventKind
 from app.crawl.state import (
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
@@ -20,7 +21,7 @@ from app.crawl.state import (
     set_control_request,
     update_run_status,
 )
-from app.crawl.pipeline.runtime_helpers import log_event
+from app.crawl.run_events import RunEventFact, run_event_timeline
 from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_ERROR,
@@ -117,7 +118,7 @@ async def _recover_stale_local_run(
     target_status: CrawlStatus,
     error_message: str,
     extraction_verdict: str,
-    log_level: str,
+    reason_code: str,
 ) -> bool:
     run = await session.get(CrawlRun, run_id)
     if run is None:
@@ -138,7 +139,15 @@ async def _recover_stale_local_run(
         extraction_verdict=extraction_verdict,
     )
     update_run_status(run, target_status)
-    await log_event(session, run.id, log_level, error_message)
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_STALE_RECOVERED,
+            reason_code=reason_code,
+            facts={"status": target_status.value},
+        ),
+        session=session,
+    )
     await session.commit()
     return True
 
@@ -174,16 +183,18 @@ async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
     ) -> None:
         if current != CrawlStatus.RUNNING:
             raise ValueError(f"Cannot pause run in state: {retry_run.status}")
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_REQUESTED,
+                reason_code="pause",
+            ),
+            session=retry_session,
+        )
         task_id = _get_task_id(retry_run)
         local_task = get_live_local_run_task(run_id)
         if local_task is not None:
             set_control_request(retry_run, CONTROL_REQUEST_PAUSE)
-            await log_event(
-                retry_session,
-                retry_run.id,
-                "warning",
-                "Pause requested; crawl will stop at the next checkpoint",
-            )
             return
         else:
             if task_id is None:
@@ -193,11 +204,13 @@ async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             process_run_task.app.control.revoke(task_id, terminate=True)
         update_run_status(retry_run, CrawlStatus.PAUSED)
         _set_task_id(retry_run, None)
-        await log_event(
-            retry_session,
-            retry_run.id,
-            "warning",
-            "Run pause requested",
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_APPLIED,
+                reason_code="paused",
+            ),
+            session=retry_session,
         )
 
     return await _run_control_update(session, run, _operation)
@@ -209,10 +222,25 @@ async def resume_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
     ) -> None:
         if current != CrawlStatus.PAUSED:
             raise ValueError(f"Cannot resume run in state: {retry_run.status}")
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_REQUESTED,
+                reason_code="resume",
+            ),
+            session=retry_session,
+        )
         update_run_status(retry_run, CrawlStatus.RUNNING)
         set_control_request(retry_run, None)
         _set_task_id(retry_run, None)
-        await log_event(retry_session, retry_run.id, "info", "Resume requested")
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_APPLIED,
+                reason_code="resumed",
+            ),
+            session=retry_session,
+        )
 
     updated = await _run_control_update(session, run, _operation)
     return await dispatch_run(session, updated)
@@ -231,6 +259,14 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
     ) -> None:
         if current in TERMINAL_STATUSES:
             raise ValueError(f"Cannot kill run in terminal state: {retry_run.status}")
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_REQUESTED,
+                reason_code="kill",
+            ),
+            session=retry_session,
+        )
         task_id = _get_task_id(retry_run)
         local_task = get_live_local_run_task(run_id)
         if local_task is not None:
@@ -241,11 +277,13 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             _set_task_id(retry_run, None)
             if live_local_run_task_count() == 0:
                 await _shutdown_browser_runtime_after_kill()
-            await log_event(
-                retry_session,
-                retry_run.id,
-                "warning",
-                "Run kill requested; local task cancelled",
+            await run_event_timeline.record(
+                run_id=retry_run.id,
+                fact=RunEventFact(
+                    kind=RunEventKind.RUN_CONTROL_APPLIED,
+                    reason_code="killed",
+                ),
+                session=retry_session,
             )
             return
         elif task_id:
@@ -254,11 +292,13 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             process_run_task.app.control.revoke(task_id, terminate=True)
         update_run_status(retry_run, CrawlStatus.KILLED)
         _set_task_id(retry_run, None)
-        await log_event(
-            retry_session,
-            retry_run.id,
-            "warning",
-            "Run kill requested",
+        await run_event_timeline.record(
+            run_id=retry_run.id,
+            fact=RunEventFact(
+                kind=RunEventKind.RUN_CONTROL_APPLIED,
+                reason_code="killed",
+            ),
+            session=retry_session,
         )
 
     return await _run_control_update(session, run, _operation)
@@ -317,7 +357,7 @@ async def recover_stale_local_runs(session: AsyncSession) -> int:
                     target_status=CrawlStatus.KILLED,
                     error_message="Local dev runner was interrupted before processing began",
                     extraction_verdict=VERDICT_BLOCKED,
-                    log_level="warning",
+                    reason_code="interrupted_before_start",
                 )
             )
             continue
@@ -328,7 +368,7 @@ async def recover_stale_local_runs(session: AsyncSession) -> int:
                 target_status=CrawlStatus.FAILED,
                 error_message="Local dev runner was interrupted by backend restart or process termination",
                 extraction_verdict=VERDICT_ERROR,
-                log_level="error",
+                reason_code="interrupted_during_run",
             )
         )
     return recovered

@@ -52,7 +52,7 @@ function recordFetchMode(
   outputTab: OutputTabKey,
   run: CrawlRun | undefined,
 ): { table: boolean; json: boolean; tableInterval: number | false; jsonInterval: number | false } {
-  const table = outputTab === 'table' || outputTab === 'logs' || terminal;
+  const table = outputTab === 'table' || outputTab === 'events' || terminal;
   const json = outputTab === 'json';
   const interval = activeRunInterval(run);
   return {
@@ -140,7 +140,7 @@ export function useRunRecords({
   jsonVisibleCount,
   verdict,
 }: Readonly<UseRunRecordsOptions>) {
-  // The live/log terminal derives payload previews, coverage, confidence, and
+  // The live Run Event terminal derives payload previews, coverage, confidence, and
   // per-URL completion state from persisted records. Keep the lightweight
   // table records query active whenever that terminal is visible.
   const fetchMode = recordFetchMode(live, terminal, outputTab, run);

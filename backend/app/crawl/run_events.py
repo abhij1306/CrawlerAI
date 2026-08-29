@@ -84,7 +84,7 @@ def _validated_reason_code(
         if reason_code not in definition.reason_codes:
             allowed = ", ".join(sorted(definition.reason_codes))
             raise ValueError(f"{fact.kind.value} reason_code must be one of: {allowed}")
-    elif reason_code is not None:
+    elif reason_code is not None and not definition.allows_open_reason_code:
         raise ValueError(f"{fact.kind.value} does not accept reason_code")
     return reason_code
 

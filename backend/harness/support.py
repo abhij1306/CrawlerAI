@@ -147,7 +147,7 @@ async def run_site_harness(*, url: str, surface: str, mode: str) -> dict[str, ob
             config=URLProcessingConfig.from_acquisition_plan(
                 run.settings_view.acquisition_plan(surface=surface),
                 update_run_state=False,
-                persist_logs=False,
+                persist_run_events=False,
                 prefetch_only=True,
             ),
         )

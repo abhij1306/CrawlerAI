@@ -14,7 +14,7 @@ type UseRunPanelErrorsOptions = {
   run: RefreshablePanel;
   tableRecords: RefreshablePanel;
   jsonRecords: RefreshablePanel;
-  logs: RefreshablePanel;
+  events: RefreshablePanel;
   domainRecipe: RefreshablePanel;
 };
 
@@ -25,7 +25,7 @@ export function useRunPanelErrors({
   run,
   tableRecords,
   jsonRecords,
-  logs,
+  events,
   domainRecipe,
 }: Readonly<UseRunPanelErrorsOptions>) {
   const reportedEventKeysRef = useRef(new Set<string>());
@@ -50,10 +50,10 @@ export function useRunPanelErrors({
           },
         },
         {
-          key: 'logs',
-          label: 'logs',
-          error: logs.error,
-          refetch: logs.refetch,
+          key: 'events',
+          label: 'Run Events',
+          error: events.error,
+          refetch: events.refetch,
         },
         {
           key: 'domain-recipe',
@@ -62,7 +62,7 @@ export function useRunPanelErrors({
           refetch: domainRecipe.refetch,
         },
       ].filter((panel) => panel.error),
-    [domainRecipe, jsonRecords, logs, run, tableRecords],
+    [domainRecipe, events, jsonRecords, run, tableRecords],
   );
 
   useEffect(() => {

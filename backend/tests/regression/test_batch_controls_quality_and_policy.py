@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from app.core.config.run_events import RunEventKind
 from tests.regression.batch_runtime_test_support import (
     AsyncSession,
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
-    CrawlLog,
     CrawlStatus,
     PageAcquisitionResult,
     ROBOTS_ALLOWED,
@@ -21,9 +21,16 @@ from tests.regression.batch_runtime_test_support import (
     get_run_records,
     process_run,
     pytest,
-    select,
     set_control_request,
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_run_event_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _record(**_kwargs) -> object:
+        return object()
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
 
 @pytest.mark.asyncio
@@ -140,21 +147,23 @@ async def test_parallel_process_run_stops_after_max_records(
     monkeypatch.setattr(
         "app.crawl.batch_runtime.process_single_url", _fake_process_single_url
     )
+    recorded: list[tuple[int, object]] = []
+
+    async def _record(*, run_id: int, fact, **_kwargs) -> object:
+        recorded.append((run_id, fact))
+        return object()
+
+    monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
-    logs = (
-        (
-            await db_session.execute(
-                select(CrawlLog.message).where(CrawlLog.run_id == run.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
 
     assert run.status == "completed"
-    assert "Stopped after reaching max_records=3" in logs
+    assert any(
+        event.kind == RunEventKind.RUN_LIMIT_REACHED
+        and event.facts == {"limit_name": "max_records", "limit_value": 3}
+        for _run_id, event in recorded
+    )
     assert run.result_summary["record_count"] >= 3
 
 

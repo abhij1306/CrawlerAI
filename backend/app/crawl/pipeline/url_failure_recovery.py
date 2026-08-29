@@ -43,12 +43,13 @@ async def recover_url_failure(
     session: AsyncSession,
     *,
     session_factory,
-    persist_failure_log: Callable[..., Awaitable[CrawlRun]],
+    persist_failure_event: Callable[..., Awaitable[CrawlRun]],
     run: CrawlRun | None = None,
     run_id: int,
     url: str,
+    url_scope_id: str,
+    timeout_seconds: float,
     exc: BaseException,
-    log_message: str,
 ) -> tuple[CrawlRun, URLProcessingResult]:
     await rollback_url_session(session, context="URL failure recovery")
     if run is not None:
@@ -62,12 +63,13 @@ async def recover_url_failure(
             await rollback_url_session(session, context="failed run refresh recovery")
     recovery_error: Exception | None = None
     try:
-        run = await persist_failure_log(
+        run = await persist_failure_event(
             session,
             run_id=run_id,
             url=url,
+            url_scope_id=url_scope_id,
+            timeout_seconds=timeout_seconds,
             exc=exc,
-            log_message=log_message,
         )
     except Exception as original_session_error:
         recovery_error = original_session_error
@@ -78,17 +80,18 @@ async def recover_url_failure(
         await rollback_url_session(session, context="before URL recovery fallback")
         try:
             async with session_factory() as recovery:
-                await persist_failure_log(
+                await persist_failure_event(
                     recovery,
                     run_id=run_id,
                     url=url,
+                    url_scope_id=url_scope_id,
+                    timeout_seconds=timeout_seconds,
                     exc=exc,
-                    log_message=log_message,
                 )
         except Exception as fallback_error:
             recovery_error = fallback_error
             logger.exception(
-                "Failed to persist URL failure log for run=%s url=%s",
+                "Failed to persist URL failure event for run=%s url=%s",
                 run_id,
                 url,
             )
@@ -112,10 +115,10 @@ async def recover_url_failure(
         raise RuntimeError(f"Run {run_id} disappeared after URL failure") from exc
     metrics = _url_failure_metrics(exc)
     if recovery_error is not None:
-        metrics["failure_log_persistence_error"] = (
+        metrics["failure_event_persistence_error"] = (
             f"{type(recovery_error).__name__}: {recovery_error}"
         )
-        metrics["failure_log_persisted"] = False
+        metrics["failure_event_persisted"] = False
     return run, URLProcessingResult(
         records=[],
         verdict=VERDICT_ERROR,

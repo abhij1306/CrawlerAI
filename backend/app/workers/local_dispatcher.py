@@ -70,7 +70,12 @@ async def _run_with_local_session(run_id: int) -> None:
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
             try:
-                await mark_run_failed(session, run_id, f"{type(exc).__name__}: {exc}")
+                await mark_run_failed(
+                    session,
+                    run_id,
+                    f"{type(exc).__name__}: {exc}",
+                    exception_type=type(exc).__name__,
+                )
             except Exception:
                 logger.exception(
                     "Failed to persist failed status for run %s after process_run error",

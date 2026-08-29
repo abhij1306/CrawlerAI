@@ -1,27 +1,27 @@
 import type { RefObject } from 'react';
 
-import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
-import { LogTerminal } from './log-terminal';
+import type { CrawlRecord, RunEvent } from '../../lib/api/types';
+import { RunEventTerminal } from './run-event-terminal';
 
-type RunLogsOutputProps = {
-  logs: CrawlLog[];
+type RunEventsOutputProps = {
+  events: RunEvent[];
   records: CrawlRecord[];
   requestedFields: string[];
   viewportRef: RefObject<HTMLDivElement | null>;
   nowMs: number;
 };
 
-export function RunLogsOutput({
-  logs,
+export function RunEventsOutput({
+  events,
   records,
   requestedFields,
   viewportRef,
   nowMs,
-}: Readonly<RunLogsOutputProps>) {
+}: Readonly<RunEventsOutputProps>) {
   return (
     <div className="min-h-[55vh]">
-      <LogTerminal
-        logs={logs}
+      <RunEventTerminal
+        events={events}
         records={records}
         requestedFields={requestedFields}
         viewportRef={viewportRef}

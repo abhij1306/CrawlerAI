@@ -18,7 +18,7 @@ import { useLiveClock, useTerminalSync } from './use-run-polling';
 import { useRunActions } from './use-run-actions';
 import { useRunFollowUpActions } from './use-run-follow-up-actions';
 import { useRunHistory } from './use-run-history';
-import { useRunLogStream } from './use-run-log-stream';
+import { useRunEventStream } from './use-run-event-stream';
 import { useRunOutputState } from './use-run-output-state';
 import { useRunPanelErrors } from './use-run-panel-errors';
 import { useRunRecipe } from './use-run-recipe';
@@ -60,7 +60,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     showLearningTab: showRunLearningTab,
   });
   const verdict = extractionVerdict(run);
-  const shouldFetchLogs = Boolean(run) && (live || outputTab === 'logs');
+  const shouldFetchEvents = Boolean(run) && (live || outputTab === 'events');
 
   const {
     tableRecordsQuery,
@@ -89,15 +89,15 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     verdict,
   });
   const {
-    query: logsQuery,
-    logs,
-    online: logSocketOnline,
+    query: eventsQuery,
+    events,
+    online: eventSocketOnline,
     liveJumpAvailable,
-    viewportRef: logViewportRef,
+    viewportRef: eventViewportRef,
     jumpToLatest,
-  } = useRunLogStream({
+  } = useRunEventStream({
     runId,
-    enabled: shouldFetchLogs,
+    enabled: shouldFetchEvents,
     live,
     refetchRun: refetchRunQuery,
   });
@@ -119,7 +119,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     killRun,
   } = useRunActions({
     runId,
-    refreshQueries: [runQuery, logsQuery, tableRecordsQuery, jsonRecordsQuery],
+    refreshQueries: [runQuery, eventsQuery, tableRecordsQuery, jsonRecordsQuery],
   });
   const { items: historyItems, prepareRun: prepareHistoryRun } = useRunHistory(historyOpen);
 
@@ -138,11 +138,11 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     run: runQuery,
     tableRecords: tableRecordsQuery,
     jsonRecords: jsonRecordsQuery,
-    logs: logsQuery,
+    events: eventsQuery,
     domainRecipe: domainRecipeQuery,
   });
 
-  useTerminalSync(run, terminal, [runQuery, tableRecordsQuery, jsonRecordsQuery, logsQuery]);
+  useTerminalSync(run, terminal, [runQuery, tableRecordsQuery, jsonRecordsQuery, eventsQuery]);
 
   const {
     visibleColumns,
@@ -285,13 +285,13 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
       {!showRunLoadingState && !terminal ? (
         <RunLiveWorkspace
           run={run}
-          logs={logs}
+          events={events}
           records={batchSourceRecords}
           elapsedLabel={elapsedLabel}
           nowMs={localNow}
-          socketOnline={logSocketOnline}
+          socketOnline={eventSocketOnline}
           liveJumpAvailable={liveJumpAvailable}
-          viewportRef={logViewportRef}
+          viewportRef={eventViewportRef}
           killPending={killPending}
           onJumpToLatest={jumpToLatest}
           onKill={() => void killRun()}
@@ -334,11 +334,11 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
                 void fetchNextJsonPage();
               },
             }}
-            logs={{
-              logs,
+            events={{
+              events,
               batchSourceRecords,
               requestedFields,
-              logViewportRef,
+              eventViewportRef,
               nowMs: localNow,
             }}
             learning={{

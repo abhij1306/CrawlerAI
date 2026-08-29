@@ -7,9 +7,10 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.telemetry import generate_correlation_id, get_correlation_id
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.crawl_settings import CrawlRunSettings
-from app.crawl.events import append_log_event
+from app.core.config.run_events import RunEventKind
+from app.crawl.run_events import RunEventFact, run_event_timeline
 from app.core.config.domain_profiles import (
     INVALID_SURFACE_VALUES,
     SURFACE_VALIDATION_ERROR,
@@ -43,7 +44,7 @@ from app.core.url_safety import (
 from app.persistence.artifacts import ArtifactRepository
 from app.acquisition.run_cookie_storage import delete_run_storage_states
 from app.schemas.crawl import enforce_run_url_limit
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -271,53 +272,6 @@ async def get_run_records(
     return list(result.scalars().all()), total
 
 
-async def get_run_logs(
-    session: AsyncSession,
-    run_id: int,
-    *,
-    after_id: int | None = None,
-    limit: int | None = None,
-) -> list[CrawlLog]:
-    query = (
-        select(CrawlLog)
-        .where(CrawlLog.run_id == run_id)
-        .order_by(CrawlLog.created_at.asc())
-    )
-    if after_id is not None:
-        query = query.where(CrawlLog.id > after_id)
-    if limit is not None:
-        query = query.limit(limit)
-    result = await session.execute(query)
-    return list(result.scalars().all())
-
-
-async def get_run_and_logs(
-    session: AsyncSession,
-    run_id: int,
-    *,
-    after_id: int | None = None,
-    limit: int | None = None,
-) -> tuple[CrawlRun | None, list[CrawlLog]]:
-    join_condition = CrawlLog.run_id == CrawlRun.id
-    if after_id is not None:
-        join_condition = and_(join_condition, CrawlLog.id > after_id)
-    query = (
-        select(CrawlRun, CrawlLog)
-        .outerjoin(CrawlLog, join_condition)
-        .where(CrawlRun.id == run_id)
-        .order_by(CrawlLog.created_at.asc(), CrawlLog.id.asc())
-    )
-    if limit is not None:
-        query = query.limit(limit)
-    result = await session.execute(query)
-    rows = list(result.all())
-    if not rows:
-        return None, []
-    run = rows[0][0]
-    logs = [log for _run, log in rows if log is not None]
-    return run, logs
-
-
 async def commit_selected_fields(
     session: AsyncSession,
     *,
@@ -374,11 +328,12 @@ async def commit_selected_fields(
     await session.commit()
 
     if updated_fields:
-        await append_log_event(
+        await run_event_timeline.record(
             run_id=run.id,
-            level="info",
-            message=f"[FIELDS] Committed {updated_fields} selected field value(s)",
-            session=session,
+            fact=RunEventFact(
+                kind=RunEventKind.REVIEW_FIELDS_COMMITTED,
+                facts={"field_count": updated_fields},
+            ),
         )
     return updated_records, updated_fields
 

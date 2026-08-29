@@ -11,7 +11,7 @@ from app.models.data_enrichment import (
     DataEnrichmentJob,
     EnrichedProduct,
 )
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
+from app.models.crawl_run import CrawlRecord, CrawlRun, CrawlUrlResult, RunEvent
 from app.models.domain_memory import (
     DomainCookieMemory,
     DomainRunProfile,
@@ -139,7 +139,7 @@ async def _reset_crawl_data_db(session: AsyncSession) -> dict:
             ("crawl_runs_deleted", CrawlRun),
             ("crawl_url_results_deleted", CrawlUrlResult),
             ("crawl_records_deleted", CrawlRecord),
-            ("crawl_logs_deleted", CrawlLog),
+            ("run_events_deleted", RunEvent),
             ("llm_cost_logs_deleted", LLMCostLog),
         ],
     )
@@ -289,13 +289,13 @@ async def _reset_crawl_data_tables(session: AsyncSession) -> None:
     await _reset_bucket_tables(
         session,
         [
-            CrawlLog,
+            RunEvent,
             CrawlRecord,
             CrawlUrlResult,
             LLMCostLog,
             CrawlRun,
         ],
-        "crawl_logs",
+        "run_events",
         "crawl_records",
         "crawl_url_results",
         "llm_cost_log",

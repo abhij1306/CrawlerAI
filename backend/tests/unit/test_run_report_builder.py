@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import settings
+from app.crawl.pipeline import run_complete_callbacks
 from app.observability.run_report import (
     SCHEMA_VERSION,
     build_run_report,
@@ -13,6 +14,29 @@ from app.observability.run_report import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.asyncio
+async def test_run_complete_callbacks_report_failures_and_continue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def _fail(_run_id: int) -> None:
+        calls.append("fail")
+        raise ValueError("callback failed")
+
+    async def _succeed(_run_id: int) -> None:
+        calls.append("succeed")
+
+    monkeypatch.setattr(
+        run_complete_callbacks,
+        "_run_complete_callbacks",
+        {"fail": _fail, "succeed": _succeed},
+    )
+
+    assert await run_complete_callbacks.on_run_complete(7) == ("ValueError",)
+    assert calls == ["fail", "succeed"]
 
 
 def _write_diagnose(
@@ -458,7 +482,7 @@ async def test_write_run_report_persists_report_json(artifacts_root: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_write_run_report_swallows_errors(
+async def test_write_run_report_propagates_errors_to_callback_owner(
     artifacts_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -466,5 +490,5 @@ async def test_write_run_report_swallows_errors(
         raise RuntimeError("boom")
 
     monkeypatch.setattr("app.observability.run_report.build_run_report", _boom)
-    # Should not raise into the pipeline.
-    await write_run_report(99)
+    with pytest.raises(RuntimeError, match="boom"):
+        await write_run_report(99)

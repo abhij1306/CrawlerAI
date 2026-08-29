@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import runpy
+from datetime import UTC, datetime
 from pathlib import Path
+import runpy
 from typing import Any, cast
 
 import pytest
@@ -10,7 +11,10 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config.run_events import RunEventKind
+from app.crawl.pipeline.runtime_helpers import persist_failure_state
 from app.crawl.run_events import RunEventFact, RunEventTimeline
+from app.crawl.state import CrawlStatus, update_run_status
+from app.schemas.common import RunEventResponse
 
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -203,6 +207,28 @@ async def test_timeline_normalizes_blank_run_scope_before_persistence() -> None:
     assert event.url_scope_id is None
 
 
+async def test_timeline_accepts_open_acquisition_reason_code() -> None:
+    session = _RecordingSession([1])
+
+    event = await _timeline(session).record(
+        run_id=42,
+        fact=RunEventFact(
+            kind=RunEventKind.ACQUISITION_BROWSER_ESCALATED,
+            url="https://example.com/products/widget",
+            url_scope_id="url:1",
+            reason_code="vendor-block:example-shield",
+            facts={
+                "status_code": 403,
+                "prior_method": "httpx",
+                "reason": "vendor-block:example-shield",
+            },
+        ),
+    )
+
+    assert event is not None
+    assert event.reason_code == "vendor-block:example-shield"
+
+
 async def test_timeline_uses_bound_session_savepoint_for_atomic_insert() -> None:
     session = _RecordingSession([7])
 
@@ -290,6 +316,29 @@ async def test_timeline_savepoint_failure_leaves_outer_session_usable(
     assert (await db_session.execute(text("SELECT 1"))).scalar_one() == 1
 
 
+async def test_failure_event_uses_explicit_exception_type(
+    db_session: AsyncSession,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget", surface="ecommerce_detail"
+    )
+    update_run_status(run, CrawlStatus.RUNNING)
+    await db_session.commit()
+
+    await persist_failure_state(
+        db_session,
+        run.id,
+        "misleading-prefix: failure detail",
+        exception_type="ActualFailure",
+    )
+
+    events = await RunEventTimeline(
+        async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    ).list_after(run_id=run.id)
+    assert events[-1].facts == {"exception_type": "ActualFailure"}
+
+
 async def test_run_events_are_append_only_but_parent_cascade_is_allowed(
     db_session: AsyncSession,
     create_test_run,
@@ -345,3 +394,43 @@ async def test_run_events_are_append_only_but_parent_cascade_is_allowed(
         {"event_id": event_id},
     )
     assert remaining == 0
+
+
+async def test_run_event_response_has_exact_wire_shape() -> None:
+    event = type(
+        "Event",
+        (),
+        {
+            "id": 7,
+            "run_id": 42,
+            "sequence": 1,
+            "kind": "url.started",
+            "stage": "acquisition",
+            "url": "https://example.com/products/widget",
+            "url_scope_id": "url:1",
+            "severity": "info",
+            "outcome": "progress",
+            "reason_code": None,
+            "facts": {"index": 1, "total": 1},
+            "created_at": datetime(2026, 1, 2, tzinfo=UTC),
+        },
+    )()
+
+    payload = RunEventResponse.model_validate(event, from_attributes=True).model_dump(
+        mode="json"
+    )
+
+    assert payload == {
+        "id": event.id,
+        "run_id": 42,
+        "sequence": 1,
+        "kind": "url.started",
+        "stage": "acquisition",
+        "url": "https://example.com/products/widget",
+        "url_scope_id": "url:1",
+        "severity": "info",
+        "outcome": "progress",
+        "reason_code": None,
+        "facts": {"index": 1, "total": 1},
+        "created_at": "2026-01-02T00:00:00Z",
+    }

@@ -3,21 +3,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
-from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
-from app.core.config.run_events import (
-    LEGACY_ACQUISITION_WARNING_EVENT_KINDS,
-    RunEventKind,
-)
 from app.core.database import SessionLocal
-from app.crawl.run_events import JsonValue, RunEventFact, run_event_timeline
-from app.models.crawl_run import CrawlLog, CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
+from app.core.config.run_events import RunEventKind
+from app.crawl.run_events import JsonValue, RunEventFact, run_event_timeline
 from app.crawl.state import TERMINAL_STATUSES, CrawlStatus, update_run_status
 from app.core.db_utils import mapping_or_empty
 from app.core.records.field_policy import normalize_requested_field
 from app.core.shared.field_coerce import LONG_TEXT_FIELDS
 from app.persistence.publish import VERDICT_ERROR, is_effectively_blocked
-from app.core.shared.run_summary import as_int
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -28,100 +24,50 @@ STAGE_NORMALIZE = "NORMALIZE"
 STAGE_PERSIST = "PERSIST"
 
 
-async def log_event(session, run_id: int | None, level: str, message: str) -> None:
-    if run_id is None:
-        return
-    session.add(CrawlLog(run_id=run_id, level=level, message=str(message or "")))
-    await session.flush()
-
-
-def log_pipeline_event(
+async def record_pipeline_event(
     context,
-    level: str,
-    message: str,
     *,
-    commit: bool = True,
+    kind: RunEventKind,
+    reason_code: str | None = None,
+    facts: Mapping[str, JsonValue] | None = None,
+    session: AsyncSession | None = None,
 ) -> None:
-    """Queue a crawl-log row for the URL's batched persistence.
-
-    Per-URL DB budget: log rows accumulate in the URL's session and flush with
-    the URL's other work, committed once per URL by the session owner, instead
-    of one flush+commit per event (~5-8 commits per URL before). ``commit`` is
-    retained for call-site compatibility; events no longer force an immediate
-    commit.
-    """
-
-    del commit  # events are batched; see docstring
-    if not context.config.persist_logs:
+    config = getattr(context, "config", None)
+    if config is None or not config.persist_run_events:
         return
-
     url = getattr(context, "url", None)
     run = getattr(context, "run", None)
-    if run is None:
+    if run is None or not url:
         return
-    # The run row no longer stores resolved_url_list while the run executes
-    # (fixed-size per-URL patches); url_count is the fixed-size stand-in.
-    if url and as_int(run.summary_dict().get("url_count")) > 1:
-        prefixed_message = f"[url:{url}] {message}"
-    else:
-        prefixed_message = message
-
-    context.session.add(
-        CrawlLog(run_id=run.id, level=level, message=str(prefixed_message or ""))
+    scope = str(getattr(config, "url_scope_id", "") or "").strip()
+    if not scope:
+        scope = f"url:{max(1, int(getattr(config, 'url_index', 1) or 1))}"
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=kind,
+            url=str(url),
+            url_scope_id=scope,
+            reason_code=reason_code,
+            facts=dict(facts or {}),
+        ),
+        session=session,
     )
 
 
 def pipeline_acquisition_event_logger(context):
     """Build the acquisition-stage ``on_event`` callback for a URL context."""
 
-    async def _log(event: AcquisitionEvent) -> None:
+    async def _record(event: AcquisitionEvent) -> None:
         kind, facts = _run_event_from_acquisition_event(event)
-        await _record_acquisition_run_event(context, kind=kind, facts=facts)
-        details = [
-            f"{key}={value}" for key, value in event.facts.items() if value is not None
-        ]
-        if event.reason_code is not None:
-            details.append(f"reason_code={event.reason_code}")
-        message = event.kind.value.replace("_", " ")
-        if details:
-            message = f"{message}: {', '.join(details)}"
-        log_pipeline_event(
+        await record_pipeline_event(
             context,
-            (
-                "warning"
-                if event.kind in LEGACY_ACQUISITION_WARNING_EVENT_KINDS
-                else "info"
-            ),
-            message,
+            kind=kind,
+            reason_code=event.reason_code,
+            facts=facts,
         )
 
-    return _log
-
-
-async def _record_acquisition_run_event(
-    context,
-    *,
-    kind: RunEventKind,
-    facts: Mapping[str, JsonValue],
-) -> None:
-    if not context.config.persist_logs:
-        return
-    url = str(getattr(context, "url", "") or "").strip()
-    run = getattr(context, "run", None)
-    if run is None or not url:
-        return
-    scope = str(getattr(context.config, "url_scope_id", "") or "").strip()
-    if not scope:
-        scope = f"url:{max(1, int(getattr(context.config, 'url_index', 1) or 1))}"
-    await run_event_timeline.record(
-        run_id=run.id,
-        fact=RunEventFact(
-            kind=kind,
-            url=url,
-            url_scope_id=scope,
-            facts=dict(facts),
-        ),
-    )
+    return _record
 
 
 _ACQUISITION_RUN_EVENT_KINDS: dict[AcquisitionEventKind, RunEventKind] = {
@@ -204,29 +150,11 @@ def browser_outcome(acquisition_result: PageAcquisitionResult) -> str:
     return PageEvidence.from_acquisition_result(acquisition_result).browser_outcome
 
 
-def browser_launch_log_message(acquisition_result: PageAcquisitionResult) -> str:
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    engine = (
-        str(diagnostics.get("browser_engine") or "chromium").strip().lower()
-        or "chromium"
-    )
-    launch_mode = str(diagnostics.get("browser_launch_mode") or "").strip().lower()
-    if not launch_mode:
-        launch_mode = "headless"
-    profile = str(diagnostics.get("browser_profile") or "").strip()
-    details = [engine]
-    if profile:
-        details.append(f"profile: {profile}")
-    return f"Launched {launch_mode} browser ({', '.join(details)})"
-
-
 def effective_blocked(acquisition_result: PageAcquisitionResult) -> bool:
     return is_effectively_blocked(acquisition_result)
 
 
-def suppress_empty_downstream_record_logs(
+def suppress_empty_downstream_record_events(
     acquisition_result: PageAcquisitionResult,
     records: list[dict[str, object]],
 ) -> bool:
@@ -301,7 +229,13 @@ def _detail_expansion_extracted_fields(
     )
 
 
-async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) -> None:
+async def mark_run_failed(
+    session: AsyncSession,
+    run_id: int,
+    error_msg: str,
+    *,
+    exception_type: str | None = None,
+) -> None:
     try:
         await session.rollback()
     except SQLAlchemyError:
@@ -309,7 +243,9 @@ async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) ->
             "Session rollback failed before failure persistence", exc_info=True
         )
     try:
-        await persist_failure_state(session, run_id, error_msg)
+        await persist_failure_state(
+            session, run_id, error_msg, exception_type=exception_type
+        )
         return
     except SQLAlchemyError:
         logger.debug(
@@ -318,7 +254,9 @@ async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) ->
         )
     try:
         async with SessionLocal() as recovery:
-            await persist_failure_state(recovery, run_id, error_msg)
+            await persist_failure_state(
+                recovery, run_id, error_msg, exception_type=exception_type
+            )
     except SQLAlchemyError:
         logger.critical(
             "Failure recovery via SessionLocal failed; "
@@ -333,6 +271,8 @@ async def persist_failure_state(
     session: AsyncSession,
     run_id: int,
     error_msg: str,
+    *,
+    exception_type: str | None = None,
 ) -> None:
     run = await session.get(CrawlRun, run_id)
     if run is None:
@@ -345,5 +285,13 @@ async def persist_failure_state(
     )
     if run.status_value not in TERMINAL_STATUSES:
         update_run_status(run, CrawlStatus.FAILED)
-    session.add(CrawlLog(run_id=run_id, level="error", message=error_msg))
+    failure_type = str(exception_type or "").strip() or "Error"
+    await run_event_timeline.record(
+        run_id=run_id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_FAILED,
+            facts={"exception_type": failure_type},
+        ),
+        session=session,
+    )
     await session.commit()

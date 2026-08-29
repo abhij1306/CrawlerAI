@@ -10,33 +10,21 @@ import {
   Globe,
   HardDrive,
   Layers,
-  Monitor,
   RefreshCw,
-  ShieldAlert,
   XCircle,
-  Zap,
 } from 'lucide-react';
 import React, { memo, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { LucideIcon } from 'lucide-react';
 
-import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
+import type { CrawlRecord, RunEvent } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
 import { formatDurationMs, formatTimeHms } from '../../lib/crawl/format';
 import { cleanRecordForDisplay } from '../../lib/crawl/record-utils';
 import { scrollViewportToBottom } from '../../lib/crawl/scroll';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { Button } from '../ui/primitives';
-import {
-  isPersistenceSummaryLog,
-  LOG_PATTERNS,
-  logMessageIsError,
-  sanitizeLogMessage,
-  siteDomId,
-  STAGE_CONFIG,
-  TERMINAL_STRINGS,
-} from './log-terminal-utils';
-import type { LogSiteGroup, LogStage } from './log-terminal-utils';
+import { siteDomId, STAGE_CONFIG, TERMINAL_STRINGS } from './run-event-terminal-utils';
+import type { RunEventGroupStage, RunEventSiteGroup } from './run-event-terminal-utils';
 import {
   buildExpandedRows,
   formatShortUrlLabel,
@@ -48,11 +36,11 @@ import {
   payloadSnapshot,
   severityTone,
   toneForConfidence,
-} from './log-terminal-display';
+} from './run-event-terminal-display';
 
-import { useLogTerminalState } from './use-log-terminal-state';
+import { useRunEventTerminalState } from './use-run-event-terminal-state';
 
-function useLogViewport(_logCount: number, ref?: RefObject<HTMLDivElement | null>) {
+function useRunEventViewport(_eventCount: number, ref?: RefObject<HTMLDivElement | null>) {
   const internalRef = useRef<HTMLDivElement | null>(null);
   const targetRef = ref ?? internalRef;
 
@@ -60,125 +48,42 @@ function useLogViewport(_logCount: number, ref?: RefObject<HTMLDivElement | null
     if (!ref) {
       scrollViewportToBottom(internalRef);
     }
-  }, [_logCount, ref]);
+  }, [_eventCount, ref]);
 
   return targetRef;
 }
-type LogIconStyle = { iconCls: string; bgCls: string };
+type RunEventIconStyle = { iconCls: string; bgCls: string };
 
-type LogIconRule = { terms: readonly string[]; icon: LucideIcon; style: LogIconStyle };
-
-function includesAny(message: string, terms: readonly string[]) {
-  return terms.some((term) => message.includes(term));
+function getRunEventIcon(event: RunEvent | null, stage: RunEventGroupStage) {
+  if (!event) return Database;
+  if (event.severity === 'error') return XCircle;
+  if (event.severity === 'warning') return AlertTriangle;
+  if (event.kind.startsWith('browser_retry.')) return RefreshCw;
+  if (stage === 'acquisition') return Globe;
+  if (stage === 'extraction') return Database;
+  if (stage === 'normalization') return Layers;
+  if (stage === 'persistence') return HardDrive;
+  return event.kind.startsWith('run.') ? Activity : Dot;
 }
 
-const LOG_ICON_RULES: readonly LogIconRule[] = [
-  {
-    terms: ['starting crawl'],
-    icon: Activity,
-    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
-  },
-  {
-    terms: ['ignoring robots.txt'],
-    icon: ShieldAlert,
-    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
-  },
-  {
-    terms: ['resolved'],
-    icon: CheckCircle2,
-    style: { iconCls: 'text-muted ', bgCls: 'bg-zinc-500/10' },
-  },
-  { terms: ['acquired'], icon: Globe, style: { iconCls: 'text-info', bgCls: 'bg-info-bg' } },
-  {
-    terms: ['extracted'],
-    icon: Database,
-    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
-  },
-  {
-    terms: ['normalized', 'normalised'],
-    icon: Layers,
-    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
-  },
-  {
-    terms: ['persisted'],
-    icon: HardDrive,
-    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
-  },
-  {
-    terms: ['page loaded', 'page load'],
-    icon: Zap,
-    style: { iconCls: 'text-warning', bgCls: 'bg-warning-bg' },
-  },
-  {
-    terms: ['challenge', 'blocked', 'captcha', 'bot check'],
-    icon: ShieldAlert,
-    style: { iconCls: 'text-danger', bgCls: 'bg-danger-bg' },
-  },
-  {
-    terms: ['acquiring', 'fetching'],
-    icon: Globe,
-    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
-  },
-  {
-    terms: ['browser', 'patchright', 'playwright', 'headless'],
-    icon: Monitor,
-    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
-  },
-  { terms: ['record'], icon: Database, style: { iconCls: 'text-success', bgCls: 'bg-success-bg' } },
-];
-
-const LOG_ICON_STYLE_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> =
-  LOG_ICON_RULES.map(({ terms, style }) => ({ terms, style }));
-
-const LOG_ICON_FINAL_RULES: readonly LogIconRule[] = [
-  {
-    terms: ['retry', 'retrying', 'refresh'],
-    icon: RefreshCw,
-    style: { iconCls: 'text-info', bgCls: 'bg-info-bg' },
-  },
-  {
-    terms: ['complete', 'success', 'done', 'finished'],
-    icon: CheckCircle2,
-    style: { iconCls: 'text-success', bgCls: 'bg-success-bg' },
-  },
-];
-
-const LOG_ICON_STYLE_FINAL_RULES: ReadonlyArray<{ terms: readonly string[]; style: LogIconStyle }> =
-  LOG_ICON_FINAL_RULES.map(({ terms, style }) => ({ terms, style }));
-
-function getLogIcon(level: string, message: string) {
-  const msg = message.toLowerCase();
-  if (logMessageIsError(level, message)) return XCircle;
-  if (level === 'warning' || level === 'warn') return AlertTriangle;
-  const matched = LOG_ICON_RULES.find((rule) => includesAny(msg, rule.terms));
-  if (matched) return matched.icon;
-  if (/https?:\/\//i.test(message)) return Globe;
-  return LOG_ICON_FINAL_RULES.find((rule) => includesAny(msg, rule.terms))?.icon ?? Dot;
-}
-
-function getLogIconStyle(level: string, message: string): LogIconStyle {
-  const msg = message.toLowerCase();
-  if (logMessageIsError(level, message)) return { iconCls: 'text-danger', bgCls: 'bg-danger-bg' };
-  if (level === 'warning' || level === 'warn')
-    return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
-  const matched = LOG_ICON_STYLE_RULES.find((rule) => includesAny(msg, rule.terms));
-  if (matched) return matched.style;
-  if (/https?:\/\//i.test(message)) return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
-  const finalMatch = LOG_ICON_STYLE_FINAL_RULES.find((rule) => includesAny(msg, rule.terms));
-  if (finalMatch) return finalMatch.style;
-  if (level === 'debug') return { iconCls: 'text-muted', bgCls: 'bg-transparent' };
+function getRunEventIconStyle(event: RunEvent | null): RunEventIconStyle {
+  if (!event) return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
+  if (event.severity === 'error') return { iconCls: 'text-danger', bgCls: 'bg-danger-bg' };
+  if (event.severity === 'warning') return { iconCls: 'text-warning', bgCls: 'bg-warning-bg' };
+  if (event.outcome === 'succeeded') return { iconCls: 'text-success', bgCls: 'bg-success-bg' };
+  if (event.stage === 'acquisition') return { iconCls: 'text-info', bgCls: 'bg-info-bg' };
   return {
     iconCls: 'text-secondary',
     bgCls: 'bg-[color-mix(in_srgb,var(--bg-alt)_50%,transparent)]',
   };
 }
 
-function StageChip({ stage, showIcon = true }: { stage: LogStage; showIcon?: boolean }) {
+function StageChip({ stage, showIcon = true }: { stage: RunEventGroupStage; showIcon?: boolean }) {
   const config = STAGE_CONFIG[stage];
   let Icon = Activity;
   if (stage === 'acquisition') Icon = Globe;
   if (stage === 'extraction') Icon = Database;
-  if (stage === 'normalize') Icon = Layers;
+  if (stage === 'normalization') Icon = Layers;
   if (stage === 'persistence') Icon = HardDrive;
 
   return (
@@ -212,55 +117,17 @@ function ShortenedUrl({ url }: { url: string }) {
   );
 }
 
-function renderLogContent(message: string, isStartingCrawl: boolean): React.ReactNode {
-  let text = sanitizeLogMessage(message).replace(LOG_PATTERNS.ROBOTS_PREFIX, '');
-  text = text.replace(
-    LOG_PATTERNS.HEADLESS_BROWSER,
-    (_, engine) => `Launched ${engine.trim()} browser`,
+function renderRunEventContent(summary: string, event: RunEvent | null): React.ReactNode {
+  return event?.url ? (
+    <>
+      {summary} · <ShortenedUrl url={event.url} />
+    </>
+  ) : (
+    summary
   );
-
-  const urlRegex = LOG_PATTERNS.URL;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = urlRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(<ShortenedUrl key={match.index} url={match[0]} />);
-    lastIndex = urlRegex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  const baseContent = parts.length > 0 ? parts : [text];
-
-  if (isStartingCrawl) {
-    return baseContent.map((part) => {
-      if (typeof part === 'string') {
-        const counterMatch = part.match(LOG_PATTERNS.COUNTER);
-        if (counterMatch && counterMatch.index !== undefined) {
-          const before = part.slice(0, counterMatch.index);
-          const after = part.slice(counterMatch.index + counterMatch[0].length);
-          return (
-            <React.Fragment key={`${before}-${counterMatch[0]}-${after}`}>
-              {before}
-              <span className="text-blue-400/70">{counterMatch[0]}</span>
-              {after}
-            </React.Fragment>
-          );
-        }
-      }
-      return part;
-    });
-  }
-
-  return baseContent;
 }
 
-function GroupIdentity({ group, runEvent }: { group: LogSiteGroup; runEvent: boolean }) {
+function GroupIdentity({ group, runEvent }: { group: RunEventSiteGroup; runEvent: boolean }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       {!runEvent ? <Globe className="size-3.5 shrink-0 text-muted" /> : null}
@@ -290,7 +157,7 @@ function GroupMetrics({
   confidence,
   durationMs,
 }: {
-  group: LogSiteGroup;
+  group: RunEventSiteGroup;
   coverage: ReturnType<typeof groupFieldCoverage>;
   confidence: ReturnType<typeof groupConfidence>;
   durationMs: number | null;
@@ -333,7 +200,7 @@ function GroupToggle({
   active,
   onToggle,
 }: {
-  group: LogSiteGroup;
+  group: RunEventSiteGroup;
   expanded: boolean;
   active: boolean;
   onToggle: () => void;
@@ -343,7 +210,7 @@ function GroupToggle({
     <button
       type="button"
       aria-expanded={expanded}
-      aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
+      aria-label={`${expanded ? 'Collapse' : 'Expand'} events for ${group.url || group.label}`}
       disabled={active}
       onClick={(event) => {
         event.stopPropagation();
@@ -384,7 +251,7 @@ function ExpandedGroupRows({
   durationMs,
   onPeek,
 }: {
-  group: LogSiteGroup;
+  group: RunEventSiteGroup;
   coverage: ReturnType<typeof groupFieldCoverage>;
   confidence: ReturnType<typeof groupConfidence>;
   durationMs: number | null;
@@ -392,10 +259,10 @@ function ExpandedGroupRows({
 }) {
   const rows = buildExpandedRows(group, coverage, confidence, durationMs);
   if (!rows.length)
-    return <div className="px-3 py-2 text-base opacity-40">{TERMINAL_STRINGS.NO_LOGS}</div>;
+    return <div className="px-3 py-2 text-base opacity-40">{TERMINAL_STRINGS.NO_EVENTS}</div>;
   return rows.map((row, index) => {
-    const IconComponent = getLogIcon(row.level, row.message);
-    const iconStyle = getLogIconStyle(row.level, row.message);
+    const IconComponent = getRunEventIcon(row.event, row.stage);
+    const iconStyle = getRunEventIconStyle(row.event);
     return (
       <div
         key={row.key}
@@ -416,7 +283,7 @@ function ExpandedGroupRows({
           <StageChip stage={row.stage} showIcon={false} />
         </div>
         <span className="min-w-0 text-base font-medium break-words text-secondary">
-          {row.createdAt ? renderLogContent(row.message, row.stage === 'system') : row.message}
+          {renderRunEventContent(row.summary, row.event)}
         </span>
         <span className="flex items-center gap-2">
           {row.payloadAction ? (
@@ -435,7 +302,7 @@ function terminalAriaLive(live: boolean) {
 }
 
 function displayedGroupOrdinal(
-  group: LogSiteGroup,
+  group: RunEventSiteGroup,
   storedOrdinal: number | undefined,
   stableIndex: number,
 ) {
@@ -443,7 +310,7 @@ function displayedGroupOrdinal(
 }
 
 function displayedGroupDuration(
-  group: LogSiteGroup,
+  group: RunEventSiteGroup,
   active: boolean,
   terminalNowMs: number,
   inferredEndMs: number | undefined,
@@ -451,22 +318,22 @@ function displayedGroupDuration(
   return groupDurationMs(group, active ? terminalNowMs : inferredEndMs);
 }
 
-export const LogTerminal = memo(function LogTerminal({
-  logs,
+export const RunEventTerminal = memo(function RunEventTerminal({
+  events,
   records = [],
   requestedFields = [],
   live = false,
   viewportRef,
   nowMs,
 }: Readonly<{
-  logs: CrawlLog[];
+  events: RunEvent[];
   records?: CrawlRecord[];
   requestedFields?: string[];
   live?: boolean;
   viewportRef?: RefObject<HTMLDivElement | null>;
   nowMs?: number;
 }>) {
-  const ref = useLogViewport(logs.length, viewportRef);
+  const ref = useRunEventViewport(events.length, viewportRef);
   const {
     activeGroupKey,
     activeGroupKeys,
@@ -490,7 +357,7 @@ export const LogTerminal = memo(function LogTerminal({
     timelineTicks,
     toggleGroup,
     visibleGroups,
-  } = useLogTerminalState({ logs, records, live, nowMs });
+  } = useRunEventTerminalState({ events, records, live, nowMs });
 
   return (
     <div
@@ -522,7 +389,7 @@ export const LogTerminal = memo(function LogTerminal({
             ></span>
           </span>
           <span className="type-label-mono text-sm tracking-[0.25em] uppercase">
-            activity_stream.log
+            activity_stream.events
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -595,10 +462,12 @@ export const LogTerminal = memo(function LogTerminal({
                 terminalNowMs,
                 inferredSerialEndMsByKey.get(group.key),
               );
-              const lastLog = group.logs.at(-1);
-              const summaryLog =
-                [...group.logs].reverse().find((log) => !isPersistenceSummaryLog(log.message)) ??
-                lastLog;
+              const lastEvent = group.events.at(-1);
+              const recentEvents = [...group.events].reverse();
+              const summaryEvent =
+                recentEvents.find((event) => event.severity !== 'info') ??
+                recentEvents.find((event) => event.stage !== 'persistence') ??
+                lastEvent;
               return (
                 <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                   <div
@@ -638,9 +507,9 @@ export const LogTerminal = memo(function LogTerminal({
                     <div className="min-w-0">
                       <div
                         className="truncate text-base text-secondary"
-                        title={summaryLog?.message || ''}
+                        title={summaryEvent?.kind || ''}
                       >
-                        {groupSummaryMessage(group, coverage, summaryLog)}
+                        {groupSummaryMessage(group, coverage, summaryEvent)}
                       </div>
                     </div>
                     {!isRunEventGroup ? (
@@ -693,7 +562,7 @@ export const LogTerminal = memo(function LogTerminal({
           </>
         ) : (
           <div className="px-6 py-8 text-center text-base italic opacity-55">
-            {live ? 'Waiting for log stream...' : 'No log activity recorded'}
+            {live ? 'Waiting for Run Events...' : 'No Run Events recorded'}
           </div>
         )}
       </div>

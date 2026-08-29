@@ -1,4 +1,4 @@
-import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
+import type { CrawlRecord, RunEvent } from '../../lib/api/types';
 import {
   formatDurationMs,
   humanizeFieldName,
@@ -8,18 +8,13 @@ import {
 import { uniqueRequestedFields } from '../../lib/crawl/fields';
 import { cleanRecordForDisplay } from '../../lib/crawl/record-utils';
 import { isInformativeValue, qualityLevelFromScore } from '../../lib/crawl/quality';
-import {
-  getLogStage,
-  parseStartingLog,
-  sanitizeLogMessage,
-  TERMINAL_STRINGS,
-} from './log-terminal-utils';
-import type { LogSiteGroup, LogStage } from './log-terminal-utils';
+import { TERMINAL_STRINGS } from './run-event-terminal-utils';
+import type { RunEventGroupStage, RunEventSiteGroup } from './run-event-terminal-utils';
 
-export function severityTone(group: LogSiteGroup, index: number) {
+export function severityTone(group: RunEventSiteGroup, index: number) {
   if (group.hasError) return 'bg-transparent border-l-2 border-l-danger';
   if (group.hasWarning) return 'bg-transparent border-l-2 border-l-warning';
-  if (group.recordCount > 0 || group.stageLogs.persistence.length > 0) {
+  if (group.recordCount > 0 || group.stageEvents.persistence.length > 0) {
     return 'bg-transparent border-l-2 border-l-success';
   }
   return index % 2 === 0
@@ -27,7 +22,7 @@ export function severityTone(group: LogSiteGroup, index: number) {
     : 'bg-transparent';
 }
 
-export function payloadSnapshot(group: LogSiteGroup) {
+export function payloadSnapshot(group: RunEventSiteGroup) {
   if (!group.records.length) return '';
   const payload =
     group.records.length === 1
@@ -70,7 +65,7 @@ function recordConfidence(record: CrawlRecord): { score: number; level: string }
   };
 }
 
-export function groupConfidence(group: LogSiteGroup): { score: number; level: string } | null {
+export function groupConfidence(group: RunEventSiteGroup): { score: number; level: string } | null {
   const scores = group.records
     .map(recordConfidence)
     .filter((value): value is { score: number; level: string } => value !== null);
@@ -84,7 +79,7 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-export function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): number | null {
+export function groupDurationMs(group: RunEventSiteGroup, activeNowMs?: number): number | null {
   const recordDurations = group.records
     .map((record) => {
       const acquisition =
@@ -103,14 +98,14 @@ export function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): numb
       return numberOrNull(phaseTimings?.total);
     })
     .filter((value): value is number => value !== null);
-  const startedAt = group.logs[0]?.created_at;
+  const startedAt = group.events[0]?.created_at;
   if (!startedAt) return null;
   const startedMs = parseApiDate(startedAt).getTime();
   if (!Number.isFinite(startedMs)) return null;
-  const lastLog = group.logs.at(-1);
+  const lastEvent = group.events.at(-1);
   const endCandidatesMs = [
     activeNowMs,
-    lastLog?.created_at ? parseApiDate(lastLog.created_at).getTime() : null,
+    lastEvent?.created_at ? parseApiDate(lastEvent.created_at).getTime() : null,
     ...group.records.map((record) => parseApiDate(record.created_at).getTime()),
     ...recordDurations.map((durationMs) => startedMs + durationMs),
   ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
@@ -118,7 +113,7 @@ export function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): numb
   return Math.max(0, Math.max(...endCandidatesMs) - startedMs);
 }
 
-export function groupFieldCoverage(group: LogSiteGroup, requestedFields: string[]) {
+export function groupFieldCoverage(group: RunEventSiteGroup, requestedFields: string[]) {
   const requested = uniqueRequestedFields(requestedFields);
   const normalizedRequested = requested.map(normalizeField);
   const foundNormalized = new Set<string>();
@@ -151,27 +146,27 @@ export function toneForConfidence(level: string) {
   return 'text-muted';
 }
 
-type ExpandedLogRow = {
+type ExpandedRunEventRow = {
   key: string;
-  stage: LogStage;
-  level: string;
-  message: string;
+  stage: RunEventGroupStage;
+  event: RunEvent | null;
+  summary: string;
   createdAt?: string | null;
   payloadAction?: boolean;
 };
 
 export function buildExpandedRows(
-  group: LogSiteGroup,
+  group: RunEventSiteGroup,
   coverage: ReturnType<typeof groupFieldCoverage>,
   confidence: ReturnType<typeof groupConfidence>,
   durationMs: number | null,
-): ExpandedLogRow[] {
-  const rows: ExpandedLogRow[] = group.logs.map((log) => ({
-    key: `log-${log.id}`,
-    stage: parseStartingLog(log.message) ? 'system' : getLogStage(log.message),
-    level: log.level,
-    message: log.message,
-    createdAt: log.created_at,
+): ExpandedRunEventRow[] {
+  const rows: ExpandedRunEventRow[] = group.events.map((event) => ({
+    key: `event-${event.sequence}`,
+    stage: event.stage ?? 'system',
+    event,
+    summary: runEventSummary(event),
+    createdAt: event.created_at,
   }));
 
   if (coverage.totalCount > 0 || coverage.labels.length > 0 || confidence) {
@@ -193,8 +188,8 @@ export function buildExpandedRows(
     rows.push({
       key: `${group.key}-fields`,
       stage: 'persistence',
-      level: 'info',
-      message: parts.join(' | '),
+      event: null,
+      summary: parts.join(' | '),
       payloadAction: group.records.length > 0,
     });
   }
@@ -203,20 +198,32 @@ export function buildExpandedRows(
 }
 
 export function groupSummaryMessage(
-  group: LogSiteGroup,
+  group: RunEventSiteGroup,
   coverage: ReturnType<typeof groupFieldCoverage>,
-  fallbackLog?: CrawlLog,
+  fallbackEvent?: RunEvent,
 ) {
   if (group.records.length > 0) {
     const noun = group.records.length === 1 ? 'record' : 'records';
     return `Extracted ${group.records.length} ${noun}; fields ${coverage.foundCount}/${coverage.totalCount || 0}`;
   }
-  if (group.hasError || group.hasWarning) {
-    return sanitizeLogMessage(fallbackLog?.message ?? 'No public record extracted');
-  }
-  const persistenceLog = group.stageLogs.persistence.at(-1);
-  if (persistenceLog) return sanitizeLogMessage(persistenceLog.message);
-  return fallbackLog ? sanitizeLogMessage(fallbackLog.message) : TERMINAL_STRINGS.PENDING;
+  if (group.hasError || group.hasWarning)
+    return fallbackEvent ? runEventSummary(fallbackEvent) : 'No public record extracted';
+  const persistenceEvent = group.stageEvents.persistence.at(-1);
+  if (persistenceEvent) return runEventSummary(persistenceEvent);
+  return fallbackEvent ? runEventSummary(fallbackEvent) : TERMINAL_STRINGS.PENDING;
+}
+
+function runEventSummary(event: RunEvent) {
+  const label = event.kind
+    .split('.')
+    .map((part) => humanizeFieldName(part))
+    .join(' ');
+  const details = Object.entries(event.facts).flatMap(([key, value]) => {
+    if (value === null || value === '' || key === 'index' || key === 'total') return [];
+    return [`${humanizeFieldName(key)} ${String(value)}`];
+  });
+  if (event.reason_code) details.unshift(humanizeFieldName(event.reason_code));
+  return details.length ? `${label}: ${details.join(' · ')}` : label;
 }
 
 export function formatShortUrlLabel(url: string) {

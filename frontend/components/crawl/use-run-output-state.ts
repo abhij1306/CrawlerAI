@@ -7,7 +7,7 @@ import type { OutputTabKey } from './shared';
 const outputTabKeys = [
   'table',
   'json',
-  'logs',
+  'events',
   'learning',
 ] as const satisfies readonly OutputTabKey[];
 
@@ -35,7 +35,7 @@ export function useRunOutputState({
   const requestedOutputTab = parseOutputTab(searchParams.get('output'));
   const outputTab =
     failedRunWithoutRecords && requestedOutputTab === 'table'
-      ? 'logs'
+      ? 'events'
       : requestedOutputTab === 'learning' && !showLearningTab
         ? 'table'
         : requestedOutputTab;

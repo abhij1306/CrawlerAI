@@ -258,19 +258,6 @@ def upgrade() -> None:
         op.f("ix_crawl_runs_user_id"), "crawl_runs", ["user_id"], unique=False
     )
     op.create_table(
-        "crawl_logs",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("run_id", sa.Integer(), nullable=False),
-        sa.Column("level", sa.String(length=20), nullable=False),
-        sa.Column("message", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["run_id"], ["crawl_runs.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_crawl_logs_run_id"), "crawl_logs", ["run_id"], unique=False
-    )
-    op.create_table(
         "run_events",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -1310,8 +1297,6 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION enforce_run_events_append_only()")
     op.drop_index("ix_run_events_run_url_scope_sequence", table_name="run_events")
     op.drop_table("run_events")
-    op.drop_index(op.f("ix_crawl_logs_run_id"), table_name="crawl_logs")
-    op.drop_table("crawl_logs")
     op.drop_index(op.f("ix_crawl_runs_user_id"), table_name="crawl_runs")
     op.drop_index("ix_crawl_runs_user_created_at", table_name="crawl_runs")
     op.drop_index("ix_crawl_runs_status_created_at", table_name="crawl_runs")

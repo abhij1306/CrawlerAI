@@ -14,7 +14,7 @@ const authHighlights = [
   {
     icon: WandSparkles,
     title: 'Crawl Studio',
-    body: 'Configure, launch, and watch runs live with per-site logs.',
+    body: 'Configure, launch, and watch runs live with per-site Run Events.',
   },
   {
     icon: DatabaseZap,

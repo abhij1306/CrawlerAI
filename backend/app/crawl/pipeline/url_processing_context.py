@@ -11,6 +11,7 @@ from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.extraction.contracts import ExtractionResult
 from app.crawl.pipeline.types import URLProcessingConfig
+from app.crawl.run_events import url_scope_id
 
 
 @dataclass(slots=True)
@@ -97,7 +98,10 @@ def resolved_url_processing_config(
             ),
         ),
         update_run_state=config.update_run_state,
-        persist_logs=config.persist_logs,
+        persist_run_events=config.persist_run_events,
+        url_index=config.url_index,
+        url_count=config.url_count,
+        url_scope_id=config.url_scope_id,
         prefetch_only=config.prefetch_only,
         record_writer=config.record_writer,
         url_timeout_seconds=config.url_timeout_seconds,
@@ -123,6 +127,8 @@ def build_url_processing_context(
         config,
         surface=run.surface,
     )
+    if not str(resolved_config.url_scope_id or "").strip():
+        resolved_config.url_scope_id = url_scope_id(resolved_config.url_index)
     return URLProcessingContext(
         session=session,
         run=run,
