@@ -15,3 +15,5 @@ trustLockfile: false
 # Explicitly disallow its build scripts so installs neither run nor flag them.
 allowBuilds:
   msw: false
+minimumReleaseAgeExclude:
+  - knip@6.33.0

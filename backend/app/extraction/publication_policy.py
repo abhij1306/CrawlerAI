@@ -12,7 +12,7 @@ from typing import Literal
 from app.core.config import field_mappings
 from app.extraction.contracts import CanonicalizationTrace
 
-__all__ = ["publication_disposition", "numeric_canonicalization"]
+__all__ = ["numeric_canonicalization", "publication_disposition"]
 
 # Facts the canonical record declares numeric (NORMALIZER_DECIMAL_FIELDS /
 # NORMALIZER_INTEGER_FIELDS) but whose evidence arrives as source text. The

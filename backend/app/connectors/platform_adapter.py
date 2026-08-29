@@ -16,7 +16,7 @@ def node_text(node: object, *, separator: str = "") -> str:
         if separator:
             kwargs["separator"] = separator
         return str(text_fn(**kwargs) or "")
-    except Exception:
+    except Exception:  # noqa: BLE001 - third-party DOM implementations may fail arbitrarily
         return ""
 
 

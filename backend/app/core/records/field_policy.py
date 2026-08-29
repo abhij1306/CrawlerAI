@@ -21,6 +21,7 @@ from app.core.config.field_mappings import (
 
 __all__ = [
     "HTML_SECTION_FIELDS",
+    "browser_retry_target_fields_for_surface",
     "canonical_fields_for_surface",
     "excluded_fields_for_surface",
     "field_allowed_for_surface",
@@ -28,7 +29,6 @@ __all__ = [
     "normalize_field_key",
     "normalize_requested_field",
     "normalize_review_target",
-    "browser_retry_target_fields_for_surface",
     "repair_target_fields_for_surface",
 ]
 

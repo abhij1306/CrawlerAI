@@ -432,7 +432,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             _update_listing_result(result, site, records, verdict)
         else:
             _update_detail_result(result, site, records, verdict)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - smoke runner reports each corpus failure
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"
     finally:
@@ -472,7 +472,7 @@ async def main(argv: list[str]) -> int:
 
     corpus_path = Path(args.corpus)
     effective_limit = args.limit
-    if not corpus_path.exists():
+    if not corpus_path.exists():  # noqa: ASYNC240 - one bounded startup check
         if corpus_path == DEFAULT_CORPUS_PATH:
             corpus = _load_default_test_sites_corpus()
             selected_groups = args.groups or [DEFAULT_TEST_SITES_GROUP]

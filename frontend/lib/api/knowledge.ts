@@ -11,7 +11,7 @@ export type KnowledgeSiteRecord = {
   last_projected_at?: string | null;
 };
 
-export type KnowledgeEntity = {
+type KnowledgeEntity = {
   id: string;
   entity_type: string;
   canonical_key: string;
@@ -20,7 +20,7 @@ export type KnowledgeEntity = {
   status: string;
 };
 
-export type KnowledgeRelationship = {
+type KnowledgeRelationship = {
   id: string;
   source_entity_id: string;
   target_entity_id: string;

@@ -1,0 +1,303 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (quality, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: crawlerai
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d crawlerai"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: test
+      JWT_SECRET_KEY: ci-jwt-secret-key-not-default
+      ENCRYPTION_KEY: ci-encryption-key-not-default
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/crawlerai
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/crawlerai
+      REDIS_STATE_ENABLED: false
+      CELERY_DISPATCH_ENABLED: false
+      BOOTSTRAP_ADMIN_ONCE: false
+      PYTHONPATH: .
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+
+      - name: Install backend dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Verify backend lockfile
+        run: uv lock --check
+
+      - name: Backend quality
+        run: node ../scripts/quality.mjs --mode check --scope backend
+
+      - name: Dependency vulnerability scan
+        run: uv run --frozen --extra dev python -m pip_audit --vulnerability-service osv
+
+      - name: Export OpenAPI contract
+        run: .venv/bin/python -m scripts.export_openapi --output .artifacts/openapi.json
+
+      - name: Publish OpenAPI contract
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-openapi
+          path: backend/.artifacts/openapi.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Pytest with measured coverage
+        run: uv run --frozen --extra dev python -m pytest tests -q --cov --cov-report=xml --cov-report=term
+
+      - name: Publish backend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend:
+    name: Frontend (quality, coverage, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        with:
+          node-version: 24
+          cache: true
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: vp install --frozen-lockfile
+
+      - name: Verify frontend lockfile
+        working-directory: frontend
+        run: vp install --frozen-lockfile --lockfile-only
+
+      - name: Dependency vulnerability scan
+        working-directory: frontend
+        run: vp pm audit -- --audit-level=high
+
+      - name: Frontend quality
+        run: node scripts/quality.mjs --mode check --scope frontend
+
+      - name: Frontend tests with measured coverage
+        working-directory: frontend
+        run: vp test --coverage
+
+      - name: Publish frontend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build frontend and check bundle budgets
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:8001
+        run: |
+          vp build
+          node scripts/check-bundle-budgets.mjs --require-dist
+
+  contract:
+    name: API contract (backend to frontend)
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        with:
+          node-version: 24
+          cache: true
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: vp install --frozen-lockfile
+
+      - name: Download OpenAPI contract
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: backend-openapi
+          path: backend-openapi
+
+      - name: Strict contract validation
+        working-directory: frontend
+        env:
+          CRAWLERAI_OPENAPI_JSON: ../backend-openapi/openapi.json
+        run: vp run check:contract
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: crawlerai
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d crawlerai"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: test
+      JWT_SECRET_KEY: ci-jwt-secret-key-change-me-32-bytes
+      ENCRYPTION_KEY: ci-encryption-key-change-me-32b
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/crawlerai
+      REDIS_STATE_ENABLED: false
+      CELERY_DISPATCH_ENABLED: false
+      BOOTSTRAP_ADMIN_ONCE: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        with:
+          node-version: 24
+          cache: true
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: vp install --frozen-lockfile
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: vp exec playwright install --with-deps chromium
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Apply backend migrations
+        working-directory: backend
+        run: uv run python -c "from app.core.migrations import apply_pending_migrations; apply_pending_migrations()"
+
+      - name: Start backend API server
+        working-directory: backend
+        run: nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 > /tmp/backend.log 2>&1 &
+
+      - name: Wait for backend healthcheck
+        run: |
+          for i in {1..60}; do
+            if curl -fsS "http://127.0.0.1:8001/api/health" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/backend.log || true
+          exit 1
+
+      - name: Start frontend dev server
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:8001
+        run: nohup vp dev > /tmp/frontend.log 2>&1 &
+
+      - name: Wait for frontend root URL
+        run: |
+          for i in {1..60}; do
+            if curl -fsS "http://127.0.0.1:3001/" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/frontend.log || true
+          exit 1
+
+      - name: Run Playwright smoke suite
+        working-directory: frontend
+        env:
+          CI: true
+          VITE_API_BASE_URL: http://127.0.0.1:8001
+        run: vp exec playwright test --config playwright.config.ts
+
+  required:
+    name: Required
+    if: always()
+    needs: [backend, frontend, contract, e2e]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require all CI owners
+        run: |
+          test "${{ needs.backend.result }}" = "success"
+          test "${{ needs.frontend.result }}" = "success"
+          test "${{ needs.contract.result }}" = "success"
+          test "${{ needs.e2e.result }}" = "success"

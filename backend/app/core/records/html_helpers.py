@@ -20,7 +20,7 @@ def html_to_text(
     for node in document.safe_css("script, style"):
         node.node.decompose()
     separator = "\n" if preserve_block_breaks else " "
-    text = document._parser.text(separator=separator, strip=True)  # noqa: SLF001
+    text = document._parser.text(separator=separator, strip=True)
     rows = [" ".join(line.split()).strip() for line in text.splitlines()]
     cleaned = [row for row in rows if row]
     return ("\n" if preserve_block_breaks else " ").join(cleaned).strip()

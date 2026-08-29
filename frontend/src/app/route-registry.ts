@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { matchPath } from 'react-router-dom';
 
-export type RouteAccess = 'public' | 'authenticated' | 'admin';
-export type RouteModule = { default: ComponentType };
+type RouteAccess = 'public' | 'authenticated' | 'admin';
+type RouteModule = { default: ComponentType };
 
 export type AppRoute = {
   id: string;

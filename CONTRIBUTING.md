@@ -20,7 +20,8 @@ Keep changes small. Prefer existing owners over new layers. Config belongs in `b
 After a meaningful implementation change:
 
 ```powershell
-.\scripts\check.ps1 -Mode Affected
+.\scripts\check.ps1 -Scope Backend
+# or: .\scripts\check.ps1 -Scope Frontend
 ```
 
 Before completion or push:
@@ -29,6 +30,7 @@ Before completion or push:
 .\scripts\check.ps1
 ```
 
-The repository scripts select tests and run backend/frontend static, type, format, LOC, and
-complexity gates. Do not replace the completion gate with hand-picked commands. Full suites,
-including the full backend suite and full E2E, are CI-only.
+Then run `.\scripts\test.ps1`. The repository gates cover backend/frontend static, type, format,
+architecture, dead-code, dependency, API-contract, LOC, and complexity policy, while the test
+selector maps changed code to affected tests. Do not replace the completion gate with hand-picked
+commands. Full suites, measured coverage, builds, and full E2E are CI-only.

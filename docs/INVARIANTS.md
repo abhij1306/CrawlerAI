@@ -190,9 +190,9 @@ Product Intelligence identity ladder, strongest first:
 
 ## 12. Maintainability, tests, plans, and docs
 
-- Static validation is owned by `scripts/check.ps1`; affected test selection is owned by `scripts/test.ps1` and `scripts/validation.json`. Do not bypass them, weaken gates, raise limits, or edit mappings to avoid relevant tests.
+- Static validation is owned by `scripts/check.ps1` and `scripts/quality.mjs`; affected test selection is owned by `scripts/test.ps1` and `scripts/validation.json`. The static gate includes architecture, dependency, dead-code, and exported OpenAPI contract checks. Do not bypass them, weaken gates, raise limits, or edit mappings to avoid relevant tests.
 - Backend callable complexity fails above 15. Frontend complexity uses the existing VitePlus/ESLint threshold. LOC uses physical source lines with narrow legacy baselines that may not grow.
-- Applied Alembic migrations are immutable history. Validation scope, exclusions, and legacy baselines live only in `scripts/validation.json`; do not add undocumented exceptions or grow a baseline.
+- Before the first production release, Alembic keeps one clean-start `001` baseline. Fold schema changes into that baseline and reset disposable local databases; migration files follow normal formatting and lint rules. After production release, applied migrations become immutable and new schema changes require additive revisions. Validation scope, exclusions, and legacy baselines live only in `scripts/validation.json`; do not add undocumented exceptions or grow a baseline.
 - Split large test modules by public behavior. Shared fixture vocabulary may live in non-test support modules; preserve collected behavior.
 - Test contracts and observable behavior, not private call order or existence of private constants.
 - A plan slice is complete only after its mapped affected tests and canonical local gate pass. Full suites are CI-only.

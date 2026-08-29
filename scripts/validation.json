@@ -21,17 +21,45 @@
   },
   "rules": [
     {
-      "sources": ["scripts/check.ps1", "scripts/test.ps1", "scripts/validation.json"],
-      "backendTests": ["tests/unit/test_final_architecture_contracts.py"],
-      "frontendTests": ["lib/check-crawl-architecture.test.ts"]
+      "sources": ["scripts/check.ps1", "scripts/quality.mjs", "scripts/test.ps1", "scripts/validation.json"],
+      "backendTests": ["tests/unit/test_final_architecture_contracts.py", "tests/unit/test_export_openapi.py"],
+      "frontendTests": ["lib/check-crawl-architecture.test.ts", "lib/api/contract-drift.test.ts"]
     },
     {
-      "sources": ["backend/pyproject.toml", "backend/uv.lock", "backend/tests/conftest.py"],
-      "backendTests": ["tests/unit/test_container_runtime_contract.py", "tests/unit/test_final_architecture_contracts.py", "tests/unit/test_pipeline_import_cycle.py"]
+      "sources": ["backend/pyproject.toml", "backend/uv.lock", "backend/.importlinter", "backend/scripts/**", "backend/tests/conftest.py"],
+      "backendTests": ["tests/unit/test_container_runtime_contract.py", "tests/unit/test_export_openapi.py", "tests/unit/test_final_architecture_contracts.py", "tests/unit/test_pipeline_import_cycle.py"]
     },
     {
-      "sources": ["frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/vite.config.ts", "frontend/vitest.setup.ts"],
-      "frontendTests": ["lib/check-crawl-architecture.test.ts"]
+      "sources": ["backend/app/core/__init__.py"],
+      "backendTests": ["tests/unit/test_final_architecture_contracts.py"]
+    },
+    {
+      "sources": ["backend/app/core/celery_app.py"],
+      "backendTests": ["tests/unit/test_celery_task_is_gone.py", "tests/unit/test_runscale_celery_config.py"]
+    },
+    {
+      "sources": ["backend/app/core/dependencies.py"],
+      "backendTests": ["tests/component/test_auth_service.py", "tests/component/test_crawl_creation_profiles.py", "tests/component/test_dashboard_service.py"]
+    },
+    {
+      "sources": ["backend/app/core/listing_cards.py"],
+      "backendTests": ["tests/unit/test_listing_cards.py"]
+    },
+    {
+      "sources": ["backend/app/core/telemetry.py"],
+      "backendTests": ["tests/component/test_crawl_proxy_validation.py", "tests/component/test_main.py"]
+    },
+    {
+      "sources": ["backend/app/evaluation/schema.py"],
+      "backendTests": ["tests/unit/test_evaluation_schema.py"]
+    },
+    {
+      "sources": ["backend/app/main.py"],
+      "backendTests": ["tests/component/test_main.py"]
+    },
+    {
+      "sources": ["frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/pnpm-workspace.yaml", "frontend/knip.jsonc", "frontend/scripts/check-contract.mjs", "frontend/vite.config.ts", "frontend/vitest.setup.ts"],
+      "frontendTests": ["lib/check-crawl-architecture.test.ts", "lib/api/contract-drift.test.ts"]
     },
     {
       "sources": ["frontend/playwright.config.ts"],

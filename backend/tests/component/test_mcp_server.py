@@ -57,7 +57,7 @@ async def test_mcp_server_registers_only_supported_tools() -> None:
 @pytest.mark.parametrize(
     "host",
     [
-        "0.0.0.0",  # nosec B104 - negative test for fail-closed bind validation
+        "0.0.0.0",  # noqa: S104  # nosec B104 - fail-closed validation fixture
         "localhost",
         "mcp.example.com",
     ],

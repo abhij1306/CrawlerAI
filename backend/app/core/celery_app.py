@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Protocol
 
 try:
-    from celery import Celery  # type: ignore[import-untyped]
+    from celery import Celery
 except (
     ModuleNotFoundError
 ):  # pragma: no cover - exercised only when Celery is not installed locally.
@@ -228,8 +228,8 @@ try:
     from celery.signals import worker_process_init, worker_process_shutdown
 except ImportError:
     # Stub signals when Celery is not installed
-    worker_process_init = SimpleNamespace(connect=lambda func: func)  # type: ignore[assignment]
-    worker_process_shutdown = SimpleNamespace(connect=lambda func: func)  # type: ignore[assignment]
+    worker_process_init = SimpleNamespace(connect=lambda func: func)
+    worker_process_shutdown = SimpleNamespace(connect=lambda func: func)
 
 # Beat stores task names, but workers still need these tasks registered on app import.
 import_module("app.tasks")

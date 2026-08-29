@@ -8,7 +8,7 @@ import { useCallback, useSyncExternalStore } from 'react';
  * initialiser, so rotating a device or resizing a window changed nothing. This
  * subscribes properly.
  */
-export function useMediaQuery(query: string): boolean {
+function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       if (typeof window === 'undefined' || !window.matchMedia) return () => {};
@@ -35,7 +35,7 @@ export function useMediaQuery(query: string): boolean {
  * Kept in sync with the `max-md:` variants the mobile layout uses — if this
  * number changes, those change with it.
  */
-export const MOBILE_MEDIA_QUERY = '(max-width: 767px)';
+const MOBILE_MEDIA_QUERY = '(max-width: 767px)';
 
 export function useIsMobile(): boolean {
   return useMediaQuery(MOBILE_MEDIA_QUERY);

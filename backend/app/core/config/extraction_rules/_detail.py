@@ -1,5 +1,5 @@
 from __future__ import annotations
-# ruff: noqa: F401,F403,F405
+# ruff: noqa: F403
 
 import re
 
@@ -436,7 +436,8 @@ DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
 TITLE_PROMOTION_EXACT_VALUES = frozenset({"prime"})
 DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (
     r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",
-) + tuple(_STATIC_EXPORTS.get("DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA", ()))
+    *tuple(_STATIC_EXPORTS.get("DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA", ())),
+)
 DETAIL_ARTIFACT_IDENTIFIER_VALUES = frozenset(
     {"description", "details", "product details", "specification", "specifications"}
 )
@@ -540,7 +541,8 @@ UNRESOLVED_TEMPLATE_URL_TOKENS = (
     "%%",
     "[[",
     "]]",
-) + tuple(_STATIC_EXPORTS.get("UNRESOLVED_TEMPLATE_URL_TOKENS_EXTRA", ()))
+    *tuple(_STATIC_EXPORTS.get("UNRESOLVED_TEMPLATE_URL_TOKENS_EXTRA", ())),
+)
 DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS = frozenset(
     {"discount", "false", "off", "on", "sale", "true"}
 )

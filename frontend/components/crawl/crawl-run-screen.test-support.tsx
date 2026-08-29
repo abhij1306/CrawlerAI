@@ -1,32 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { render } from '@testing-library/react';
+import { afterEach, beforeEach, vi } from 'vite-plus/test';
 
-import { queryKeys } from '@/api/query-keys';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
-import { POLLING_INTERVALS, WEBSOCKET_RECONNECT } from '../../lib/constants/timing';
-import { storeProductIntelligencePrefill } from '../../lib/crawl/prefill';
 import { TopBarProvider } from '../layout/top-bar-context';
 import { CrawlRunScreen } from './crawl-run-screen';
-import { LogTerminal } from './log-terminal';
 
-export {
-  QueryClient,
-  act,
-  describe,
-  expect,
-  fireEvent,
-  it,
-  LogTerminal,
-  POLLING_INTERVALS,
-  queryKeys,
-  render,
-  screen,
-  storeProductIntelligencePrefill,
-  vi,
-  waitFor,
-  WEBSOCKET_RECONNECT,
-};
+export { QueryClient };
 export type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe };
 
 const sharedMocks = vi.hoisted(() => ({
@@ -46,7 +26,8 @@ const sharedMocks = vi.hoisted(() => ({
   },
 }));
 
-export const { apiMock, pushMock, replaceMock, routeMock } = sharedMocks;
+const { apiMock, pushMock, routeMock } = sharedMocks;
+export { apiMock, pushMock, routeMock };
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();

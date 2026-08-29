@@ -138,7 +138,7 @@ async def _google_native_session(
 
                 html = await html_getter(page)
                 current_url = _page_url(page)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - browser provider boundary records failures
                 logger.warning(
                     "Product intelligence native Google query failed: %s", exc
                 )

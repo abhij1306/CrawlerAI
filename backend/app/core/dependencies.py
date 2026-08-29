@@ -30,7 +30,7 @@ _dispatcher_lock = threading.Lock()
 
 
 def get_db(
-    session: AsyncSession = Depends(get_session),  # noqa: B008 - FastAPI injects dependencies via parameter defaults.
+    session: AsyncSession = Depends(get_session),
 ) -> AsyncSession:
     return session
 
@@ -139,7 +139,7 @@ async def get_current_user(
     request: Request,
     access_token: str | None = Cookie(default=None),
     authorization: str | None = Header(default=None),
-    session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
+    session: AsyncSession = Depends(get_db),
 ) -> User:
     if _token_source(access_token, authorization) == "cookie":
         enforce_cookie_csrf(request)
@@ -158,7 +158,7 @@ async def get_current_user_optional(
     request: Request,
     access_token: str | None = Cookie(default=None),
     authorization: str | None = Header(default=None),
-    session: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
+    session: AsyncSession = Depends(get_db),
 ) -> User | None:
     """Same resolution as get_current_user but anonymous-friendly (no 401)."""
     if _token_source(access_token, authorization) == "cookie":
@@ -171,7 +171,7 @@ async def get_current_user_optional(
 
 
 def require_admin(
-    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
+    user: User = Depends(get_current_user),
 ) -> User:
     if user.role != "admin":
         raise HTTPException(

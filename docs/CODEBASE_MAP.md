@@ -11,7 +11,7 @@ hard constraints live in `INVARIANTS.md`.
 | Celery application and tasks | `backend/app/core/celery_app.py`, `backend/app/tasks.py` |
 | Database and migrations | `backend/app/core/database.py`, `backend/app/core/migrations.py`, `backend/alembic/` |
 | Frontend bootstrap and route registry | `frontend/src/main.tsx`, `frontend/src/app/route-registry.ts` |
-| Local static validation and fixes | `scripts/check.ps1` |
+| Local static validation and fixes | `scripts/check.ps1`, `scripts/quality.mjs` |
 | Affected test selection and execution | `scripts/test.ps1`, `scripts/validation.json` |
 
 Support outside `backend/app/`:
@@ -146,6 +146,8 @@ All paths below are relative to `frontend/`.
 | User and LLM administration | `app/admin/users/`, `app/admin/llm/` |
 | Global tokens/reset/animations | `app/globals.css` |
 | Browser tests | `e2e/` |
+| Frontend dead-code policy | `knip.jsonc` |
+| Backend/frontend API contract drift | `lib/api/contract-drift.ts` |
 
 ## Tests
 

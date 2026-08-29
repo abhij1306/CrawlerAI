@@ -81,7 +81,8 @@ def attempt_spec(
 def plan_deadline(runner: AttemptRunner) -> datetime:
     if runner.plan.plan_deadline is None:
         start_plan(runner)
-    assert runner.plan.plan_deadline is not None
+    if runner.plan.plan_deadline is None:
+        raise RuntimeError("Acquisition plan deadline was not initialized")
     return runner.plan.plan_deadline
 
 

@@ -184,7 +184,7 @@ async def _run_one(
             "browser_diagnostics": dict(result.browser_diagnostics or {}),
             "seconds": round(time.perf_counter() - started, 2),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - smoke runner reports each target failure
         return {
             "name": name,
             "url": url,

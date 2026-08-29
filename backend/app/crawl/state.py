@@ -18,13 +18,13 @@ __all__ = [
     "CONTROL_REQUEST_KEY",
     "CONTROL_REQUEST_KILL",
     "CONTROL_REQUEST_PAUSE",
-    "CrawlStatus",
     "TERMINAL_STATUSES",
+    "CrawlStatus",
+    "get_control_request",
     "normalize_status",
+    "set_control_request",
     "transition_status",
     "update_run_status",
-    "get_control_request",
-    "set_control_request",
 ]
 
 

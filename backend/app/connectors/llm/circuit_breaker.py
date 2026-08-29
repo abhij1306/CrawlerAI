@@ -11,9 +11,9 @@ from app.connectors.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_e
 __all__ = [
     "ERROR_PREFIX",
     "LLMErrorCategory",
-    "classify_error",
     "circuit_breaker_snapshot",
     "circuit_is_open",
+    "classify_error",
     "record_failure",
     "record_success",
 ]

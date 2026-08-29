@@ -2,7 +2,7 @@ import { apiClient } from '@/api/client';
 
 import { paginationQuery, withQuery } from './shared';
 
-export type DataEnrichmentOptions = {
+type DataEnrichmentOptions = {
   max_source_records: number;
   llm_enabled: boolean;
 };

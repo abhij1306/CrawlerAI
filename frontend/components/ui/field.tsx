@@ -89,13 +89,3 @@ export function Field({
     </label>
   );
 }
-export type FieldProps = {
-  label: string;
-  hint?: string;
-  error?: ReactNode;
-  required?: boolean;
-  className?: string;
-  children:
-    | ReactNode
-    | ((props: { id: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }) => ReactNode);
-};

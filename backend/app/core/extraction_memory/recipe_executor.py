@@ -562,10 +562,8 @@ def _check_capture_requirements(
     missing = [
         requirement
         for requirement in recipe.capture_requirements
-        if requirement == "rendered_dom"
-        and "rendered_html" not in available
-        or requirement == "network_json"
-        and "network_json" not in available
+        if (requirement == "rendered_dom" and "rendered_html" not in available)
+        or (requirement == "network_json" and "network_json" not in available)
     ]
     if missing:
         raise _RecipeError(

@@ -181,10 +181,10 @@ def _square_crop_image_html(*, image_url: str) -> str:
 
 
 __all__ = [
+    "_CONTROL_ROLE_HTML",
     "CommerceDetailProjection",
     "PublicationEntry",
     "Surface",
-    "_CONTROL_ROLE_HTML",
     "_compacted_description_html",
     "_dom_option_values",
     "_extract",

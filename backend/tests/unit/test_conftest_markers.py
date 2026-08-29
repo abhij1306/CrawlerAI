@@ -45,7 +45,7 @@ async def test_real_redis_marker_skips_the_fake(
         assert not isinstance(client, FakeRedis)
         try:
             await client.ping()
-        except Exception:
+        except Exception:  # noqa: BLE001 - optional external Redis probe
             pytest.skip("no real Redis server available")
     finally:
         # Do not leak a real client/pool into module state for later tests.

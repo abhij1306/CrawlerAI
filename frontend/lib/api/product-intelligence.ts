@@ -41,7 +41,7 @@ export type ProductIntelligenceJob = {
   completed_at: string | null;
 };
 
-export type ProductIntelligenceSourceProduct = {
+type ProductIntelligenceSourceProduct = {
   id: number;
   job_id: number;
   source_run_id: number | null;
@@ -61,7 +61,7 @@ export type ProductIntelligenceSourceProduct = {
   created_at: string;
 };
 
-export type ProductIntelligenceCandidate = {
+type ProductIntelligenceCandidate = {
   id: number;
   job_id: number;
   source_product_id: number;
@@ -77,7 +77,7 @@ export type ProductIntelligenceCandidate = {
   updated_at: string;
 };
 
-export type ProductIntelligenceMatch = {
+type ProductIntelligenceMatch = {
   id: number;
   job_id: number;
   source_product_id: number;
@@ -105,7 +105,7 @@ export type ProductIntelligenceJobDetail = {
   matches: ProductIntelligenceMatch[];
 };
 
-export type ProductIntelligenceDiscoveryCandidate = {
+type ProductIntelligenceDiscoveryCandidate = {
   source_record_id: number | null;
   source_run_id: number | null;
   source_url: string;

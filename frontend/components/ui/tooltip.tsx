@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useId } from 'react';
 import { createPortal } from 'react-dom';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement } from 'react';
 import { cn } from '../../lib/utils';
 
 /**
@@ -118,4 +118,3 @@ export function Tooltip({
     </div>
   );
 }
-export const TooltipProvider = ({ children }: { children: ReactNode }) => children;

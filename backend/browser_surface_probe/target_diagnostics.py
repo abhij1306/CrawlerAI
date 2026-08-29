@@ -366,7 +366,7 @@ def _classification_payload(
 def _geo_payload_from_text(text: str) -> dict[str, object]:
     try:
         payload = json.loads(text)
-    except Exception:
+    except Exception:  # noqa: BLE001 - malformed provider diagnostics are ignored
         return {}
     if not isinstance(payload, dict):
         return {}
@@ -425,7 +425,7 @@ async def _run_geo_endpoint_checks(proxy: str | None) -> dict[str, object]:
                         "geo": payload,
                     }
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - report captures per-check failures
                 checks.append(
                     {
                         "label": label,
@@ -463,7 +463,7 @@ async def _target_transport_payload(
             float(BROWSER_SURFACE_PROBE_TARGET_HTTP_TIMEOUT_SECONDS),
             proxy=proxy,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - diagnostic method reports any client failure
         return {
             "method": method_label,
             "url": url,
@@ -512,9 +512,9 @@ async def _response_headers_dict(response: object | None) -> dict[str, str]:
         except TypeError:
             try:
                 resolved = candidate()
-            except Exception:
+            except Exception:  # noqa: BLE001,S112  # nosec B112 - try next binding
                 continue
-        except Exception:
+        except Exception:  # noqa: BLE001,S112  # nosec B112 - try next binding
             continue
         if isinstance(resolved, dict):
             return {str(key): str(value) for key, value in resolved.items()}
@@ -530,7 +530,7 @@ async def _browser_cookie_names(page: Any, final_url: str) -> list[str]:
         return []
     try:
         cookies = await cookies_method([final_url]) if callable(cookies_method) else []
-    except Exception:
+    except Exception:  # noqa: BLE001 - cookie capture is optional diagnostics
         return []
     names = [
         _normalize_space(cookie.get("name"))
@@ -575,7 +575,7 @@ async def _target_browser_payload(
         for state, timeout_ms in (("load", 10000), ("networkidle", 8000)):
             try:
                 await page.wait_for_load_state(state, timeout=timeout_ms)
-            except Exception:
+            except Exception:  # noqa: BLE001,S112  # nosec B112 - best-effort state
                 continue
         await page.wait_for_timeout(int(BROWSER_SURFACE_PROBE_POST_NAVIGATION_WAIT_MS))
         html = await page.content()
@@ -594,7 +594,7 @@ async def _target_browser_payload(
                 status_code = int(
                     status_attr() if callable(status_attr) else status_attr or 0
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - status extraction is best-effort
                 status_code = 0
         cookie_names = await _browser_cookie_names(page, final_url or url)
         return {
@@ -672,7 +672,7 @@ async def _run_target_diagnostic(
             artifacts_dir=artifacts_dir,
             target_id=target_id,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - browser failure becomes diagnostic output
         browser_payload = {
             "method": "browser",
             "url": url,
@@ -700,7 +700,7 @@ async def _navigate_probe_target(page, url: str) -> None:
     for state, timeout_ms in (("load", 10000), ("networkidle", 8000)):
         try:
             await page.wait_for_load_state(state, timeout=timeout_ms)
-        except Exception:
+        except Exception:  # noqa: BLE001,S112  # nosec B112 - best-effort state
             continue
     await page.wait_for_timeout(int(BROWSER_SURFACE_PROBE_POST_NAVIGATION_WAIT_MS))
 
@@ -708,11 +708,11 @@ async def _navigate_probe_target(page, url: str) -> None:
 async def _capture_probe_artifacts(page, artifacts: dict[str, Path]) -> None:
     try:
         await page.screenshot(path=str(artifacts["screenshot"]), full_page=True)
-    except Exception:
+    except Exception:  # noqa: BLE001,S110  # nosec B110 - optional artifact
         # Screenshot artifact is diagnostic-only; ignore capture failures.
         pass
     try:
         artifacts["html"].write_text(await page.content(), encoding="utf-8")
-    except Exception:
+    except Exception:  # noqa: BLE001,S110  # nosec B110 - optional artifact
         # HTML artifact is diagnostic-only; ignore capture failures.
         pass

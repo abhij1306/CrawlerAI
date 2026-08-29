@@ -373,8 +373,8 @@ def detail_readiness_hint_count(surface: str, visible_text: str) -> int:
 
 
 __all__ = [
-    "ExtractableContentSignals",
     "STRUCTURED_SHELL_TOKENS",
+    "ExtractableContentSignals",
     "analyze_extractable_content",
     "analyze_html",
     "detail_readiness_hint_count",

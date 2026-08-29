@@ -35,7 +35,7 @@ export function Card({
   );
 }
 
-export function CardHeader({
+function CardHeader({
   children,
   className,
   ...props
@@ -53,31 +53,7 @@ export function CardHeader({
   );
 }
 
-export function CardTitle({
-  children,
-  className,
-  ...props
-}: Readonly<ComponentPropsWithoutRef<'h3'>>) {
-  return (
-    <h3 {...props} className={cn('text-lg font-semibold text-foreground', className)}>
-      {children}
-    </h3>
-  );
-}
-
-export function CardDescription({
-  children,
-  className,
-  ...props
-}: Readonly<ComponentPropsWithoutRef<'p'>>) {
-  return (
-    <p {...props} className={cn('text-base text-secondary', className)}>
-      {children}
-    </p>
-  );
-}
-
-export function CardContent({
+function CardContent({
   children,
   className,
   ...props
@@ -89,7 +65,7 @@ export function CardContent({
   );
 }
 
-export function CardFooter({
+function CardFooter({
   children,
   className,
   ...props

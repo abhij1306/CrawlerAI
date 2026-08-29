@@ -221,9 +221,6 @@ def _recipe_tier_result(*, records: tuple = ({"title": "x"},)):
 
 
 __all__ = [
-    "AsyncSession",
-    "ExtractionOperatorLabel",
-    "Surface",
     "_CLAIM_URL",
     "_DETAIL_HTML",
     "_DETAIL_URL",
@@ -231,6 +228,9 @@ __all__ = [
     "_NO_CANDIDATE_RESPONSE",
     "_RESPONSE",
     "_SURFACE_VALUE",
+    "AsyncSession",
+    "ExtractionOperatorLabel",
+    "Surface",
     "_empty_result_with_retry",
     "_latch_acquisition_result",
     "_learned_recipe",

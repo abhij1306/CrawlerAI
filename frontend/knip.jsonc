@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "entry": ["index.html", "e2e/**/*.spec.ts", "scripts/*.mjs"],
+  "project": ["{app,components,lib,src,e2e,scripts}/**/*.{ts,tsx,js,mjs}"],
+  "ignoreDependencies": [
+    // Loaded from app/globals.css via `@import "tailwindcss"`; Knip does not follow CSS imports.
+    "tailwindcss",
+  ],
+}

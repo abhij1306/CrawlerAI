@@ -41,8 +41,8 @@ from app.acquisition.traversal_steps import (
 )
 
 __all__ = [
-    "TraversalResult",
     "PlaywrightError",
+    "TraversalResult",
     "click_with_retry",
     "count_listing_cards",
     "dismiss_overlays_if_needed",

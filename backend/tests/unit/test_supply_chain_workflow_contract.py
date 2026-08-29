@@ -67,12 +67,17 @@ def test_ecr_gate_uses_oidc_temporary_helper_and_fail_closed_policy() -> None:
 
 
 def test_existing_dependency_secret_and_code_scans_remain_blocking() -> None:
-    backend = _workflow("backend-ci.yml")
-    frontend = _workflow("frontend-playwright-smoke.yml")
+    ci = _workflow("ci.yml")
 
-    assert "uv lock --check" in backend
-    assert "python -m pip_audit --vulnerability-service osv" in backend
-    assert "vp install --frozen-lockfile" in frontend
-    assert "vp pm audit -- --audit-level=high" in frontend
+    assert "uv lock --check" in ci
+    assert "python -m pip_audit --vulnerability-service osv" in ci
+    assert "vp install --frozen-lockfile" in ci
+    assert "vp pm audit -- --audit-level=high" in ci
+    assert "node ../scripts/quality.mjs --mode check --scope backend" in ci
+    assert "node scripts/quality.mjs --mode check --scope frontend" in ci
+    assert "CRAWLERAI_OPENAPI_JSON" in ci
+    assert "--cov-report=xml" in ci
+    assert "vp test --coverage" in ci
+    assert "name: Required" in ci
     assert (WORKFLOW_ROOT / "gitleaks.yml").is_file()
     assert (WORKFLOW_ROOT / "codeql.yml").is_file()

@@ -323,7 +323,7 @@ def _build_recipe(
             domain=normalize_domain(
                 request.capture.final_url or request.capture.requested_url
             ),
-            surface=request.surface.value,  # type: ignore[arg-type]
+            surface=request.surface.value,
             route_pattern=normalize_route(
                 request.capture.final_url or request.capture.requested_url,
                 request.surface.value,

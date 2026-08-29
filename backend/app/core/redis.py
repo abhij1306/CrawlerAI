@@ -155,7 +155,7 @@ async def redis_fail_open(
         return default
     try:
         return await operation(get_redis())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - fail-open boundary handles all client failures
         _temporarily_disable_redis(exc)
         logger.warning(
             "Redis operation failed; continuing without shared state",

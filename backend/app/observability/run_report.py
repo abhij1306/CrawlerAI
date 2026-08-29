@@ -99,7 +99,7 @@ def build_run_report(run_id: int) -> dict[str, Any]:
 
 
 class _RootCauseGroup:
-    __slots__ = ("root_cause", "_links", "_examples")
+    __slots__ = ("_examples", "_links", "root_cause")
 
     def __init__(self, root_cause: str) -> None:
         self.root_cause = root_cause

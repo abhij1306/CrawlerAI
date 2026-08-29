@@ -396,11 +396,11 @@ sanitize_header_name = _sanitize_header_name
 client_rate_limit_key = _client_rate_limit_key
 
 __all__ = [
-    "app",
-    "sanitize_header_value",
-    "sanitize_header_name",
-    "client_rate_limit_key",
     "RATE_LIMIT_BUCKETS",
+    "app",
+    "client_rate_limit_key",
+    "sanitize_header_name",
+    "sanitize_header_value",
 ]
 
 

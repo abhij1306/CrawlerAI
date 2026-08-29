@@ -207,7 +207,7 @@ async def _reset_crawl_runtime_state() -> dict:
 
     artifacts_removed = _reset_directory(settings.artifacts_dir)
     legacy_artifacts_dir = BASE_DIR / "artifacts"
-    artifacts_dir = Path(settings.artifacts_dir).resolve()
+    artifacts_dir = Path(settings.artifacts_dir).resolve()  # noqa: ASYNC240 - bounded local cleanup
     if (
         not _looks_like_test_artifacts_dir(artifacts_dir)
         and artifacts_dir.is_relative_to(PROJECT_ROOT.resolve())

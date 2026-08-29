@@ -581,13 +581,13 @@ def _curl_response_to_fetch_result(url: str, response: Any) -> PageFetchResult:
 
 
 __all__ = [
-    "BlockPageClassification",
     "BLOCK_SIGNATURES",
+    "BlockPageClassification",
     "NetworkPayloadReadResult",
+    "PageFetchResult",
     "classify_block_from_headers",
     "classify_blocked_page",
     "classify_blocked_page_async",
-    "PageFetchResult",
     "close_shared_http_client",
     "copy_headers",
     "curl_fetch",
@@ -595,8 +595,8 @@ __all__ = [
     "http_fetch",
     "is_blocked_html",
     "is_blocked_html_async",
-    "is_non_retryable_http_status",
     "is_browser_recoverable_http_status",
+    "is_non_retryable_http_status",
     "is_retryable_http_status",
     "should_escalate_to_browser",
     "should_escalate_to_browser_async",

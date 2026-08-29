@@ -238,7 +238,8 @@ DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS = (
     r"\bexclusive\s+member-only\s+deals\b",
     r"\bwas\s+this\s+product\s+information\s+helpful\b",
     r"\bwrite\s+a\s+review\b",
-) + tuple(_STATIC_EXPORTS.get("DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS_EXTRA", ()))
+    *tuple(_STATIC_EXPORTS.get("DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS_EXTRA", ())),
+)
 DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS = (
     r"\b(?:l|i)nstagram\s+@[A-Za-z0-9_.-]+\b",
     r"\bimport\s+duties,\s+taxes,\s+and\s+charges\b.{0,260}\bprior\s+to\s+(?:bidding|buying)\b\.?",

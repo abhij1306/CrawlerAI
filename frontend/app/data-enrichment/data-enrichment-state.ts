@@ -4,7 +4,7 @@ import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import type { DataEnrichmentPrefillPayload } from '../../lib/crawl/prefill';
 import { loadStoredPrefill, parsePrefillRecords } from '../../lib/crawl/prefill';
 
-export type DataEnrichmentState = {
+type DataEnrichmentState = {
   llmEnabled: boolean;
   activeJobId: number | null;
   error: string;
@@ -12,7 +12,7 @@ export type DataEnrichmentState = {
   selectedProductId: number | null;
 };
 
-export type DataEnrichmentAction =
+type DataEnrichmentAction =
   | { type: 'llmChanged'; enabled: boolean }
   | { type: 'jobCreated'; jobId: number }
   | { type: 'failed'; message: string }

@@ -1,4 +1,3 @@
-# ruff: noqa: F401
 from __future__ import annotations
 
 from decimal import Decimal
@@ -88,21 +87,21 @@ def _build_candidate_intelligence(
 
 
 __all__ = [
+    "GOOGLE_NATIVE_HOME_URL",
+    "PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED",
+    "PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT",
+    "SOURCE_TYPE_BRAND_DTC",
     "AsyncSession",
     "CrawlRecord",
     "Decimal",
-    "GOOGLE_NATIVE_HOME_URL",
     "LLMErrorCategory",
     "LLMTaskResult",
-    "PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED",
-    "PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT",
     "ProductIntelligenceCandidate",
     "ProductIntelligenceDiscoveryRequest",
     "ProductIntelligenceJob",
     "ProductIntelligenceMatch",
     "ProductIntelligenceSettings",
     "ProductIntelligenceSourceProduct",
-    "SOURCE_TYPE_BRAND_DTC",
     "SearchResult",
     "backfill_candidate_brand",
     "build_search_queries",

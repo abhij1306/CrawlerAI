@@ -450,12 +450,12 @@ def is_same_origin(current_url: str, next_url: str) -> bool:
     # Also compare the first path segment to prevent cross-tenant bleed
     # on path-based multi-tenant architectures (e.g. myworkdayjobs.com/TenantA).
     if _requires_path_tenant_boundary(current_url, next_url):
-        current_first = (str(current.path or "").strip("/").split("/") + [""])[
-            0
-        ].lower()
-        next_first = (str(next_value.path or "").strip("/").split("/") + [""])[
-            0
-        ].lower()
+        current_first = next(
+            iter(str(current.path or "").strip("/").split("/")), ""
+        ).lower()
+        next_first = next(
+            iter(str(next_value.path or "").strip("/").split("/")), ""
+        ).lower()
         if current_first and next_first and current_first != next_first:
             return False
     return True

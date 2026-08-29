@@ -1,5 +1,4 @@
 from __future__ import annotations
-# ruff: noqa: F401,F403,F405
 
 _EXTRA_EXPORTS = [
     "MAX_SOURCE_OBJECTS_PER_ARTIFACT",

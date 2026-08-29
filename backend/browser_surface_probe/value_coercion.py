@@ -158,9 +158,6 @@ def coalesce(values: Sequence[object]) -> object | None:
 
 __all__ = [
     "BROWSER_VERSION_RE",
-    "object_dict",
-    "object_list",
-    "string_list",
     "coalesce",
     "country_code_from_value",
     "dedupe",
@@ -170,6 +167,9 @@ __all__ = [
     "looks_like_truthy_risk",
     "normalize_key",
     "normalize_space",
+    "object_dict",
+    "object_list",
     "percent_value",
+    "string_list",
     "timezone_matches_country",
 ]

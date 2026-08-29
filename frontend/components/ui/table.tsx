@@ -112,9 +112,3 @@ export function TableCell({
     </td>
   );
 }
-export type TableProps = {
-  children: ReactNode;
-  className?: string;
-  wrapperClassName?: string;
-  wrapperRef?: Ref<HTMLDivElement>;
-};

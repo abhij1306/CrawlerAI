@@ -19,7 +19,7 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run_fresh(code: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 - fixed interpreter executes test-owned code
         [sys.executable, "-c", code],
         cwd=_BACKEND_ROOT,
         capture_output=True,

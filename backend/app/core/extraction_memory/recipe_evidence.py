@@ -225,8 +225,7 @@ def _build_row(
     artifact_id = binding.artifact or _default_artifact_id(bundle)
     locator = SourceLocator(
         kind=_LOCATOR_KIND.get(binding.source, "adapter_path"),  # type: ignore[arg-type]
-        value=binding.attribute
-        and f"{binding.path}@{binding.attribute}"
+        value=(binding.attribute and f"{binding.path}@{binding.attribute}")
         or binding.path
         or binding.binding_id,
         preview=str(value)[:120],

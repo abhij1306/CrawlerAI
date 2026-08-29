@@ -133,10 +133,12 @@ first. Before declaring implementation complete or pushing, run these once, in t
 .\scripts\test.ps1
 ```
 
-`check.ps1` is the canonical static/fix gate. It applies Ruff fixes and formatting, runs mypy,
-runs VitePlus format/lint/type checks with fixes, and enforces LOC and complexity. `test.ps1`
-separately selects and runs affected backend, frontend, and mapped E2E tests. Fix every failure.
-Review and include any formatter changes.
+`check.ps1` is the canonical static/fix gate and delegates shared orchestration to
+`scripts/quality.mjs`. It applies Ruff fixes and formatting; runs mypy, import-linter, Vulture,
+and deptry; runs VitePlus format/lint/type and frontend policy checks; runs Knip and the exported
+OpenAPI contract guard; and enforces LOC and complexity. `test.ps1` separately selects and runs
+affected backend, frontend, and mapped E2E tests. Fix every failure. Review and include formatter
+changes.
 
 If `test.ps1` fails, note every file edited while fixing that failure. Rerun the selector with only
 that retry delta, for example:
@@ -154,7 +156,9 @@ When debugging one known failure, running that exact test directly is allowed. R
 repository script before considering the change complete.
 
 The pre-push hook runs `.\scripts\check.ps1 -CheckOnly`. It never mutates files. GitHub CI
-remains authoritative and runs full static, unit, integration, frontend, and E2E validation.
+remains authoritative and runs full static, unit, integration, frontend, contract, build, and E2E
+validation, publishes measured coverage without a percentage gate, and exposes one stable
+`CI / Required` result.
 Do not run the full backend suite locally. Full suites and CI-only reproduction belong to GitHub CI.
 
 ### Do not game gates

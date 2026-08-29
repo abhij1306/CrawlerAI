@@ -162,8 +162,9 @@ def _run_fixture_adapter(
 
 
 __all__ = [
-    "BoundingBox",
     "COMPACT_REPRESENTATION_MAX_NODES",
+    "UTC",
+    "BoundingBox",
     "EntityRelationship",
     "EvaluationCase",
     "EvaluationPartition",
@@ -175,7 +176,6 @@ __all__ = [
     "ModelPrediction",
     "OfflineHarnessResult",
     "Path",
-    "UTC",
     "ValidationError",
     "_boundary",
     "_case",
