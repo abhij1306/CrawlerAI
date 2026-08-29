@@ -11,6 +11,7 @@ from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.acquisition.browser_capture import is_response_closed_error
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventHandler
 from app.acquisition.browser_listing_visual import listing_visual_elements_html
 from app.acquisition.browser_page_helpers import (
     capture_listing_visual_elements as _capture_listing_visual_elements,
@@ -37,7 +38,7 @@ class BrowserFinalizeInput:
     url: str
     surface: str | None
     browser_reason: str | None
-    on_event: Any
+    on_event: AcquisitionEventHandler | None
     response: Any
     navigation_strategy: str
     readiness_probes: list[dict[str, object]]
@@ -113,6 +114,7 @@ class BrowserAcquisitionResultBuilder:
         await self._emit_events(
             browser_outcome=state.browser_outcome,
             blocked=state.blocked,
+            status_code=state.status_code,
         )
         screenshot_path = await self._capture_screenshot(
             browser_outcome=state.browser_outcome
@@ -354,26 +356,30 @@ class BrowserAcquisitionResultBuilder:
             "html_document": analysis.document,
         }
 
-    async def _emit_events(self, *, browser_outcome: str, blocked: bool) -> None:
+    async def _emit_events(
+        self, *, browser_outcome: str, blocked: bool, status_code: int
+    ) -> None:
         payload = self.payload
         if payload.traversal_result is not None and payload.traversal_result.activated:
             await self.emit_browser_event(
                 payload.on_event,
-                "info",
-                (
-                    "Traversal complete - "
-                    f"mode={payload.traversal_result.selected_mode or payload.traversal_result.requested_mode}, "
-                    f"last_page_cards={int(payload.traversal_result.card_count or 0)}, "
-                    f"fragments={len(payload.traversal_result.html_fragments)}, "
-                    f"progress_events={int(payload.traversal_result.progress_events or 0)}, "
-                    f"stop_reason={payload.traversal_result.stop_reason}"
+                AcquisitionEvent.traversal_completed(
+                    mode=(
+                        payload.traversal_result.selected_mode
+                        or payload.traversal_result.requested_mode
+                    ),
+                    card_count=int(payload.traversal_result.card_count or 0),
+                    fragment_count=len(payload.traversal_result.html_fragments),
+                    progress_event_count=int(
+                        payload.traversal_result.progress_events or 0
+                    ),
+                    stop_reason=str(payload.traversal_result.stop_reason or ""),
                 ),
             )
         if blocked:
             await self.emit_browser_event(
                 payload.on_event,
-                "warning",
-                f"Acquisition detected rate limiting or bot protection for {payload.url}",
+                AcquisitionEvent.protection_detected(status_code=status_code),
             )
         if browser_outcome == "usable_content":
             payload.phase_timings_ms["screenshot_capture"] = 0

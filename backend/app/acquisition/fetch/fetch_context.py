@@ -5,7 +5,6 @@ from dataclasses import replace
 from functools import partial
 import logging
 import time
-from typing import Any
 
 import httpx
 from patchright.async_api import Error as PlaywrightError
@@ -30,6 +29,7 @@ from app.acquisition.cookie_store import (
     clear_cookie_store_cache,
     export_cookie_storage_state_for_domain,
 )
+from app.acquisition.events import AcquisitionEvent, emit_acquisition_event
 from app.acquisition.rate_limiter import (
     apply_protected_host_backoff,
     reset_pacing_state,
@@ -78,15 +78,6 @@ from app.core.url_safety import SecurityError
 logger = logging.getLogger(__name__)
 
 _FetchRuntimeContext = FetchRuntimeContext
-
-
-async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
-    if not callable(on_event):
-        return
-    try:
-        await on_event(level, message)
-    except Exception:
-        logger.debug("Fetch event callback failed", exc_info=True)
 
 
 def _should_retry_patchright_with_real_chrome(
@@ -218,14 +209,26 @@ async def fetch_page(call: FetchPageCall) -> PageFetchResult:
         prefer_browser=call.prefer_browser,
         host_preference_enabled=host_preference_enabled,
     )
-    await _emit_fetch_event(
+    await emit_acquisition_event(
         context.on_event,
-        "info",
-        _acquisition_strategy_message(
-            context=context,
+        AcquisitionEvent.strategy_selected(
+            fetch_mode=context.fetch_mode,
+            browser_first=browser_first,
             prefer_browser=call.prefer_browser,
             host_preference_enabled=host_preference_enabled,
-            browser_first=browser_first,
+            http_timeout_seconds=_resolve_http_timeout(context),
+            primary_http_fetcher=(
+                "httpx" if crawler_runtime_settings.force_httpx else "curl"
+            ),
+            reason_code=(
+                _browser_first_reason(
+                    context=context,
+                    prefer_browser=call.prefer_browser,
+                    host_preference_enabled=host_preference_enabled,
+                )
+                if browser_first
+                else "http_first"
+            ),
         ),
     )
     if browser_first:
@@ -331,13 +334,9 @@ async def _record_browser_first_failure(
         context=context
     ):
         return True
-    await _emit_fetch_event(
+    await emit_acquisition_event(
         context.on_event,
-        "warning",
-        (
-            "Browser-first acquisition failed; falling back to HTTP "
-            f"({type(exc).__name__})"
-        ),
+        AcquisitionEvent.browser_first_fallback(exception_type=type(exc).__name__),
     )
     return False
 
@@ -380,32 +379,6 @@ async def _run_final_browser_fallback(
             context.last_browser_attempt_diagnostics,
         )
         raise wrapped from exc
-
-
-def _acquisition_strategy_message(
-    *,
-    context: _FetchRuntimeContext,
-    prefer_browser: bool,
-    host_preference_enabled: bool,
-    browser_first: bool,
-) -> str:
-    if browser_first:
-        return (
-            "Acquisition strategy: browser-first "
-            f"(reason={_browser_first_reason(context=context, prefer_browser=prefer_browser, host_preference_enabled=host_preference_enabled)}, "
-            f"fetch_mode={context.fetch_mode})"
-        )
-    if not crawler_runtime_settings.force_httpx:
-        return (
-            "Acquisition strategy: http-first "
-            f"(fetch_mode={context.fetch_mode}, timeout={_resolve_http_timeout(context):.1f}s, "
-            "curl=primary, httpx_fallback=on_transport_failure)"
-        )
-    return (
-        "Acquisition strategy: http-first "
-        f"(fetch_mode={context.fetch_mode}, timeout={_resolve_http_timeout(context):.1f}s, "
-        "httpx=primary)"
-    )
 
 
 def _attach_proxy_run_session(proxy_url: str, *, run_id: int | None) -> str:
@@ -470,7 +443,7 @@ async def _run_browser_attempts(
             browser_attempt_timeout_seconds=_browser_attempt_timeout_seconds,
             should_retry_patchright_with_real_chrome=_should_retry_patchright_with_real_chrome,
             update_host_result_memory=_update_host_result_memory,
-            emit_fetch_event=_emit_fetch_event,
+            emit_fetch_event=emit_acquisition_event,
             load_host_protection_policy=load_host_protection_policy,
             note_host_hard_block=note_host_hard_block,
             wait_for_host_slot=wait_for_host_slot,
@@ -487,7 +460,7 @@ def _http_attempt_dependencies() -> HttpAttemptDependencies:
         http_fetcher=_http_fetch,
         resolve_http_timeout=_resolve_http_timeout,
         remaining_timeout_seconds=_remaining_browser_timeout_seconds,
-        emit_fetch_event=_emit_fetch_event,
+        emit_fetch_event=emit_acquisition_event,
         wait_for_host_slot=wait_for_host_slot,
         should_escalate_to_browser=_should_escalate_to_browser_async,
         run_browser_attempts=run_browser_attempts,

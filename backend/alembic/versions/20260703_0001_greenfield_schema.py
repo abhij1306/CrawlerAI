@@ -28,6 +28,29 @@ depends_on: Sequence[str] | None = None
 
 __all__ = ["branch_labels", "depends_on", "down_revision", "revision"]
 
+_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL = """
+CREATE FUNCTION enforce_run_events_append_only()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' AND NOT EXISTS (
+        SELECT 1 FROM crawl_runs WHERE id = OLD.run_id
+    ) THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'run_events are append-only'
+        USING ERRCODE = '55000';
+END;
+$$
+"""
+
+_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL = """
+CREATE TRIGGER run_events_append_only
+BEFORE UPDATE OR DELETE ON run_events
+FOR EACH ROW EXECUTE FUNCTION enforce_run_events_append_only()
+"""
+
 
 def upgrade() -> None:
     op.create_table(
@@ -184,6 +207,12 @@ def upgrade() -> None:
         sa.Column("claim_count", sa.Integer(), nullable=False),
         sa.Column("extraction_release_snapshot_id", sa.UUID(), nullable=True),
         sa.Column("last_claimed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "run_event_sequence",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+        ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
@@ -241,6 +270,55 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_crawl_logs_run_id"), "crawl_logs", ["run_id"], unique=False
     )
+    op.create_table(
+        "run_events",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("run_id", sa.Integer(), nullable=False),
+        sa.Column("sequence", sa.Integer(), nullable=False),
+        sa.Column("kind", sa.String(length=64), nullable=False),
+        sa.Column("stage", sa.String(length=64), nullable=True),
+        sa.Column("url", sa.Text(), nullable=True),
+        sa.Column("url_scope_id", sa.String(length=128), nullable=True),
+        sa.Column("severity", sa.String(length=20), nullable=False),
+        sa.Column("outcome", sa.String(length=64), nullable=False),
+        sa.Column("reason_code", sa.String(length=64), nullable=True),
+        sa.Column(
+            "facts",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["run_id"], ["crawl_runs.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint("sequence > 0", name="ck_run_events_sequence_positive"),
+        sa.CheckConstraint(
+            "stage IS NULL OR stage IN ('acquisition', 'extraction', 'normalization', 'persistence')",
+            name="ck_run_events_stage",
+        ),
+        sa.CheckConstraint(
+            "severity IN ('info', 'warning', 'error')",
+            name="ck_run_events_severity",
+        ),
+        sa.CheckConstraint(
+            "outcome IN ('progress', 'succeeded', 'partial', 'failed', 'blocked', "
+            "'skipped', 'cancelled', 'requested', 'limited')",
+            name="ck_run_events_outcome",
+        ),
+        sa.CheckConstraint(
+            "(url IS NULL) = (url_scope_id IS NULL)",
+            name="ck_run_events_url_scope",
+        ),
+        sa.UniqueConstraint("run_id", "sequence", name="uq_run_events_run_sequence"),
+    )
+    op.create_index(
+        "ix_run_events_run_url_scope_sequence",
+        "run_events",
+        ["run_id", "url_scope_id", "sequence"],
+        unique=False,
+        postgresql_where=sa.text("url_scope_id IS NOT NULL"),
+    )
+    op.execute(_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL)
+    op.execute(_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL)
     op.create_table(
         "crawl_url_results",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -1228,6 +1306,10 @@ def downgrade() -> None:
         table_name="crawl_url_results",
     )
     op.drop_table("crawl_url_results")
+    op.execute("DROP TRIGGER run_events_append_only ON run_events")
+    op.execute("DROP FUNCTION enforce_run_events_append_only()")
+    op.drop_index("ix_run_events_run_url_scope_sequence", table_name="run_events")
+    op.drop_table("run_events")
     op.drop_index(op.f("ix_crawl_logs_run_id"), table_name="crawl_logs")
     op.drop_table("crawl_logs")
     op.drop_index(op.f("ix_crawl_runs_user_id"), table_name="crawl_runs")

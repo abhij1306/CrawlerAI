@@ -9,6 +9,7 @@ from typing import Any
 from app.acquisition.contracts import (
     AttemptResult,
 )
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventHandler
 from app.acquisition.executor import AttemptExecution, AttemptExecutor
 from app.acquisition.fetch import (
     attempt_execution,
@@ -52,7 +53,9 @@ UpdateHostMemory = Callable[
     [FetchRuntimeContext],
     Awaitable[None],
 ]
-EmitFetchEvent = Callable[[object, str, str], Awaitable[None]]
+EmitFetchEvent = Callable[
+    [AcquisitionEventHandler | None, AcquisitionEvent], Awaitable[None]
+]
 
 
 @dataclass(slots=True)

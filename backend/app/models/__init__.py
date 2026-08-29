@@ -3,7 +3,13 @@ from app.core.database import Base
 from app.models.api_key import ApiKey
 from app.models.bootstrap import BootstrapRecord
 from app.models.user import User
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
+from app.models.crawl_run import (
+    CrawlLog,
+    CrawlRecord,
+    CrawlRun,
+    CrawlUrlResult,
+    RunEvent,
+)
 from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
 from app.models.domain_memory import (
     DomainCookieMemory,
@@ -53,5 +59,6 @@ __all__ = [
     "ProductIntelligenceJob",
     "ProductIntelligenceMatch",
     "ProductIntelligenceSourceProduct",
+    "RunEvent",
     "User",
 ]

@@ -13,10 +13,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.acquisition.events import AcquisitionEvent
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.extraction_memory import EXTRACTION_RELEASE_VERSION
 from app.crawl.pipeline import persistence as record_persistence
 from app.crawl.pipeline import record_extraction_stage
+from app.crawl.pipeline import runtime_helpers as runtime_helpers_module
 from app.crawl.pipeline.runtime_helpers import (
     log_pipeline_event,
     pipeline_acquisition_event_logger,
@@ -347,7 +349,9 @@ async def test_log_pipeline_event_batches_rows_until_url_commit(
 
 
 async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
-    db_session: AsyncSession, create_test_run
+    db_session: AsyncSession,
+    create_test_run,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = await create_test_run(url="https://example.com/a", surface="ecommerce_detail")
     context = SimpleNamespace(
@@ -356,8 +360,29 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
         run=run,
         session=db_session,
     )
+    recorded: list[tuple[int, object]] = []
 
-    await pipeline_acquisition_event_logger(context)("info", "browser started")
+    async def _record(*, run_id: int, fact, **_kwargs) -> None:
+        recorded.append((run_id, fact))
+
+    monkeypatch.setattr(runtime_helpers_module.run_event_timeline, "record", _record)
+
+    await pipeline_acquisition_event_logger(context)(
+        AcquisitionEvent.browser_launched(
+            launch_mode="headless",
+            engine="chromium",
+            profile="default",
+            proxy_mode="direct",
+            binary="bundled",
+        )
+    )
+    await pipeline_acquisition_event_logger(context)(
+        AcquisitionEvent.browser_escalated(
+            status_code=403,
+            method="httpx",
+            reason_code="blocked_status",
+        )
+    )
     await db_session.commit()
 
     rows = (
@@ -369,7 +394,35 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
         .scalars()
         .all()
     )
-    assert [row.message for row in rows] == ["browser started"]
+    assert [(row.level, row.message) for row in rows] == [
+        (
+            "info",
+            "browser launched: launch_mode=headless, engine=chromium, "
+            "profile=default, proxy_mode=direct, binary=bundled",
+        ),
+        (
+            "info",
+            "browser escalated: status_code=403, method=httpx, "
+            "reason_code=blocked_status",
+        ),
+    ]
+    assert [
+        (run_id, fact.kind.value, fact.url, fact.url_scope_id)
+        for run_id, fact in recorded
+    ] == [
+        (
+            run.id,
+            "acquisition.browser_launched",
+            "https://example.com/a",
+            "url:1",
+        ),
+        (
+            run.id,
+            "acquisition.browser_escalated",
+            "https://example.com/a",
+            "url:1",
+        ),
+    ]
 
 
 def _acquisition(final_url: str = "https://example.com/p/1") -> SimpleNamespace:

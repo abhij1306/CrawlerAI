@@ -10,6 +10,7 @@ import httpx
 from patchright.async_api import Error as PlaywrightError
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventHandler
 from app.acquisition.fetch.browser_policy import (
     attach_browser_attempt_diagnostics,
     browser_escalation_allowed,
@@ -50,7 +51,9 @@ class HttpAttemptDependencies:
     http_fetcher: AsyncDependency
     resolve_http_timeout: SyncDependency
     remaining_timeout_seconds: SyncDependency
-    emit_fetch_event: AsyncDependency
+    emit_fetch_event: Callable[
+        [AcquisitionEventHandler | None, AcquisitionEvent], Awaitable[None]
+    ]
     wait_for_host_slot: AsyncDependency
     should_escalate_to_browser: AsyncDependency
     run_browser_attempts: AsyncDependency
@@ -223,6 +226,7 @@ async def _execute_planned_http_attempt(
     raw_result = await _attempt_http_fetch(
         context,
         fetcher=fetcher,
+        fetcher_name=execution.spec.transport,
         proxy=execution.spec.proxy,
         timeout_seconds=timeout_seconds,
         deps=deps,
@@ -322,6 +326,7 @@ async def _attempt_http_fetch(
     context: Any,
     *,
     fetcher: AsyncDependency,
+    fetcher_name: str,
     proxy: str | None,
     timeout_seconds: float | None = None,
     deps: HttpAttemptDependencies,
@@ -333,10 +338,10 @@ async def _attempt_http_fetch(
     )
     await deps.emit_fetch_event(
         context.on_event,
-        "info",
-        (
-            f"HTTP fetch via {fetcher.__name__} "
-            f"(timeout={http_timeout:.1f}s, proxy={display_proxy(proxy)})"
+        AcquisitionEvent.http_attempted(
+            fetcher=fetcher_name,
+            timeout_seconds=http_timeout,
+            proxy_mode=display_proxy(proxy),
         ),
     )
     try:
@@ -352,14 +357,16 @@ async def _attempt_http_fetch(
         logger.debug(
             "Fetch failure for %s via %s (%s)",
             context.url,
-            fetcher.__name__,
+            fetcher_name,
             display_proxy(proxy),
             exc_info=True,
         )
         await deps.emit_fetch_event(
             context.on_event,
-            "warning",
-            f"HTTP fetch failed via {fetcher.__name__}: {type(exc).__name__}",
+            AcquisitionEvent.http_failed(
+                fetcher=fetcher_name,
+                exception_type=type(exc).__name__,
+            ),
         )
         return _http_attempt_failed
 
@@ -643,10 +650,10 @@ async def _escalate_http_result_to_browser(
     )
     await deps.emit_fetch_event(
         context.on_event,
-        "info",
-        (
-            "Escalating to browser after HTTP result "
-            f"(status={result.status_code}, method={result.method}, reason={browser_reason})"
+        AcquisitionEvent.browser_escalated(
+            status_code=result.status_code,
+            method=result.method,
+            reason_code=browser_reason,
         ),
     )
     browser_result = await deps.run_browser_attempts(

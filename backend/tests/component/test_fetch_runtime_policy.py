@@ -12,6 +12,7 @@ from tests.component.crawl_fetch_runtime_test_support import (
     httpx,
     pytest,
 )
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
 
 
 @pytest.mark.asyncio
@@ -360,11 +361,11 @@ async def test_fetch_page_emits_http_strategy_and_escalation_events(
 ) -> None:
     await crawl_fetch_runtime.reset_fetch_runtime_state()
     url = "https://example.com/products/widget"
-    events: list[tuple[str, str]] = []
+    events: list[AcquisitionEvent] = []
 
     @_as_async
-    def _on_event(level: str, message: str) -> None:
-        events.append((level, message))
+    def _on_event(event: AcquisitionEvent) -> None:
+        events.append(event)
 
     @_as_async
     def _fake_curl(request_url: str, timeout: float, *, proxy: str | None = None):
@@ -414,18 +415,27 @@ async def test_fetch_page_emits_http_strategy_and_escalation_events(
         await crawl_fetch_runtime.reset_fetch_runtime_state()
 
     assert result.method == "browser"
-    messages = [message for _level, message in events]
-    assert any(
-        message.startswith("Acquisition strategy: http-first") for message in messages
-    )
-    assert any(
-        "curl=primary, httpx_fallback=on_transport_failure" in message
-        for message in messages
-    )
-    assert any("HTTP fetch via" in message for message in messages)
-    assert any(
-        "Escalating to browser after HTTP result" in message for message in messages
-    )
+    assert events == [
+        AcquisitionEvent.strategy_selected(
+            fetch_mode="auto",
+            browser_first=False,
+            prefer_browser=False,
+            host_preference_enabled=False,
+            http_timeout_seconds=10.0,
+            primary_http_fetcher="curl",
+            reason_code="http_first",
+        ),
+        AcquisitionEvent.http_attempted(
+            fetcher="curl",
+            timeout_seconds=10.0,
+            proxy_mode="direct",
+        ),
+        AcquisitionEvent.browser_escalated(
+            status_code=200,
+            method="curl_cffi",
+            reason_code="http-escalation",
+        ),
+    ]
 
 
 @pytest.mark.asyncio
@@ -499,12 +509,12 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
 ) -> None:
     await crawl_fetch_runtime.reset_fetch_runtime_state()
     url = "https://www.bestbuy.com/product/widget"
-    events: list[tuple[str, str]] = []
+    events: list[AcquisitionEvent] = []
     browser_engines: list[str] = []
 
     @_as_async
-    def _on_event(level: str, message: str) -> None:
-        events.append((level, message))
+    def _on_event(event: AcquisitionEvent) -> None:
+        events.append(event)
 
     @_as_async
     def _failing_curl(request_url: str, _timeout: float, *, proxy: str | None = None):
@@ -558,5 +568,15 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
     assert result.method == "browser"
     assert result.browser_diagnostics["browser_engine"] == "real_chrome"
     assert browser_engines == ["patchright", "real_chrome"]
-    messages = [message for _level, message in events]
-    assert any("Patchright navigation failed" in message for message in messages)
+    assert events[-1] == AcquisitionEvent.browser_escalated(
+        status_code=0,
+        method="patchright",
+        reason_code="http2_protocol_error",
+    )
+    http_failures = [
+        event for event in events if event.kind is AcquisitionEventKind.HTTP_FAILED
+    ]
+    assert [dict(event.facts) for event in http_failures] == [
+        {"fetcher": "curl", "exception_type": "ReadTimeout"},
+        {"fetcher": "httpx", "exception_type": "ReadTimeout"},
+    ]

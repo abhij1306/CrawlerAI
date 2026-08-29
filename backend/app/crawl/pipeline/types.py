@@ -148,6 +148,9 @@ class URLProcessingConfig:
     sleep_ms: int = crawler_runtime_settings.default_sleep_ms
     update_run_state: bool = True
     persist_logs: bool = True
+    url_index: int = 1
+    url_count: int = 1
+    url_scope_id: str | None = None
     prefetch_only: bool = False
     record_writer: RecordWriter | None = None
     url_timeout_seconds: float | None = None
@@ -172,6 +175,9 @@ class URLProcessingConfig:
         *,
         update_run_state: bool = True,
         persist_logs: bool = True,
+        url_index: int = 1,
+        url_count: int = 1,
+        url_scope_id: str | None = None,
         prefetch_only: bool = False,
         record_writer: RecordWriter | None = None,
         url_timeout_seconds: float | None = None,
@@ -180,6 +186,9 @@ class URLProcessingConfig:
             acquisition_plan=plan,
             update_run_state=update_run_state,
             persist_logs=persist_logs,
+            url_index=max(1, int(url_index)),
+            url_count=max(1, int(url_count)),
+            url_scope_id=url_scope_id,
             prefetch_only=prefetch_only,
             record_writer=record_writer,
             url_timeout_seconds=url_timeout_seconds,

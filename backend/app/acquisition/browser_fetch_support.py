@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from app.acquisition.browser_background_tasks import register_popup_guard_task
+from app.acquisition.events import (
+    AcquisitionEvent,
+    AcquisitionEventHandler,
+    emit_acquisition_event,
+)
 from app.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE,
     build_browser_diagnostics_contract,
@@ -53,7 +58,7 @@ class BrowserFetchRequest:
     max_pages: int = 1
     max_scrolls: int = 1
     max_records: int | None = None
-    on_event: Any = None
+    on_event: AcquisitionEventHandler | None = None
 
 
 @dataclass(slots=True)
@@ -142,22 +147,21 @@ async def emit_page_loaded_event(
     page: Any,
     *,
     phase_timings_ms: dict[str, int],
-    on_event,
-    emit_browser_event: Callable[..., Awaitable[None]],
+    on_event: AcquisitionEventHandler | None,
+    emit_browser_event: Callable[
+        [AcquisitionEventHandler | None, AcquisitionEvent], Awaitable[None]
+    ],
 ) -> None:
     page_title = ""
     try:
         page_title = clean_text(await page.title())
     except Exception:
-        # Best-effort: page title is cosmetic for the event; ignore failures.
         logger.debug("Page-title read failed for a browser event", exc_info=True)
-        page_title = ""
     await emit_browser_event(
         on_event,
-        "info",
-        (
-            f"Page loaded in {browser_page_load_elapsed_ms(phase_timings_ms)}ms"
-            + (f' - title="{page_title}"' if page_title else "")
+        AcquisitionEvent.browser_page_loaded(
+            elapsed_ms=browser_page_load_elapsed_ms(phase_timings_ms),
+            page_title=page_title,
         ),
     )
 
@@ -166,8 +170,10 @@ async def dismiss_browser_interstitial(
     page: Any,
     *,
     phase_timings_ms: dict[str, int],
-    on_event,
-    emit_browser_event: Callable[..., Awaitable[None]],
+    on_event: AcquisitionEventHandler | None,
+    emit_browser_event: Callable[
+        [AcquisitionEventHandler | None, AcquisitionEvent], Awaitable[None]
+    ],
     elapsed_ms: Callable[[float], int],
 ) -> dict[str, object]:
     interstitial_started_at = time.perf_counter()
@@ -180,8 +186,9 @@ async def dismiss_browser_interstitial(
         phase_timings_ms["interstitial_dismissal"] = elapsed
         await emit_browser_event(
             on_event,
-            "info",
-            f"Dismissed location interstitial via {diagnostics.get('selector')}",
+            AcquisitionEvent.browser_interstitial_dismissed(
+                selector=str(diagnostics.get("selector") or "")
+            ),
         )
     else:
         phase_timings_ms["interstitial_probe"] = elapsed
@@ -310,30 +317,24 @@ def _network_payload_rows(value: object) -> list[dict[str, object]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
-async def _emit_popup_event(on_event, level: str, message: str) -> None:
-    if on_event is None:
-        return
-    try:
-        await on_event(level, message)
-    except Exception:
-        logger.debug("Browser event callback failed", exc_info=True)
-
-
-async def _close_unexpected_popup(page: Any, *, on_event=None) -> None:
+async def _close_unexpected_popup(
+    page: Any, *, on_event: AcquisitionEventHandler | None = None
+) -> None:
     popup_url = str(getattr(page, "url", "") or "").strip() or "about:blank"
     close_page = getattr(page, "close", None)
     if not callable(close_page):
         return
     with suppress(Exception):
         await close_page()
-        await _emit_popup_event(
+        await emit_acquisition_event(
             on_event,
-            "info",
-            f"Closed unexpected popup page: {popup_url}",
+            AcquisitionEvent.popup_closed(popup_url=popup_url),
         )
 
 
-def install_popup_guard(page: Any, *, on_event=None) -> list[tuple[Any, str, Any]]:
+def install_popup_guard(
+    page: Any, *, on_event: AcquisitionEventHandler | None = None
+) -> list[tuple[Any, str, Any]]:
     context = getattr(page, "context", None)
     if callable(context):
         with suppress(Exception):

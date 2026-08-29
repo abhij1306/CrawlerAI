@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Mapping
 
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
+from app.core.config.run_events import (
+    LEGACY_ACQUISITION_WARNING_EVENT_KINDS,
+    RunEventKind,
+)
 from app.core.database import SessionLocal
+from app.crawl.run_events import JsonValue, RunEventFact, run_event_timeline
 from app.models.crawl_run import CrawlLog, CrawlRun
 from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
 from app.crawl.state import TERMINAL_STATUSES, CrawlStatus, update_run_status
@@ -68,13 +74,102 @@ def log_pipeline_event(
 def pipeline_acquisition_event_logger(context):
     """Build the acquisition-stage ``on_event`` callback for a URL context."""
 
-    def _log(level: str, message: str) -> asyncio.Future[None]:
-        log_pipeline_event(context, level, message)
-        completed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        completed.set_result(None)
-        return completed
+    async def _log(event: AcquisitionEvent) -> None:
+        kind, facts = _run_event_from_acquisition_event(event)
+        await _record_acquisition_run_event(context, kind=kind, facts=facts)
+        details = [
+            f"{key}={value}" for key, value in event.facts.items() if value is not None
+        ]
+        if event.reason_code is not None:
+            details.append(f"reason_code={event.reason_code}")
+        message = event.kind.value.replace("_", " ")
+        if details:
+            message = f"{message}: {', '.join(details)}"
+        log_pipeline_event(
+            context,
+            (
+                "warning"
+                if event.kind in LEGACY_ACQUISITION_WARNING_EVENT_KINDS
+                else "info"
+            ),
+            message,
+        )
 
     return _log
+
+
+async def _record_acquisition_run_event(
+    context,
+    *,
+    kind: RunEventKind,
+    facts: Mapping[str, JsonValue],
+) -> None:
+    if not context.config.persist_logs:
+        return
+    url = str(getattr(context, "url", "") or "").strip()
+    run = getattr(context, "run", None)
+    if run is None or not url:
+        return
+    scope = str(getattr(context.config, "url_scope_id", "") or "").strip()
+    if not scope:
+        scope = f"url:{max(1, int(getattr(context.config, 'url_index', 1) or 1))}"
+    await run_event_timeline.record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=kind,
+            url=url,
+            url_scope_id=scope,
+            facts=dict(facts),
+        ),
+    )
+
+
+_ACQUISITION_RUN_EVENT_KINDS: dict[AcquisitionEventKind, RunEventKind] = {
+    AcquisitionEventKind.STARTED: RunEventKind.ACQUISITION_STARTED,
+    AcquisitionEventKind.STRATEGY_SELECTED: RunEventKind.ACQUISITION_STRATEGY_SELECTED,
+    AcquisitionEventKind.HTTP_ATTEMPTED: RunEventKind.ACQUISITION_HTTP_ATTEMPTED,
+    AcquisitionEventKind.HTTP_FAILED: RunEventKind.ACQUISITION_HTTP_FAILED,
+    AcquisitionEventKind.BROWSER_LAUNCHED: RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
+    AcquisitionEventKind.BROWSER_PAGE_LOADED: RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
+    AcquisitionEventKind.BROWSER_FIRST_FALLBACK: RunEventKind.ACQUISITION_BROWSER_FIRST_FALLBACK,
+    AcquisitionEventKind.BROWSER_ESCALATED: RunEventKind.ACQUISITION_BROWSER_ESCALATED,
+    AcquisitionEventKind.PROTECTION_DETECTED: RunEventKind.ACQUISITION_PROTECTION_DETECTED,
+    AcquisitionEventKind.POPUP_CLOSED: RunEventKind.ACQUISITION_POPUP_CLOSED,
+    AcquisitionEventKind.BROWSER_INTERSTITIAL_DISMISSED: RunEventKind.ACQUISITION_INTERSTITIAL_DISMISSED,
+    AcquisitionEventKind.TRAVERSAL_DETECTED: RunEventKind.TRAVERSAL_DETECTED,
+    AcquisitionEventKind.TRAVERSAL_PROGRESSED: RunEventKind.TRAVERSAL_PROGRESS,
+    AcquisitionEventKind.TRAVERSAL_SETTLED: RunEventKind.TRAVERSAL_SETTLED,
+    AcquisitionEventKind.TRAVERSAL_RECOVERY_STARTED: RunEventKind.TRAVERSAL_RECOVERY_STARTED,
+    AcquisitionEventKind.TRAVERSAL_COMPLETED: RunEventKind.TRAVERSAL_COMPLETED,
+}
+
+
+def _run_event_from_acquisition_event(
+    event: AcquisitionEvent,
+) -> tuple[RunEventKind, dict[str, JsonValue]]:
+    facts: dict[str, JsonValue] = dict(event.facts)
+    if event.kind == AcquisitionEventKind.STARTED:
+        facts = {}
+    elif event.kind == AcquisitionEventKind.STRATEGY_SELECTED:
+        facts["strategy"] = facts.pop("fetch_mode")
+        if event.reason_code:
+            facts["reason"] = event.reason_code
+    elif event.kind == AcquisitionEventKind.BROWSER_ESCALATED:
+        facts["prior_method"] = facts.pop("method")
+        if event.reason_code:
+            facts["reason"] = event.reason_code
+    elif event.kind == AcquisitionEventKind.TRAVERSAL_PROGRESSED:
+        facts["previous_count"] = facts.pop("previous_card_count")
+        facts["current_count"] = facts.pop("current_card_count")
+    elif event.kind == AcquisitionEventKind.TRAVERSAL_SETTLED:
+        facts = {
+            "previous_count": facts["previous_card_count"],
+            "record_count": facts["current_card_count"],
+        }
+    elif event.kind == AcquisitionEventKind.TRAVERSAL_COMPLETED:
+        facts["record_count"] = facts.pop("card_count")
+        facts["progress_count"] = facts.pop("progress_event_count")
+    return _ACQUISITION_RUN_EVENT_KINDS[event.kind], facts
 
 
 async def set_stage(
