@@ -15,6 +15,7 @@ from app.acquisition.browser_capture import (
     should_capture_network_payload,
 )
 from app.acquisition.browser_detail import expand_detail_content_if_needed
+from app.acquisition.events import AcquisitionEvent, emit_acquisition_event
 from app.acquisition.browser_diagnostics import (
     REAL_CHROME_BROWSER_ENGINE,
     browser_launch_mode,
@@ -154,15 +155,6 @@ async def _resolve_page_context(
     )
 
 
-async def _emit_browser_event(on_event, level: str, message: str) -> None:
-    if on_event is None:
-        return
-    try:
-        await on_event(level, message)
-    except Exception:
-        logger.debug("Browser event callback failed", exc_info=True)
-
-
 async def _prepare_launch_context(
     state: BrowserFetchState,
     runtime: SharedBrowserRuntime | None,
@@ -183,13 +175,14 @@ async def _prepare_launch_context(
     state.runtime_bridge_used = state.runtime_bridge_used or bool(
         bridge_flag() if callable(bridge_flag) else False
     )
-    await _emit_browser_event(
+    await emit_acquisition_event(
         request.on_event,
-        "info",
-        (
-            f"Launched {browser_launch_mode(runtime_engine)} browser "
-            f"({runtime_engine}, profile: {browser_profile(runtime_engine)}, "
-            f"proxy: {display_proxy(request.proxy)}, binary: {state.runtime_binary})"
+        AcquisitionEvent.browser_launched(
+            launch_mode=browser_launch_mode(runtime_engine),
+            engine=runtime_engine,
+            profile=browser_profile(runtime_engine),
+            proxy_mode=display_proxy(request.proxy),
+            binary=state.runtime_binary,
         ),
     )
 
@@ -303,14 +296,14 @@ async def _run_navigation(
         page,
         phase_timings_ms=state.phase_timings_ms,
         on_event=request.on_event,
-        emit_browser_event=_emit_browser_event,
+        emit_browser_event=emit_acquisition_event,
     )
     strategy = str(getattr(response, "browser_navigation_strategy", None) or strategy)
     interstitial = await dismiss_browser_interstitial(
         page,
         phase_timings_ms=state.phase_timings_ms,
         on_event=request.on_event,
-        emit_browser_event=_emit_browser_event,
+        emit_browser_event=emit_acquisition_event,
         elapsed_ms=_elapsed_ms,
     )
     return response, strategy, interstitial
@@ -428,7 +421,7 @@ async def _run_finalization(
             classify_low_content_reason=classify_low_content_reason,
             classify_browser_outcome=classify_browser_outcome,
             capture_browser_screenshot=capture_browser_screenshot,
-            emit_browser_event=_emit_browser_event,
+            emit_browser_event=emit_acquisition_event,
             elapsed_ms=_elapsed_ms,
         ),
     )

@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.acquisition.events import AcquisitionEvent
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.extraction_memory import EXTRACTION_RELEASE_VERSION
 from app.crawl.pipeline import persistence as record_persistence
@@ -357,7 +358,15 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
         session=db_session,
     )
 
-    await pipeline_acquisition_event_logger(context)("info", "browser started")
+    await pipeline_acquisition_event_logger(context)(
+        AcquisitionEvent.browser_launched(
+            launch_mode="headless",
+            engine="chromium",
+            profile="default",
+            proxy_mode="direct",
+            binary="bundled",
+        )
+    )
     await db_session.commit()
 
     rows = (
@@ -369,7 +378,10 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
         .scalars()
         .all()
     )
-    assert [row.message for row in rows] == ["browser started"]
+    assert [row.message for row in rows] == [
+        "browser launched: launch_mode=headless, engine=chromium, profile=default, "
+        "proxy_mode=direct, binary=bundled"
+    ]
 
 
 def _acquisition(final_url: str = "https://example.com/p/1") -> SimpleNamespace:

@@ -13,13 +13,13 @@ from app.acquisition.traversal_card_counting import (
 )
 from app.acquisition.traversal_helpers import (
     append_html_fragment,
-    emit_event,
     is_same_origin,
     page_matches_block_challenge,
     remaining_timeout_ms,
     settle_after_action,
     wait_for_transition,
 )
+from app.acquisition.events import AcquisitionEvent, emit_acquisition_event
 from app.acquisition.traversal_recovery import (
     click_with_retry,
     find_actionable_locator,
@@ -243,7 +243,13 @@ async def settle_thin_initial_listing(
         f"{previous.get('card_count', 0)} -> {current.get('card_count', 0)} records"
     )
     result.events.append(("info", message))
-    await emit_event(on_event, "info", message)
+    await emit_acquisition_event(
+        on_event,
+        AcquisitionEvent.traversal_settled(
+            previous_card_count=int(previous.get("card_count", 0)),
+            current_card_count=int(current.get("card_count", 0)),
+        ),
+    )
     return current
 
 

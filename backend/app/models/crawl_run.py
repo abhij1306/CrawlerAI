@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     or_,
     text,
     update,
@@ -112,6 +113,12 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
     )
     last_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    run_event_sequence: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
     )
 
     @property
@@ -344,3 +351,48 @@ class CrawlLog(CreatedAtMixin, Base):
     )
     level: Mapped[str] = mapped_column(String(20), default="info")
     message: Mapped[str] = mapped_column(Text)
+
+
+class RunEvent(CreatedAtMixin, Base):
+    __tablename__ = "run_events"
+    __table_args__ = (
+        CheckConstraint("sequence > 0", name="ck_run_events_sequence_positive"),
+        CheckConstraint(
+            "stage IS NULL OR stage IN ('acquisition', 'extraction', 'normalization', 'persistence')",
+            name="ck_run_events_stage",
+        ),
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'error')",
+            name="ck_run_events_severity",
+        ),
+        CheckConstraint(
+            "outcome IN ('progress', 'succeeded', 'partial', 'failed', 'blocked', "
+            "'skipped', 'cancelled', 'requested', 'limited')",
+            name="ck_run_events_outcome",
+        ),
+        CheckConstraint(
+            "(url IS NULL) = (url_scope_id IS NULL)",
+            name="ck_run_events_url_scope",
+        ),
+        UniqueConstraint("run_id", "sequence", name="uq_run_events_run_sequence"),
+        Index("ix_run_events_run_sequence", "run_id", "sequence"),
+        Index(
+            "ix_run_events_run_url_scope_sequence",
+            "run_id",
+            "url_scope_id",
+            "sequence",
+            postgresql_where=text("url_scope_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey(CRAWL_RUN_FK, ondelete=CASCADE))
+    sequence: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(64))
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url_scope_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    severity: Mapped[str] = mapped_column(String(20))
+    outcome: Mapped[str] = mapped_column(String(64))
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    facts: Mapped[dict] = mapped_column(JSONB, default=dict)

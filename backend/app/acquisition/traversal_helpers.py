@@ -423,15 +423,6 @@ def _remaining_timeout_ms(
     return max(min_ms, min(int(default_ms), remaining_ms))
 
 
-async def _emit_event(on_event, level: str, message: str) -> None:
-    if on_event is None:
-        return
-    try:
-        await on_event(level, message)
-    except (RuntimeError, TypeError, ValueError):
-        logger.debug("Traversal event callback failed", exc_info=True)
-
-
 def is_same_origin(current_url: str, next_url: str) -> bool:
     current = urlsplit(str(current_url or ""))
     next_value = urlsplit(str(next_url or ""))
@@ -480,7 +471,6 @@ def _requires_path_tenant_boundary(current_url: str, next_url: str) -> bool:
 
 append_html_fragment = _append_html_fragment
 deadline_reached = _deadline_reached
-emit_event = _emit_event
 looks_like_next_page_control = _looks_like_next_page_control
 page_matches_block_challenge = _page_matches_block_challenge
 remaining_timeout_ms = _remaining_timeout_ms

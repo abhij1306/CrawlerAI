@@ -8,6 +8,7 @@ from app.acquisition.acquirer import (
     PageEvidence,
     acquire,
 )
+from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
 from app.acquisition.internal_api_replay import (
     _is_safe_replay_url,
     payload_extracts_surface,
@@ -15,6 +16,14 @@ from app.acquisition.internal_api_replay import (
 from app.acquisition.policy import AcquisitionPolicy
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
+
+
+@pytest.mark.component
+def test_protection_detected_event_accepts_status_code() -> None:
+    event = AcquisitionEvent.protection_detected(status_code=403)
+
+    assert event.kind == AcquisitionEventKind.PROTECTION_DETECTED
+    assert dict(event.facts) == {"status_code": 403}
 
 
 @pytest.mark.component
@@ -41,16 +50,22 @@ def test_collect_target_urls_normalizes_csv_values() -> None:
 async def test_acquire_returns_public_headers_as_plain_dict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    events: list[tuple[str, str]] = []
+    events: list[AcquisitionEvent] = []
 
-    async def _on_event(level: str, message: str) -> None:
-        events.append((level, message))
+    async def _on_event(event: AcquisitionEvent) -> None:
+        events.append(event)
 
     async def _fake_fetch_page(call):
         on_event = call.on_event
         if on_event is not None:
             await on_event(
-                "info", "Launched headless browser (chromium, proxy: direct)"
+                AcquisitionEvent.browser_launched(
+                    launch_mode="headless",
+                    engine="chromium",
+                    profile="default",
+                    proxy_mode="direct",
+                    binary="bundled",
+                )
             )
         return type(
             "FetchResult",
@@ -87,9 +102,18 @@ async def test_acquire_returns_public_headers_as_plain_dict(
     assert result.headers == {"content-type": "text/html"}
     assert isinstance(result.headers, dict)
     assert result.acquisition_diagnostics["result"]["plan_id"] == "plan-1"
-    assert events == [
-        ("info", "Acquiring https://example.com"),
-        ("info", "Launched headless browser (chromium, proxy: direct)"),
+    assert [(event.kind, dict(event.facts)) for event in events] == [
+        (AcquisitionEventKind.STARTED, {"url": "https://example.com"}),
+        (
+            AcquisitionEventKind.BROWSER_LAUNCHED,
+            {
+                "launch_mode": "headless",
+                "engine": "chromium",
+                "profile": "default",
+                "proxy_mode": "direct",
+                "binary": "bundled",
+            },
+        ),
     ]
 
 

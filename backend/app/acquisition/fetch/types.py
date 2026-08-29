@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
 from app.acquisition.contracts import AttemptResult, AttemptSpec
+from app.acquisition.events import AcquisitionEventHandler
 from app.acquisition.host_protection_memory import HostProtectionPolicy
 from app.acquisition.runtime import PageFetchResult
 
-FetchEventHandler = Callable[[str, str], Awaitable[None] | None]
+FetchEventHandler = AcquisitionEventHandler
 
 
 @dataclass(slots=True)

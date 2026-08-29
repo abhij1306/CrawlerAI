@@ -8,6 +8,7 @@ from app.acquisition.dom_runtime import (
     get_page_html,
     wait_for_dom_mutation_settle,
 )
+from app.acquisition.events import AcquisitionEvent, emit_acquisition_event
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.acquisition.traversal_types import TraversalResult
 
@@ -22,7 +23,6 @@ from app.acquisition.traversal_card_counting import (
 from app.acquisition.traversal_helpers import (
     append_html_fragment as _append_html_fragment,
     deadline_reached as _deadline_reached,
-    emit_event as _emit_event,
     looks_like_paginate_control,
 )
 from app.acquisition.browser_capture import PlaywrightError
@@ -80,19 +80,6 @@ def _observe_unique_cards(
     result.card_count = total
     observed["card_count"] = total
     return observed
-
-
-def _format_traversal_detection_message(
-    *,
-    mode: str,
-    max_iterations: int,
-    max_records: int | None,
-) -> str:
-    target_suffix = (
-        f", target_records={int(max_records)}" if max_records is not None else ""
-    )
-    safety_suffix = f", safety_cap={max_iterations}"
-    return f"Detected listing layout, traversal={mode}{target_suffix}{safety_suffix}"
 
 
 def _format_traversal_progress_message(
@@ -250,7 +237,16 @@ async def _record_traversal_progress(
         max_records=max_records,
     )
     result.events.append(("info", message))
-    await _emit_event(on_event, "info", message)
+    await emit_acquisition_event(
+        on_event,
+        AcquisitionEvent.traversal_progressed(
+            action=label,
+            step=step,
+            previous_card_count=previous_count,
+            current_card_count=current_count,
+            target_records=max_records,
+        ),
+    )
     await _append_html_fragment(page, result, surface=surface)
     return max(0, current_count - previous_count)
 
@@ -272,13 +268,12 @@ async def _run_scroll_traversal(
     previous = _observe_unique_cards(
         result, await _page_snapshot(page, surface=surface)
     )
-    await _emit_event(
+    await emit_acquisition_event(
         on_event,
-        "info",
-        _format_traversal_detection_message(
+        AcquisitionEvent.traversal_detected(
             mode="scroll",
-            max_iterations=max_iterations,
-            max_records=max_records,
+            safety_cap=max_iterations,
+            target_records=max_records,
         ),
     )
     if _target_record_limit_reached(
@@ -355,13 +350,12 @@ async def _run_load_more_traversal(
     previous = _observe_unique_cards(
         result, await _page_snapshot(page, surface=surface)
     )
-    await _emit_event(
+    await emit_acquisition_event(
         on_event,
-        "info",
-        _format_traversal_detection_message(
+        AcquisitionEvent.traversal_detected(
             mode="load_more",
-            max_iterations=max_iterations,
-            max_records=max_records,
+            safety_cap=max_iterations,
+            target_records=max_records,
         ),
     )
     if _target_record_limit_reached(
@@ -445,13 +439,12 @@ async def _run_paginate_traversal(
     gain_state = _TraversalGainState()
     page_limit = int(crawler_runtime_settings.traversal_max_iterations_cap)
     await _append_html_fragment(page, result, surface=surface)
-    await _emit_event(
+    await emit_acquisition_event(
         on_event,
-        "info",
-        _format_traversal_detection_message(
+        AcquisitionEvent.traversal_detected(
             mode="paginate",
-            max_iterations=page_limit,
-            max_records=max_records,
+            safety_cap=page_limit,
+            target_records=max_records,
         ),
     )
     visited_urls: set[str] = {page.url}

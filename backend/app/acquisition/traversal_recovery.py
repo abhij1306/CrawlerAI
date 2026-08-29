@@ -9,11 +9,11 @@ from app.acquisition.dom_runtime import (
     wait_for_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
 from app.acquisition.browser_capture import is_recoverable_playwright_error
+from app.acquisition.events import AcquisitionEvent, emit_acquisition_event
 from app.acquisition.traversal_helpers import (
     RECOVERABLE_ERRORS as _RECOVERABLE_ERRORS,
 )
 from app.acquisition.traversal_helpers import (
-    emit_event as _emit_event,
     looks_like_next_page_control as _looks_like_next_page_control,
     looks_like_paginate_control,
     remaining_timeout_ms as _remaining_timeout_ms,
@@ -186,7 +186,7 @@ async def recover_listing_page_content(
 
     helper_result = TraversalResult(requested_mode="recovery")
     wait_ms = max(0, int(crawler_runtime_settings.listing_recovery_post_action_wait_ms))
-    for action_name, pattern, message in TRAVERSAL_LISTING_RECOVERY_ACTIONS:
+    for action_name, pattern, _message in TRAVERSAL_LISTING_RECOVERY_ACTIONS:
         if clicked_count >= max_actions:
             diagnostics["status"] = "interaction_limit_reached"
             break
@@ -201,7 +201,10 @@ async def recover_listing_page_content(
         )
         if locator is None:
             continue
-        await _emit_event(on_event, "info", f"{message}...")
+        await emit_acquisition_event(
+            on_event,
+            AcquisitionEvent.traversal_recovery_started(action=action_name),
+        )
         if not await click_with_retry(page, locator, result=helper_result):
             continue
         clicked_count += 1

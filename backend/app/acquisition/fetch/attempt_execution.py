@@ -17,6 +17,7 @@ from app.acquisition.fetch.browser_policy import (
     attach_exception_browser_diagnostics,
     host_policy_snapshot,
 )
+from app.acquisition.events import AcquisitionEvent
 from app.acquisition.fetch.types import AttemptOutcomeState as AttemptOutcomeState
 from app.acquisition.fetch.types import AttemptRunner
 from app.acquisition.runtime import PageFetchResult
@@ -252,10 +253,10 @@ async def record_attempt_exception(
         engine_attempts.append("real_chrome")
         await runner.deps.emit_fetch_event(
             runner.context.on_event,
-            "info",
-            (
-                "Patchright navigation failed for "
-                f"{runner.context.url} with ERR_HTTP2_PROTOCOL_ERROR; retrying real Chrome"
+            AcquisitionEvent.browser_escalated(
+                status_code=0,
+                method="patchright",
+                reason_code="http2_protocol_error",
             ),
         )
     if attempt_host_policy.should_mark_vendor_timeout(

@@ -14,6 +14,11 @@ from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.acquisition.fetch.types import FetchPageCall
+from app.acquisition.events import (
+    AcquisitionEvent,
+    AcquisitionEventHandler,
+    emit_acquisition_event,
+)
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 from app.acquisition.source_capabilities import attach_source_capability_diagnostics
 from app.extraction.documents import HtmlDocument
@@ -32,7 +37,7 @@ class AcquisitionRequest:
     )
     acquisition_profile: dict[str, object] = field(default_factory=dict)
     policy: AcquisitionPolicy | None = None
-    on_event: Any = None
+    on_event: AcquisitionEventHandler | None = None
     attempt_timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
@@ -212,19 +217,6 @@ def _has_active_provider_evidence(evidence: list[str]) -> bool:
     )
 
 
-async def _emit_event(on_event: Any, level: str, message: str) -> None:
-    if on_event is None:
-        return
-    try:
-        await on_event(level, message)
-    except Exception:
-        logger.exception(
-            "Acquisition event callback failed",
-            extra={"event_level": level, "event_message": message},
-        )
-        return
-
-
 async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
     requested_url = normalize_target_url(request.url)
     effective_url = requested_url
@@ -244,7 +236,9 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
     policy_middleware = PolicyMiddleware()
     await policy_middleware.before_fetch(request)
     request = request.with_profile_updates(**acquisition_policy.to_profile())
-    await _emit_event(request.on_event, "info", f"Acquiring {effective_url}")
+    await emit_acquisition_event(
+        request.on_event, AcquisitionEvent.started(url=effective_url)
+    )
     profile_endpoints = request.acquisition_profile.get(
         INTERNAL_API_ENDPOINTS_PROFILE_KEY
     )
