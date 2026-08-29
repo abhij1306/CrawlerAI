@@ -26,8 +26,8 @@ from tests.regression.batch_runtime_test_support import (
 
 @pytest.fixture(autouse=True)
 def _disable_run_event_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _record(**_kwargs) -> None:
-        return None
+    async def _record(**_kwargs) -> object:
+        return object()
 
     monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
@@ -171,6 +171,68 @@ async def test_acquisition_stage_releases_db_session_before_fetch(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_prefetched_browser_acquisition_records_lifecycle_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = CommitTrackingSession()
+    context = SimpleNamespace(
+        session=session,
+        run=SimpleNamespace(id=101),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        requested_fields=[],
+        config=SimpleNamespace(persist_run_events=True),
+    )
+
+    async def _unused_event_callback(_event) -> None:
+        return None
+
+    async def _fake_build_acquisition_request(ctx):
+        return SimpleNamespace(url=ctx.url, on_event=_unused_event_callback)
+
+    recorded_kinds: list[RunEventKind] = []
+
+    async def _fake_record_pipeline_event(_context, *, kind, **_kwargs) -> None:
+        recorded_kinds.append(kind)
+
+    monkeypatch.setattr(
+        extraction_loop,
+        "build_acquisition_request",
+        _fake_build_acquisition_request,
+    )
+    monkeypatch.setattr(
+        extraction_loop,
+        "_record_pipeline_event",
+        _fake_record_pipeline_event,
+    )
+    request = SimpleNamespace(url=context.url)
+    prefetched = PageAcquisitionResult(
+        request=request,
+        final_url=context.url,
+        html="<html></html>",
+        method="browser",
+        status_code=200,
+        browser_diagnostics={
+            "browser_engine": "chromium",
+            "browser_launch_mode": "headless",
+            "phase_timings_ms": {"navigation": 25},
+        },
+    )
+
+    await extraction_loop._run_acquisition_stage(
+        context,
+        prefetched_acquisition=prefetched,
+    )
+
+    assert recorded_kinds == [
+        RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
+        RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
+        RunEventKind.ACQUISITION_COMPLETED,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_extraction_memory_pending_rollback_is_not_swallowed() -> None:
     class _Nested:
         async def __aenter__(self):
@@ -303,8 +365,9 @@ async def test_persist_url_failure_event_is_url_scoped_for_parallel_ui(
     url = "https://example.com/products/missing-widget"
     recorded: list[tuple[int, object]] = []
 
-    async def _record(*, run_id: int, fact, **_kwargs) -> None:
+    async def _record(*, run_id: int, fact, **_kwargs) -> object:
         recorded.append((run_id, fact))
+        return object()
 
     monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 

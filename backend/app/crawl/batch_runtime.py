@@ -607,23 +607,17 @@ async def _finalize_completed_run(
     status_value, _ = await _run_control_checkpoint(int(run.id))
     if status_value is None or status_value in TERMINAL_STATUS_VALUES:
         return
-    aggregate_verdict_value = aggregate_verdict(progress_state.url_verdicts)
-    set_logfire_attributes(
-        run_span,
-        verdict=aggregate_verdict_value,
-        record_count=record_count,
-    )
+    final_verdict = aggregate_verdict(progress_state.url_verdicts)
+    set_logfire_attributes(run_span, verdict=final_verdict, record_count=record_count)
     # Lease release and terminal write commit atomically; a newer claim owner finalizes instead.
     if not await release_run_lease(session, run_id=int(run.id), owner=owner):
-        logger.warning(
-            "Run %s queue claim lost before finalize; skipping completion write", run.id
-        )
+        logger.warning("Run %s lost queue claim before finalization", run.id)
         await session.rollback()
         return
     await session.refresh(run, attribute_names=["status", "result_summary"])
     update_run_status(run, CrawlStatus.COMPLETED)
     run.update_summary(
-        **progress_state.build_final_patch(aggregate_verdict_value),
+        **progress_state.build_final_patch(final_verdict),
         current_stage=STAGE_PERSIST,
         duration_ms=_current_duration_ms(run),
     )
@@ -633,7 +627,7 @@ async def _finalize_completed_run(
         logger.exception("Run-complete callback dispatch failed for run=%s", run.id)
         callback_failure_types = (type(exc).__name__,)
     for exception_type in callback_failure_types:
-        await run_event_timeline.record(
+        callback_failure_event = await run_event_timeline.record(
             run_id=run.id,
             fact=RunEventFact(
                 kind=RunEventKind.RUN_CALLBACK_FAILED,
@@ -641,14 +635,18 @@ async def _finalize_completed_run(
             ),
             session=session,
         )
-    await run_event_timeline.record(
+        if callback_failure_event is None:
+            raise RuntimeError("Run callback failure event could not be persisted")
+    completed_event = await run_event_timeline.record(
         run_id=run.id,
         fact=RunEventFact(
             kind=RunEventKind.RUN_COMPLETED,
-            facts={"record_count": record_count, "verdict": aggregate_verdict_value},
+            facts={"record_count": record_count, "verdict": final_verdict},
         ),
         session=session,
     )
+    if completed_event is None:
+        raise RuntimeError("Run completion event could not be persisted")
     await session.commit()
 
 

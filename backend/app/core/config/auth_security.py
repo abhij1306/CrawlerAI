@@ -25,7 +25,7 @@ CSRF_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 API_ALLOWED_CORS_HEADER_BASE = ("Content-Type", "Authorization", CSRF_HEADER_NAME)
 
-AUTH_NO_STORE_PATH_PREFIXES = ("/api/auth/",)
+AUTH_NO_STORE_PATH_PREFIXES = ("/api/auth/", "/api/crawls/")
 PUBLIC_API_PATH_PREFIX = "/api/v1/"
 CSV_UPLOAD_PATH = "/api/crawls/csv"
 REQUEST_BODY_TOO_LARGE_DETAIL = "Request body too large"

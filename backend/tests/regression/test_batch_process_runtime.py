@@ -21,8 +21,8 @@ from tests.regression.batch_runtime_test_support import (
 
 @pytest.fixture(autouse=True)
 def _disable_run_event_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _record(**_kwargs) -> None:
-        return None
+    async def _record(**_kwargs) -> object:
+        return object()
 
     monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 
@@ -468,8 +468,9 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
     monkeypatch.setattr("app.crawl.batch_runtime.SessionLocal", session_factory)
     recorded: list[tuple[int, object]] = []
 
-    async def _record(*, run_id: int, fact, **_kwargs) -> None:
+    async def _record(*, run_id: int, fact, **_kwargs) -> object:
         recorded.append((run_id, fact))
+        return object()
 
     monkeypatch.setattr(batch_runtime_module.run_event_timeline, "record", _record)
 

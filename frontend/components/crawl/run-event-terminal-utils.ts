@@ -68,7 +68,6 @@ function canonicalEventMatchUrl(value: string) {
   try {
     const parsed = new URL(value);
     parsed.hash = '';
-    parsed.search = '';
     parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
     return parsed.toString();
   } catch {
@@ -83,6 +82,13 @@ function hasSameStablePathIdentity(left: string, right: string) {
     const leftHost = leftUrl.hostname.replace(/^www\./, '').toLowerCase();
     const rightHost = rightUrl.hostname.replace(/^www\./, '').toLowerCase();
     if (leftHost !== rightHost) return false;
+    const normalizedPath = (url: URL) => url.pathname.replace(/\/+$/, '') || '/';
+    if (
+      normalizedPath(leftUrl) === normalizedPath(rightUrl) &&
+      leftUrl.search !== rightUrl.search
+    ) {
+      return false;
+    }
     const lastSegment = (url: URL) =>
       decodeURIComponent(url.pathname).split('/').filter(Boolean).at(-1)?.trim().toLowerCase() ??
       '';

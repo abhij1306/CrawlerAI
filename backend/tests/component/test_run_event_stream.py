@@ -92,6 +92,7 @@ async def test_events_rest_returns_run_event_shape_in_sequence_order(
     response = await crawls_api_client.get(f"/api/crawls/{run.id}/events")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     payload = response.json()
     assert [event["sequence"] for event in payload] == [1, 2]
     assert set(payload[0]) == {

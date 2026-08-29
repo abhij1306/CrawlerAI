@@ -80,6 +80,80 @@ async def test_process_run_commits_callback_failure_before_completion(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+@pytest.mark.parametrize(
+    "dropped_kind",
+    [RunEventKind.RUN_CALLBACK_FAILED, RunEventKind.RUN_COMPLETED],
+)
+async def test_process_run_does_not_complete_when_terminal_event_is_dropped(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    dropped_kind: RunEventKind,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/products/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+
+    async def _fake_process_single_url(*_args, **_kwargs):
+        return URLProcessingResult(
+            records=[],
+            verdict="success",
+            url_metrics={"record_count": 0},
+        )
+
+    async def _callback_failures(_run_id: int) -> tuple[str, ...]:
+        return ("CallbackFailure",)
+
+    original_record = batch_runtime_module.run_event_timeline.record
+
+    async def _drop_terminal_event(**kwargs):
+        if kwargs["fact"].kind == dropped_kind:
+            return None
+        return await original_record(**kwargs)
+
+    monkeypatch.setattr(
+        batch_runtime_module,
+        "process_single_url",
+        _fake_process_single_url,
+    )
+    monkeypatch.setattr(
+        batch_runtime_module,
+        "on_run_complete",
+        _callback_failures,
+    )
+    monkeypatch.setattr(
+        batch_runtime_module.run_event_timeline,
+        "record",
+        _drop_terminal_event,
+    )
+
+    await process_run(db_session, run.id)
+    await db_session.refresh(run)
+    event_kinds = (
+        (
+            await db_session.execute(
+                select(RunEvent.kind)
+                .where(RunEvent.run_id == run.id)
+                .order_by(RunEvent.sequence)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert run.status == "failed"
+    assert RunEventKind.RUN_COMPLETED.value not in event_kinds
+    assert RunEventKind.RUN_FAILED.value in event_kinds
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_process_run_continues_after_sqlalchemy_url_error(
     db_session: AsyncSession,
     test_user,

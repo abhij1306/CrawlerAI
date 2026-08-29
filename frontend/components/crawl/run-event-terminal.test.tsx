@@ -53,6 +53,31 @@ afterEach(() => {
 });
 
 describe('RunEventTerminal group windowing', () => {
+  it('shows a persistence failure in the collapsed group summary', () => {
+    const events: RunEvent[] = [
+      {
+        ...makeUrlEvents(1)[0],
+        stage: 'acquisition',
+      },
+      {
+        ...makeUrlEvents(1)[0],
+        id: 2,
+        sequence: 2,
+        kind: 'persistence.failed',
+        stage: 'persistence',
+        severity: 'error',
+        outcome: 'failed',
+        facts: { exception_type: 'IntegrityError' },
+      },
+    ];
+
+    render(<RunEventTerminal events={events} />);
+
+    expect(screen.getByTitle('persistence.failed')).toHaveTextContent(
+      /Persistence Failed:.*IntegrityError/,
+    );
+  });
+
   it('keeps zebra striping stable when the sliding window drops a group', () => {
     const allEvents = makeUrlEvents(RUN_EVENT_GROUP_WINDOW_SIZE + 2);
     const { rerender } = render(

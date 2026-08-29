@@ -463,8 +463,10 @@ export const RunEventTerminal = memo(function RunEventTerminal({
                 inferredSerialEndMsByKey.get(group.key),
               );
               const lastEvent = group.events.at(-1);
+              const recentEvents = [...group.events].reverse();
               const summaryEvent =
-                [...group.events].reverse().find((event) => event.stage !== 'persistence') ??
+                recentEvents.find((event) => event.severity !== 'info') ??
+                recentEvents.find((event) => event.stage !== 'persistence') ??
                 lastEvent;
               return (
                 <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">

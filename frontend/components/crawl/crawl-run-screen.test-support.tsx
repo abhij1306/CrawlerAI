@@ -49,11 +49,14 @@ vi.mock('react-router-dom', async (importOriginal) => {
       );
       const setParams = React.useCallback(
         (nextParams: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
-          setParamsState((current: URLSearchParams) =>
-            typeof nextParams === 'function'
-              ? new URLSearchParams(nextParams(current))
-              : new URLSearchParams(nextParams),
-          );
+          setParamsState((current: URLSearchParams) => {
+            const updated =
+              typeof nextParams === 'function'
+                ? new URLSearchParams(nextParams(current))
+                : new URLSearchParams(nextParams);
+            sharedMocks.routeMock.searchParams = updated.toString();
+            return updated;
+          });
         },
         [],
       );

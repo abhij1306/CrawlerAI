@@ -111,13 +111,14 @@ async def process_url_in_owned_session(
         run = await url_session.get(CrawlRun, run_id, populate_existing=True)
         if run is None:
             raise RuntimeError(f"Run {run_id} disappeared before URL processing")
+        resolved_scope_id = url_scope_id(idx)
         if log_start:
             await run_event_timeline.record(
                 run_id=run.id,
                 fact=RunEventFact(
                     kind=RunEventKind.URL_STARTED,
                     url=url,
-                    url_scope_id=url_scope_id(idx),
+                    url_scope_id=resolved_scope_id,
                     facts={"index": idx, "total": total_urls},
                 ),
             )
@@ -130,7 +131,7 @@ async def process_url_in_owned_session(
             persist_run_events=True,
             url_index=idx,
             url_count=total_urls,
-            url_scope_id=f"url:{idx}",
+            url_scope_id=resolved_scope_id,
             url_timeout_seconds=url_timeout_seconds,
         )
         try:
@@ -176,7 +177,7 @@ async def process_url_in_owned_session(
                 run=run,
                 run_id=run.id,
                 url=url,
-                url_scope_id=f"url:{idx}",
+                url_scope_id=resolved_scope_id,
                 timeout_seconds=url_timeout_seconds,
                 exc=exc,
             )
@@ -191,7 +192,7 @@ async def process_url_in_owned_session(
                 run=run,
                 run_id=run.id,
                 url=url,
-                url_scope_id=f"url:{idx}",
+                url_scope_id=resolved_scope_id,
                 timeout_seconds=url_timeout_seconds,
                 exc=exc,
             )

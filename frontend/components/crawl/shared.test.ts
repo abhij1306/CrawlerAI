@@ -295,6 +295,30 @@ describe('buildRunEventSiteGroups', () => {
     expect(groups[0].recordCount).toBe(1);
   });
 
+  it('does not associate records across query-distinct URL scopes', () => {
+    const records = [
+      makeRecord(1, { title: 'Small Widget', url: 'https://example.com/p/12345?variant=small' }),
+      makeRecord(2, { title: 'Large Widget', url: 'https://example.com/p/12345?variant=large' }),
+    ];
+    const events = [
+      makeRunEvent(1, {
+        kind: 'url.started',
+        url: 'https://example.com/p/12345?variant=small',
+        url_scope_id: 'small',
+      }),
+      makeRunEvent(2, {
+        kind: 'url.started',
+        url: 'https://example.com/p/12345?variant=large',
+        url_scope_id: 'large',
+      }),
+    ];
+
+    const groups = buildRunEventSiteGroups(events, records);
+
+    expect(groups[0].records.map((record) => record.id)).toEqual([1]);
+    expect(groups[1].records.map((record) => record.id)).toEqual([2]);
+  });
+
   it('keeps run-scoped events separate from URL-scoped events', () => {
     const events = [
       makeRunEvent(1, { kind: 'run.started' }),

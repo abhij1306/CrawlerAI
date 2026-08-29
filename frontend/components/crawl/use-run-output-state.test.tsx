@@ -31,8 +31,10 @@ describe('useRunOutputState', () => {
     expect(screen.getByLabelText('active output tab')).toHaveTextContent('json');
     fireEvent.click(screen.getByRole('button', { name: 'Run Events' }));
     expect(screen.getByLabelText('active output tab')).toHaveTextContent('events');
+    expect(routeMock.searchParams).toBe('run_id=42&output=events');
     fireEvent.click(screen.getByRole('button', { name: 'Table' }));
     expect(screen.getByLabelText('active output tab')).toHaveTextContent('table');
+    expect(routeMock.searchParams).toBe('run_id=42');
   });
 
   it('falls back to table when a hidden learning tab is requested', () => {

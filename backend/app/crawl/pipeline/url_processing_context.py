@@ -11,6 +11,7 @@ from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.extraction.contracts import ExtractionResult
 from app.crawl.pipeline.types import URLProcessingConfig
+from app.crawl.run_events import url_scope_id
 
 
 @dataclass(slots=True)
@@ -127,7 +128,7 @@ def build_url_processing_context(
         surface=run.surface,
     )
     if not str(resolved_config.url_scope_id or "").strip():
-        resolved_config.url_scope_id = f"url:{resolved_config.url_index}"
+        resolved_config.url_scope_id = url_scope_id(resolved_config.url_index)
     return URLProcessingContext(
         session=session,
         run=run,

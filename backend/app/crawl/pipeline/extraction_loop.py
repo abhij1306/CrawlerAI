@@ -221,6 +221,17 @@ async def _run_robots_gate(
     return None
 
 
+def _needs_browser_lifecycle_events(
+    method: object,
+    prefetched_acquisition: PageAcquisitionResult | None,
+    acquisition_request: object,
+) -> bool:
+    return method == "browser" and (
+        prefetched_acquisition is not None
+        or getattr(acquisition_request, "on_event", None) is None
+    )
+
+
 async def _run_acquisition_stage(
     context: _URLProcessingContext,
     *,
@@ -257,33 +268,34 @@ async def _run_acquisition_stage(
             ),
         )
     method = getattr(acquisition_result, "method", "unknown")
-    if method == "browser":
-        if getattr(acquisition_request, "on_event", None) is None:
-            diagnostics = mapping_or_empty(
-                getattr(acquisition_result, "browser_diagnostics", {})
-            )
-            timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
-            load_ms = browser_page_load_elapsed_ms(timings) or timings.get("total", 0)
-            try:
-                elapsed_ms = int(str(load_ms or 0))
-            except (TypeError, ValueError):
-                elapsed_ms = 0
-            await _record_pipeline_event(
-                context,
-                kind=RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
-                facts={
-                    "engine": str(diagnostics.get("browser_engine") or "chromium"),
-                    "launch_mode": str(
-                        diagnostics.get("browser_launch_mode") or "headless"
-                    ),
-                    "profile": str(diagnostics.get("browser_profile") or ""),
-                },
-            )
-            await _record_pipeline_event(
-                context,
-                kind=RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
-                facts={"elapsed_ms": elapsed_ms},
-            )
+    if _needs_browser_lifecycle_events(
+        method, prefetched_acquisition, acquisition_request
+    ):
+        diagnostics = mapping_or_empty(
+            getattr(acquisition_result, "browser_diagnostics", {})
+        )
+        timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
+        load_ms = browser_page_load_elapsed_ms(timings) or timings.get("total", 0)
+        try:
+            elapsed_ms = int(str(load_ms or 0))
+        except (TypeError, ValueError):
+            elapsed_ms = 0
+        await _record_pipeline_event(
+            context,
+            kind=RunEventKind.ACQUISITION_BROWSER_LAUNCHED,
+            facts={
+                "engine": str(diagnostics.get("browser_engine") or "chromium"),
+                "launch_mode": str(
+                    diagnostics.get("browser_launch_mode") or "headless"
+                ),
+                "profile": str(diagnostics.get("browser_profile") or ""),
+            },
+        )
+        await _record_pipeline_event(
+            context,
+            kind=RunEventKind.ACQUISITION_BROWSER_PAGE_LOADED,
+            facts={"elapsed_ms": elapsed_ms},
+        )
     status = getattr(acquisition_result, "status_code", None)
     completed_facts: dict[str, str | int] = {"method": str(method)}
     if status is not None:
@@ -451,6 +463,7 @@ async def _run_persistence_stage(
                 "record_count": persisted_count,
                 "final_url": str(acquisition_result.final_url or context.url),
             },
+            session=context.session,
         )
     if (
         verdict == VERDICT_EMPTY

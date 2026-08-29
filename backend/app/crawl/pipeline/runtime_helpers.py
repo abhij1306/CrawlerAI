@@ -30,6 +30,7 @@ async def record_pipeline_event(
     kind: RunEventKind,
     reason_code: str | None = None,
     facts: Mapping[str, JsonValue] | None = None,
+    session: AsyncSession | None = None,
 ) -> None:
     config = getattr(context, "config", None)
     if config is None or not config.persist_run_events:
@@ -50,6 +51,7 @@ async def record_pipeline_event(
             reason_code=reason_code,
             facts=dict(facts or {}),
         ),
+        session=session,
     )
 
 
