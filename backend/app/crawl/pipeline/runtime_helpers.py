@@ -4,7 +4,10 @@ import logging
 from collections.abc import Mapping
 
 from app.acquisition.events import AcquisitionEvent, AcquisitionEventKind
-from app.core.config.run_events import RunEventKind
+from app.core.config.run_events import (
+    LEGACY_ACQUISITION_WARNING_EVENT_KINDS,
+    RunEventKind,
+)
 from app.core.database import SessionLocal
 from app.crawl.run_events import JsonValue, RunEventFact, run_event_timeline
 from app.models.crawl_run import CrawlLog, CrawlRun
@@ -74,20 +77,21 @@ def pipeline_acquisition_event_logger(context):
     async def _log(event: AcquisitionEvent) -> None:
         kind, facts = _run_event_from_acquisition_event(event)
         await _record_acquisition_run_event(context, kind=kind, facts=facts)
-        warning_kinds = {
-            AcquisitionEventKind.HTTP_FAILED,
-            AcquisitionEventKind.BROWSER_FIRST_FALLBACK,
-            AcquisitionEventKind.PROTECTION_DETECTED,
-        }
-        details = ", ".join(
+        details = [
             f"{key}={value}" for key, value in event.facts.items() if value is not None
-        )
+        ]
+        if event.reason_code is not None:
+            details.append(f"reason_code={event.reason_code}")
         message = event.kind.value.replace("_", " ")
         if details:
-            message = f"{message}: {details}"
+            message = f"{message}: {', '.join(details)}"
         log_pipeline_event(
             context,
-            "warning" if event.kind in warning_kinds else "info",
+            (
+                "warning"
+                if event.kind in LEGACY_ACQUISITION_WARNING_EVENT_KINDS
+                else "info"
+            ),
             message,
         )
 

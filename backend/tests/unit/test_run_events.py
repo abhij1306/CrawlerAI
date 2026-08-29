@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import runpy
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config.run_events import RunEventKind
@@ -183,6 +185,24 @@ async def test_timeline_sequences_and_cursors_run_events() -> None:
     assert "run_events.sequence >" in str(session.query)
 
 
+async def test_timeline_normalizes_blank_run_scope_before_persistence() -> None:
+    session = _RecordingSession([1])
+
+    event = await _timeline(session).record(
+        run_id=42,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_STARTED,
+            url="   ",
+            url_scope_id="   ",
+            facts={"seed_url_count": 1},
+        ),
+    )
+
+    assert event is not None
+    assert event.url is None
+    assert event.url_scope_id is None
+
+
 async def test_timeline_uses_bound_session_savepoint_for_atomic_insert() -> None:
     session = _RecordingSession([7])
 
@@ -268,3 +288,60 @@ async def test_timeline_savepoint_failure_leaves_outer_session_usable(
 
     assert result is None
     assert (await db_session.execute(text("SELECT 1"))).scalar_one() == 1
+
+
+async def test_run_events_are_append_only_but_parent_cascade_is_allowed(
+    db_session: AsyncSession,
+    create_test_run,
+) -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "20260703_0001_greenfield_schema.py"
+    )
+    migration = runpy.run_path(str(migration_path))
+    await db_session.execute(text(migration["_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL"]))
+    await db_session.execute(text(migration["_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL"]))
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+    event = await RunEventTimeline(
+        cast(async_sessionmaker[AsyncSession], object())
+    ).record(
+        run_id=run.id,
+        fact=RunEventFact(
+            kind=RunEventKind.RUN_STARTED,
+            facts={"seed_url_count": 1},
+        ),
+        session=db_session,
+    )
+    assert event is not None
+    await db_session.commit()
+    event_id = event.id
+    run_id = run.id
+
+    with pytest.raises(DBAPIError, match="run_events are append-only"):
+        await db_session.execute(
+            text("UPDATE run_events SET outcome = 'failed' WHERE id = :event_id"),
+            {"event_id": event_id},
+        )
+    await db_session.rollback()
+
+    with pytest.raises(DBAPIError, match="run_events are append-only"):
+        await db_session.execute(
+            text("DELETE FROM run_events WHERE id = :event_id"),
+            {"event_id": event_id},
+        )
+    await db_session.rollback()
+
+    await db_session.execute(
+        text("DELETE FROM crawl_runs WHERE id = :run_id"), {"run_id": run_id}
+    )
+    await db_session.commit()
+    remaining = await db_session.scalar(
+        text("SELECT count(*) FROM run_events WHERE id = :event_id"),
+        {"event_id": event_id},
+    )
+    assert remaining == 0

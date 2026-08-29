@@ -1,7 +1,81 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
+
+
+class AcquisitionEventKind(str, Enum):
+    STARTED = "started"
+    STRATEGY_SELECTED = "strategy_selected"
+    HTTP_ATTEMPTED = "http_attempted"
+    HTTP_FAILED = "http_failed"
+    BROWSER_LAUNCHED = "browser_launched"
+    BROWSER_PAGE_LOADED = "browser_page_loaded"
+    BROWSER_FIRST_FALLBACK = "browser_first_fallback"
+    BROWSER_ESCALATED = "browser_escalated"
+    PROTECTION_DETECTED = "protection_detected"
+    POPUP_CLOSED = "popup_closed"
+    BROWSER_INTERSTITIAL_DISMISSED = "browser_interstitial_dismissed"
+    TRAVERSAL_DETECTED = "traversal_detected"
+    TRAVERSAL_PROGRESSED = "traversal_progressed"
+    TRAVERSAL_SETTLED = "traversal_settled"
+    TRAVERSAL_RECOVERY_STARTED = "traversal_recovery_started"
+    TRAVERSAL_COMPLETED = "traversal_completed"
+
+
+ACQUISITION_EVENT_REQUIRED_FACTS: dict[AcquisitionEventKind, frozenset[str]] = {
+    AcquisitionEventKind.STARTED: frozenset({"url"}),
+    AcquisitionEventKind.STRATEGY_SELECTED: frozenset(
+        {
+            "fetch_mode",
+            "browser_first",
+            "prefer_browser",
+            "host_preference_enabled",
+            "http_timeout_seconds",
+            "primary_http_fetcher",
+        }
+    ),
+    AcquisitionEventKind.HTTP_ATTEMPTED: frozenset(
+        {"fetcher", "timeout_seconds", "proxy_mode"}
+    ),
+    AcquisitionEventKind.HTTP_FAILED: frozenset({"fetcher", "exception_type"}),
+    AcquisitionEventKind.BROWSER_LAUNCHED: frozenset(
+        {"launch_mode", "engine", "profile", "proxy_mode", "binary"}
+    ),
+    AcquisitionEventKind.BROWSER_PAGE_LOADED: frozenset({"elapsed_ms", "page_title"}),
+    AcquisitionEventKind.BROWSER_FIRST_FALLBACK: frozenset({"exception_type"}),
+    AcquisitionEventKind.BROWSER_ESCALATED: frozenset({"status_code", "method"}),
+    AcquisitionEventKind.PROTECTION_DETECTED: frozenset({"status_code"}),
+    AcquisitionEventKind.POPUP_CLOSED: frozenset({"popup_url"}),
+    AcquisitionEventKind.BROWSER_INTERSTITIAL_DISMISSED: frozenset({"selector"}),
+    AcquisitionEventKind.TRAVERSAL_DETECTED: frozenset(
+        {"mode", "safety_cap", "target_records"}
+    ),
+    AcquisitionEventKind.TRAVERSAL_PROGRESSED: frozenset(
+        {
+            "action",
+            "step",
+            "previous_card_count",
+            "current_card_count",
+            "target_records",
+        }
+    ),
+    AcquisitionEventKind.TRAVERSAL_SETTLED: frozenset(
+        {"previous_card_count", "current_card_count"}
+    ),
+    AcquisitionEventKind.TRAVERSAL_RECOVERY_STARTED: frozenset({"action"}),
+    AcquisitionEventKind.TRAVERSAL_COMPLETED: frozenset(
+        {"mode", "card_count", "fragment_count", "progress_event_count", "stop_reason"}
+    ),
+}
+
+LEGACY_ACQUISITION_WARNING_EVENT_KINDS = frozenset(
+    {
+        AcquisitionEventKind.HTTP_FAILED,
+        AcquisitionEventKind.BROWSER_FIRST_FALLBACK,
+        AcquisitionEventKind.PROTECTION_DETECTED,
+    }
+)
 
 
 class RunEventKind(StrEnum):
@@ -361,10 +435,13 @@ RUN_EVENT_VERDICT_OUTCOMES: dict[str, RunEventOutcome] = {
 
 
 __all__ = [
+    "ACQUISITION_EVENT_REQUIRED_FACTS",
+    "LEGACY_ACQUISITION_WARNING_EVENT_KINDS",
     "RUN_EVENT_DEFINITIONS",
     "RUN_EVENT_REASON_OUTCOMES",
     "RUN_EVENT_REASON_SEVERITIES",
     "RUN_EVENT_VERDICT_OUTCOMES",
+    "AcquisitionEventKind",
     "RunEventDefinition",
     "RunEventKind",
     "RunEventOutcome",

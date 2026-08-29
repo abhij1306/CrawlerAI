@@ -119,6 +119,37 @@ async def test_acquire_returns_public_headers_as_plain_dict(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_acquire_emits_started_before_prefetch_policy_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[AcquisitionEvent] = []
+
+    async def _on_event(event: AcquisitionEvent) -> None:
+        events.append(event)
+
+    async def _fail_before_fetch(_self, _request) -> None:
+        raise RuntimeError("prefetch policy failed")
+
+    monkeypatch.setattr(
+        "app.acquisition.acquirer.PolicyMiddleware.before_fetch",
+        _fail_before_fetch,
+    )
+
+    with pytest.raises(RuntimeError, match="prefetch policy failed"):
+        await acquire(
+            AcquisitionRequest(
+                run_id=1,
+                url="https://example.com",
+                plan=AcquisitionIntent(surface="ecommerce_detail"),
+                on_event=_on_event,
+            )
+        )
+
+    assert [event.kind for event in events] == [AcquisitionEventKind.STARTED]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_acquire_strips_pasted_encoded_url_suffix_before_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

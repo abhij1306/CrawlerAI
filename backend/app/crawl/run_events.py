@@ -231,9 +231,9 @@ class RunEventTimeline:
             sequence=int(sequence),
             kind=fact.kind.value,
             stage=definition.stage.value if definition.stage is not None else None,
-            url=str(fact.url).strip() if fact.url is not None else None,
+            url=(str(fact.url).strip() or None) if fact.url is not None else None,
             url_scope_id=(
-                str(fact.url_scope_id).strip()
+                str(fact.url_scope_id).strip() or None
                 if fact.url_scope_id is not None
                 else None
             ),

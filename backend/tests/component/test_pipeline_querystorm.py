@@ -376,6 +376,13 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
             binary="bundled",
         )
     )
+    await pipeline_acquisition_event_logger(context)(
+        AcquisitionEvent.browser_escalated(
+            status_code=403,
+            method="httpx",
+            reason_code="blocked_status",
+        )
+    )
     await db_session.commit()
 
     rows = (
@@ -387,9 +394,17 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
         .scalars()
         .all()
     )
-    assert [row.message for row in rows] == [
-        "browser launched: launch_mode=headless, engine=chromium, profile=default, "
-        "proxy_mode=direct, binary=bundled"
+    assert [(row.level, row.message) for row in rows] == [
+        (
+            "info",
+            "browser launched: launch_mode=headless, engine=chromium, "
+            "profile=default, proxy_mode=direct, binary=bundled",
+        ),
+        (
+            "info",
+            "browser escalated: status_code=403, method=httpx, "
+            "reason_code=blocked_status",
+        ),
     ]
     assert [
         (run_id, fact.kind.value, fact.url, fact.url_scope_id)
@@ -400,7 +415,13 @@ async def test_pipeline_acquisition_event_logger_returns_awaitable_adapter(
             "acquisition.browser_launched",
             "https://example.com/a",
             "url:1",
-        )
+        ),
+        (
+            run.id,
+            "acquisition.browser_escalated",
+            "https://example.com/a",
+            "url:1",
+        ),
     ]
 
 

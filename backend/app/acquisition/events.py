@@ -5,78 +5,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
 from types import MappingProxyType
+
+from app.core.config.run_events import (
+    ACQUISITION_EVENT_REQUIRED_FACTS,
+    AcquisitionEventKind,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class AcquisitionEventKind(str, Enum):
-    STARTED = "started"
-    STRATEGY_SELECTED = "strategy_selected"
-    HTTP_ATTEMPTED = "http_attempted"
-    HTTP_FAILED = "http_failed"
-    BROWSER_LAUNCHED = "browser_launched"
-    BROWSER_PAGE_LOADED = "browser_page_loaded"
-    BROWSER_FIRST_FALLBACK = "browser_first_fallback"
-    BROWSER_ESCALATED = "browser_escalated"
-    PROTECTION_DETECTED = "protection_detected"
-    POPUP_CLOSED = "popup_closed"
-    BROWSER_INTERSTITIAL_DISMISSED = "browser_interstitial_dismissed"
-    TRAVERSAL_DETECTED = "traversal_detected"
-    TRAVERSAL_PROGRESSED = "traversal_progressed"
-    TRAVERSAL_SETTLED = "traversal_settled"
-    TRAVERSAL_RECOVERY_STARTED = "traversal_recovery_started"
-    TRAVERSAL_COMPLETED = "traversal_completed"
-
-
 AcquisitionFactValue = str | int | float | bool | None
-
-_REQUIRED_FACTS: dict[AcquisitionEventKind, frozenset[str]] = {
-    AcquisitionEventKind.STARTED: frozenset({"url"}),
-    AcquisitionEventKind.STRATEGY_SELECTED: frozenset(
-        {
-            "fetch_mode",
-            "browser_first",
-            "prefer_browser",
-            "host_preference_enabled",
-            "http_timeout_seconds",
-            "primary_http_fetcher",
-        }
-    ),
-    AcquisitionEventKind.HTTP_ATTEMPTED: frozenset(
-        {"fetcher", "timeout_seconds", "proxy_mode"}
-    ),
-    AcquisitionEventKind.HTTP_FAILED: frozenset({"fetcher", "exception_type"}),
-    AcquisitionEventKind.BROWSER_LAUNCHED: frozenset(
-        {"launch_mode", "engine", "profile", "proxy_mode", "binary"}
-    ),
-    AcquisitionEventKind.BROWSER_PAGE_LOADED: frozenset({"elapsed_ms", "page_title"}),
-    AcquisitionEventKind.BROWSER_FIRST_FALLBACK: frozenset({"exception_type"}),
-    AcquisitionEventKind.BROWSER_ESCALATED: frozenset({"status_code", "method"}),
-    AcquisitionEventKind.PROTECTION_DETECTED: frozenset({"status_code"}),
-    AcquisitionEventKind.POPUP_CLOSED: frozenset({"popup_url"}),
-    AcquisitionEventKind.BROWSER_INTERSTITIAL_DISMISSED: frozenset({"selector"}),
-    AcquisitionEventKind.TRAVERSAL_DETECTED: frozenset(
-        {"mode", "safety_cap", "target_records"}
-    ),
-    AcquisitionEventKind.TRAVERSAL_PROGRESSED: frozenset(
-        {
-            "action",
-            "step",
-            "previous_card_count",
-            "current_card_count",
-            "target_records",
-        }
-    ),
-    AcquisitionEventKind.TRAVERSAL_SETTLED: frozenset(
-        {"previous_card_count", "current_card_count"}
-    ),
-    AcquisitionEventKind.TRAVERSAL_RECOVERY_STARTED: frozenset({"action"}),
-    AcquisitionEventKind.TRAVERSAL_COMPLETED: frozenset(
-        {"mode", "card_count", "fragment_count", "progress_event_count", "stop_reason"}
-    ),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +28,7 @@ class AcquisitionEvent:
 
     def __post_init__(self) -> None:
         facts = dict(self.facts)
-        required = _REQUIRED_FACTS[self.kind]
+        required = ACQUISITION_EVENT_REQUIRED_FACTS[self.kind]
         if set(facts) != required:
             raise ValueError(f"Invalid facts for acquisition event kind: {self.kind}")
         if any(

@@ -375,7 +375,6 @@ class RunEvent(CreatedAtMixin, Base):
             name="ck_run_events_url_scope",
         ),
         UniqueConstraint("run_id", "sequence", name="uq_run_events_run_sequence"),
-        Index("ix_run_events_run_sequence", "run_id", "sequence"),
         Index(
             "ix_run_events_run_url_scope_sequence",
             "run_id",

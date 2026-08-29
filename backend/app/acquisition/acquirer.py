@@ -233,12 +233,12 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
     browser_reason = acquisition_policy.browser_reason
     if browser_reason is None and bool(runtime_policy.get("requires_browser")):
         browser_reason = "platform-required"
-    policy_middleware = PolicyMiddleware()
-    await policy_middleware.before_fetch(request)
-    request = request.with_profile_updates(**acquisition_policy.to_profile())
     await emit_acquisition_event(
         request.on_event, AcquisitionEvent.started(url=effective_url)
     )
+    policy_middleware = PolicyMiddleware()
+    await policy_middleware.before_fetch(request)
+    request = request.with_profile_updates(**acquisition_policy.to_profile())
     profile_endpoints = request.acquisition_profile.get(
         INTERNAL_API_ENDPOINTS_PROFILE_KEY
     )

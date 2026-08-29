@@ -28,6 +28,29 @@ depends_on: Sequence[str] | None = None
 
 __all__ = ["branch_labels", "depends_on", "down_revision", "revision"]
 
+_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL = """
+CREATE FUNCTION enforce_run_events_append_only()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' AND NOT EXISTS (
+        SELECT 1 FROM crawl_runs WHERE id = OLD.run_id
+    ) THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'run_events are append-only'
+        USING ERRCODE = '55000';
+END;
+$$
+"""
+
+_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL = """
+CREATE TRIGGER run_events_append_only
+BEFORE UPDATE OR DELETE ON run_events
+FOR EACH ROW EXECUTE FUNCTION enforce_run_events_append_only()
+"""
+
 
 def upgrade() -> None:
     op.create_table(
@@ -288,18 +311,14 @@ def upgrade() -> None:
         sa.UniqueConstraint("run_id", "sequence", name="uq_run_events_run_sequence"),
     )
     op.create_index(
-        "ix_run_events_run_sequence",
-        "run_events",
-        ["run_id", "sequence"],
-        unique=False,
-    )
-    op.create_index(
         "ix_run_events_run_url_scope_sequence",
         "run_events",
         ["run_id", "url_scope_id", "sequence"],
         unique=False,
         postgresql_where=sa.text("url_scope_id IS NOT NULL"),
     )
+    op.execute(_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL)
+    op.execute(_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL)
     op.create_table(
         "crawl_url_results",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -1287,8 +1306,9 @@ def downgrade() -> None:
         table_name="crawl_url_results",
     )
     op.drop_table("crawl_url_results")
+    op.execute("DROP TRIGGER run_events_append_only ON run_events")
+    op.execute("DROP FUNCTION enforce_run_events_append_only()")
     op.drop_index("ix_run_events_run_url_scope_sequence", table_name="run_events")
-    op.drop_index("ix_run_events_run_sequence", table_name="run_events")
     op.drop_table("run_events")
     op.drop_index(op.f("ix_crawl_logs_run_id"), table_name="crawl_logs")
     op.drop_table("crawl_logs")
