@@ -200,18 +200,18 @@ def has_product_option_signal(tokens: frozenset[str], *, axis: str = "") -> bool
 
 
 __all__ = [
+    "OPTION_VALUE_OPAQUE_NUMERIC_MIN_DIGITS",
+    "OPTION_VALUE_REJECT_EXACT",
+    "OPTION_VALUE_REJECT_PHRASES",
+    "OPTION_VALUE_REJECT_TOKENS",
+    "OPTION_VALUE_REJECT_TOKEN_SETS",
+    "SELECT_CONTROL_REJECT_PHRASES",
     "SELECT_CONTROL_REJECT_ROLE_TOKENS",
     "SELECT_CONTROL_REJECT_TOKENS",
-    "SELECT_CONTROL_REJECT_PHRASES",
-    "SELECT_PRODUCT_OPTION_SIGNAL_TOKENS",
     "SELECT_CONTROL_SIGNAL_ATTRIBUTES",
-    "OPTION_VALUE_REJECT_PHRASES",
-    "OPTION_VALUE_REJECT_TOKEN_SETS",
-    "OPTION_VALUE_REJECT_TOKENS",
-    "OPTION_VALUE_REJECT_EXACT",
-    "OPTION_VALUE_OPAQUE_NUMERIC_MIN_DIGITS",
+    "SELECT_PRODUCT_OPTION_SIGNAL_TOKENS",
     "control_signal_tokens",
+    "has_product_option_signal",
     "is_rejected_control",
     "is_rejected_option_value",
-    "has_product_option_signal",
 ]

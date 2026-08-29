@@ -249,7 +249,7 @@ def _node_key(node: Any) -> str:
         mem_id = getattr(node, "mem_id", None)
         if mem_id is not None:
             return f"node:{int(mem_id)}"
-    except Exception:
+    except Exception:  # noqa: BLE001 - duck-typed DOM node identity is best-effort
         # Duck-typed nodes without identity/mem_id fall back to a content hash.
         logger.debug("listing card node identity unavailable; hashing html")
     return (
@@ -263,7 +263,7 @@ def _is_hidden_self(node: Any) -> bool:
         method = getattr(node, "is_hidden", None)
         if callable(method) and method():
             return True
-    except Exception:
+    except Exception:  # noqa: BLE001 - duck-typed visibility probe is best-effort
         # Nodes without a working is_hidden() are judged by attributes below.
         logger.debug("listing card is_hidden probe failed; using attribute check")
     if _has_attribute(node, "hidden"):
@@ -501,7 +501,6 @@ def card_rejection_reason(
     text = _text(node)
     if len(text) < 4:
         return "insufficient_text"
-    _, url = canonical_record_url(node, surface=surface, page_url=page_url)
     identity = stable_card_identity(node, surface=surface, page_url=page_url)
     if not identity:
         return "missing_identity"
@@ -652,11 +651,11 @@ __all__ = [
     "ListingCardDiagnostics",
     "ListingCardRejectionSample",
     "ListingCardSelection",
+    "canonical_record_url",
+    "canonicalize_identity_url",
     "card_is_admitted",
     "card_quality_score",
     "card_rejection_reason",
-    "canonical_record_url",
-    "canonicalize_identity_url",
     "derive_card_selectors",
     "select_listing_cards",
     "select_listing_cards_with_diagnostics",

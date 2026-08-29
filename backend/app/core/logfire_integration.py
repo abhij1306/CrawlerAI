@@ -68,7 +68,7 @@ def _patch_opentelemetry_fastapi() -> None:
 
         otel_fastapi._get_route_details = _patched_get_route_details
         logger.debug("Successfully patched opentelemetry.instrumentation.fastapi")
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional instrumentation must degrade cleanly
         logger.debug(
             "Optional opentelemetry patch not applied; library may not be present"
         )

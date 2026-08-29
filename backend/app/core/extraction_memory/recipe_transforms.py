@@ -73,7 +73,7 @@ def _normalize_field(
 ) -> Any:
     field = binding.field
     value = _normalize_field_url(request, field, value)
-    if field == "additional_images" and isinstance(value, str) or field == "variants":
+    if (field == "additional_images" and isinstance(value, str)) or field == "variants":
         return value
     value = _normalize_textual_field(field, value)
     price = _normalized_price(value, binding)

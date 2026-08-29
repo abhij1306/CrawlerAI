@@ -752,8 +752,7 @@ def _variant_signals_are_sufficient(
             or (commercial and (typed or variant_path))
             or (variant_path and has_sku)
         )
-        or (typed and option_count >= 2)
-    )
+    ) or (typed and option_count >= 2)
 
 
 def _has_variant_children(obj: dict) -> bool:

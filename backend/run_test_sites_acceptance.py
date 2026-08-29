@@ -61,7 +61,7 @@ async def _run_one(site: dict[str, object], mode: str) -> dict[str, object]:
                     mode=mode,
                 )
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - acceptance runner isolates target failures
         result["error"] = f"{type(exc).__name__}: {exc}"
     result["elapsed_s"] = round(time.perf_counter() - started, 2)
     result["failure_mode"] = classify_failure_mode(result)
@@ -410,7 +410,7 @@ async def main(argv: list[str]) -> int:
     finally:
         try:
             await shutdown_browser_runtime()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - cleanup failure is reported separately
             cleanup_failed = True
             print(f"Browser runtime shutdown failed: {type(exc).__name__}: {exc}")
 

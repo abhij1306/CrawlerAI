@@ -183,7 +183,7 @@ async def process_url_in_owned_session(
             url_result.url_metrics["error"] = (
                 f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - URL isolation boundary must recover all failures
             run, url_result = await recover_url_failure(
                 url_session,
                 session_factory=session_factory,

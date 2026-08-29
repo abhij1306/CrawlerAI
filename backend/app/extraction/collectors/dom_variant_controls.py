@@ -364,8 +364,10 @@ def _supports_axis_inference(node: HtmlNode) -> bool:
     return (
         role in VARIANT_DOM_SELECTION_AXISLESS_ROLES
         or node.tag() == "option"
-        or node.tag() == "input"
-        and str(node.attribute("type") or "").casefold() in {"checkbox", "radio"}
+        or (
+            node.tag() == "input"
+            and str(node.attribute("type") or "").casefold() in {"checkbox", "radio"}
+        )
     )
 
 

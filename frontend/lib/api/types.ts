@@ -16,16 +16,16 @@ export type RunStatus =
   | 'failed'
   | 'proxy_exhausted';
 
-export type CrawlModule = 'category' | 'pdp';
+type CrawlModule = 'category' | 'pdp';
 export type CrawlDomain = 'commerce' | 'jobs';
 export type CrawlSurface = 'ecommerce_listing' | 'ecommerce_detail' | 'job_listing' | 'job_detail';
 
-export type CrawlMode = 'single' | 'sitemap' | 'bulk' | 'batch' | 'csv';
+type CrawlMode = 'single' | 'sitemap' | 'bulk' | 'batch' | 'csv';
 export type AdvancedCrawlMode = 'scroll' | 'load_more' | 'paginate' | 'view_all';
 
 export type ResultSummaryQualityLevel = 'high' | 'medium' | 'low' | 'unknown';
 
-export type ResultSummaryQuality = {
+type ResultSummaryQuality = {
   level?: ResultSummaryQualityLevel;
   score?: number;
   scored_urls?: number;
@@ -37,7 +37,7 @@ export type ResultSummaryQuality = {
   [key: string]: unknown;
 };
 
-export type ResultSummary = {
+type ResultSummary = {
   extraction_verdict?: string;
   record_count?: number;
   quality_summary?: ResultSummaryQuality;
@@ -206,7 +206,7 @@ export type DomainRunProfile = {
   saved_at?: string | null;
 };
 
-export type DomainRecipeSelectorCandidate = {
+type DomainRecipeSelectorCandidate = {
   candidate_key: string;
   field_name: string;
   selector_kind: string;
@@ -359,20 +359,20 @@ export type GroundedCorrectionResponse = {
 // `run-report.v1` (app/observability/run_report.py). Bounded, self-contained
 // root-cause artifacts surfaced read-only by the KG diagnostics drill-down.
 
-export type DiagnoseEvidenceLocator = {
+type DiagnoseEvidenceLocator = {
   kind: string;
   value: unknown;
   preview?: unknown;
 };
 
-export type DiagnoseFieldWinner = {
+type DiagnoseFieldWinner = {
   collector_id?: string;
   locator?: DiagnoseEvidenceLocator;
   value?: unknown;
   rule_id?: string;
 };
 
-export type DiagnoseFieldRejected = {
+type DiagnoseFieldRejected = {
   reason: string;
   collector_id?: string;
   locator?: DiagnoseEvidenceLocator;
@@ -380,7 +380,7 @@ export type DiagnoseFieldRejected = {
   omitted?: number;
 };
 
-export type DiagnoseField = {
+type DiagnoseField = {
   field: string;
   status:
     | 'captured_and_resolved'
@@ -400,7 +400,7 @@ export type DiagnoseField = {
   publication_policy?: unknown;
 };
 
-export type DiagnoseContractOutcome = {
+type DiagnoseContractOutcome = {
   field: string;
   outcome: string;
   selected_source?: string | null;
@@ -409,7 +409,7 @@ export type DiagnoseContractOutcome = {
   detail?: string | null;
 };
 
-export type DiagnoseEvidenceDispositionStatus =
+type DiagnoseEvidenceDispositionStatus =
   | 'accepted'
   | 'rejected_invalid'
   | 'rejected_lower_rank'
@@ -420,7 +420,7 @@ export type DiagnoseEvidenceDispositionStatus =
   | 'diagnostic_only'
   | string;
 
-export type DiagnoseEvidenceDisposition = {
+type DiagnoseEvidenceDisposition = {
   evidence_id: string;
   entity_id?: string | null;
   status: DiagnoseEvidenceDispositionStatus;
@@ -453,7 +453,7 @@ export type ResultDiagnosis = {
   >;
 };
 
-export type RunReportRootCause = {
+type RunReportRootCause = {
   root_cause: string;
   count: number;
   diagnose_links: string[];

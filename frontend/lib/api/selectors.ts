@@ -10,7 +10,7 @@ export type SelectorTestResponse = {
   selector_used?: string | null;
 };
 
-export type SelectorSuggestion = {
+type SelectorSuggestion = {
   field_name?: string | null;
   css_selector?: string | null;
   xpath?: string | null;

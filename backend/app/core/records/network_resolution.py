@@ -11,7 +11,7 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 
 AddressFamilyPreference = Literal["auto", "ipv4", "ipv6"]
 
-_IPV4_LOCAL_ADDRESS = "0.0.0.0"  # nosec B104
+_IPV4_LOCAL_ADDRESS = "0.0.0.0"  # noqa: S104 - outbound socket source binding
 _IPV6_LOCAL_ADDRESS = "::"  # nosec B104
 _CHROME_MAJOR_VERSION_RE = re.compile(r"Chrome/(\d+)\.")
 

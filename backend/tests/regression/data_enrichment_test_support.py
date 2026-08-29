@@ -1,4 +1,3 @@
-# ruff: noqa: F401
 from __future__ import annotations
 
 import asyncio
@@ -76,9 +75,7 @@ def _as_async(fn):
 
 
 __all__ = [
-    "AsyncSession",
     "BACKEND_ROOT",
-    "CrawlRecord",
     "DATA_ENRICHMENT_COLOR_FAMILY_ALIASES",
     "DATA_ENRICHMENT_STATUS_DEGRADED",
     "DATA_ENRICHMENT_STATUS_ENRICHED",
@@ -87,6 +84,8 @@ __all__ = [
     "DATA_ENRICHMENT_STATUS_RUNNING",
     "DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS",
     "DATA_ENRICHMENT_TAXONOMY_VERSION",
+    "AsyncSession",
+    "CrawlRecord",
     "DataEnrichmentJobDetailResponse",
     "EnrichedProduct",
     "LLMTaskResult",

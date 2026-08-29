@@ -159,6 +159,11 @@ def _recipe(layer: str, kind: str, payload: dict) -> ExtractionRecipe:
 
 
 __all__ = [
+    "EXTRACTION_MEMORY_STATUS_SUSPENDED",
+    "EXTRACTION_RECIPE_KIND_CONTRACTS",
+    "EXTRACTION_RECIPE_KIND_SELECTORS",
+    "EXTRACTION_RECIPE_LAYER_DOMAIN",
+    "EXTRACTION_RECIPE_LAYER_TEMPLATE",
     "AsyncSession",
     "CollectorOutcome",
     "CommerceDetailRecord",
@@ -166,11 +171,6 @@ __all__ = [
     "CrawlRun",
     "CrawlUrlResult",
     "Decision",
-    "EXTRACTION_MEMORY_STATUS_SUSPENDED",
-    "EXTRACTION_RECIPE_KIND_CONTRACTS",
-    "EXTRACTION_RECIPE_KIND_SELECTORS",
-    "EXTRACTION_RECIPE_LAYER_DOMAIN",
-    "EXTRACTION_RECIPE_LAYER_TEMPLATE",
     "Evidence",
     "ExtractionRecipe",
     "ExtractionResult",

@@ -1,0 +1,57 @@
+[importlinter]
+root_package = app
+include_external_packages = False
+namespace_packages = True
+
+[importlinter:contract:extraction-is-storage-free]
+name = Extraction does not depend on persistence
+type = forbidden
+source_modules =
+    app.extraction
+forbidden_modules =
+    app.models
+    app.persistence
+
+[importlinter:contract:models-are-persistence-only]
+name = Models do not depend on runtime layers
+type = forbidden
+source_modules =
+    app.models
+forbidden_modules =
+    app.acquisition
+    app.api
+    app.connectors
+    app.crawl
+    app.enrichment
+    app.extraction
+    app.intelligence
+    app.observability
+    app.persistence
+    app.workers
+allow_indirect_imports = True
+ignore_imports =
+    app.models.crawl_settings -> app.acquisition.runtime_plan
+    app.models.crawl_settings -> app.extraction.surfaces
+    app.models.crawl_settings_views -> app.crawl.profile.normalization
+    app.models.crawl_settings_views -> app.crawl.utils
+
+[importlinter:contract:api-is-a-leaf]
+name = Runtime owners do not depend on API routes
+type = forbidden
+source_modules =
+    app.acquisition
+    app.connectors
+    app.core
+    app.crawl
+    app.enrichment
+    app.extraction
+    app.intelligence
+    app.models
+    app.observability
+    app.persistence
+    app.workers
+forbidden_modules =
+    app.api
+allow_indirect_imports = True
+ignore_imports =
+    app.connectors.public_api.extraction_service -> app.api.public.common

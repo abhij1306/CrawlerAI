@@ -35,6 +35,7 @@ def test_validation_tooling_changes_use_targeted_contract_tests() -> None:
     config = json.loads(_VALIDATION_CONFIG.read_text(encoding="utf-8"))
     tooling_paths = {
         "scripts/check.ps1",
+        "scripts/quality.mjs",
         "scripts/test.ps1",
         "scripts/validation.json",
     }
@@ -43,9 +44,13 @@ def test_validation_tooling_changes_use_targeted_contract_tests() -> None:
         rule for rule in config["rules"] if set(rule["sources"]) == tooling_paths
     )
     assert tooling_rule["backendTests"] == [
-        "tests/unit/test_final_architecture_contracts.py"
+        "tests/unit/test_final_architecture_contracts.py",
+        "tests/unit/test_export_openapi.py",
     ]
-    assert tooling_rule["frontendTests"] == ["lib/check-crawl-architecture.test.ts"]
+    assert tooling_rule["frontendTests"] == [
+        "lib/check-crawl-architecture.test.ts",
+        "lib/api/contract-drift.test.ts",
+    ]
 
 
 def test_acquisition_plan_rejects_duplicate_attempt_ids() -> None:

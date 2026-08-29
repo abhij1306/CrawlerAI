@@ -806,8 +806,7 @@ def _variant_entity(
         offer_ids=(),
         asset_ids=(),
         selected=any(
-            ev.fact_type == "variant.selected"
-            and bool(ev.value)
+            (ev.fact_type == "variant.selected" and bool(ev.value))
             or bool(ev.entity_hint and ev.entity_hint.selected)
             for ev in rows
         ),

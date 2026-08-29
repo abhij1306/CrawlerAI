@@ -152,7 +152,8 @@ $env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8001/api/v1'
 During implementation:
 
 ```powershell
-.\scripts\check.ps1 -Mode Affected
+.\scripts\check.ps1 -Scope Backend
+# or: .\scripts\check.ps1 -Scope Frontend
 ```
 
 Before completion or push:
@@ -161,12 +162,14 @@ Before completion or push:
 .\scripts\check.ps1
 ```
 
-The local gate fixes and verifies backend and frontend formatting/lint, runs type checks, enforces
-LOC and complexity limits, and runs tests selected from changed paths. The pre-push hook runs the
-same gate in non-mutating check-only mode.
+The local static gate fixes and verifies formatting/lint, type checks, architecture, dependency and
+dead-code policy, the exported backend-to-frontend OpenAPI contract, and LOC/complexity limits.
+Run `.\scripts\test.ps1` separately for mapped affected tests. The pre-push hook runs the static
+gate in non-mutating check-only mode.
 
 Full suites are CI-only. Do not run the full backend suite locally. GitHub CI remains the exhaustive
-authority for backend, frontend, and full E2E validation.
+authority for backend, frontend, strict API contract, build, measured coverage, and full E2E
+validation through the stable `CI / Required` result.
 
 ## Project Layout
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, cast
+from typing import Any
 
 from app.core.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
@@ -137,7 +137,7 @@ def _coerce_brand_like_value(value: object) -> str | None:
         if explicit_value in (None, "", [], {}) and set(value.keys()) <= {
             str(index) for index in range(len(value))
         }:
-            explicit_value = list(value.values())[0] if value else None
+            explicit_value = next(iter(value.values())) if value else None
         return coerce_brand_text(explicit_value)
     return coerce_brand_text(value)
 
@@ -199,7 +199,7 @@ def _coerce_list_value(
 ) -> list[object] | None:
     normalized_rows: list[object] = []
     for item in value:
-        normalized_value = cast(object, coerce_field_value(field_name, item, page_url))
+        normalized_value = coerce_field_value(field_name, item, page_url)
         if normalized_value in (None, "", [], {}):
             continue
         if isinstance(normalized_value, list):

@@ -385,7 +385,7 @@ async def _probe_site(
                 except Exception:
                     await _capture_probe_artifacts(page, artifacts)
                     raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - probe records arbitrary browser failures
             last_error = f"{type(exc).__name__}: {exc}"
             logger.warning(
                 "Browser surface probe failed site=%s attempt=%s/%s: %s",
@@ -415,7 +415,7 @@ async def build_report(
     target_urls: list[str] | None = None,
     runtime_provider=get_browser_runtime,
 ) -> dict[str, object]:
-    report_dir.mkdir(parents=True, exist_ok=True)
+    report_dir.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240 - bounded setup I/O
     runtime = await runtime_provider(
         proxy=runtime_source.selected_proxy,
         browser_engine=runtime_source.browser_engine,
@@ -462,7 +462,7 @@ async def build_report(
                 runtime_source=runtime_source,
                 artifacts_dir=report_dir,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - each probe target is isolated
             diagnostic = _failed_target_diagnostic(
                 url=url,
                 error=f"{type(exc).__name__}: {exc}",

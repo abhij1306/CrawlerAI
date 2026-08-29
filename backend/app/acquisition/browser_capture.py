@@ -160,7 +160,7 @@ class BrowserNetworkCapture:
         if callable(remove_listener):
             try:
                 remove_listener("response", self._schedule_capture)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - browser bindings vary by engine
                 if is_response_closed_error(exc):
                     logger.debug(
                         "Browser response listener detach skipped (page already closed)"

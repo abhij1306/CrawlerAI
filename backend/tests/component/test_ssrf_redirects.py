@@ -70,7 +70,7 @@ async def test_redirect_to_private_ip_is_blocked_before_request() -> None:
         }
     )
 
-    with pytest.raises(SecurityError, match="non-public|blocked platform"):
+    with pytest.raises(SecurityError, match=r"non-public|blocked platform"):
         await get_with_validated_redirects(client, start_url)
 
     assert client.requested_urls == [start_url]

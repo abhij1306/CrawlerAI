@@ -293,7 +293,7 @@ async def _attempt_browser_rung(
             attempt, outcome="cancelled"
         )
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - retry rung records arbitrary browser failures
         _handle_failed_browser_rung(
             context,
             fetched,

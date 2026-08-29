@@ -373,7 +373,7 @@ def _merge_context_profiles(
 ) -> dict[str, object]:
     """Merge browser_context_profile: explicit values override runtime."""
     merged = (
-        dict(cast(Mapping[str, object], runtime_context))
+        dict(runtime_context)
         if isinstance(runtime_context, Mapping) and runtime_context
         else {}
     )
@@ -390,7 +390,7 @@ def _merge_locality(
 ) -> dict[str, object]:
     """Merge locality: remove browser_context_profile from explicit before merge, inject back."""
     merged = (
-        dict(cast(Mapping[str, object], runtime_locality))
+        dict(runtime_locality)
         if isinstance(runtime_locality, Mapping) and runtime_locality
         else {}
     )

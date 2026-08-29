@@ -33,6 +33,7 @@ def upgrade() -> None:
     op.create_table(
         "domain_cookie_memory",
         sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("domain", sa.String(length=255), nullable=False),
         sa.Column(
             "storage_state", postgresql.JSONB(astext_type=sa.Text()), nullable=False
@@ -41,12 +42,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        "uq_domain_cookie_memory_domain",
-        "domain_cookie_memory",
-        ["domain"],
-        unique=True,
     )
     op.create_table(
         "domain_run_profiles",
@@ -121,6 +116,32 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+    op.create_foreign_key(
+        "fk_domain_cookie_memory_user_id_users",
+        "domain_cookie_memory",
+        "users",
+        ["user_id"],
+        ["id"],
+        ondelete="CASCADE",
+    )
+    op.create_index(
+        op.f("ix_domain_cookie_memory_user_id"),
+        "domain_cookie_memory",
+        ["user_id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_domain_cookie_memory_user_domain",
+        "domain_cookie_memory",
+        ["user_id", "domain"],
+        unique=True,
+    )
+    op.create_table(
+        "bootstrap_records",
+        sa.Column("name", sa.String(length=64), nullable=False),
+        sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("name"),
+    )
     op.create_table(
         "api_keys",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -1227,6 +1248,20 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_api_keys_key_hash"), table_name="api_keys")
     op.drop_index(op.f("ix_api_keys_is_active"), table_name="api_keys")
     op.drop_table("api_keys")
+    op.drop_table("bootstrap_records")
+    op.drop_index(
+        "uq_domain_cookie_memory_user_domain",
+        table_name="domain_cookie_memory",
+    )
+    op.drop_index(
+        op.f("ix_domain_cookie_memory_user_id"),
+        table_name="domain_cookie_memory",
+    )
+    op.drop_constraint(
+        "fk_domain_cookie_memory_user_id_users",
+        "domain_cookie_memory",
+        type_="foreignkey",
+    )
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_table("users")
     op.drop_table("llm_configs")
@@ -1236,5 +1271,4 @@ def downgrade() -> None:
         "uq_domain_run_profiles_domain_surface", table_name="domain_run_profiles"
     )
     op.drop_table("domain_run_profiles")
-    op.drop_index("uq_domain_cookie_memory_domain", table_name="domain_cookie_memory")
     op.drop_table("domain_cookie_memory")

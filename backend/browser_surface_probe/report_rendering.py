@@ -221,8 +221,8 @@ def render_markdown(report: dict[str, object]) -> str:
 
 
 __all__ = [
-    "build_findings",
     "build_agent_summary",
+    "build_findings",
     "render_markdown",
 ]
 
@@ -598,7 +598,7 @@ def _target_findings(
             {
                 "severity": severity,
                 "category": category,
-                "message": f"{str(payload.get('url') or 'target')}: {root_cause.get('message')}",
+                "message": f"{payload.get('url') or 'target'!s}: {root_cause.get('message')}",
                 "evidence": root_cause.get("evidence"),
             }
         )

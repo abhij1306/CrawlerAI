@@ -35,27 +35,27 @@ from app.core.records.field_url_normalization import is_concatenated_url
 from app.core.shared.text_coerce import clean_text
 
 __all__ = [
+    "_ensure_scheme",
+    "_is_placeholder_image_url",
     "absolute_url",
     "asset_url_identity",
     "clean_color_tokens",
+    "ensure_scheme",
     "extract_urls",
     "identity_token",
+    "is_placeholder_image_url",
+    "is_utility_image_url",
+    "looks_like_locale_segment",
     "low_resolution_asset_urls",
     "public_asset_delivery_url",
     "same_host",
+    "structured_extensionless_image_url",
     "suffix_after_prefix",
     "terminal_text",
     "terminal_tokens",
     "title_preserving_acronyms",
     "title_tokens",
     "variant_url_with_param",
-    "ensure_scheme",
-    "is_placeholder_image_url",
-    "structured_extensionless_image_url",
-    "is_utility_image_url",
-    "looks_like_locale_segment",
-    "_ensure_scheme",
-    "_is_placeholder_image_url",
 ]
 
 _BARE_HOST_URL_RE = BARE_HOST_URL_RE

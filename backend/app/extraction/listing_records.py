@@ -250,7 +250,7 @@ def discover_listing_records(
     # the grid) — bottom-up climbing shattered those cards, top-down does not.
     grids: dict[int, _GridParent] = {}
     for order, (anchor, url, identity) in enumerate(anchors):
-        chain = (anchor,) + anchor.ancestors()
+        chain = (anchor, *anchor.ancestors())
         for depth in range(len(chain) - 1):
             child = chain[depth]
             parent = chain[depth + 1]
@@ -345,7 +345,7 @@ class _GridParent:
     it has — the true product grid maximises this.
     """
 
-    __slots__ = ("node", "_children", "_child_order")
+    __slots__ = ("_child_order", "_children", "node")
 
     def __init__(self, node: HtmlNode) -> None:
         self.node = node

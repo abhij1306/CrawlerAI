@@ -1,7 +1,7 @@
 from __future__ import annotations
-# ruff: noqa: F401,F403,F405
+# ruff: noqa: F403
 
-from numbers import Number
+from numbers import Real
 
 from ._common import *
 from ._images import *
@@ -551,8 +551,8 @@ NORMALIZER_AVAILABILITY_TOKENS = {
 def normalize_availability_value(value: object) -> str:
     if isinstance(value, bool):
         return "in_stock" if value else "out_of_stock"
-    if isinstance(value, Number) and not isinstance(value, complex) and value in {0, 1}:
-        return "in_stock" if value == 1 else "out_of_stock"
+    if isinstance(value, Real) and float(value) in {0.0, 1.0}:
+        return "in_stock" if float(value) == 1.0 else "out_of_stock"
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     key = text.casefold()
     if mapped := AVAILABILITY_URL_MAP.get(key.rstrip("/")):

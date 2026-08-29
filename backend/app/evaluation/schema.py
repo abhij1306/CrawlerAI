@@ -232,7 +232,7 @@ class GroundedLabel(EvaluationSchemaModel):
                 raise ValueError(
                     "Explicit absence requires semantic_role and locale_interpretation"
                 )
-        elif self.field_name is not None and self.target_kind != "explicit_absence":
+        elif self.field_name is not None:
             raise ValueError("field_name is valid only for field or explicit absence")
 
     def _validate_record_boundary(self, kinds: set[GroundingReferenceKind]) -> None:

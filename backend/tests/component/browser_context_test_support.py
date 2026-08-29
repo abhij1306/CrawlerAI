@@ -87,11 +87,11 @@ def _context_spec(
 
 
 __all__ = [
+    "_PASSWORD_KEY",
     "AsyncSession",
     "DomainCookieMemory",
     "Path",
     "SimpleNamespace",
-    "_PASSWORD_KEY",
     "_authority_with_credentials",
     "_context_spec",
     "_credential_url",

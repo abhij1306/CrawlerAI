@@ -268,7 +268,7 @@ def _predict_with_timeout(
             responses.put(
                 adapter.predict(page, artifact, timeout_ms=artifact.timeout_ms)
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider thread returns arbitrary SDK failures
             responses.put(exc)
 
     Thread(target=invoke, daemon=True, name="universal-model-predict").start()

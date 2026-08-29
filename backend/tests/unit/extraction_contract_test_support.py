@@ -2,13 +2,13 @@ from tests.unit.extraction_pipeline_test_support import _extract
 
 from app.extraction.engine import _trust_state
 
-import json  # noqa: E402
+import json
 
-from app.extraction import adapters, cascade  # noqa: E402
+from app.extraction import adapters, cascade
 
-from app.extraction.contracts import CollectorOutcome  # noqa: E402
+from app.extraction.contracts import CollectorOutcome
 
-from app.extraction.surfaces import surface_spec  # noqa: E402
+from app.extraction.surfaces import surface_spec
 
 _DETAIL_HTML = """
 <html>
@@ -55,11 +55,11 @@ def _detail_result(html: str = _DETAIL_HTML, url: str = _DETAIL_URL):
 
 
 __all__ = [
-    "CollectorOutcome",
     "_DETAIL_HTML",
     "_DETAIL_URL",
     "_DOM_ONLY_DETAIL_HTML",
     "_DOM_ONLY_URL",
+    "CollectorOutcome",
     "_detail_result",
     "_trust_state",
     "adapters",

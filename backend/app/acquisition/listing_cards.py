@@ -109,8 +109,8 @@ async def count_listing_cards(
 
 __all__ = [
     "ListingCard",
-    "card_fragments_from_html",
     "card_diagnostics_from_html",
+    "card_fragments_from_html",
     "card_identities_from_html",
     "card_is_admitted",
     "card_quality_score",
@@ -118,8 +118,8 @@ __all__ = [
     "cards_from_html",
     "count_cards_from_html",
     "count_listing_cards",
-    "selectors_for_surface",
     "select_listing_cards",
+    "selectors_for_surface",
     "stable_card_identity",
     "unique_card_count",
 ]

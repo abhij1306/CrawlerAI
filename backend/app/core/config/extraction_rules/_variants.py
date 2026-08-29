@@ -1,5 +1,5 @@
 from __future__ import annotations
-# ruff: noqa: F401,F403,F405
+# ruff: noqa: F403
 
 from app.core.config.variant_policy import VARIANT_URL_AXIS_PARAMS
 

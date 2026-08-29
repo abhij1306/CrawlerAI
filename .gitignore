@@ -29,6 +29,7 @@ __pycache__/
 backend/.pytest-tmp/
 backend/alembic.ini
 backend/artifacts/
+backend/.artifacts/
 backend/.coverage
 backend/.tmp_project_requirements.txt
 

@@ -26,20 +26,6 @@ function Get-BackendPython {
     throw "Backend virtual environment missing. Run 'uv sync --extra dev' in backend/."
 }
 
-function Invoke-BackendPython {
-    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Arguments)
-    $python = Get-BackendPython
-    Push-Location (Join-Path $repoRoot "backend")
-    try { & $python @Arguments } finally { Pop-Location }
-}
-
-function Invoke-FrontendVp {
-    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Arguments)
-    if (-not (Get-Command vp -ErrorAction SilentlyContinue)) { throw "VitePlus ('vp') missing from PATH." }
-    Push-Location (Join-Path $repoRoot "frontend")
-    try { & vp @Arguments } finally { Pop-Location }
-}
-
 function Test-CodeLimits([string] $SelectedScope) {
     $failures = [Collections.Generic.List[string]]::new()
     $roots = @()
@@ -89,22 +75,12 @@ function Test-CodeLimits([string] $SelectedScope) {
 }
 
 function Invoke-StaticChecks([string] $SelectedScope) {
-    if ($SelectedScope -ne "Frontend") {
-        if ($CheckOnly) {
-            Invoke-Step "Ruff lint" { Invoke-BackendPython -m ruff check . }
-            Invoke-Step "Ruff format" { Invoke-BackendPython -m ruff format --check . }
-        } else {
-            Invoke-Step "Ruff lint fixes" { Invoke-BackendPython -m ruff check . --fix }
-            Invoke-Step "Ruff format fixes" { Invoke-BackendPython -m ruff format . }
-        }
-        Invoke-Step "Mypy" { Invoke-BackendPython -m mypy app }
-    }
-    if ($SelectedScope -ne "Backend") {
-        if ($CheckOnly) {
-            Invoke-Step "Frontend format, lint, and types" { Invoke-FrontendVp check }
-        } else {
-            Invoke-Step "Frontend format, lint, and types with fixes" { Invoke-FrontendVp check --fix }
-        }
+    $mode = if ($CheckOnly) { "check" } else { "fix" }
+    $qualityScope = $SelectedScope.ToLowerInvariant()
+    Invoke-Step "Shared quality gates" {
+        Push-Location $repoRoot
+        try { & node scripts/quality.mjs --mode $mode --scope $qualityScope }
+        finally { Pop-Location }
     }
     Invoke-Step "LOC and complexity" { Test-CodeLimits $SelectedScope }
 }

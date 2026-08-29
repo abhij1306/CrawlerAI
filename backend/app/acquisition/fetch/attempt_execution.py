@@ -109,7 +109,7 @@ async def execute_browser_attempt(
             outcome="success",
             result=result,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - attempt boundary records all transport failures
         await record_attempt_exception(
             runner,
             exc,

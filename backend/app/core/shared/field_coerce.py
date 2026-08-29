@@ -88,8 +88,8 @@ _decimal_for_shared_price = decimal_for_shared_price
 
 __all__ = (
     "IMAGE_FIELDS",
-    "URL_FIELDS",
     "PRICE_RE",
+    "URL_FIELDS",
     "absolute_url",
     "clean_text",
     "extract_price_text",
@@ -98,8 +98,8 @@ __all__ = (
     "infer_brand_from_title_host",
     "infer_brand_from_title_marker",
     "is_title_noise",
-    "sanitize_option_scalar",
     "same_host",
+    "sanitize_option_scalar",
     "strip_html_tags",
     "strip_tracking_query_params",
     "variant_option_value_is_opaque_numeric",

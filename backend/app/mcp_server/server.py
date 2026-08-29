@@ -10,7 +10,7 @@ from app.mcp_server.tools import list_capabilities as _list_capabilities
 
 
 def build_server(client: PublicApiClient | None = None):
-    from fastmcp import FastMCP  # type: ignore[import-untyped]
+    from fastmcp import FastMCP
 
     mcp = FastMCP("crawlerai")
     api_client = client or PublicApiClient(api_key=api_key(), base_url=api_base_url())

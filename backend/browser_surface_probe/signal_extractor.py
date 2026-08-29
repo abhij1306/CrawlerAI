@@ -32,13 +32,13 @@ _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _BASELINE_PROBE_SCRIPT_PATH = Path(__file__).resolve().with_name("baseline_probe.js")
 
 __all__ = [
+    "_collect_baseline",
+    "_collect_behavioral_smoke",
+    "_collect_page_snapshot",
     "_extract_creepjs",
     "_extract_generic_site",
     "_extract_pixelscan",
     "_sannysoft_signal_rows",
-    "_collect_baseline",
-    "_collect_behavioral_smoke",
-    "_collect_page_snapshot",
     "load_baseline_probe_script",
 ]
 
@@ -313,7 +313,7 @@ async def _collect_behavioral_smoke(page) -> dict[str, object]:
                 return { ready: true, x: 24, y: 24 };
             }"""
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - browser evaluation is best-effort diagnostics
         return {"mouse_isTrusted": None, "click_isTrusted": None}
     if not _object_dict(setup).get("ready"):
         return {
@@ -325,7 +325,7 @@ async def _collect_behavioral_smoke(page) -> dict[str, object]:
         await page.wait_for_timeout(50)
         await page.mouse.click(24, 24, delay=50)
         await page.wait_for_timeout(50)
-    except Exception:
+    except Exception:  # noqa: BLE001,S110 - trust probe is explicitly best-effort
         # Trust-probe input is best-effort; evaluation below reports actual state.
         pass
     try:
@@ -347,7 +347,7 @@ async def _collect_behavioral_smoke(page) -> dict[str, object]:
                 }"""
             )
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - browser evaluation is best-effort diagnostics
         return {"mouse_isTrusted": None, "click_isTrusted": None}
 
 

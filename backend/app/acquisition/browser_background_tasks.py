@@ -123,7 +123,7 @@ async def await_without_cancelling(
         return False
     try:
         task.result()
-    except Exception:
+    except Exception:  # noqa: BLE001 - task result may contain any driver failure
         consume_task_exception(task)
         return False
     return True

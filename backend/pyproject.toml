@@ -49,6 +49,9 @@ dev = [
   "bandit>=1.9.4,<2",
   "vulture>=2.16,<3",
   "radon>=6.0.1,<7",
+  "deptry>=0.20,<1",
+  "import-linter>=2.0,<3",
+  "pytest-cov>=7.0,<8",
 ]
 prod = []
 
@@ -56,17 +59,61 @@ prod = []
 where = ["."]
 include = ["app*"]
 
+[tool.ruff]
+target-version = "py312"
+
 [tool.ruff.lint]
-# Freeze Ruff's historical default surface. Ruff 0.16 expanded implicit rules;
-# broader lint-policy changes belong in an explicit quality-gate plan.
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "S", "ASYNC", "BLE", "RUF"]
+ignore = [
+  "S105",
+  "S106",
+  "S107",
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  # Protocol and third-party callback signatures require this parameter name.
+  "ASYNC109",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ASYNC240", "RUF012"]
 
 [tool.vulture]
 min_confidence = 100
+ignore_names = ["deep", "__context"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["tests/*", "alembic/*"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = true
+
+[tool.deptry]
+optional_dependencies_dev_groups = ["dev"]
+extend_exclude = ["alembic", "tests"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+  "alembic",
+  "asyncpg",
+  "email-validator",
+  "python-multipart",
+  # Loaded deliberately through importlib so metrics remain optional at runtime.
+  "prometheus-client",
+  "uvicorn",
+]
 
 [tool.mypy]
 python_version = "3.12"
+files = ["app", "bootstrap_admin.py", "ecr_scan_gate.py", "run_extraction_smoke.py"]
 exclude = ["tests", "alembic", "\\.venv"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+strict_equality = true
 
 [[tool.mypy.overrides]]
 module = [

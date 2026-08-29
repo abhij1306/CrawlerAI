@@ -90,8 +90,7 @@ def has_product_context(path: str, obj: dict) -> bool:
         "product" in type_name
         or direct_product_path
         or len(product_keys) >= 2
-        or bool(product_keys & {"name", "productName", "title"})
-        and complete_offer
+        or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
     )
 
 

@@ -5,6 +5,7 @@ import re
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from functools import partial
+from itertools import pairwise
 from urllib.parse import urlparse
 
 from app.core.config.data_enrichment import (
@@ -467,7 +468,7 @@ def title_bigrams(tokens: list[str], unigrams: set[str]) -> list[str]:
     return list(
         dict.fromkeys(
             clean_text(f"{first} {second}").casefold()
-            for first, second in zip(tokens, tokens[1:], strict=False)
+            for first, second in pairwise(tokens)
             if first in unigrams and second in unigrams
         )
     )
