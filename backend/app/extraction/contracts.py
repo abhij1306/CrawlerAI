@@ -760,6 +760,7 @@ class CommerceDetailRecord(PublicRecord):
     description: str | None = None
     category: str | None = None
     sku: str | None = None
+    product_id: str | None = None
     mpn: str | None = None
     gtin: str | None = None
     price: JsonValue | None = None

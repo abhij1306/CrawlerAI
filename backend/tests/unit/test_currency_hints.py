@@ -15,6 +15,12 @@ def test_locale_path_segment_infers_currency() -> None:
     assert currency_hint_from_page_url("https://shop.test/en_us/p/item") == "USD"
 
 
+def test_leading_country_path_segment_infers_currency() -> None:
+    assert currency_hint_from_page_url("https://shop.test/us/store/item") == "USD"
+    assert currency_hint_from_page_url("https://shop.test/uk/products/item") == "GBP"
+    assert currency_hint_from_page_url("https://shop.test/products/us/item") is None
+
+
 def test_cctld_infers_currency() -> None:
     assert currency_hint_from_page_url("https://shop.co.in/p/item") == "INR"
     assert currency_hint_from_page_url("https://shop.co.uk/p/item") == "GBP"

@@ -157,8 +157,114 @@ def test_product_color_from_structured_product_stays_product_scoped() -> None:
     assert result.records[0].get("variants") == ()
 
 
+def test_visible_labeled_color_is_product_evidence() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    html = """
+    <main class="product-detail">
+      <h1>Trail Shoe</h1>
+      <div data-component="product-trait">
+        <span>Colorway</span>
+        <p>White/Black</p>
+      </div>
+    </main>
+    """
+
+    result = _extract(html, url, "title", "color")
+
+    assert result.records[0]["color"] == "White/Black"
+    assert any(
+        row.fact_type == "product.color"
+        and row.value == "White/Black"
+        and row.metadata.get("color_strategy") == "label"
+        for row in result.evidence
+    )
+
+
+def test_color_temperature_label_is_not_product_color() -> None:
+    result = _extract(
+        """
+        <main class="product-detail">
+          <h1>Mirrorless Camera</h1>
+          <ul><li>Color temperature</li></ul>
+        </main>
+        """,
+        "https://shop.test/products/mirrorless-camera",
+        "title",
+        "color",
+    )
+
+    assert result.records[0].get("color") is None
+
+
+def test_label_only_color_does_not_consume_unrelated_sibling() -> None:
+    result = _extract(
+        """
+        <main class="product-detail">
+          <h1>Canvas Bag</h1>
+          <dl><dt>Color</dt><dt>Material</dt><dd>Cotton</dd></dl>
+        </main>
+        """,
+        "https://shop.test/products/canvas-bag",
+        "title",
+        "color",
+    )
+
+    assert result.records[0].get("color") is None
+
+
 def test_coming_soon_remains_distinct_from_out_of_stock() -> None:
     assert normalize_availability_value("Coming Soon") == "coming_soon"
+
+
+def test_visible_coming_soon_refines_unanimous_variant_out_of_stock() -> None:
+    url = "https://shop.test/products/launch-set"
+    variants = [
+        {
+            "@type": "Product",
+            "sku": f"LAUNCH-{size}",
+            "color": "yellow",
+            "size": size,
+            "offers": {
+                "@type": "Offer",
+                "price": "18.00",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/OutOfStock",
+            },
+        }
+        for size in ("S", "M")
+    ]
+    product = {
+        "@context": "https://schema.org",
+        "@type": "ProductGroup",
+        "name": "Launch Set",
+        "hasVariant": variants,
+    }
+    html = f"""
+    <main class="product-detail">
+      <h1>Launch Set</h1>
+      <section class="product-info">
+        <div data-testid="product-price">$18.00</div>
+        <div data-testid="swatch-color-title">Color: Yellow</div>
+        <button data-testid="add-to-bag-button">Coming Soon - Get Notified</button>
+      </section>
+      <script type="application/ld+json">{json.dumps(product)}</script>
+    </main>
+    """
+
+    result = _extract(
+        html,
+        url,
+        "title",
+        "price",
+        "color",
+        "currency",
+        "availability",
+        "variants",
+    )
+    record = result.records[0]
+
+    assert record["availability"] == "coming_soon"
+    assert record["color"] == "Yellow"
 
 
 def test_query_selected_axes_store_stripped_values() -> None:
@@ -547,6 +653,59 @@ def test_structured_product_attributes_are_published() -> None:
     assert record["barcode"] == "0123456789012"
 
 
+def test_explicit_product_id_roles_publish_without_reusing_group_identity() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    product = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Trail Shoe",
+        "url": url,
+        "productID": "WEB-123",
+        "productGroupID": "STYLE-9",
+    }
+
+    result = _extract(
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        "product_id",
+        "style_id",
+    )
+
+    assert result.records[0]["product_id"] == "WEB-123"
+    assert result.records[0]["style_id"] == "STYLE-9"
+
+
+def test_selected_first_party_product_id_excludes_recommendation_ids() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    state = {
+        "props": {
+            "pageProps": {
+                "product": {
+                    "productId": 12345,
+                    "name": "Trail Shoe",
+                    "url": url,
+                },
+                "recommendations": [
+                    {
+                        "productId": 99999,
+                        "name": "City Shoe",
+                        "url": "https://shop.test/products/city-shoe",
+                    }
+                ],
+            }
+        }
+    }
+    html = f"""
+    <html><head>
+      <script id="__NEXT_DATA__" type="application/json">{json.dumps(state)}</script>
+    </head><body><h1>Trail Shoe</h1></body></html>
+    """
+
+    result = _extract(html, url, "product_id")
+
+    assert result.records[0]["product_id"] == "12345"
+
+
 def test_shared_offer_condition_publishes_but_conflicting_conditions_fail_closed() -> (
     None
 ):
@@ -646,6 +805,33 @@ def test_jsonld_targeting_preserves_selected_axes_and_product_paths() -> None:
         )
         == "https://shop.test/en-us/products/tee"
     )
+
+
+def test_jsonld_with_unescaped_newline_keeps_atomic_commercial_pair() -> None:
+    url = "https://shop.test/products/follow-road"
+    html = f"""
+    <script type="application/ld+json">
+    {{
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Follow The Road Hoodie",
+      "url": "{url}",
+      "description": "Line one
+      Line two",
+      "offers": {{
+        "@type": "Offer",
+        "url": "{url}",
+        "price": "101.75",
+        "priceCurrency": "USD"
+      }}
+    }}
+    </script>
+    """
+
+    result = _extract(html, url, "price", "currency")
+
+    assert result.records[0]["price"] == "101.75"
+    assert result.records[0]["currency"] == "USD"
 
 
 def test_product_group_accepts_full_schema_type_iri() -> None:

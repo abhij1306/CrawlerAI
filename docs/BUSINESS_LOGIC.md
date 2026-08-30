@@ -74,6 +74,18 @@ belong in `INVARIANTS.md`.
   supported 8/12/13/14-digit shape cannot publish as barcodes.
 - `style_id` is the family/style identifier (schema.org `productGroupID`) and stays
   distinct from `sku`, which is the product-level merchant SKU.
+- `product_id` publishes only a product identifier explicitly declared under
+  that role in target-scoped structured evidence. It stays distinct from SKU,
+  MPN, GTIN/barcode, `productGroupID`/`style_id`, variant IDs, and codes parsed
+  from the URL; those values are not copied across identifier roles.
+- Top-level `color` and `size` prefer explicit product or selected-variant
+  evidence. A visible value under an explicit `Color`, `Colour`, or `Colorway`
+  product label is direct color evidence; color-related specifications such as
+  color temperature are not. When that visible label differs from a unanimous
+  variant color only by letter case, its display spelling wins. Without a
+  selected variant, an option may otherwise roll up only when every eligible
+  deepest variant leaf declares that axis and all resolved values are identical.
+  Mixed or partially populated matrices remain missing.
 - `gender` states the audience the source declares, either structurally or in the
   requested PDP path; it is never inferred from query or tracking state.
 - schema.org enumerations publish as plain wording (`NewCondition` becomes `New`).
@@ -101,6 +113,15 @@ belong in `INVARIANTS.md`.
   canonical record declares. The conversion from source text is an authorized
   canonicalization carrying its own lineage. `price` stays a string, where
   trailing-zero precision is part of the value.
+- `price` and `currency` publish as one target-scoped commercial pair.
+  Structured JSON remains admissible when its only syntax defect is a literal
+  control character inside a quoted value; other malformed syntax fails closed.
+  When price evidence lacks currency, a leading country/locale URL segment may
+  supply the currency without changing the source price.
+- A direct visible `coming soon` product-offer state may refine unanimous
+  variant `out_of_stock` evidence because it is the more precise non-sellable
+  state. Other source conflicts remain unresolved or preserve selected-state
+  evidence; they are not rewritten from an old reference.
 - A URL-less schema Product may bind to the requested product through its sole
   Offer URL when that URL names the same product resource. The URL is ownership
   evidence only; it is not copied into a product identifier field.

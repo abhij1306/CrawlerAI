@@ -290,6 +290,40 @@ def test_all_out_of_stock_variants_roll_up_to_out_of_stock() -> None:
     assert result.records[0].get("availability") == "out_of_stock"
 
 
+def test_unanimous_variant_color_rolls_up_but_mixed_matrix_stays_missing() -> None:
+    unanimous = ", ".join(
+        (
+            '{"@type":"Product","sku":"SKU-BLK-S","color":"Black","size":"S"}',
+            '{"@type":"Product","sku":"SKU-BLK-M","color":"Black","size":"M"}',
+        )
+    )
+    unanimous_result = _extract(
+        "ecommerce_detail",
+        _variant_group_html(variants=unanimous),
+        "https://shop.test/products/norvan",
+        requested_fields=("color", "variants"),
+    )
+    unanimous_record = unanimous_result.records[0]
+    assert unanimous_record.get("color") == "Black"
+    assert (
+        unanimous_record["_lineage"]["color"]["rule_id"] == "unanimous_variant_option"
+    )
+
+    mixed = ", ".join(
+        (
+            '{"@type":"Product","sku":"SKU-BLK-S","color":"Black","size":"S"}',
+            '{"@type":"Product","sku":"SKU-WHT-M","color":"White","size":"M"}',
+        )
+    )
+    mixed_result = _extract(
+        "ecommerce_detail",
+        _variant_group_html(variants=mixed),
+        "https://shop.test/products/norvan",
+        requested_fields=("color", "variants"),
+    )
+    assert mixed_result.records[0].get("color") is None
+
+
 def test_partial_variant_pricing_publishes_bounded_range_not_a_fake_aggregate() -> None:
     """Slice 3 policy: when only a subset of variants are priced, publish a
     documented bounded ``price_min``/``price_max`` range — never a single value

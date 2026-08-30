@@ -348,6 +348,7 @@ The seven previously measured captures break down as follows:
 | --- | --- |
 | 51, 61 | Existing matrices bind uniquely; selected color now publishes. |
 | 10, 11, 31 | No same-product variant matrix exists, so DOM state cannot synthesize one. |
+
 | 72 | Several marked vendor values and no compatible matrix axis; fails closed. |
 | 74 | The product color marker is explicitly false; zero selected values fails closed. |
 
@@ -720,3 +721,224 @@ Final corrected replay timing was mean 282 ms, p50 217 ms, p95 704 ms. The
 canonical verification passed: `scripts/check.ps1` passed Ruff, mypy,
 VitePlus, LOC, and complexity; `scripts/test.ps1` selected 57 backend files and
 passed all 760 tests.
+
+## Fresh run-1 live-corpus continuation — 2026-08-30
+
+This pass uses the new live artifacts under `backend/artifacts/runs/1`.
+The run contains 81 one-record captures. Reference case 55 was intentionally
+omitted because its anti-automation shell must remain a zero-record result.
+Version 3.2 remains the old evaluation reference used to compare the new pages;
+it is not the current crawl.
+
+The persisted live outputs contain 81 records, average **13.62** populated
+top-level fields, **47** products with variants, and **830** total variant rows.
+These are absolute run-1 values, not a percentage comparison against the
+78-product run-5 alignment.
+
+### Replay baseline and source validation
+
+Before code changes, deterministic replay of the 81 available cases produced
+**68 failing cases / 204 fixture disagreements**. The corrected old 82-capture
+replay also had 204 disagreements, but the identical total hides movement caused
+by live product and offer changes:
+
+| Field | Old captures | Fresh run 1 |
+| --- | ---: | ---: |
+| availability | 8 | 6 |
+| brand | 24 | 20 |
+| currency | 4 | 3 |
+| original price | 3 | 2 |
+| SKU | 16 | 15 |
+| style ID | 6 | 5 |
+| price | 14 | 16 |
+| rating / review count | 6 / 5 | 7 / 6 |
+| title | 30 | 31 |
+| variant count / assertions | 5 / 34 | 6 / 38 |
+
+The remaining field counts were unchanged. The movement is not treated as a
+code regression: prices, stock, ratings, titles, and available variants changed
+in the captured source.
+
+The new pages resolve the previously pending large-matrix and acquisition
+questions:
+
+- H&M still declares and publishes exactly **50** leaves.
+- New Balance now declares and publishes exactly **146** leaves, replacing the
+  prior capture's source-backed 147-row difference.
+- Uniqlo now acquires usable product content and publishes all **56** declared
+  leaves. No Uniqlo-specific acquisition or extraction rule was added.
+- Ralph Lauren currently publishes **12** source-backed rows: 11 colour leaves
+  plus one explicit optionless product row. The old reference's 13 is not
+  present in this capture.
+
+The five previously reported parent-SKU losses remain governed by requested
+field intent. The live crawl did not request those SKU fields, and no variant
+SKU promotion or cross-role identifier fallback was added.
+
+### Explicit product-ID wiring
+
+A focused replay requesting only canonical `product_id` published **0 / 81**
+before the change. The source keys already informed entity ownership, but
+`product.id` was absent from the admitted fact universe, field-to-fact map,
+publication map, and typed public record.
+
+The fix admits explicitly declared `productID`, `productId`, `product_id`,
+`productCode`, `product_code`, `entryID`, and `catalogEntryId` values from
+target-scoped JSON-LD and bounded first-party state. It then uses the existing
+Harvest → Resolve → Publish path. It does not reinterpret URL resource codes,
+SKU, MPN, GTIN, `productGroupID`, style IDs, or variant IDs.
+
+The same focused replay now publishes **20 / 81** source-declared product IDs
+in cases 2, 9, 14, 16, 18, 27, 31, 33, 35, 39, 40, 44, 53, 59, 61, 70, 71,
+73, 76, and 81. Case 81 now publishes the explicitly declared `141791`.
+Case 28 remains missing because `9984296` appears only as a URL resource code;
+copying it into a declared identifier role would violate the identifier
+contract.
+
+Full replay after the fix is **67 failing cases / 203 fixture disagreements**.
+Only the source-backed case-81 product-ID assertion moved. Timing was mean
+578 ms, p50 337 ms, and p95 1699 ms.
+
+Repository verification passed:
+
+- focused product-ID tests: **3 passed**
+- `scripts/check.ps1`: passed Ruff, formatting, mypy, architecture,
+  dead-code, dependency, frontend, contract, LOC, and complexity gates
+- `scripts/test.ps1`: selected 56 backend files and passed **764 tests**;
+  no frontend or E2E tests were selected
+
+## Fresh run-1 breadth continuation — unanimous options
+
+The external latest-vs-v3 analysis confirms that selected state remains the
+largest old-defect cluster. Raw fixture breadth still ranks title first at 31
+products, but 20 title disagreements ask the extractor to compose a name from
+separate brand, colour, condition, or identifier fields. That contradicts the
+completed semantic-title contract and is not an extraction defect.
+
+Color is next at 23 products. Inspection of the saved outputs and deterministic
+replay found six source-backed matrices where top-level color could remain
+missing even though every eligible deepest leaf resolved the same non-empty
+color: cases 6, 20, 26, 59, 64, and 74. The resolver previously derived
+top-level options only from `selected_variant_ids`; it discarded safe
+matrix-wide unanimity.
+
+The resolver now keeps selected-state precedence, then falls back per axis to
+the eligible deepest leaves. It derives `color` or `size` only when every leaf
+has that axis and all resolved values are identical. The derived fact retains
+the contributing leaf evidence and uses rule
+`unanimous_variant_option`. Mixed or partially populated matrices still publish
+no parent option.
+
+Focused replay publishes color for **38 / 81** cases. The new unanimity rule
+fires in six cases: 6 (`Blue`), 20 (`White/White`), 26 (`yellow`), 59 (`G-H`),
+64 (`Dress Blue - Blue`), and 74 (`Paint Splatter Charcoal Grey`). Source
+spelling is preserved; case 26 therefore remains a fixture casing disagreement,
+and case 6's resolved source value `Blue` is not rewritten to the old fixture's
+`Vintage Navy`.
+
+The full 81-case replay moves from **67 failing cases / 203 disagreements** to
+**67 / 201**. Color disagreements move from **23 to 21**. Exact fixture
+movements are case 20 (`White/White`) and case 74
+(`Paint Splatter Charcoal Grey`); cases 59 and 64 gain source-backed color where
+the fixture has no color assertion. Isolated replay timing was mean 699 ms, p50
+523 ms, and p95 1738 ms.
+
+Focused verification passed the unanimous/mixed matrix regression and the
+existing selected-style precedence regression.
+
+Repository verification:
+
+- `scripts/check.ps1`: passed Ruff, formatting, mypy, architecture, dead-code,
+  dependency, frontend, contract, LOC, and complexity gates
+- `scripts/test.ps1`: selected 56 backend files and passed **765 tests**;
+  no frontend or E2E tests were selected
+
+## Fresh run-1 price continuation — missing atomic pairs
+
+The fresh replay has 16 price disagreements. Thirteen are exact-value changes
+on dynamic commercial data and are not safe extractor targets without live
+revalidation. Three are missing prices:
+
+- case 1, StockX, contains no admissible current price in the saved source
+- case 3, Sneaker Politics, declares `101.75` / `USD` in JSON-LD, but a literal
+  unescaped newline inside its description made the whole script fail strict
+  JSON parsing
+- case 46, Nintendo, declares price `59.99` in selected embedded state without
+  repeating currency; the requested PDP's leading `/us/` path states USD
+
+The JSON-ish boundary parser now accepts control characters inside quoted JSON
+values while continuing to reject other malformed syntax. Locale currency
+inference now accepts a leading bare country path segment as well as `en-US`
+style segments and ccTLDs. Both changes preserve the source price and the
+existing atomic price/currency publication guard.
+
+A broader `og:price:*` admission was tested and rejected. It recovered case 3
+but changed Blue Nile case 53 from its selected `944.00` price to page-level
+`1180.00`. The shipped fix keeps case 53 at `944.00` / `USD`.
+
+Affected replay results:
+
+- case 3 publishes `101.75` / `USD`
+- case 46 publishes `59.99` / `USD`
+- case 1 remains missing rather than inventing a StockX market price
+- case 53 remains `944.00` / `USD`
+
+The full 81-case replay moves from **67 failing cases / 201 disagreements** to
+**67 / 197**. Price disagreements move from **16 to 14** and currency
+disagreements from **3 to 1**. No new price disagreement appears. Isolated
+timing was mean 1492 ms, p50 998 ms, and p95 4553 ms; this single observation
+includes variable local load and is not a stable performance comparison.
+
+Focused JSON control-character and country-path currency regressions passed.
+
+Repository verification:
+
+- `scripts/check.ps1`: passed Ruff, formatting, mypy, architecture, dead-code,
+  dependency, frontend, contract, LOC, and complexity gates
+- `scripts/test.ps1`: selected 56 backend files and passed **767 tests**;
+  no frontend or E2E tests were selected
+
+## Fresh run-1 color and availability continuation
+
+The post-price replay had 21 capture-backed color disagreements and six
+availability disagreements. The obvious source-backed subset was:
+
+- cases 1, 2, 4, 8, 26, 57, and 67 expose their expected color under a visible
+  product-scoped `Color`, `Colour`, or `Colorway` label
+- case 26 visibly states `Coming Soon - Get Notified`; its eight structured
+  variants all state the less precise non-sellable state `out_of_stock`
+
+The DOM attribute collector now emits direct product color evidence only from
+explicit label/value structures inside the product roots. A guard rejects color
+specifications such as Canon case 47's `Color temperature`. When a visible
+label and a unanimous variant rollup differ only by case, the visible display
+spelling refines the aggregate. This changes Fashion Nova from source
+`yellow` to visible `Yellow` without rewriting semantic disagreements.
+
+DOM offer context now recognizes `coming soon`. A direct product-offer
+`coming_soon` state refines a complete variant aggregate only when every
+contributing variant says `out_of_stock`. The rule preserves both DOM and
+variant lineage. It does not convert other stock conflicts.
+
+Affected replay publishes:
+
+- case 1 `White/Black`
+- case 2 `BLACK`
+- case 4 `Black/Red`
+- case 8 `Jet Black`
+- case 26 `Yellow` and `coming_soon`
+- case 57 `White`
+- case 67 `SEA SALT with FAST TRACK`
+
+The 81-capture field replay, still excluding intentional anti-automation case
+55, moves color disagreements from **21 to 14** and availability disagreements
+from **6 to 5**. The new disagreement sets are strict subsets of the old sets;
+no previously passing color or availability assertion regressed. Final isolated
+replay mean was 1243 ms; this single local-load observation is not a stable
+performance comparison.
+
+The five remaining availability disagreements are not safe code targets:
+StockX and Balmain lack admissible selected stock evidence, while current
+Uniqlo, New Balance, and Ralph Lauren captures contradict the old stock
+reference. Focused labeled-color, color-temperature, and coming-soon
+regressions pass **3 tests**.

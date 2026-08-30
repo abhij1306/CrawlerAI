@@ -300,7 +300,7 @@ def json_objects(value: Any) -> Iterable[tuple[str, Any]]:
 
 def loads_jsonish(text: str) -> Any:
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except (TypeError, ValueError):
         return None
 
