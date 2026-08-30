@@ -457,14 +457,12 @@ async def test_run_with_local_session_preserves_original_process_run_error(
         assert run_id == 17
         raise RuntimeError("process exploded")
 
-    async def _failing_mark_run_failed(
-        active_session, run_id: int, message: str, *, exception_type: str | None = None
-    ) -> None:
     mark_failed_calls: list[tuple[int, str, str | None]] = []
 
     async def _failing_mark_run_failed(
         active_session, run_id: int, message: str, *, exception_type: str | None = None
     ) -> None:
+        assert active_session is session
         mark_failed_calls.append((run_id, message, exception_type))
         raise ValueError("write failed")
 
@@ -486,6 +484,7 @@ async def test_run_with_local_session_preserves_original_process_run_error(
         "Failed to persist failed status for run 17 after process_run error"
         in caplog.text
     )
+    assert mark_failed_calls == [(17, "RuntimeError: process exploded", "RuntimeError")]
 
 
 @pytest.mark.asyncio
