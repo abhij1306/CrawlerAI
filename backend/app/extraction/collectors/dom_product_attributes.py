@@ -104,9 +104,9 @@ def _explicit_color_value(node: HtmlNode) -> str:
         text.casefold().rstrip(":") in DETAIL_DOM_COLOR_LABELS for text in texts
     ):
         return ""
-    for sibling in node.following_siblings()[:2]:
-        if value := _clean_color_value(sibling.text(separator=" ", strip=True)):
-            return value
+    siblings = node.following_siblings()
+    if node.tag() == "dt" and siblings and siblings[0].tag() == "dd":
+        return _clean_color_value(siblings[0].text(separator=" ", strip=True))
     return ""
 
 

@@ -273,6 +273,8 @@ def _parent_derived_from_variants(
 def _refine_parent_availability(
     parent_facts: tuple[DerivedFact, ...],
     evidence_by_id: dict[str, Evidence],
+    *,
+    product_subject_ids: frozenset[str],
 ) -> tuple[DerivedFact, ...]:
     refinements = tuple(
         row
@@ -281,6 +283,7 @@ def _refine_parent_availability(
         and row.value == "coming_soon"
         and row.directness == "direct"
         and row.metadata.get("component_role") == "product_offer"
+        and row.parent_subject_id in product_subject_ids
     )
     if not refinements:
         return parent_facts
@@ -325,6 +328,8 @@ def _refine_parent_availability(
 def _refine_parent_color(
     parent_facts: tuple[DerivedFact, ...],
     evidence_by_id: dict[str, Evidence],
+    *,
+    product_subject_ids: frozenset[str],
 ) -> tuple[DerivedFact, ...]:
     candidates = tuple(
         row
@@ -332,6 +337,7 @@ def _refine_parent_color(
         if row.fact_type == "product.color"
         and row.directness == "direct"
         and row.metadata.get("color_strategy") == "label"
+        and row.subject_id in product_subject_ids
     )
     candidate_values = {str(row.value).casefold() for row in candidates}
     if len(candidate_values) != 1:

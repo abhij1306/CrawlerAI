@@ -196,6 +196,22 @@ def test_color_temperature_label_is_not_product_color() -> None:
     assert result.records[0].get("color") is None
 
 
+def test_label_only_color_does_not_consume_unrelated_sibling() -> None:
+    result = _extract(
+        """
+        <main class="product-detail">
+          <h1>Canvas Bag</h1>
+          <dl><dt>Color</dt><dt>Material</dt><dd>Cotton</dd></dl>
+        </main>
+        """,
+        "https://shop.test/products/canvas-bag",
+        "title",
+        "color",
+    )
+
+    assert result.records[0].get("color") is None
+
+
 def test_coming_soon_remains_distinct_from_out_of_stock() -> None:
     assert normalize_availability_value("Coming Soon") == "coming_soon"
 

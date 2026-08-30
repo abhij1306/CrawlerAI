@@ -1,7 +1,7 @@
 # Active Plan
 
-**Current:** CrawlerAI Source-Backed Extraction Coverage → `docs/plans/crawlerai-extraction-coverage-plan.md`
-**Status:** COMPLETE
+**Current:** None
+**Status:** No active plan
 **Started:** 2026-08-25
 **Current slice:** None — plan complete
 **Last slice completed:** Post-close run-1 color and availability continuation

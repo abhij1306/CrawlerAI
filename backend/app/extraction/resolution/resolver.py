@@ -213,6 +213,29 @@ def _variant_decision_pipeline(
     by_id: dict[str, Evidence],
 ) -> tuple[tuple[VariantDecision, ...], tuple[DerivedFact, ...]]:
     """Resolve variants, reconcile prices, and roll parent facts up from survivors."""
+    primary_product = entities.products[0] if len(entities.products) == 1 else None
+    primary_product_evidence_ids = (
+        tuple(
+            dict.fromkeys(
+                (
+                    *primary_product.identity_evidence_ids,
+                    *(
+                        evidence_id
+                        for evidence_ids in primary_product.attribute_evidence.values()
+                        for evidence_id in evidence_ids
+                    ),
+                )
+            )
+        )
+        if primary_product is not None
+        else ()
+    )
+    product_subject_ids = frozenset(
+        subject_id
+        for evidence_id in primary_product_evidence_ids
+        if (row := by_id.get(evidence_id)) is not None
+        for subject_id in (row.subject_id, *row.source_subject_ids)
+    )
     variant_decisions = _resolve_variants(entities, decisions, derived_facts, by_id)
     variant_decisions, reconciliation_facts = _reconcile_variant_prices(
         variant_decisions,
@@ -223,7 +246,7 @@ def _variant_decision_pipeline(
     )
     parent_facts = _parent_derived_from_variants(
         primary_product_entity_id=(
-            entities.products[0].entity_id if len(entities.products) == 1 else None
+            primary_product.entity_id if primary_product is not None else None
         ),
         primary_offer_entity_id=primary_offer_entity_id,
         variant_decisions=variant_decisions,
@@ -248,8 +271,13 @@ def _variant_decision_pipeline(
     parent_facts = _refine_parent_availability(
         parent_facts,
         evidence_by_id=by_id,
+        product_subject_ids=product_subject_ids,
     )
-    parent_facts = _refine_parent_color(parent_facts, by_id)
+    parent_facts = _refine_parent_color(
+        parent_facts,
+        by_id,
+        product_subject_ids=product_subject_ids,
+    )
     return variant_decisions, (*derived_facts, *reconciliation_facts, *parent_facts)
 
 
