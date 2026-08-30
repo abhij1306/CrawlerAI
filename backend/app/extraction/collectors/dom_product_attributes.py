@@ -4,6 +4,13 @@ import re
 from dataclasses import dataclass
 
 from app.core.config.extraction_rules import (
+    DETAIL_DOM_COLOR_EXPLICIT_SELECTOR,
+    DETAIL_DOM_COLOR_LABEL_PATTERN,
+    DETAIL_DOM_COLOR_LABELS,
+    DETAIL_DOM_COLOR_MAX_VALUE_CHARS,
+    DETAIL_DOM_COLOR_SCAN_LIMIT,
+    DETAIL_DOM_COLOR_VALUE_BOUNDARY_PATTERN,
+    DETAIL_DOM_COLOR_VALUE_REJECT,
     DETAIL_DOM_DESCRIPTION_SELECTORS,
     DETAIL_DOM_MATERIAL_COMPONENT_PATTERN,
     DETAIL_DOM_MATERIAL_CONSTRUCTION_PATTERNS,
@@ -21,6 +28,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DOM_MATERIAL_DECORATIVE_SYMBOL_PATTERN,
     MATERIAL_KEYWORDS,
 )
+from app.core.shared.field_coerce import sanitize_option_scalar
 from app.extraction.collectors._helpers import evidence
 from app.extraction.collectors.dom_scoping import (
     node_context_excluded,
@@ -31,11 +39,114 @@ from app.extraction.documents import HtmlDocument, HtmlNode
 
 
 @dataclass(frozen=True)
+class _ColorCandidate:
+    value: str
+    node: HtmlNode
+    confidence: float
+
+
+@dataclass(frozen=True)
 class _MaterialCandidate:
     value: str
     node: HtmlNode
     confidence: float
     strategy: str
+
+
+def collect_product_color_evidence(
+    bundle: CaptureBundle,
+    doc: HtmlDocument,
+    roots: tuple[HtmlNode, ...],
+    product_subject: str,
+) -> tuple[Evidence, ...]:
+    if not roots:
+        return ()
+    preferred: dict[str, _ColorCandidate] = {}
+    for candidate in _explicit_color_candidates(doc, roots):
+        preferred.setdefault(candidate.value.casefold(), candidate)
+    return tuple(
+        _color_evidence(bundle, product_subject, candidate)
+        for candidate in preferred.values()
+    )
+
+
+def _explicit_color_candidates(
+    doc: HtmlDocument, roots: tuple[HtmlNode, ...]
+) -> list[_ColorCandidate]:
+    candidates: list[_ColorCandidate] = []
+    root_ids = {root.identity() for root in roots}
+    admitted = 0
+    for node in doc.safe_css(DETAIL_DOM_COLOR_EXPLICIT_SELECTOR):
+        if (
+            node.is_hidden()
+            or not node_within_roots(node, root_ids)
+            or node_context_excluded(node)
+        ):
+            continue
+        admitted += 1
+        if admitted > DETAIL_DOM_COLOR_SCAN_LIMIT:
+            break
+        if value := _explicit_color_value(node):
+            candidates.append(_ColorCandidate(value, node, 0.88))
+    return candidates
+
+
+def _explicit_color_value(node: HtmlNode) -> str:
+    texts = (
+        _text(node.direct_text()),
+        _text(node.text(separator=" ", strip=True)),
+    )
+    for text in texts:
+        match = re.match(DETAIL_DOM_COLOR_LABEL_PATTERN, text, re.I)
+        if match is not None and (value := _clean_color_value(match.group("value"))):
+            return value
+    if not any(
+        text.casefold().rstrip(":") in DETAIL_DOM_COLOR_LABELS for text in texts
+    ):
+        return ""
+    for sibling in node.following_siblings()[:2]:
+        if value := _clean_color_value(sibling.text(separator=" ", strip=True)):
+            return value
+    return ""
+
+
+def _clean_color_value(value: object) -> str:
+    text = re.sub(
+        DETAIL_DOM_COLOR_VALUE_BOUNDARY_PATTERN,
+        "",
+        _text(value),
+        flags=re.I,
+    ).strip(" ,.;:-")
+    if (
+        not text
+        or len(text) > DETAIL_DOM_COLOR_MAX_VALUE_CHARS
+        or text.casefold() in DETAIL_DOM_COLOR_VALUE_REJECT
+        or re.match(r"^temperature(?:\s|:|$)", text, re.I)
+    ):
+        return ""
+    return sanitize_option_scalar("color", text) or ""
+
+
+def _color_evidence(
+    bundle: CaptureBundle, product_subject: str, candidate: _ColorCandidate
+) -> Evidence:
+    return evidence(
+        bundle,
+        "html",
+        "dom",
+        "product.color",
+        candidate.value,
+        SourceLocator(
+            kind="css_selector",
+            value=candidate.node.stable_locator(),
+            preview=candidate.value[:120],
+        ),
+        hint=EntityHint(entity_type="product"),
+        confidence=candidate.confidence,
+        subject_id=product_subject,
+        subject_scope="product",
+        metadata={"component_role": "product_details", "color_strategy": "label"},
+    )
 
 
 def collect_product_material_evidence(

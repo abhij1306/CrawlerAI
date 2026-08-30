@@ -43,6 +43,8 @@ from app.extraction.resolution.variant_rollup import (
     _inherit_variant_offer_facts,
     _parent_derived_from_variants,
     _reconcile_variant_prices,
+    _refine_parent_availability,
+    _refine_parent_color,
 )
 from app.extraction.resolution.variants import (
     _resolve_variant,
@@ -243,6 +245,11 @@ def _variant_decision_pipeline(
             )
         ),
     )
+    parent_facts = _refine_parent_availability(
+        parent_facts,
+        evidence_by_id=by_id,
+    )
+    parent_facts = _refine_parent_color(parent_facts, by_id)
     return variant_decisions, (*derived_facts, *reconciliation_facts, *parent_facts)
 
 

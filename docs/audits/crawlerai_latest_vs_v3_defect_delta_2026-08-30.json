@@ -1,0 +1,1633 @@
+{
+  "generated_at": "2026-08-30",
+  "baseline": {
+    "name": "run-3 / v3.2",
+    "benchmark_cases": 82,
+    "run_results": 80,
+    "failing_cases": 54,
+    "tracked_defects": 146
+  },
+  "latest": {
+    "record_outputs": 81,
+    "benchmark_results": 81,
+    "benchmark_cases": 82,
+    "diagnostics": {
+      "success": 59,
+      "partial": 22,
+      "transport_ok": 81,
+      "model_invocations": 0,
+      "average_completeness": 0.959877
+    }
+  },
+  "tracked_defect_delta": {
+    "resolved": 55,
+    "remaining": 91,
+    "reduction_pct": 37.7,
+    "cases_with_remaining_old_defects": 46,
+    "by_area": [
+      {
+        "area": "Product identity / page state",
+        "baseline": 3,
+        "remaining": 3,
+        "resolved": 0,
+        "reduction_pct": 0.0
+      },
+      {
+        "area": "Selected variant state",
+        "baseline": 29,
+        "remaining": 24,
+        "resolved": 5,
+        "reduction_pct": 17.2
+      },
+      {
+        "area": "Commercial fields",
+        "baseline": 42,
+        "remaining": 30,
+        "resolved": 12,
+        "reduction_pct": 28.6
+      },
+      {
+        "area": "Variants / options",
+        "baseline": 14,
+        "remaining": 6,
+        "resolved": 8,
+        "reduction_pct": 57.1
+      },
+      {
+        "area": "Product identifiers",
+        "baseline": 6,
+        "remaining": 3,
+        "resolved": 3,
+        "reduction_pct": 50.0
+      },
+      {
+        "area": "Core identity / brand",
+        "baseline": 12,
+        "remaining": 3,
+        "resolved": 9,
+        "reduction_pct": 75.0
+      },
+      {
+        "area": "Attributes",
+        "baseline": 25,
+        "remaining": 11,
+        "resolved": 14,
+        "reduction_pct": 56.0
+      },
+      {
+        "area": "Ratings / reviews",
+        "baseline": 15,
+        "remaining": 11,
+        "resolved": 4,
+        "reduction_pct": 26.7
+      }
+    ],
+    "resolved_issues": [
+      {
+        "id": 1,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 24,
+        "actual": 24
+      },
+      {
+        "id": 1,
+        "field": "style_id",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": true,
+        "expected": "DD1391-100",
+        "actual": "DD1391-100"
+      },
+      {
+        "id": 1,
+        "field": "gender",
+        "code": "MISSING_GENDER",
+        "resolved": true,
+        "expected": "Men",
+        "actual": "Men"
+      },
+      {
+        "id": 1,
+        "field": "condition",
+        "code": "MISSING_CONDITION",
+        "resolved": true,
+        "expected": "New",
+        "actual": "New"
+      },
+      {
+        "id": 2,
+        "field": "barcode",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": true,
+        "expected": "114410600165",
+        "actual": "114410600165"
+      },
+      {
+        "id": 4,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "cotton",
+        "actual": "everyday cotton fabric"
+      },
+      {
+        "id": 5,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": true,
+        "expected": "White",
+        "actual": "White"
+      },
+      {
+        "id": 5,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": true,
+        "expected": "215.00",
+        "actual": "215.00"
+      },
+      {
+        "id": 8,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "Rippy 66 Monomesh",
+        "actual": "Rippy 66 Monomesh"
+      },
+      {
+        "id": 9,
+        "field": "color",
+        "code": "WRONG_SELECTED_STATE",
+        "resolved": true,
+        "expected": "Black",
+        "actual": "Black"
+      },
+      {
+        "id": 9,
+        "field": "condition",
+        "code": "MISSING_CONDITION",
+        "resolved": true,
+        "expected": "Refurbished",
+        "actual": "Refurbished"
+      },
+      {
+        "id": 10,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "Levtex Home",
+        "actual": "Levtex Home"
+      },
+      {
+        "id": 11,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": true,
+        "expected": "Black",
+        "actual": "Black"
+      },
+      {
+        "id": 11,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 3,
+        "actual": 3
+      },
+      {
+        "id": 11,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "BIRKENSTOCK",
+        "actual": "Birkenstock"
+      },
+      {
+        "id": 11,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "Birko-Flor",
+        "actual": "Birko-Flor"
+      },
+      {
+        "id": 11,
+        "field": "gender",
+        "code": "MISSING_GENDER",
+        "resolved": true,
+        "expected": "Unisex",
+        "actual": "Unisex"
+      },
+      {
+        "id": 21,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "adidas",
+        "actual": "adidas"
+      },
+      {
+        "id": 25,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 7,
+        "actual": 7
+      },
+      {
+        "id": 25,
+        "field": "size_options",
+        "code": "INCOMPLETE_SIZE_OPTIONS",
+        "resolved": true,
+        "expected": [
+          "xs",
+          "s",
+          "m",
+          "l",
+          "xl",
+          "xxl",
+          "3xl"
+        ],
+        "actual": [
+          "xxl",
+          "xl",
+          "l",
+          "s",
+          "xs",
+          "3xl",
+          "m"
+        ]
+      },
+      {
+        "id": 27,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": true,
+        "expected": "22N Light Neutral",
+        "actual": "22N Light Neutral"
+      },
+      {
+        "id": 27,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": true,
+        "expected": "32.00",
+        "actual": "32.00"
+      },
+      {
+        "id": 27,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": true,
+        "expected": "USD",
+        "actual": "USD"
+      },
+      {
+        "id": 27,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": true,
+        "expected": "in_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 27,
+        "field": "brand",
+        "code": "WRONG_BRAND",
+        "resolved": true,
+        "expected": "Tarte",
+        "actual": "Tarte"
+      },
+      {
+        "id": 27,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": true,
+        "expected": 4.7,
+        "actual": 4.7
+      },
+      {
+        "id": 27,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": true,
+        "expected": 37875,
+        "actual": 37876
+      },
+      {
+        "id": 31,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "Phase Eight",
+        "actual": "Phase Eight"
+      },
+      {
+        "id": 33,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "Turkish cotton",
+        "actual": "premium 500 GSM Aegean Turkish cotton"
+      },
+      {
+        "id": 34,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "Apple",
+        "actual": "Apple"
+      },
+      {
+        "id": 37,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "linen",
+        "actual": "linen"
+      },
+      {
+        "id": 40,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": true,
+        "expected": "USD",
+        "actual": "USD"
+      },
+      {
+        "id": 40,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": true,
+        "expected": "in_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 40,
+        "field": "sku",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": true,
+        "expected": "tread-basics-package-ng-us",
+        "actual": "tread-basics-package-ng-us"
+      },
+      {
+        "id": 40,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "Peloton",
+        "actual": "Peloton"
+      },
+      {
+        "id": 41,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": true,
+        "expected": "in_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 41,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "Phenolic, aluminum, steel, nylon, ABS plastic, thermoplastic rubber",
+        "actual": "Phenolic, aluminum, steel, nylon, ABS plastic, thermoplastic rubber"
+      },
+      {
+        "id": 51,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": true,
+        "expected": "Newport - Navy Gloss / Slate Trim",
+        "actual": "Newport - Navy Gloss / Slate Trim"
+      },
+      {
+        "id": 51,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "50% recycled polycarbonate",
+        "actual": "50% recycled polycarbonate"
+      },
+      {
+        "id": 61,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": true,
+        "expected": "12.99",
+        "actual": "12.99"
+      },
+      {
+        "id": 61,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": true,
+        "expected": "USD",
+        "actual": "USD"
+      },
+      {
+        "id": 61,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": true,
+        "expected": "in_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 61,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 50,
+        "actual": 50
+      },
+      {
+        "id": 61,
+        "field": "size_options",
+        "code": "MISSING_SIZE_OPTIONS",
+        "resolved": true,
+        "expected": [
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL"
+        ],
+        "actual": [
+          "L",
+          "M",
+          "S",
+          "XL",
+          "XS"
+        ]
+      },
+      {
+        "id": 61,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "Cotton, Jersey",
+        "actual": "Cotton"
+      },
+      {
+        "id": 61,
+        "field": "gender",
+        "code": "MISSING_GENDER",
+        "resolved": true,
+        "expected": "Men",
+        "actual": "Men"
+      },
+      {
+        "id": 61,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": true,
+        "expected": 4.7,
+        "actual": 4.7
+      },
+      {
+        "id": 61,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": true,
+        "expected": 39,
+        "actual": 43
+      },
+      {
+        "id": 67,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 146,
+        "actual": 146
+      },
+      {
+        "id": 71,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "Calvin Klein",
+        "actual": "Calvin Klein"
+      },
+      {
+        "id": 71,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": true,
+        "expected": "100% polyester",
+        "actual": "100% polyester"
+      },
+      {
+        "id": 77,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": true,
+        "expected": "in_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 77,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": true,
+        "expected": 82,
+        "actual": 82
+      },
+      {
+        "id": 79,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": true,
+        "expected": "J.Crew",
+        "actual": "J.Crew"
+      },
+      {
+        "id": 81,
+        "field": "original_price",
+        "code": "MISSING_ORIGINAL_PRICE",
+        "resolved": true,
+        "expected": "84.99",
+        "actual": "84.99"
+      }
+    ],
+    "persistent_issues": [
+      {
+        "id": 1,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "White/Black",
+        "actual": null
+      },
+      {
+        "id": 1,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": false,
+        "expected": "58.00",
+        "actual": null
+      },
+      {
+        "id": 1,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": false,
+        "expected": "USD",
+        "actual": null
+      },
+      {
+        "id": 1,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": false,
+        "expected": "in_stock",
+        "actual": null
+      },
+      {
+        "id": 2,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "BLACK",
+        "actual": null
+      },
+      {
+        "id": 2,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "100% Cotton",
+        "actual": "heavyweight cotton"
+      },
+      {
+        "id": 2,
+        "field": "gender",
+        "code": "MISSING_GENDER",
+        "resolved": false,
+        "expected": "Men",
+        "actual": null
+      },
+      {
+        "id": 3,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": false,
+        "expected": "101.75",
+        "actual": null
+      },
+      {
+        "id": 3,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": false,
+        "expected": "USD",
+        "actual": null
+      },
+      {
+        "id": 4,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Black/Red",
+        "actual": null
+      },
+      {
+        "id": 6,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Vintage Navy",
+        "actual": null
+      },
+      {
+        "id": 6,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "100% Cotton",
+        "actual": null
+      },
+      {
+        "id": 8,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Jet Black",
+        "actual": null
+      },
+      {
+        "id": 9,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "437.00",
+        "actual": "417.00"
+      },
+      {
+        "id": 10,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Blue",
+        "actual": null
+      },
+      {
+        "id": 10,
+        "field": "size",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Twin/Twin XL",
+        "actual": null
+      },
+      {
+        "id": 11,
+        "field": "title",
+        "code": "WRONG_PRODUCT_OR_TITLE",
+        "resolved": false,
+        "expected": "Arizona Birko-Flor in Color Black",
+        "actual": "arizona core birkoflor 0 eva u 1"
+      },
+      {
+        "id": 18,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "60200.00",
+        "actual": "60100.00"
+      },
+      {
+        "id": 19,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Blush",
+        "actual": null
+      },
+      {
+        "id": 19,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "Satin",
+        "actual": null
+      },
+      {
+        "id": 20,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "White/White",
+        "actual": null
+      },
+      {
+        "id": 20,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": false,
+        "expected": 24,
+        "actual": 22
+      },
+      {
+        "id": 21,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Cloud White / Core White / Green",
+        "actual": null
+      },
+      {
+        "id": 21,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": false,
+        "expected": "100.00",
+        "actual": null
+      },
+      {
+        "id": 21,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": false,
+        "expected": "USD",
+        "actual": null
+      },
+      {
+        "id": 21,
+        "field": "original_price",
+        "code": "MISSING_ORIGINAL_PRICE",
+        "resolved": false,
+        "expected": "100.00",
+        "actual": null
+      },
+      {
+        "id": 21,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": false,
+        "expected": "in_stock",
+        "actual": null
+      },
+      {
+        "id": 22,
+        "field": "size_options",
+        "code": "MISSING_SIZE_OPTIONS",
+        "resolved": false,
+        "expected": [
+          "UK 3",
+          "UK 7",
+          "UK 8",
+          "UK 9",
+          "UK 10",
+          "UK 11"
+        ],
+        "actual": null
+      },
+      {
+        "id": 26,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Yellow",
+        "actual": null
+      },
+      {
+        "id": 26,
+        "field": "original_price",
+        "code": "MISSING_ORIGINAL_PRICE",
+        "resolved": false,
+        "expected": "29.99",
+        "actual": null
+      },
+      {
+        "id": 26,
+        "field": "availability",
+        "code": "WRONG_AVAILABILITY",
+        "resolved": false,
+        "expected": "coming_soon",
+        "actual": "out_of_stock"
+      },
+      {
+        "id": 28,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "Textile lining; EVA insole; rubber outsole",
+        "actual": "jacquard knit engineered mesh upper; cotton; Durabrasion rubber"
+      },
+      {
+        "id": 29,
+        "field": "color",
+        "code": "WRONG_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Sixtine",
+        "actual": "blue"
+      },
+      {
+        "id": 30,
+        "field": "color",
+        "code": "WRONG_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Ivory",
+        "actual": "White"
+      },
+      {
+        "id": 32,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 4.453032,
+        "actual": null
+      },
+      {
+        "id": 32,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": false,
+        "expected": 10752,
+        "actual": null
+      },
+      {
+        "id": 34,
+        "field": "price_min",
+        "code": "MISSING_PRICE_MIN",
+        "resolved": false,
+        "expected": "699.00",
+        "actual": null
+      },
+      {
+        "id": 34,
+        "field": "price_max",
+        "code": "MISSING_PRICE_MAX",
+        "resolved": false,
+        "expected": "799.00",
+        "actual": null
+      },
+      {
+        "id": 34,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": false,
+        "expected": 2,
+        "actual": 0
+      },
+      {
+        "id": 35,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Brown",
+        "actual": null
+      },
+      {
+        "id": 39,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "White/Black",
+        "actual": null
+      },
+      {
+        "id": 39,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "70% wool, 30% silk",
+        "actual": null
+      },
+      {
+        "id": 40,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": false,
+        "expected": "3295.00",
+        "actual": "2695.00"
+      },
+      {
+        "id": 44,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": false,
+        "expected": 6,
+        "actual": 0
+      },
+      {
+        "id": 45,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "272000.00",
+        "actual": "271800.00"
+      },
+      {
+        "id": 46,
+        "field": "price",
+        "code": "MISSING_PRICE",
+        "resolved": false,
+        "expected": "59.99",
+        "actual": null
+      },
+      {
+        "id": 46,
+        "field": "currency",
+        "code": "MISSING_CURRENCY",
+        "resolved": false,
+        "expected": "USD",
+        "actual": null
+      },
+      {
+        "id": 46,
+        "field": "sku",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": false,
+        "expected": "7100101665",
+        "actual": null
+      },
+      {
+        "id": 46,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": false,
+        "expected": "Capcom",
+        "actual": "Nintendo"
+      },
+      {
+        "id": 47,
+        "field": "title",
+        "code": "WRONG_PRODUCT_OR_TITLE",
+        "resolved": false,
+        "expected": "Canon EOS R5",
+        "actual": "EOS R5 Body"
+      },
+      {
+        "id": 47,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "2999.00",
+        "actual": "2799.00"
+      },
+      {
+        "id": 48,
+        "field": "sku",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": false,
+        "expected": "6175771",
+        "actual": null
+      },
+      {
+        "id": 51,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 4.9,
+        "actual": null
+      },
+      {
+        "id": 51,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": false,
+        "expected": 76,
+        "actual": null
+      },
+      {
+        "id": 55,
+        "field": "result",
+        "code": "MISSING_PRODUCT_RESULT",
+        "resolved": false,
+        "expected": "product result",
+        "actual": null
+      },
+      {
+        "id": 56,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Champagne",
+        "actual": null
+      },
+      {
+        "id": 56,
+        "field": "sku",
+        "code": "MISSING_IDENTIFIER",
+        "resolved": false,
+        "expected": "8303",
+        "actual": null
+      },
+      {
+        "id": 56,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "18k yellow gold",
+        "actual": null
+      },
+      {
+        "id": 56,
+        "field": "condition",
+        "code": "MISSING_CONDITION",
+        "resolved": false,
+        "expected": "Vintage",
+        "actual": null
+      },
+      {
+        "id": 57,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "White",
+        "actual": null
+      },
+      {
+        "id": 61,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "White/Track Unit TRK",
+        "actual": null
+      },
+      {
+        "id": 61,
+        "field": "original_price",
+        "code": "MISSING_ORIGINAL_PRICE",
+        "resolved": false,
+        "expected": "12.99",
+        "actual": null
+      },
+      {
+        "id": 67,
+        "field": "color",
+        "code": "WRONG_SELECTED_STATE",
+        "resolved": false,
+        "expected": "SEA SALT with FAST TRACK",
+        "actual": "SEA SALT"
+      },
+      {
+        "id": 67,
+        "field": "availability",
+        "code": "WRONG_AVAILABILITY",
+        "resolved": false,
+        "expected": "out_of_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 69,
+        "field": "gender",
+        "code": "MISSING_GENDER",
+        "resolved": false,
+        "expected": "Men",
+        "actual": null
+      },
+      {
+        "id": 70,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 3.5,
+        "actual": null
+      },
+      {
+        "id": 70,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": false,
+        "expected": 296,
+        "actual": null
+      },
+      {
+        "id": 71,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "55.65",
+        "actual": "159.00"
+      },
+      {
+        "id": 71,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 0.0,
+        "actual": null
+      },
+      {
+        "id": 72,
+        "field": "color",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Heritage Royal",
+        "actual": null
+      },
+      {
+        "id": 72,
+        "field": "availability",
+        "code": "WRONG_AVAILABILITY",
+        "resolved": false,
+        "expected": "out_of_stock",
+        "actual": "in_stock"
+      },
+      {
+        "id": 72,
+        "field": "variant_count",
+        "code": "WRONG_VARIANT_COUNT",
+        "resolved": false,
+        "expected": 13,
+        "actual": 12
+      },
+      {
+        "id": 72,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "100% cotton",
+        "actual": "cotton chino fabric"
+      },
+      {
+        "id": 73,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "49.50",
+        "actual": "99.00"
+      },
+      {
+        "id": 73,
+        "field": "brand",
+        "code": "MISSING_BRAND",
+        "resolved": false,
+        "expected": "Tommy Hilfiger",
+        "actual": "Tommy"
+      },
+      {
+        "id": 73,
+        "field": "material",
+        "code": "MISSING_MATERIAL",
+        "resolved": false,
+        "expected": "Polyester and polyethylene upper; thermoplastic rubber outsole",
+        "actual": "97% polyester, 3% polyethylene"
+      },
+      {
+        "id": 74,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "110.00",
+        "actual": "89.95"
+      },
+      {
+        "id": 76,
+        "field": "size",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "1.7 oz / 50 ml",
+        "actual": null
+      },
+      {
+        "id": 77,
+        "field": "size_options",
+        "code": "INCOMPLETE_SIZE_OPTIONS",
+        "resolved": false,
+        "expected": [
+          "1.5 g",
+          "1.3 g"
+        ],
+        "actual": [
+          "0.05 oz",
+          "0.04 oz"
+        ]
+      },
+      {
+        "id": 78,
+        "field": "size",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "50 ml",
+        "actual": null
+      },
+      {
+        "id": 78,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "190.00",
+        "actual": "200.00"
+      },
+      {
+        "id": 78,
+        "field": "availability",
+        "code": "MISSING_AVAILABILITY",
+        "resolved": false,
+        "expected": "out_of_stock",
+        "actual": null
+      },
+      {
+        "id": 78,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 4.3,
+        "actual": null
+      },
+      {
+        "id": 78,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": false,
+        "expected": 1285,
+        "actual": null
+      },
+      {
+        "id": 79,
+        "field": "selected_fit",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "Classic",
+        "actual": null
+      },
+      {
+        "id": 79,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "14461.00",
+        "actual": "14444.00"
+      },
+      {
+        "id": 79,
+        "field": "rating",
+        "code": "MISSING_RATING",
+        "resolved": false,
+        "expected": 4.7,
+        "actual": null
+      },
+      {
+        "id": 79,
+        "field": "review_count",
+        "code": "MISSING_REVIEW_COUNT",
+        "resolved": false,
+        "expected": 1378,
+        "actual": null
+      },
+      {
+        "id": 80,
+        "field": "price",
+        "code": "WRONG_PRICE",
+        "resolved": false,
+        "expected": "11.97",
+        "actual": "17.95"
+      },
+      {
+        "id": 80,
+        "field": "brand",
+        "code": "WRONG_BRAND",
+        "resolved": false,
+        "expected": "American Eagle",
+        "actual": "AE"
+      },
+      {
+        "id": 82,
+        "field": "size",
+        "code": "MISSING_SELECTED_STATE",
+        "resolved": false,
+        "expected": "1.5-2 inches",
+        "actual": null
+      }
+    ]
+  },
+  "new_benchmark_deviations": {
+    "count": 20,
+    "clear_stable_regressions": 3,
+    "semantic_or_dynamic_revalidation": 17,
+    "items": [
+      {
+        "case_id": 3,
+        "field": "title",
+        "expected": "One Of These Days Follow The Road Pullover Hoodie - Dark Brown",
+        "run3": "One Of These Days Follow The Road Pullover Hoodie - Dark Brown",
+        "latest": "One Of These Days Follow The Road Pullover Hoodie",
+        "url": "https://sneakerpolitics.com/collections/hoodies/products/one-of-these-days-follow-the-road-pullover-hoodie-dark-brown",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 4,
+        "field": "title",
+        "expected": "Jordan 40th Anniversary Graphic Womens Short Sleeve Shirt Black Red HJ0139-045",
+        "run3": "Jordan 40th Anniversary Graphic Womens Short Sleeve Shirt Black Red HJ0139-045",
+        "latest": "40th Anniversary Graphic Womens Short Sleeve Shirt (Black/Red)",
+        "url": "https://www.shoepalace.com/products/jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1?variant=43468991627470",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 7,
+        "field": "title",
+        "expected": "Purple adidas Originals SL 72 PT",
+        "run3": "Purple adidas Originals SL 72 PT",
+        "latest": "adidas Originals SL 72 PT",
+        "url": "https://www.size.co.uk/product/purple-adidas-originals-sl-72-pt/19738059/",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 8,
+        "field": "price",
+        "expected": "28600.00",
+        "run3": "28600.00",
+        "latest": "28500.00",
+        "url": "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 25,
+        "field": "title",
+        "expected": "Gymshark Arrival 5\" Shorts - Black",
+        "run3": "Gymshark Arrival 5\" Shorts - Black",
+        "latest": "Arrival 5\" Shorts",
+        "url": "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 28,
+        "field": "title",
+        "expected": "Women's HOKA Bondi 9",
+        "run3": "Women's HOKA Bondi 9",
+        "latest": "HOKA Bondi 9 Women's",
+        "url": "https://www.zappos.com/kratos/p/womens-hoka-bondi-9-berry-jam-berry-patch/product/9984296/color/318988?zlfid=191&ref=pd_search_nr-1-bqcp_1",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 29,
+        "field": "title",
+        "expected": "T-shirt Teddyx Blue Sixtine",
+        "run3": "T-shirt Teddyx Blue Sixtine",
+        "latest": "Teddyx T-shirt",
+        "url": "https://zadig-et-voltaire.com/eu/uk/p/JMTS01771443/t-shirt-teddyx-blue-sixtine",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 31,
+        "field": "price",
+        "expected": "159.00",
+        "run3": "159.00",
+        "latest": "127.20",
+        "url": "https://www.phase-eight.com/product/lucinda-spot-midi-dress-10015500806.html",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 36,
+        "field": "title",
+        "expected": "CREED - Aventus Eau de Parfum",
+        "run3": "CREED - Aventus Eau de Parfum",
+        "latest": "CREED Aventus Eau de Parfum",
+        "url": "https://www.selfridges.com/GB/en/product/creed-aventus-eau-de-parfum_365-83022651-AVENTUS/",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 36,
+        "field": "brand",
+        "expected": "CREED",
+        "run3": "CREED",
+        "latest": "Selfridges",
+        "url": "https://www.selfridges.com/GB/en/product/creed-aventus-eau-de-parfum_365-83022651-AVENTUS/",
+        "classification": "clear_regression"
+      },
+      {
+        "case_id": 44,
+        "field": "brand",
+        "expected": "Breville",
+        "run3": "Breville",
+        "latest": "Williams Sonoma",
+        "url": "https://www.williams-sonoma.com/products/breville-the-bambino-plus/",
+        "classification": "clear_regression"
+      },
+      {
+        "case_id": 48,
+        "field": "title",
+        "expected": "Millennium Falcon 75192",
+        "run3": "Millennium Falcon 75192",
+        "latest": "Millennium Falcon",
+        "url": "https://www.lego.com/en-us/product/millennium-falcon-75192",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 51,
+        "field": "price",
+        "expected": "850.00",
+        "run3": "850.00",
+        "latest": "775.00",
+        "url": "https://www.roamluggage.com/collections/luggage/products/large-check-in",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 51,
+        "field": "availability",
+        "expected": "in_stock",
+        "run3": "in_stock",
+        "latest": "out_of_stock",
+        "url": "https://www.roamluggage.com/collections/luggage/products/large-check-in",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 56,
+        "field": "brand",
+        "expected": "Rolex",
+        "run3": "Rolex",
+        "latest": "Amsterdam Vintage Watches",
+        "url": "https://amsterdamvintagewatches.com/shop/rolex-day-date-18038-champagne-5/",
+        "classification": "clear_regression"
+      },
+      {
+        "case_id": 63,
+        "field": "availability",
+        "expected": "in_stock",
+        "run3": "in_stock",
+        "latest": "out_of_stock",
+        "url": "https://www.uniqlo.com/us/en/products/E455957-000/00?colorDisplayCode=57&sizeDisplayCode=004",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 65,
+        "field": "title",
+        "expected": "UA Charged Assert 10 Men's Running Shoes",
+        "run3": "UA Charged Assert 10 Men's Running Shoes",
+        "latest": "UA Charged Assert 10",
+        "url": "https://www.underarmour.com/en-us/p/ua_charged_assert_10_mens_running_shoes/3026175.html",
+        "classification": "semantic_title_change"
+      },
+      {
+        "case_id": 75,
+        "field": "variant_count",
+        "expected": 8,
+        "run3": 8,
+        "latest": 10,
+        "url": "https://www.sephora.com/product/eadem-le-chouchou-exfoliating-softening-peptide-lip-balm-P511921?skuId=2960730&icid2=bestsellers_us_skugrid_ufe:p511921:product",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 78,
+        "field": "variant_count",
+        "expected": 3,
+        "run3": 3,
+        "latest": 4,
+        "url": "https://www.balmainbeauty.com/product/39323/130117/fragrance/carbone-eau-de-parfum#/sku/189322",
+        "classification": "needs_live_revalidation"
+      },
+      {
+        "case_id": 78,
+        "field": "size_options",
+        "expected": [
+          "10 ml",
+          "50 ml",
+          "150 ml (Refill)"
+        ],
+        "run3": [
+          "10 ml",
+          "150 ml (Refill)",
+          "50 ml"
+        ],
+        "latest": [
+          "10 ml",
+          "150 ml (Refill)",
+          "30 ml",
+          "50 ml"
+        ],
+        "url": "https://www.balmainbeauty.com/product/39323/130117/fragrance/carbone-eau-de-parfum#/sku/189322",
+        "classification": "needs_live_revalidation"
+      }
+    ]
+  },
+  "field_coverage_common_80": [
+    {
+      "field": "title",
+      "run3_present": 80,
+      "latest_present": 80,
+      "delta": 0
+    },
+    {
+      "field": "brand",
+      "run3_present": 70,
+      "latest_present": 80,
+      "delta": 10
+    },
+    {
+      "field": "price",
+      "run3_present": 69,
+      "latest_present": 72,
+      "delta": 3
+    },
+    {
+      "field": "currency",
+      "run3_present": 69,
+      "latest_present": 72,
+      "delta": 3
+    },
+    {
+      "field": "availability",
+      "run3_present": 64,
+      "latest_present": 69,
+      "delta": 5
+    },
+    {
+      "field": "sku",
+      "run3_present": 50,
+      "latest_present": 52,
+      "delta": 2
+    },
+    {
+      "field": "barcode",
+      "run3_present": 5,
+      "latest_present": 6,
+      "delta": 1
+    },
+    {
+      "field": "style_id",
+      "run3_present": 17,
+      "latest_present": 22,
+      "delta": 5
+    },
+    {
+      "field": "color",
+      "run3_present": 25,
+      "latest_present": 32,
+      "delta": 7
+    },
+    {
+      "field": "materials",
+      "run3_present": 12,
+      "latest_present": 30,
+      "delta": 18
+    },
+    {
+      "field": "gender",
+      "run3_present": 23,
+      "latest_present": 26,
+      "delta": 3
+    },
+    {
+      "field": "condition",
+      "run3_present": 1,
+      "latest_present": 27,
+      "delta": 26
+    },
+    {
+      "field": "rating",
+      "run3_present": 27,
+      "latest_present": 29,
+      "delta": 2
+    },
+    {
+      "field": "review_count",
+      "run3_present": 27,
+      "latest_present": 29,
+      "delta": 2
+    },
+    {
+      "field": "original_price",
+      "run3_present": 2,
+      "latest_present": 4,
+      "delta": 2
+    },
+    {
+      "field": "price_min",
+      "run3_present": 8,
+      "latest_present": 8,
+      "delta": 0
+    },
+    {
+      "field": "price_max",
+      "run3_present": 8,
+      "latest_present": 8,
+      "delta": 0
+    },
+    {
+      "field": "image_url",
+      "run3_present": 77,
+      "latest_present": 78,
+      "delta": 1
+    },
+    {
+      "field": "description",
+      "run3_present": 75,
+      "latest_present": 76,
+      "delta": 1
+    },
+    {
+      "field": "additional_images",
+      "run3_present": 56,
+      "latest_present": 56,
+      "delta": 0
+    },
+    {
+      "field": "variants",
+      "run3_present": 45,
+      "latest_present": 46,
+      "delta": 1
+    },
+    {
+      "field": "variant_count",
+      "run3_present": 80,
+      "latest_present": 80,
+      "delta": 0
+    }
+  ]
+}

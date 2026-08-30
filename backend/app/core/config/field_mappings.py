@@ -61,12 +61,22 @@ ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS = (
 PRODUCT_BRAND_FACT_TYPE = "product.brand"
 PRODUCT_DESCRIPTION_FACT_TYPE = "product.description"
 PRODUCT_GTIN_FACT_TYPE = "product.gtin"
+PRODUCT_ID_FACT_TYPE = "product.id"
 PRODUCT_MPN_FACT_TYPE = "product.mpn"
 PRODUCT_SKU_FACT_TYPE = "product.sku"
 PRODUCT_TITLE_FACT_TYPE = "product.title"
 PRODUCT_URL_FACT_TYPE = "product.url"
 VARIANT_GTIN_FACT_TYPE = "variant.gtin"
 VARIANT_SKU_FACT_TYPE = "variant.sku"
+ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
+    "productId",
+    "productID",
+    "product_id",
+    "productCode",
+    "product_code",
+    "entryID",
+    "catalogEntryId",
+)
 
 FIELD_ALIASES: dict[str, list[str]] = {
     "title": ["title", "name", "job_title", "position", "headline", "productName"],
@@ -408,6 +418,7 @@ ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
     "image": ASSET_IMAGE_URL_FACT_TYPE,
     "image_url": ASSET_IMAGE_URL_FACT_TYPE,
     "mpn": PRODUCT_MPN_FACT_TYPE,
+    "product_id": PRODUCT_ID_FACT_TYPE,
     "name": PRODUCT_TITLE_FACT_TYPE,
     "original_price": "offer.original_price",
     "price": OFFER_PRICE_FACT_TYPE,
@@ -420,6 +431,7 @@ ECOMMERCE_PUBLIC_FIELD_FACT_TYPES = {
     "brand": PRODUCT_BRAND_FACT_TYPE,
     "color": "product.color",
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "product_id": PRODUCT_ID_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
     "currency": OFFER_CURRENCY_FACT_TYPE,
@@ -436,6 +448,7 @@ ECOMMERCE_TYPED_STRING_FACT_TYPES = frozenset(
         "product.category",
         PRODUCT_DESCRIPTION_FACT_TYPE,
         PRODUCT_GTIN_FACT_TYPE,
+        PRODUCT_ID_FACT_TYPE,
         PRODUCT_MPN_FACT_TYPE,
         PRODUCT_SKU_FACT_TYPE,
         PRODUCT_TITLE_FACT_TYPE,
@@ -451,6 +464,7 @@ ECOMMERCE_TYPED_STRING_FACT_TYPES = frozenset(
 ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES = frozenset(
     {
         PRODUCT_GTIN_FACT_TYPE,
+        PRODUCT_ID_FACT_TYPE,
         PRODUCT_MPN_FACT_TYPE,
         PRODUCT_SKU_FACT_TYPE,
         VARIANT_GTIN_FACT_TYPE,
@@ -463,6 +477,7 @@ INVALID_GTIN_SHAPE_EVIDENCE_FLAG = "invalid_gtin_shape"
 ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     **dict.fromkeys(DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS, OFFER_PRICE_FACT_TYPE),
     **dict.fromkeys(ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS, OFFER_PRICE_FACT_TYPE),
+    **dict.fromkeys(ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS, PRODUCT_ID_FACT_TYPE),
     **dict.fromkeys(("availability", "available"), OFFER_AVAILABILITY_FACT_TYPE),
     "advertisedPrice": OFFER_PRICE_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
@@ -534,15 +549,6 @@ ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES = {
 }
 ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS = frozenset(
     key_path[0] for key_path in ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES
-)
-ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
-    "productId",
-    "productID",
-    "product_id",
-    "productCode",
-    "product_code",
-    "entryID",
-    "catalogEntryId",
 )
 ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
@@ -627,6 +633,9 @@ ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
     "gtin12": PRODUCT_GTIN_FACT_TYPE,
     "gtin13": PRODUCT_GTIN_FACT_TYPE,
     "gtin14": PRODUCT_GTIN_FACT_TYPE,
+    "productID": PRODUCT_ID_FACT_TYPE,
+    "productId": PRODUCT_ID_FACT_TYPE,
+    "product_id": PRODUCT_ID_FACT_TYPE,
     "productGroupID": PRODUCT_STYLE_ID_FACT_TYPE,
     "color": "product.color",
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,

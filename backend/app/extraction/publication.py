@@ -42,6 +42,7 @@ PUBLIC_FACT_TO_FIELD = {
     field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE: "description",
     "product.category": "category",
     field_mappings.PRODUCT_SKU_FACT_TYPE: "sku",
+    field_mappings.PRODUCT_ID_FACT_TYPE: "product_id",
     field_mappings.PRODUCT_MPN_FACT_TYPE: "mpn",
     # Canonical detail schema names the product GTIN/UPC/EAN "barcode".
     field_mappings.PRODUCT_GTIN_FACT_TYPE: "barcode",

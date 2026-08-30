@@ -1,9 +1,9 @@
 # Plan: CrawlerAI Source-Backed Extraction Coverage
 
 **Created:** 2026-08-25
-**Revised:** 2026-08-27 after the run-5 version comparison and Amazon regression analysis
+**Revised:** 2026-08-30 after the fresh 81-result live crawl
 **Agent:** Codex
-**Status:** COMPLETE — core slices and run-5 regression hardening verified
+**Status:** COMPLETE
 **Branch:** `codex/crawlerai-extraction-coverage`
 **Base:** updated `main` after the data-accuracy PR merges
 **Touches buckets:** deterministic collectors, variants/options, product identifiers, attributes, ratings/reviews, offer/commercial completion, publication, diagnostics, focused tests
@@ -277,6 +277,158 @@ Not changed in this regression-only pass:
   this pass.
 - Uniqlo remains a separate missing acquisition result. No Uniqlo-specific
   behavior was added while the active request was Amazon.
+
+### Post-close run-1 live-corpus continuation
+
+**Status:** DONE and verified (2026-08-30).
+
+The fresh live crawl is `backend/artifacts/runs/1` and contains 81 successful
+captures. Reference case 55 was intentionally not crawled because its
+anti-automation shell must remain a zero-record result. Replay therefore uses
+the other 81 version-3.2 cases only; version 3 remains the old reference, not
+the new crawl.
+
+The first replay against the new pages has **68 failing cases / 204 fixture
+disagreements**. This equals the corrected old-capture disagreement total, but
+the field mix moved with live content. Source validation resolves three
+previously pending points without code changes: H&M still exposes and publishes
+50 explicit leaves; New Balance now exposes and publishes the reference's 146
+leaves rather than the prior capture's 147; and Uniqlo acquisition now succeeds
+and publishes all 56 explicit leaves. Ralph Lauren currently exposes 11
+colourways plus one explicit optionless product row, so its source-backed count
+is 12 rather than the old reference's 13.
+
+The remaining reproduced generic gap is `product_id`: a focused 81-page replay
+requesting only that canonical field publishes **0 / 81**, even though the new
+corpus contains explicit `productID`, `productId`, and `product_id` values.
+Those keys currently contribute entity ownership only; no `product.id` fact
+reaches Resolve or Publish.
+
+**What:** Wire explicitly declared product-ID roles from JSON-LD and bounded
+same-product first-party state through the existing evidence, resolution,
+publication, canonicalization, and diagnostics contracts. Do not reinterpret
+URL codes, SKU, MPN, GTIN, `productGroupID`, or variant IDs as `product_id`.
+
+**Verify:** Focused JSON-LD and first-party-state tests; repeat the 81-page
+`product_id` replay; `.\scripts\check.ps1`; `.\scripts\test.ps1`.
+
+Result:
+
+- focused product-ID replay moved from **0 / 81** to **20 / 81**
+  source-declared values
+- full 81-case replay moved from **68 / 204** to **67 / 203**; only
+  case 81's explicit `product_id=141791` assertion moved
+- focused product-ID tests: **3 passed**
+- `scripts/check.ps1`: passed Ruff, formatting, mypy, architecture,
+  dead-code, dependency, frontend, contract, LOC, and complexity gates
+- `scripts/test.ps1`: selected 56 backend files and passed **764 tests**;
+  no frontend or E2E tests were selected
+
+
+### Post-close run-1 breadth continuation
+
+**Status:** COMPLETE (2026-08-30).
+
+The highest raw disagreement breadth is title (31 products), but 20 of those
+expect a composed title that adds brand, colour, condition, or another field to
+the source-declared semantic product name. That is contrary to the completed
+title contract, so title is not the next defect.
+
+Color is next at 23 products. Fresh-record and replay inspection finds a generic
+source-backed subset: cases 6, 20, 26, 59, 64, and 74 expose an eligible leaf
+matrix whose every row carries the same non-empty color, while the parent color
+can remain missing. The resolver currently derives an option only from
+`selected_variant_ids`; it does not use the stronger matrix-wide unanimity that
+already exists after eligibility and leaf filtering.
+
+**What:** When selected-variant option resolution produces no value, derive
+top-level color or size only if every eligible deepest leaf has that axis and
+all values are identical. Preserve selected-state precedence, source spelling,
+and complete lineage. Mixed or partially populated matrices remain missing.
+
+**Verify:** Focused unanimous/mixed matrix tests; fresh color partition replay;
+`.\scripts\check.ps1`; `.\scripts\test.ps1`.
+
+Result:
+
+- focused color replay publishes **38 / 81**; the unanimity rule fires in six
+  source-backed cases
+- full replay moves from **67 / 203** to **67 / 201**; color disagreements move
+  from 23 to 21
+- exact reference movements are cases 20 and 74; source spelling remains
+  unchanged in cases 6 and 26
+- focused unanimous/mixed and selected-style precedence tests pass
+- `.\scripts\check.ps1` passed all repository static gates
+- `.\scripts\test.ps1` selected 56 backend files and passed **765 tests**;
+  no frontend or E2E tests were selected
+
+### Post-close run-1 price continuation
+
+**Status:** COMPLETE (2026-08-30).
+
+Fresh replay has 16 price disagreements. Thirteen are exact-value changes on
+dynamic commercial data and require live revalidation before any extractor
+change. Three are missing values. StockX exposes no admissible current price in
+the saved capture. Sneaker Politics declares an atomic `101.75` / `USD` pair in
+JSON-LD whose description contains a literal unescaped newline. Nintendo
+declares `59.99` in selected embedded state without repeating its currency; the
+requested PDP's leading `/us/` locale states USD.
+
+**What:** Parse structured JSON leniently only for control characters inside
+quoted values, and recognize a leading country path segment as a page-level
+currency hint. Preserve atomic price/currency publication. Do not infer a
+StockX price or rewrite dynamic exact-value differences.
+
+**Verify:** Focused JSON control-character and country-path currency tests;
+affected replay including the unchanged Blue Nile selected price; full fresh
+replay; `.\scripts\check.ps1`; `.\scripts\test.ps1`.
+
+Result before repository gates:
+
+- case 3 publishes `101.75` / `USD`
+- case 46 publishes `59.99` / `USD`
+- case 1 remains missing because its capture has no admissible current price
+- case 53 remains `944.00` / `USD`; broader Open Graph price admission was
+  rejected after it changed that selected price to the page-level `1180.00`
+- full replay moves from **67 / 201** to **67 / 197**; price disagreements move
+  from 16 to 14 and currency disagreements from 3 to 1
+- `.\scripts\check.ps1` passed all repository static gates
+- `.\scripts\test.ps1` selected 56 backend files and passed **767 tests**;
+  no frontend or E2E tests were selected
+
+### Post-close run-1 color and availability continuation
+
+**Status:** COMPLETE (2026-08-30).
+
+Fresh replay had 21 capture-backed color disagreements and six availability
+disagreements. Source inspection separated explicit current evidence from stale
+or dynamic reference differences. Visible product panels explicitly label the
+missing colors in cases 1, 2, 4, 8, 26, 57, and 67. Case 26 also displays
+`Coming Soon - Get Notified` while all structured variants report the coarser
+non-sellable state `out_of_stock`.
+
+**What:** Collect visible product-scoped `Color`, `Colour`, and `Colorway`
+label/value pairs. Reject adjacent color-related specifications such as color
+temperature. Preserve the visible label's display casing when unanimous variant
+evidence differs only by case. Recognize visible `coming soon` in a product
+offer and let it refine an all-`out_of_stock` variant aggregate. Do not rewrite
+missing StockX availability or live Uniqlo, New Balance, Ralph Lauren, or
+Balmain stock differences from the old reference.
+
+**Verify:** Focused label, color-temperature rejection, and coming-soon tests;
+affected capture replay; full color/availability partition replay;
+`.\scripts\check.ps1`; `.\scripts\test.ps1`.
+
+Result:
+
+- exact color assertions now pass in cases 1, 2, 4, 8, 26, 57, and 67
+- case 26 now publishes source spelling `Yellow` and availability `coming_soon`
+- color disagreements move from **21 to 14**; availability disagreements move
+  from **6 to 5**
+- the remaining availability disagreements are absent or contradict the current
+  capture; no reference-driven stock rewrite was added
+- focused regressions pass **3 tests**
+
 
 ## Do Not Touch
 

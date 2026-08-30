@@ -7,6 +7,8 @@ from app.core.config.extraction_rules import AVAILABILITY_PARENT_ROLLUP_PRECEDEN
 from app.core.config.variant_policy import (
     AXIS_GROUP_VARIANT_DIAGNOSTIC_REASON,
     DEFAULT_VARIANT_DIAGNOSTIC_REASON,
+    DETAIL_PARENT_AVAILABILITY_REFINEMENT_RULE_ID,
+    DETAIL_PARENT_COLOR_LABEL_REFINEMENT_RULE_ID,
     SIBLING_PRODUCT_VARIANT_DIAGNOSTIC_REASON,
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
@@ -220,7 +222,7 @@ def _parent_derived_from_variants(
     variants = tuple(row for row in variant_decisions if row.status == "eligible")
     leaf_variants = _leaf_variant_decisions(variants)
     out = list(
-        _selected_variant_option_facts(
+        _parent_variant_option_facts(
             primary_product_entity_id,
             variants,
             selected_variant_ids=selected_variant_ids,
@@ -268,7 +270,107 @@ def _parent_derived_from_variants(
     return tuple(out)
 
 
-def _selected_variant_option_facts(
+def _refine_parent_availability(
+    parent_facts: tuple[DerivedFact, ...],
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[DerivedFact, ...]:
+    refinements = tuple(
+        row
+        for row in evidence_by_id.values()
+        if row.fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE
+        and row.value == "coming_soon"
+        and row.directness == "direct"
+        and row.metadata.get("component_role") == "product_offer"
+    )
+    if not refinements:
+        return parent_facts
+    out: list[DerivedFact] = []
+    for fact in parent_facts:
+        source_values = {
+            str(evidence_by_id[evidence_id].value)
+            for evidence_id in fact.input_evidence_ids
+            if evidence_id in evidence_by_id
+        }
+        if (
+            fact.fact_type != field_mappings.OFFER_AVAILABILITY_FACT_TYPE
+            or fact.value != "out_of_stock"
+            or source_values != {"out_of_stock"}
+        ):
+            out.append(fact)
+            continue
+        out.append(
+            _aggregate_fact(
+                fact.entity_id,
+                fact.fact_type,
+                "coming_soon",
+                tuple(
+                    dict.fromkeys(
+                        (
+                            *fact.input_evidence_ids,
+                            *(row.evidence_id for row in refinements),
+                        )
+                    )
+                ),
+                DETAIL_PARENT_AVAILABILITY_REFINEMENT_RULE_ID,
+                input_selected_fact_ids=fact.input_selected_fact_ids,
+                input_derived_fact_ids=(
+                    *fact.input_derived_fact_ids,
+                    fact.derived_fact_id,
+                ),
+            )
+        )
+    return tuple(out)
+
+
+def _refine_parent_color(
+    parent_facts: tuple[DerivedFact, ...],
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[DerivedFact, ...]:
+    candidates = tuple(
+        row
+        for row in evidence_by_id.values()
+        if row.fact_type == "product.color"
+        and row.directness == "direct"
+        and row.metadata.get("color_strategy") == "label"
+    )
+    candidate_values = {str(row.value).casefold() for row in candidates}
+    if len(candidate_values) != 1:
+        return parent_facts
+    display_value = str(candidates[0].value)
+    out: list[DerivedFact] = []
+    for fact in parent_facts:
+        if (
+            fact.fact_type != "product.color"
+            or str(fact.value).casefold() != display_value.casefold()
+            or fact.value == display_value
+        ):
+            out.append(fact)
+            continue
+        out.append(
+            _aggregate_fact(
+                fact.entity_id,
+                fact.fact_type,
+                display_value,
+                tuple(
+                    dict.fromkeys(
+                        (
+                            *fact.input_evidence_ids,
+                            *(row.evidence_id for row in candidates),
+                        )
+                    )
+                ),
+                DETAIL_PARENT_COLOR_LABEL_REFINEMENT_RULE_ID,
+                input_selected_fact_ids=fact.input_selected_fact_ids,
+                input_derived_fact_ids=(
+                    *fact.input_derived_fact_ids,
+                    fact.derived_fact_id,
+                ),
+            )
+        )
+    return tuple(out)
+
+
+def _parent_variant_option_facts(
     entity_id: str,
     variants: tuple[VariantDecision, ...],
     *,
@@ -278,24 +380,39 @@ def _selected_variant_option_facts(
     selected = tuple(
         row for row in variants if row.variant_entity_id in selected_variant_ids
     )
+    leaf_variants = _leaf_variant_decisions(variants)
     out: list[DerivedFact] = []
     for axis in ("color", "size"):
-        values = [row.values.get(axis) for row in selected]
-        if (
-            not values
-            or any(value in (None, "", [], {}, ()) for value in values)
-            or len({str(value) for value in values}) != 1
-            or (entity_id, f"product.{axis}") in existing_fact_keys
-        ):
+        if (entity_id, f"product.{axis}") in existing_fact_keys:
             continue
-        lineages = [row.lineage.get(axis) for row in selected]
+        source: tuple[VariantDecision, ...] = ()
+        value: object = None
+        rule_id = ""
+        for candidates, candidate_rule in (
+            (selected, "selected_variant_option"),
+            (leaf_variants, "unanimous_variant_option"),
+        ):
+            values = [row.values.get(axis) for row in candidates]
+            if (
+                not values
+                or any(item in (None, "", [], {}, ()) for item in values)
+                or len({str(item) for item in values}) != 1
+            ):
+                continue
+            source = candidates
+            value = values[0]
+            rule_id = candidate_rule
+            break
+        if not source:
+            continue
+        lineages = [row.lineage.get(axis) for row in source]
         out.append(
             _aggregate_fact(
                 entity_id,
                 f"product.{axis}",
-                values[0],
+                value,
                 _lineage_evidence_ids(lineages),
-                "selected_variant_option",
+                rule_id,
                 input_selected_fact_ids=_lineage_reference_ids(
                     lineages, "selected_fact_id"
                 ),

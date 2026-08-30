@@ -31,6 +31,7 @@ ECOMMERCE_PRODUCT_FACT_TYPES = frozenset(
         "description",
         "category",
         "product_type",
+        "id",
         "sku",
         "mpn",
         "gtin",
@@ -690,6 +691,14 @@ DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID = "PARENT_OFFER_TO_VARIANT"
 # A sibling offer on the same product supplies an availability the primary
 # offer never stated; unanimous agreement is required.
 DETAIL_SIBLING_OFFER_AVAILABILITY_RULE_ID = "SIBLING_OFFER_AVAILABILITY"
+# A direct page-level "coming soon" state is a more precise non-sellable state
+# than unanimous variant "out of stock" evidence.
+DETAIL_PARENT_AVAILABILITY_REFINEMENT_RULE_ID = (
+    "PARENT_AVAILABILITY_REFINES_VARIANT_AGGREGATE"
+)
+DETAIL_PARENT_COLOR_LABEL_REFINEMENT_RULE_ID = (
+    "PARENT_COLOR_LABEL_REFINES_VARIANT_AGGREGATE"
+)
 DETAIL_NEGATIVE_STOCK_RULE_ID = "NEGATIVE_STOCK_TO_OUT_OF_STOCK"
 DETAIL_REQUIRED_OFFER_FIELDS: tuple[str, ...] = (PRICE_FIELD, CURRENCY_FIELD)
 DETAIL_MINIMUM_KNOWLEDGE_FIELDS: tuple[str, ...] = (

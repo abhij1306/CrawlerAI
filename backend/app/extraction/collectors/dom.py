@@ -54,6 +54,7 @@ from app.extraction.collectors.dom_variant_controls import (
     select_option_axis,
 )
 from app.extraction.collectors.dom_product_attributes import (
+    collect_product_color_evidence,
     collect_product_material_evidence,
 )
 from app.extraction.collectors.dom_scoping import (
@@ -93,6 +94,9 @@ class DomCollector:
         out.extend(_product_brand_evidence(bundle, doc, product_roots, product_subject))
         out.extend(
             _product_description_evidence(bundle, product_roots, product_subject)
+        )
+        out.extend(
+            collect_product_color_evidence(bundle, doc, product_roots, product_subject)
         )
         out.extend(
             collect_product_material_evidence(

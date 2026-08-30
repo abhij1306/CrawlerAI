@@ -460,10 +460,12 @@ async def test_run_with_local_session_preserves_original_process_run_error(
     async def _failing_mark_run_failed(
         active_session, run_id: int, message: str, *, exception_type: str | None = None
     ) -> None:
-        assert active_session is session
-        assert run_id == 17
-        assert "RuntimeError: process exploded" in message
-        assert exception_type == "RuntimeError"
+    mark_failed_calls: list[tuple[int, str, str | None]] = []
+
+    async def _failing_mark_run_failed(
+        active_session, run_id: int, message: str, *, exception_type: str | None = None
+    ) -> None:
+        mark_failed_calls.append((run_id, message, exception_type))
         raise ValueError("write failed")
 
     monkeypatch.setattr(local_dispatch_module, "SessionLocal", _FakeSessionLocal)
