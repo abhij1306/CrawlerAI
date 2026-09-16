@@ -31,7 +31,8 @@ COPY --from=build /ms-playwright /ms-playwright
 
 # Patchright owns the browser runtime library list. Compiler headers, curl, uv,
 # and package build tooling stay in earlier stages.
-RUN .venv/bin/python -m patchright install-deps chromium && \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends libpcre2-8-0 && \
+    .venv/bin/python -m patchright install-deps chromium && \
     apt-get purge -y xvfb && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \
