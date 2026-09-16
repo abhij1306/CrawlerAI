@@ -443,6 +443,7 @@ class _ParallelRunState:
                     )
                     await self.drain_results()
                 except TimeoutError:
+                    # No result arrived before the tick; re-check worker state.
                     pass
                 self.raise_worker_error()
                 if (

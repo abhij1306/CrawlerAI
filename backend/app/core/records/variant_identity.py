@@ -7,30 +7,38 @@ from typing import Protocol
 
 class VariantHint(Protocol):
     @property
-    def option_values(self) -> Mapping[str, str]: ...
+    def option_values(self) -> Mapping[str, str]:
+        raise NotImplementedError
 
     @property
-    def variant_id(self) -> str | None: ...
+    def variant_id(self) -> str | None:
+        raise NotImplementedError
 
     @property
-    def sku(self) -> str | None: ...
+    def sku(self) -> str | None:
+        raise NotImplementedError
 
     @property
-    def url(self) -> str | None: ...
+    def url(self) -> str | None:
+        raise NotImplementedError
 
 
 class VariantEvidence(Protocol):
     @property
-    def collector_id(self) -> str: ...
+    def collector_id(self) -> str:
+        raise NotImplementedError
 
     @property
-    def entity_hint(self) -> VariantHint | None: ...
+    def entity_hint(self) -> VariantHint | None:
+        raise NotImplementedError
 
     @property
-    def fact_type(self) -> str: ...
+    def fact_type(self) -> str:
+        raise NotImplementedError
 
     @property
-    def value(self) -> object: ...
+    def value(self) -> object:
+        raise NotImplementedError
 
 
 def selected_variant_values(hints: Iterable[VariantHint | None]) -> tuple[str, ...]:
