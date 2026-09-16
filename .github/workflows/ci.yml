@@ -118,6 +118,7 @@ jobs:
           node-version: 24
           cache: true
           working-directory: frontend
+          run-install: false
 
       - name: Install dependencies
         working-directory: frontend
@@ -172,6 +173,7 @@ jobs:
           node-version: 24
           cache: true
           working-directory: frontend
+          run-install: false
 
       - name: Install dependencies
         working-directory: frontend
@@ -227,6 +229,7 @@ jobs:
           node-version: 24
           cache: true
           working-directory: frontend
+          run-install: false
 
       - name: Install frontend dependencies
         working-directory: frontend
