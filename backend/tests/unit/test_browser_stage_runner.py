@@ -41,7 +41,7 @@ async def test_caller_cancellation_propagates_after_stage_cleanup() -> None:
     caller.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await caller
+        _ = await caller
 
     assert page.closed.is_set()
     assert unwound.is_set()
