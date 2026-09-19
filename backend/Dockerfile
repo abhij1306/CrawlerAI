@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uv-tool
 
-FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS build
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254 AS build
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,7 +18,7 @@ COPY backend/alembic.ini backend/init_db.py backend/bootstrap_admin.py ./
 RUN uv sync --locked --no-dev --extra prod && \
     .venv/bin/python -m patchright install chromium
 
-FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS runtime
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -31,7 +31,8 @@ COPY --from=build /ms-playwright /ms-playwright
 
 # Patchright owns the browser runtime library list. Compiler headers, curl, uv,
 # and package build tooling stay in earlier stages.
-RUN .venv/bin/python -m patchright install-deps chromium && \
+RUN apt-get update && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 && \
+    .venv/bin/python -m patchright install-deps chromium && \
     apt-get purge -y xvfb && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \

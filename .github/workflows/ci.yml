@@ -113,10 +113,12 @@ jobs:
           persist-credentials: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
           node-version: 24
           cache: true
+          working-directory: frontend
+          run-install: false
 
       - name: Install dependencies
         working-directory: frontend
@@ -166,17 +168,19 @@ jobs:
           persist-credentials: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
           node-version: 24
           cache: true
+          working-directory: frontend
+          run-install: false
 
       - name: Install dependencies
         working-directory: frontend
         run: vp install --frozen-lockfile
 
       - name: Download OpenAPI contract
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: backend-openapi
           path: backend-openapi
@@ -220,10 +224,12 @@ jobs:
           persist-credentials: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@07d0b0e993009eb3b908ea06e49e88e933b728a2 # v1.17.0
+        uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
           node-version: 24
           cache: true
+          working-directory: frontend
+          run-install: false
 
       - name: Install frontend dependencies
         working-directory: frontend
