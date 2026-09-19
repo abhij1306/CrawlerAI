@@ -55,7 +55,7 @@
     "knip": "6.35.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite-plus": "0.3.0"
+    "vite-plus": "0.3.2"
   },
   "engines": {
     "node": ">=20.19"
