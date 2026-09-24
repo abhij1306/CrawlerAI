@@ -94,6 +94,7 @@ DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
 DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN = r"\d{1,3}%(?=[A-Z])|\d{1,2}oz(?=[A-Z])"
 DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH = 80
 DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
+    r"\bbuying options\b.{0,120}\b(?:financing|delivery|returns?)\b",
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
     r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now|more\s+items?)\b",
     r"^\s*searching\s+for\b.{0,220}\b(?:we(?:'|’)ve\s+got|shop|discover)\b",
@@ -308,6 +309,7 @@ DETAIL_DOM_DESCRIPTION_SELECTORS = (
     "[class*='description' i]",
 )
 DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
+DETAIL_DESCRIPTION_MIN_CONTENT_WORDS = 2
 DETAIL_DOM_COLOR_EXPLICIT_SELECTOR = (
     "p, li, tr, dt, [data-component='product-trait'], "
     "[data-testid*='color' i], [data-testid*='colour' i], "
@@ -318,11 +320,13 @@ DETAIL_DOM_COLOR_MAX_VALUE_CHARS = 80
 DETAIL_DOM_COLOR_LABEL_PATTERN = (
     r"^(?:color|colour|colorway)(?:\s*:\s*|\s+)(?P<value>.+)$"
 )
+DETAIL_DOM_SELECTED_COLOR_TEST_ID_PATTERN = r"(?:selected[-_]?colou?r|colou?r[-_]?name)"
 DETAIL_DOM_COLOR_VALUE_BOUNDARY_PATTERN = (
     r"\s+(?:material|size|sku|style)\s*:?(?:\s|$).*$"
 )
 DETAIL_DOM_COLOR_LABELS = frozenset({"color", "colour", "colorway"})
 DETAIL_DOM_COLOR_VALUE_REJECT = frozenset({"temperature"})
+DETAIL_DOM_COLOR_CONTROL_SELECTOR = "button, a, nav, [role='button'], [role='radio']"
 DETAIL_DOM_MATERIAL_EXPLICIT_SELECTOR = (
     "li, dt, [class*='label' i], [itemprop='material'], "
     "[data-field='material'], [data-testid*='material' i], "
@@ -450,11 +454,14 @@ DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS = {
     "coming_soon": (r"\bcoming\s+soon\b",),
 }
 DETAIL_TEXT_SCOPE_PRIORITY_TOKENS = ("description", "detail", "pdp", "product")
+DETAIL_TEXT_SCOPE_EXCLUDE_TAGS = frozenset({"nav", "header", "footer", "aside"})
 DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS = (
     "also-viewed",
     "also viewed",
     "ask",
     "compare",
+    "consent",
+    "cookie",
     "dialog",
     "disclaimer",
     "fit-guide",
@@ -467,6 +474,7 @@ DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS = (
     "recommend",
     "related",
     "review",
+    "saveditem",
     "similar",
     "shipping",
     "size-guide",

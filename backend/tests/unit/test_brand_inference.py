@@ -4,8 +4,31 @@ import pytest
 
 from app.core.config.url_path_markers import ECOMMERCE_DETAIL_PATH_MARKERS
 from app.core.shared.field_coerce_text import infer_brand_from_product_url
+from app.extraction.resolution.derived import _brand_from_title
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    ("url", "title", "site_brand"),
+    [
+        (
+            "https://www.phase-eight.com/product/lucinda-spot-midi-dress-10015500806.html",
+            "Lucinda Spot Midi Dress",
+            "Phase Eight",
+        ),
+        ("https://www.apple.com/shop/buy-iphone/iphone-16", "iPhone 16", "Apple"),
+    ],
+)
+def test_page_identity_beats_model_title_prefix(
+    url: str, title: str, site_brand: str
+) -> None:
+    assert _brand_from_title(
+        title,
+        page_url=url,
+        evidence_values=(site_brand, title),
+        product_evidence_values=(site_brand,),
+    ) == (site_brand, "page_identity")
 
 
 @pytest.mark.parametrize("marker", ECOMMERCE_DETAIL_PATH_MARKERS)

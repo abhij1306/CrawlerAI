@@ -10,8 +10,19 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 from app.extraction.entities import _link_products, _owner_product_id, build_entities
+from app.core.records.product_identity import (
+    product_identity_sets_compatible,
+    product_identity_sets_match,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def test_same_terminal_product_code_allows_descriptive_slug_in_source_url() -> None:
+    requested = {("product.url", "https://shop.test/m/pants/ME988")}
+    source = {("product.url", "https://shop.test/m/pants/soleil-pant-in-linen/ME988")}
+    assert product_identity_sets_match(requested, source)
+    assert product_identity_sets_compatible(requested, source)
 
 
 def _bundle() -> CaptureBundle:

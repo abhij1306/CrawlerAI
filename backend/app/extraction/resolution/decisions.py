@@ -296,10 +296,12 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
         "brand_url",
         "category_as_brand",
         "description_incomplete_ending",
+        "description_bare_label",
         "description_missing_separator",
         "description_promotional_copy",
         "description_ui_pollution",
         "invalid_decimal",
+        "invalid_gender",
         "invalid_currency",
         "invalid_brand_scalar",
         "non_manufacturer_brand_role",
@@ -311,6 +313,7 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
         DETAIL_TITLE_MEASUREMENT_FLAG,
         "placeholder_text",
         "tracking_url",
+        "unresolved_template",
         VARIANT_COLOR_BRAND_CONFLICT_FLAG,
     }
 )

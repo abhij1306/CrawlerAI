@@ -103,23 +103,18 @@ def test_missing_requested_field_has_visible_finding() -> None:
     assert result.verdict in {"partial", "review"}
 
 
-def test_missing_core_detail_fields_request_one_rendered_capability() -> None:
+def test_missing_core_detail_fields_remain_missing() -> None:
     result = _extract(
         "ecommerce_detail",
         "<main><h1>Espresso Machine</h1></main>",
         "https://shop.test/products/espresso-machine",
     )
 
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "dynamic_content_missing"
-    assert result.retry_request.required_artifacts == (
-        "rendered_html",
-        "network_payloads",
-    )
-    assert result.retry_request.max_attempts == 1
+    assert result.records[0].get("price") is None
+    assert result.records[0].get("currency") is None
 
 
-def test_explicit_variant_controls_request_rendered_capability_without_field_request() -> (
+def test_explicit_variant_controls_do_not_invent_variants_without_field_request() -> (
     None
 ):
     result = _extract(
@@ -134,12 +129,9 @@ def test_explicit_variant_controls_request_rendered_capability_without_field_req
     )
 
     assert not result.records[0].get("variants")
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "explicit_variants_missing"
-    assert result.retry_request.max_attempts == 1
 
 
-def test_missing_requested_variants_requests_one_rendered_capability() -> None:
+def test_missing_requested_variants_remain_missing() -> None:
     result = extract(
         fixture_request_from_inputs(
             Surface.ECOMMERCE_DETAIL,
@@ -154,9 +146,6 @@ def test_missing_requested_variants_requests_one_rendered_capability() -> None:
         )
     )
     assert not result.records[0].get("variants")
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "explicit_variants_missing"
-    assert result.retry_request.max_attempts == 1
 
 
 def test_explicit_size_axis_missing_from_variants_has_visible_finding() -> None:
@@ -325,7 +314,7 @@ def test_variant_offer_without_availability_emits_finding() -> None:
     )
 
 
-def test_missing_requested_variants_without_dom_cues_requests_browser() -> None:
+def test_missing_requested_variants_without_dom_cues_remain_missing() -> None:
     result = extract(
         fixture_request_from_inputs(
             Surface.ECOMMERCE_DETAIL,
@@ -335,8 +324,6 @@ def test_missing_requested_variants_without_dom_cues_requests_browser() -> None:
         )
     )
     assert not result.records[0].get("variants")
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "explicit_variants_missing"
 
 
 def test_ingredient_style_percentages_do_not_trigger_missing_separator() -> None:

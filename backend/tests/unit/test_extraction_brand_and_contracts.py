@@ -11,6 +11,95 @@ from tests.unit.extraction_contract_test_support import (
 
 
 @pytest.mark.parametrize(
+    ("url", "title", "site", "expected"),
+    [
+        (
+            "https://www.selfridges.com/GB/en/product/creed-aventus-eau-de-parfum_365-83022651-AVENTUS/",
+            "Creed Aventus Eau de Parfum",
+            "Selfridges",
+            "Creed",
+        ),
+        (
+            "https://www.williams-sonoma.com/products/breville-the-bambino-plus/",
+            "Breville Bambino Plus",
+            "Williams Sonoma",
+            "Breville",
+        ),
+        (
+            "https://amsterdamvintagewatches.com/shop/rolex-day-date-18038-champagne-5/",
+            "Rolex Day Date",
+            "Amsterdam Vintage Watches",
+            "Rolex",
+        ),
+        (
+            "https://atelier-market.test/products/mina-linen-shirt",
+            "Mina Linen Shirt",
+            "Atelier Market",
+            "Mina",
+        ),
+    ],
+)
+def test_product_url_brand_beats_seller_page_identity(
+    url: str, title: str, site: str, expected: str
+) -> None:
+    html = (
+        f"<title>{title} | {site}</title>"
+        f'<meta property="og:site_name" content="{site}">'
+        f'<script type="application/ld+json">{
+            json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "Product",
+                    "name": title,
+                    "url": url,
+                    "description": f"{title} has a detailed fit and construction for everyday use.",
+                }
+            )
+        }</script>'
+    )
+    assert (
+        _extract("ecommerce_detail", html, url, requested_fields=("brand",)).records[0][
+            "brand"
+        ]
+        == expected
+    )
+
+
+def test_unanchored_first_title_word_is_not_a_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        '<main><h1>Soft Linen Shirt</h1><p class="product-description">'
+        "A soft linen shirt with long sleeves and a relaxed fit.</p></main>",
+        "https://market.test/products/linen-shirt",
+    )
+    assert result.records[0].get("brand") is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    ["{{ Secret }}", "Buy now Secret jewelry with free shipping and exclusive offers."],
+)
+def test_rejected_description_cannot_corroborate_a_brand(description: str) -> None:
+    url = "https://www.brilliantearth.com/Secret-Halo-Diamond-Ring-BE1D13065/"
+    product = {
+        "@type": "Product",
+        "name": "Secret Halo Diamond Ring",
+        "url": url,
+        "description": description,
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<title>Secret Halo Diamond Ring | Brilliant Earth</title>"
+        '<meta property="og:site_name" content="Brilliant Earth">'
+        f'<script type="application/ld+json">{json.dumps(product)}</script>',
+        url,
+        requested_fields=("brand", "description"),
+    )
+    assert result.records[0]["brand"] == "Brilliant Earth"
+    assert result.records[0].get("description") is None
+
+
+@pytest.mark.parametrize(
     ("url", "title", "description", "image", "bad_brand", "expected"),
     [
         (
@@ -297,10 +386,16 @@ def test_explicit_visible_product_brand_label_is_collected() -> None:
     )
 
 
-def test_page_title_site_identity_beats_uncorroborated_product_title_token() -> None:
+@pytest.mark.parametrize(
+    "description",
+    ["A refined diamond ring with a hidden halo.", "Secret Halo Diamond Ring"],
+)
+def test_page_title_site_identity_beats_uncorroborated_product_title_token(
+    description: str,
+) -> None:
     result = _extract(
         "ecommerce_detail",
-        """
+        f"""
         <head>
           <title>Secret Halo Diamond Ring | Brilliant Earth</title>
           <meta property="og:title" content="Secret Halo Diamond Ring">
@@ -308,7 +403,7 @@ def test_page_title_site_identity_beats_uncorroborated_product_title_token() -> 
         </head>
         <main>
           <h1>Secret Halo Diamond Ring</h1>
-          <p data-description="A refined diamond ring with a hidden halo."></p>
+          <p class="product-description">{description}</p>
         </main>
         """,
         "https://www.brilliantearth.com/Secret-Halo-Diamond-Ring-BE1D13065/",

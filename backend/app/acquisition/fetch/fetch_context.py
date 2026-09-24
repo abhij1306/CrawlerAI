@@ -80,26 +80,6 @@ logger = logging.getLogger(__name__)
 _FetchRuntimeContext = FetchRuntimeContext
 
 
-def _should_retry_patchright_with_real_chrome(
-    *,
-    context: "_FetchRuntimeContext",
-    exc: Exception,
-    browser_engine: str,
-    engine_attempts: list[str],
-) -> bool:
-    if str(context.forced_browser_engine or "").strip():
-        return False
-    if browser_engine != "patchright":
-        return False
-    if "real_chrome" in engine_attempts:
-        return False
-    if not bool(crawler_runtime_settings.browser_real_chrome_enabled):
-        return False
-    if not real_chrome_browser_available():
-        return False
-    return "ERR_HTTP2_PROTOCOL_ERROR" in str(exc or "").upper()
-
-
 async def _get_shared_http_client(*, proxy: str | None = None):
     return await get_shared_http_client(proxy=proxy)
 
@@ -441,9 +421,7 @@ async def _run_browser_attempts(
             browser_engine_attempts=_browser_engine_attempts,
             extend_engine_attempts_after_block=_extend_browser_engine_attempts_after_block,
             browser_attempt_timeout_seconds=_browser_attempt_timeout_seconds,
-            should_retry_patchright_with_real_chrome=_should_retry_patchright_with_real_chrome,
             update_host_result_memory=_update_host_result_memory,
-            emit_fetch_event=emit_acquisition_event,
             load_host_protection_policy=load_host_protection_policy,
             note_host_hard_block=note_host_hard_block,
             wait_for_host_slot=wait_for_host_slot,

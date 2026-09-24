@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from urllib.parse import parse_qsl, unquote, urlparse, urlsplit
 
 from app.core.config.extraction_rules import (
@@ -82,30 +83,80 @@ _TITLE_OVERLAP_KEY, _TITLE_PRECISION_KEY = DETAIL_TITLE_IDENTITY_METADATA_KEYS
 _URL_MATCH_FLAG, _URL_MISMATCH_FLAG = DETAIL_URL_TARGET_FLAGS
 
 
-def selected_variant_axes(url: str) -> dict[str, str]:
+@dataclass(frozen=True)
+class VariantSelectionIntent:
+    source: str
+    raw_key: str
+    raw_value: str
+    axis: str | None
+    identity_strength: str
+
+
+def variant_selection_intents(url: str) -> tuple[VariantSelectionIntent, ...]:
     parsed = urlsplit(url)
-    axes: dict[str, str] = {}
-    fragment = unquote(parsed.fragment).strip()
-    query_sources = (parsed.query, fragment.lstrip("#?"))
-    for key, value in (
-        pair
-        for source in query_sources
-        for pair in parse_qsl(source, keep_blank_values=False)
-    ):
+    fragment = parsed.fragment.strip().lstrip("#?")
+    fragment_path, separator, fragment_query = fragment.partition("?")
+    if not separator and "=" in fragment:
+        fragment_path, fragment_query = "", fragment
+    return (
+        *_query_selection_intents(parsed.query, source="query"),
+        *_query_selection_intents(fragment_query, source="fragment"),
+        *_path_selection_intents(parsed.path, source="path"),
+        *_path_selection_intents(fragment_path, source="fragment"),
+    )
+
+
+def _query_selection_intents(
+    raw_query: str, *, source: str
+) -> tuple[VariantSelectionIntent, ...]:
+    intents: list[VariantSelectionIntent] = []
+    for key, value in parse_qsl(raw_query, keep_blank_values=False):
+        value = value.strip()
+        if not value:
+            continue
         raw_key = key.casefold()
-        axis = VARIANT_URL_AXIS_PARAMS.get(raw_key)
+        axis_key = re.sub(r"^dwvar_?[^_]+_", "", raw_key)
+        axis = VARIANT_URL_AXIS_PARAMS.get(axis_key)
         if axis is None and (
-            match := re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, raw_key, flags=re.I)
+            match := re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, axis_key, flags=re.I)
         ):
             axis = VARIANT_URL_AXIS_PARAMS.get(match.group("axis").casefold())
-        if axis and value.strip():
-            axes[axis] = value.strip()
-    for source in (parsed.path, fragment.split("?", 1)[0]):
-        parts = [unquote(part).strip() for part in source.split("/") if part]
-        for index, part in enumerate(parts[:-1]):
-            axis = VARIANT_URL_PATH_AXIS_MARKERS.get(part.casefold())
-            if axis and parts[index + 1]:
-                axes.setdefault(axis, parts[index + 1])
+        if axis is None:
+            stem = re.sub(r"(?:display|product)?(?:code|name)$", "", axis_key)
+            axis = VARIANT_URL_AXIS_PARAMS.get(stem)
+        strength = "opaque" if axis is None or raw_key.endswith("code") else "axis"
+        if axis == "sku":
+            strength = "identity"
+        if axis or re.search(r"(?:variant|select|sku)$", raw_key):
+            intents.append(VariantSelectionIntent(source, key, value, axis, strength))
+    return tuple(intents)
+
+
+def _path_selection_intents(
+    path: str, *, source: str
+) -> tuple[VariantSelectionIntent, ...]:
+    intents: list[VariantSelectionIntent] = []
+    parts = [unquote(part).strip() for part in path.split("/") if part]
+    for index, part in enumerate(parts[:-1]):
+        axis = VARIANT_URL_PATH_AXIS_MARKERS.get(part.casefold())
+        if axis and parts[index + 1]:
+            intents.append(
+                VariantSelectionIntent(
+                    source,
+                    part,
+                    parts[index + 1],
+                    axis,
+                    "identity" if axis == "sku" else "axis",
+                )
+            )
+    return tuple(intents)
+
+
+def selected_variant_axes(url: str) -> dict[str, str]:
+    axes: dict[str, str] = {}
+    for intent in variant_selection_intents(url):
+        if intent.axis:
+            axes.setdefault(intent.axis, intent.raw_value)
     return axes
 
 

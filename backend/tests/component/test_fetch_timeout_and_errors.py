@@ -19,7 +19,7 @@ from tests.component.crawl_fetch_runtime_test_support import (
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_retries(
+async def test_fetch_page_does_not_retry_browser_after_headless_timeout(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
@@ -90,17 +90,16 @@ async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_
         0,
     )
 
-    result = await crawl_fetch_runtime.fetch_page(
-        crawl_fetch_runtime.FetchPageCall(
-            url,
-            timeout_seconds=0.2,
-            surface="ecommerce_detail",
+    with pytest.raises(TimeoutError, match="patchright budget exhausted"):
+        await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(
+                url,
+                timeout_seconds=0.2,
+                surface="ecommerce_detail",
+            )
         )
-    )
-
-    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
+    assert len(browser_timeouts) == 1
     assert browser_timeouts[0] < 0.16
-    assert browser_timeouts[1] < browser_timeouts[0]
 
 
 @pytest.mark.asyncio
@@ -140,7 +139,15 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
         engine = str(request.browser_engine or "")
         browser_calls.append((engine, request.timeout_seconds))
         if engine == "patchright":
-            raise TimeoutError("patchright budget exhausted")
+            return PageFetchResult(
+                url=request.url,
+                final_url=request.url,
+                html="<html><body>blocked</body></html>",
+                status_code=403,
+                method="browser",
+                blocked=True,
+                browser_diagnostics={"browser_engine": engine},
+            )
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -294,7 +301,15 @@ async def test_run_browser_attempts_patchright_probe_cap_bounds_wall_clock(
         browser_calls.append((engine, request.timeout_seconds))
         if engine == "patchright":
             await asyncio.sleep(0.08)
-            raise TimeoutError("patchright hidden launch exceeded probe budget")
+            return PageFetchResult(
+                url=request.url,
+                final_url=request.url,
+                html="<html><body>blocked</body></html>",
+                status_code=403,
+                method="browser",
+                blocked=True,
+                browser_diagnostics={"browser_engine": engine},
+            )
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -326,22 +341,23 @@ async def test_run_browser_attempts_patchright_probe_cap_bounds_wall_clock(
         ),
     )
 
-    result = await crawl_fetch_runtime.run_browser_attempts(
-        context,
-        reason="vendor-block:cloudflare",
-        host_policy=HostProtectionPolicy(
-            host="example.com",
-            patchright_blocked=True,
-            prefer_browser=True,
-            last_block_vendor="cloudflare",
-        ),
-    )
+    started = time.perf_counter()
+    with pytest.raises(TimeoutError):
+        await crawl_fetch_runtime.run_browser_attempts(
+            context,
+            reason="vendor-block:cloudflare",
+            host_policy=HostProtectionPolicy(
+                host="example.com",
+                patchright_blocked=True,
+                prefer_browser=True,
+                last_block_vendor="cloudflare",
+            ),
+        )
 
-    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
     assert browser_calls[0][0] == "patchright"
     assert browser_calls[0][1] == pytest.approx(0.01, abs=0.01)
-    assert browser_calls[1][0] == "real_chrome"
-    assert browser_calls[1][1] > 0.06
+    assert len(browser_calls) == 1
+    assert time.perf_counter() - started < 0.12
 
 
 @pytest.mark.component

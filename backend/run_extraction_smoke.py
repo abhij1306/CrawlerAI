@@ -217,17 +217,6 @@ def _initial_acquisition_metrics(acquisition, url: str) -> dict[str, object]:
     }
 
 
-def _retry_acquisition_metrics(acquisition) -> dict[str, object]:
-    return {
-        "method": acquisition.method,
-        "status_code": acquisition.status_code,
-        "content_type": acquisition.content_type,
-        "html_len": len(acquisition.html or ""),
-        "network_payloads": len(acquisition.network_payloads or []),
-        "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
-    }
-
-
 def _extract_site(site: dict, surface: str, url: str, acquisition):
     return extract(
         request_from_acquisition_result(
@@ -240,36 +229,6 @@ def _extract_site(site: dict, surface: str, url: str, acquisition):
             ),
         )
     )
-
-
-async def _retry_extraction_if_required(
-    site: dict,
-    surface: str,
-    url: str,
-    acquisition_request: AcquisitionRequest,
-    acquisition,
-    extraction_result,
-    timeout_seconds: int,
-):
-    retry_request = extraction_result.retry_request
-    should_retry = (
-        retry_request is not None
-        and retry_request.required
-        and acquisition.method != "browser"
-    )
-    if not should_retry:
-        return acquisition, extraction_result
-    acquisition = await asyncio.wait_for(
-        acquire(
-            acquisition_request.with_profile_updates(
-                fetch_mode="browser_only",
-                prefer_browser=True,
-                retry_reason=retry_request.reason,
-            )
-        ),
-        timeout=timeout_seconds,
-    )
-    return acquisition, _extract_site(site, surface, url, acquisition)
 
 
 def _listing_issue(
@@ -407,18 +366,6 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             return result
 
         extraction_result = _extract_site(site, surface, url, acquisition)
-        initial_acquisition = acquisition
-        acquisition, extraction_result = await _retry_extraction_if_required(
-            site,
-            surface,
-            url,
-            acquisition_request,
-            acquisition,
-            extraction_result,
-            timeout_seconds,
-        )
-        if acquisition is not initial_acquisition:
-            result.update(_retry_acquisition_metrics(acquisition))
         records = [
             record.model_dump(mode="json", exclude_none=True)
             for record in extraction_result.records

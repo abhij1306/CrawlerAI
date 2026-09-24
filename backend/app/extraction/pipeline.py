@@ -37,6 +37,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
     DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
     DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH,
+    DETAIL_DESCRIPTION_MIN_CONTENT_WORDS,
     DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN,
     DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
@@ -750,8 +751,6 @@ def _normalize_typed_semantics(
         _flag_description_value(evidence, value, flags)
     if isinstance(value, str):
         value = normalize_product_attribute_value(evidence.fact_type, value, flags)
-    if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
-        flags.add("placeholder_text")
     return value
 
 
@@ -818,6 +817,11 @@ def _segment_grounded_description(value: str) -> str:
 
 
 def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:
+    if (
+        len(value.split()) < DETAIL_DESCRIPTION_MIN_CONTENT_WORDS
+        and len(value.strip()) < DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH
+    ):
+        flags.add("description_bare_label")
     locator_value = str(evidence.locator.value or "").casefold()
     if any(
         token in locator_value
@@ -842,16 +846,12 @@ def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> 
 
 def _description_pattern_flags(value: str) -> set[str]:
     flags: set[str] = set()
-    if any(
-        re.search(pattern, value, re.IGNORECASE)
-        for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
+    for flag, patterns in (
+        ("description_ui_pollution", DETAIL_DESCRIPTION_UI_PATTERNS),
+        ("description_promotional_copy", DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS),
     ):
-        flags.add("description_ui_pollution")
-    if any(
-        re.search(pattern, value, re.IGNORECASE)
-        for pattern in DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS
-    ):
-        flags.add("description_promotional_copy")
+        if any(re.search(pattern, value, re.IGNORECASE) for pattern in patterns):
+            flags.add(flag)
     return flags
 
 

@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from urllib.parse import urlsplit
 
 from app.core.records.url_identity import (
+    detail_identity_codes_from_url,
     detail_url_marker_identity,
     detail_url_resource_identity,
     detail_title_from_url,
@@ -198,6 +199,21 @@ def _product_url_paths_compatible(left: set[str], right: set[str]) -> bool:
             first, second = urlsplit(left_url), urlsplit(right_url)
             if first.hostname != second.hostname:
                 continue
+            first_terminal = first.path.rstrip("/").rsplit("/", 1)[-1]
+            second_terminal = second.path.rstrip("/").rsplit("/", 1)[-1]
+            if (
+                first_terminal.casefold() == second_terminal.casefold()
+                and first_terminal.casefold()
+                in {
+                    code.casefold() for code in detail_identity_codes_from_url(left_url)
+                }
+                and second_terminal.casefold()
+                in {
+                    code.casefold()
+                    for code in detail_identity_codes_from_url(right_url)
+                }
+            ):
+                return True
             short, long = sorted(
                 (first.path.rstrip("/"), second.path.rstrip("/")), key=len
             )

@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 from app.core.config import variant_policy
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
+    ECOMMERCE_MEDIA_DESCRIPTION_PATH_TOKENS,
     ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS,
 )
 from app.core.config.field_mappings import (
@@ -17,6 +18,7 @@ from app.core.config.field_mappings import (
     ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
 )
 from app.core.records.url_identity import (
+    detail_urls_conflict,
     detail_identity_codes_from_url,
     detail_title_from_url,
     detail_url_resource_identity,
@@ -24,6 +26,26 @@ from app.core.records.url_identity import (
 )
 
 RootStatus = Literal["selected", "unresolved", "ambiguous"]
+
+
+def structured_fact_admissible(
+    fact: str,
+    value: object,
+    *,
+    product_context: bool,
+    offer_context: bool,
+    path_tokens: set[str],
+) -> bool:
+    if fact.startswith("product.") and not product_context:
+        return False
+    if (
+        fact == "product.description"
+        and path_tokens & ECOMMERCE_MEDIA_DESCRIPTION_PATH_TOKENS
+    ):
+        return False
+    if fact.startswith("offer.") and not offer_context:
+        return False
+    return value not in (None, "", [], {})
 
 
 @dataclass(frozen=True)
@@ -290,6 +312,53 @@ def root_admits_path(selection: RootSelection, path: str) -> bool:
     if selection.status == "ambiguous":
         return False
     return True
+
+
+def conflicting_product_roots(
+    objects: Iterable[tuple[str, Any]], final_url: str
+) -> tuple[str, ...]:
+    page_codes = set(detail_identity_codes_from_url(final_url))
+    return tuple(
+        path
+        for path, obj in objects
+        if isinstance(obj, dict)
+        and any(
+            isinstance(obj.get(key), list) and obj[key]
+            for key in variant_policy.VARIANT_CHILD_COLLECTION_KEYS
+        )
+        and _nested_product_url_conflicts(obj, final_url, page_codes)
+    )
+
+
+def _nested_product_url_conflicts(
+    obj: dict, final_url: str, page_codes: set[str]
+) -> bool:
+    page = urlparse(final_url)
+    page_host = str(page.hostname or "").casefold()
+    sources = (obj, *(value for value in obj.values() if isinstance(value, dict)))
+    for source in sources:
+        for key in _ROOT_URL_KEYS:
+            candidate = source.get(key)
+            if not isinstance(candidate, str):
+                continue
+            candidate_host = str(urlparse(candidate).hostname or page_host).casefold()
+            if candidate_host != page_host:
+                continue
+            candidate_path = urlparse(candidate).path.rstrip("/")
+            if candidate_path and page.path.rstrip("/").startswith(
+                candidate_path + "/"
+            ):
+                continue
+            if detail_urls_conflict(final_url, candidate):
+                return True
+            candidate_codes = set(detail_identity_codes_from_url(candidate))
+            if (
+                page_codes
+                and candidate_codes
+                and page_codes.isdisjoint(candidate_codes)
+            ):
+                return True
+    return False
 
 
 def path_is_nested_sibling_product(

@@ -14,15 +14,6 @@ from __future__ import annotations
 
 from typing import Final
 
-# --- Capability-request escalation -----------------------------------------
-
-# Upper bound on how many acquisition rungs a single ``CapabilityRequest`` may
-# ask the acquisition ladder to climb. The contract clamps ``max_attempts`` to
-# this value. Kept small: one initial attempt plus one escalation is enough to
-# cover the http-shell -> rendered-html -> network-payload progression without
-# unbounded re-fetch loops.
-CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP: Final[int] = 2
-
 # --- Listing record-cardinality floor --------------------------------------
 
 # Minimum number of repeated same-shape records a listing surface must yield
@@ -271,7 +262,6 @@ CASCADE_LISTING_ONCLICK_URL_PATTERN: Final[str] = (
 )
 
 __all__ = [
-    "CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP",
     "CASCADE_DOM_LISTING_CONFIDENCE",
     "CASCADE_LEARN_ONCE_ATTEMPT_TTL_SECONDS",
     "CASCADE_LEARN_ONCE_CLAIM_LOCK_TIMEOUT_MS",

@@ -350,6 +350,12 @@ DETAIL_SCHEMA_GENDER_VALUES = {
     "boys": "Boys",
     "girls": "Girls",
 }
+DETAIL_PUBLIC_GENDER_VALUES = frozenset(DETAIL_SCHEMA_GENDER_VALUES.values())
+DETAIL_UNRESOLVED_TEMPLATE_PATTERN = (
+    r"\{\{[^{}]+\}\}|\{%[^%]+%\}|\$\{[^{}]+\}|<%=?[^%]+%>"
+)
+DETAIL_SENTINEL_TOKEN_PATTERN = r"\bn\s*/\s*a\b|[a-z0-9]+"
+DETAIL_SENTINEL_VALUE_TOKENS = frozenset({"n/a", "na", "none", "null", "undefined"})
 DETAIL_SCHEMA_CONDITION_VALUES = {
     "new": "New",
     "refurbished": "Refurbished",

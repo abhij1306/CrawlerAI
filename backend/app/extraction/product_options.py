@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
+import re
 from typing import Any, Protocol, Self, TypeVar
 
 from app.core.config.extraction_rules import (
@@ -12,7 +13,7 @@ from app.core.config.extraction_rules import (
     VARIANT_DOM_SELECTION_VALUE_METADATA_KEY,
     is_rejected_option_value,
 )
-from app.core.records.url_identity import selected_variant_axes
+from app.core.records.url_identity import variant_selection_intents
 from app.extraction.contracts import (
     CaptureBundle,
     Evidence,
@@ -97,10 +98,19 @@ def apply_dom_variant_selection(
     variants: tuple[VariantT, ...],
     product_by_subject: dict[str, str],
 ) -> tuple[VariantT, ...]:
+    requested = _apply_request_selection(bundle, evidence, variants, product_by_subject)
+    if requested is not None:
+        if sum(row.selected for row in requested) == 1:
+            return requested
+        variants = requested
     selected = _unambiguous_selected_signals(evidence, variants, product_by_subject)
     if not selected:
         return variants
-    url_axes = selected_variant_axes(bundle.requested_url)
+    url_axes = {
+        intent.axis: intent.raw_value
+        for intent in variant_selection_intents(bundle.requested_url)
+        if intent.axis and intent.identity_strength == "axis"
+    }
     updates: dict[str, dict[str, object]] = {}
     for product_id, dom_signals in selected.items():
         updates.update(
@@ -112,6 +122,74 @@ def apply_dom_variant_selection(
         else variant
         for variant in variants
     )
+
+
+def _apply_request_selection(
+    bundle: CaptureBundle,
+    evidence: tuple[Evidence, ...],
+    variants: tuple[VariantT, ...],
+    product_by_subject: dict[str, str],
+) -> tuple[VariantT, ...] | None:
+    intents = variant_selection_intents(bundle.requested_url)
+    owner = _request_product_owner(evidence, product_by_subject)
+    if not intents or owner is None:
+        return None
+    candidates = tuple(row for row in variants if row.product_entity_id == owner)
+    matches = [
+        row
+        for row in candidates
+        if all(
+            _intent_matches_variant(
+                row, intent.axis, intent.raw_value, intent.identity_strength
+            )
+            for intent in intents
+        )
+    ]
+    if not matches or (
+        len(matches) > 1
+        and any(intent.identity_strength != "axis" for intent in intents)
+    ):
+        return None
+    selected_ids = {row.entity_id for row in matches}
+    return tuple(
+        row.model_copy(update={"selected": row.entity_id in selected_ids})
+        if row.product_entity_id == owner
+        else row
+        for row in variants
+    )
+
+
+def _request_product_owner(
+    evidence: tuple[Evidence, ...], product_by_subject: dict[str, str]
+) -> str | None:
+    owners = {
+        product_by_subject[row.subject_id]
+        for row in evidence
+        if row.collector_id == "url"
+        and row.fact_type == "product.url"
+        and row.subject_id in product_by_subject
+    }
+    return next(iter(owners)) if len(owners) == 1 else None
+
+
+def _intent_matches_variant(
+    variant: VariantSelectionCandidate, axis: str | None, value: str, strength: str
+) -> bool:
+    expected = _normalized(value)
+    if strength == "opaque" and axis in variant.option_values:
+        if any(
+            expected in re.split(r"[^a-z0-9]+", key.removeprefix("sku:").casefold())
+            for key in variant.identity_keys
+            if key.startswith("sku:")
+        ):
+            return True
+    if strength != "axis" or axis is None or axis == "sku":
+        return any(
+            _normalized(key.split(":", 1)[1]) == expected
+            for key in variant.identity_keys
+            if key.startswith(("id:", "sku:"))
+        )
+    return _normalized(variant.option_values.get(axis, "")) == expected
 
 
 def is_dom_selection_signal(row: Evidence) -> bool:
@@ -196,7 +274,7 @@ def _product_selection_updates(
     match_ids = {
         variant.entity_id for variant in candidates if _variant_matches(variant, axes)
     }
-    if not match_ids:
+    if len(match_ids) != 1:
         return {}
     signal_rows = tuple(
         row for signal in active_signals.values() for row in signal.rows

@@ -67,6 +67,50 @@ def test_js_state_explicit_variant_rows_are_materialized() -> None:
     ]
 
 
+def test_generic_sku_base_identity_binds_fragment_to_existing_child() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Layered Fragrance</h1></main>",
+        "https://shop.test/products/layered-fragrance#/sku/189322",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Layered Fragrance",
+                    "variants": [
+                        {"sku_base_id": 189321, "sku": "FR-30", "size": "30 ml"},
+                        {"sku_base_id": 189322, "sku": "FR-50", "size": "50 ml"},
+                    ],
+                }
+            }
+        },
+        requested_fields=("title", "size", "variants"),
+    )
+    assert result.records[0]["size"] == "50 ml"
+    assert {row["sku"] for row in result.records[0]["variants"]} == {"FR-30", "FR-50"}
+
+
+def test_product_id_does_not_become_variant_identity() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Layered Fragrance</h1></main>",
+        "https://shop.test/products/layered-fragrance#/sku/189322",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Layered Fragrance",
+                    "productId": 189322,
+                    "variants": [{"sku": "FR-30", "size": "30 ml"}],
+                }
+            }
+        },
+        requested_fields=("title", "size", "variants"),
+    )
+    assert not any(
+        row.fact_type == "variant.id" and str(row.value) == "189322"
+        for row in result.evidence
+    )
+
+
 def test_selected_style_family_uses_only_agreed_member_price() -> None:
     artifacts = {
         "js_state_objects": {

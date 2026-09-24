@@ -4,6 +4,21 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Protocol
 
+from app.core.config.variant_policy import VARIANT_ID_KEYS
+from app.core.records.structured_variant_state import scalar_value
+
+
+def structured_variant_identity(values: Mapping[str, object]) -> str | None:
+    normalized = {
+        re.sub(r"[^a-z0-9]", "", str(key).casefold()): scalar_value(value)
+        for key, value in values.items()
+    }
+    for key in VARIANT_ID_KEYS:
+        value = normalized.get(key)
+        if value not in (None, "", [], {}):
+            return str(value).strip()
+    return None
+
 
 class VariantHint(Protocol):
     @property
@@ -104,6 +119,8 @@ def variant_identity_keys(rows: Iterable[VariantEvidence]) -> set[str]:
 
 def variant_identity_keys_overlap(left: set[str], right: set[str]) -> bool:
     option_conflict = _variant_option_keys_conflict(left, right)
+    if option_conflict:
+        return False
     for prefix in ("id:", "gtin:"):
         left_values = _prefixed_values(left, prefix)
         right_values = _prefixed_values(right, prefix)
@@ -113,8 +130,6 @@ def variant_identity_keys_overlap(left: set[str], right: set[str]) -> bool:
     right_skus = _prefixed_values(right, "sku:")
     if left_skus & right_skus and not option_conflict:
         return True
-    if option_conflict:
-        return False
     # Identifier roles stay distinct facts. Their exact values can still identify
     # one variant across sources (for example, DOM data-sku == structured id).
     if _variant_identifier_values(left) & _variant_identifier_values(right):

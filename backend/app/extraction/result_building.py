@@ -7,11 +7,9 @@ from typing import Any
 
 from app.core.config.extraction_rules._detail import (
     DETAIL_TERMINAL_SOURCE_UNAVAILABLE_OUTCOMES,
-    DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
 )
 from app.core.config import field_mappings
-from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.records.field_policy import canonical_fields_for_surface
@@ -29,14 +27,13 @@ from app.extraction.contracts import (
     PublicationProjection,
     PublicRecord,
     ResolutionResult,
-    RetryRequest,
     SelectedFact,
     TargetSelection,
 )
 from app.extraction.entities import EntitySet
 from app.extraction.field_states import FieldStateName, field_state
 from app.core.shared.ids import stable_id
-from app.extraction.surfaces import Surface, SurfaceSpec
+from app.extraction.surfaces import SurfaceSpec
 
 
 def decisions(resolution: Any) -> tuple[Decision, ...]:
@@ -680,177 +677,6 @@ def data_integrity_status(
     if verdict in {"invalid", "error"}:
         return "defect"
     return "unknown"
-
-
-def retry_request(
-    verdict: str,
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-    evidence: tuple[Evidence, ...] = (),
-) -> RetryRequest | None:
-    job_retry = _job_retry_request(verdict, records, request, evidence)
-    if job_retry is not None:
-        return job_retry
-    shell_detected = any(is_shell_record(record) for record in records) or any(
-        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
-    )
-    if verdict == "error" and shell_detected:
-        return RetryRequest(
-            required=not request.capture.browser_attempted,
-            reason="http_shell",
-            required_artifacts=("rendered_html",),
-        )
-    if _empty_listing_needs_browser(verdict, records, request):
-        return RetryRequest(
-            required=True,
-            reason="empty_extraction",
-            required_artifacts=("rendered_html",),
-        )
-    if _detail_variants_need_browser(records, request, evidence):
-        return RetryRequest(
-            required=True,
-            reason="explicit_variants_missing",
-            required_artifacts=("rendered_html", "network_payloads"),
-        )
-    if request.surface.value == "ecommerce_detail":
-        return _commerce_dynamic_content_retry(verdict, records, request)
-    return None
-
-
-def _empty_listing_needs_browser(
-    verdict: str,
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-) -> bool:
-    return bool(
-        request.surface.value == "ecommerce_listing"
-        and verdict == "empty"
-        and not records
-        and not request.capture.browser_attempted
-    )
-
-
-def _detail_variants_need_browser(
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-    evidence: tuple[Evidence, ...],
-) -> bool:
-    if request.surface.value != "ecommerce_detail" or request.capture.browser_attempted:
-        return False
-    if _explicit_variant_dom_cues(evidence) and _variant_controls_incomplete(
-        records, evidence
-    ):
-        return True
-    return "variants" in request.requested_fields and _variants_missing_or_incomplete(
-        records
-    )
-
-
-def _commerce_dynamic_content_retry(
-    verdict: str,
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-) -> RetryRequest | None:
-    requested_core_fields = {
-        "image_url" if field == "image" else field
-        for field in request.requested_fields
-        if field in field_mappings.ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS
-    }
-    if (
-        verdict in {"error", "partial", "review"}
-        and not request.capture.browser_attempted
-        and (not request.requested_fields or requested_core_fields or not records)
-    ):
-        record = records[0] if records else PublicRecord()
-        target_core_fields = requested_core_fields or set(
-            field_mappings.SURFACE_BROWSER_RETRY_TARGETS.get("ecommerce_detail", ())
-        )
-        missing_core_fields = tuple(
-            field
-            for field in target_core_fields
-            if record.get(field) in (None, "", [], {}, ())
-        )
-        if missing_core_fields or not records:
-            return RetryRequest(
-                required=True,
-                reason="dynamic_content_missing",
-                required_artifacts=("rendered_html", "network_payloads"),
-            )
-    return None
-
-
-_JOB_SURFACES = frozenset({Surface.JOB_DETAIL.value, Surface.JOB_LISTING.value})
-
-
-def _job_retry_request(
-    verdict: str,
-    records: tuple[PublicRecord, ...],
-    request: ExtractionRequest,
-    evidence: tuple[Evidence, ...],
-) -> RetryRequest | None:
-    """Surface-agnostic escalation for job surfaces.
-
-    An empty or shell job page requests the rendered document; when the
-    structured JSON-LD signal is also missing, network payloads are added so the
-    ladder climbs the network floor. ``max_attempts`` is the configured cap; a
-    request is still emitted after a browser attempt (retry/stage.py stops it).
-    """
-    if request.surface.value not in _JOB_SURFACES:
-        return None
-    shell = any(is_shell_record(record) for record in records) or any(
-        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
-    )
-    if not ((verdict in {"empty", "error"} and not records) or shell):
-        return None
-    required_artifacts: tuple[str, ...] = ("rendered_html",)
-    if not any(row.collector_id == "job_jsonld" for row in evidence):
-        required_artifacts = ("rendered_html", "network_payloads")
-    return RetryRequest(
-        required=True,
-        reason="http_shell" if shell else "empty_extraction",
-        required_artifacts=required_artifacts,
-        max_attempts=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP,
-    )
-
-
-def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
-    return any(
-        row.collector_id == "dom" and row.fact_type.startswith("option.")
-        for row in evidence
-    )
-
-
-def _variants_missing_or_incomplete(records: tuple[PublicRecord, ...]) -> bool:
-    if not records:
-        return True
-    variants = tuple(records[0].get("variants") or ())
-    if not variants:
-        return True
-    return any(
-        not isinstance(variant, dict)
-        or all(
-            variant.get(field) in (None, "", [], {}, ())
-            for field in ("variant_id", "sku", "size", "color", "style")
-        )
-        for variant in variants
-    )
-
-
-def _variant_controls_incomplete(
-    records: tuple[PublicRecord, ...], evidence: tuple[Evidence, ...]
-) -> bool:
-    variants = tuple(records[0].get("variants") or ()) if records else ()
-    axes = {
-        row.fact_type.removeprefix("option.")
-        for row in evidence
-        if row.collector_id == "dom" and row.fact_type.startswith("option.")
-    }
-    if not variants:
-        return True
-    return any(
-        any(variant.get(axis) in (None, "", [], {}, ()) for variant in variants)
-        for axis in axes
-    )
 
 
 def is_shell_record(record: PublicRecord | None) -> bool:

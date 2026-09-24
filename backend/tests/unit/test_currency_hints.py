@@ -13,6 +13,12 @@ def test_locale_path_segment_infers_currency() -> None:
     assert currency_hint_from_page_url("https://shop.test/fr-fr/p/item") == "EUR"
     # Underscore locale separators also work.
     assert currency_hint_from_page_url("https://shop.test/en_us/p/item") == "USD"
+    assert currency_hint_from_page_url("https://shop.test/es-ar/p/item") == "ARS"
+
+
+def test_language_only_arabic_path_defers_to_host_currency() -> None:
+    assert currency_hint_from_page_url("https://shop.ae/ar/products/item") == "AED"
+    assert currency_hint_from_page_url("https://shop.test/ar/products/item") is None
 
 
 def test_leading_country_path_segment_infers_currency() -> None:
@@ -39,6 +45,19 @@ def test_generic_gtld_without_locale_infers_nothing() -> None:
     assert currency_hint_from_page_url("https://shop.com/products/item") is None
     assert currency_hint_from_page_url("https://brand.co/products/item") is None
     assert currency_hint_from_page_url("https://example.io/products/item") is None
+
+
+def test_country_subdomain_on_generic_host_infers_currency() -> None:
+    assert (
+        currency_hint_from_page_url("https://ar.brand.test.com/products/item") == "ARS"
+    )
+    assert currency_hint_from_page_url("https://ca.brand.com/products/item") == "CAD"
+    assert (
+        currency_hint_from_page_url("https://www.ar.brand.com/products/item") == "ARS"
+    )
+    assert currency_hint_from_page_url("https://www.ar.brand.de/products/item") == "EUR"
+    assert currency_hint_from_page_url("https://www.ar.com/products/item") is None
+    assert currency_hint_from_page_url("https://brand.com/products/item") is None
 
 
 def test_empty_or_invalid_url_is_safe() -> None:

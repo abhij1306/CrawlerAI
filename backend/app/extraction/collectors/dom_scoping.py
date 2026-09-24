@@ -8,6 +8,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS,
     DETAIL_DOM_PRODUCT_ROOT_SELECTORS,
     DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
+    DETAIL_TEXT_SCOPE_EXCLUDE_TAGS,
     DETAIL_TEXT_SCOPE_OVERLAY_TOKENS,
     DETAIL_TEXT_SCOPE_PRIORITY_TOKENS,
 )
@@ -51,6 +52,16 @@ def node_within_roots(node: HtmlNode, root_ids: set[int]) -> bool:
 
 def node_context_excluded(node: HtmlNode) -> bool:
     context_nodes = tuple(_component_ancestors(node))
+    if any(
+        current.tag() in DETAIL_TEXT_SCOPE_EXCLUDE_TAGS
+        and not any(
+            token in str(current.attribute(attribute) or "").casefold()
+            for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
+            for token in DETAIL_TEXT_SCOPE_PRIORITY_TOKENS
+        )
+        for current in context_nodes
+    ):
+        return True
     context = " ".join(
         str(current.attribute(attribute) or "").casefold()
         for current in context_nodes

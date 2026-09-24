@@ -16,6 +16,10 @@ from app.core.config.extraction_rules import (
     DETAIL_SCHEMA_CONDITION_VALUES,
     DETAIL_SCHEMA_ENUM_SUFFIXES,
     DETAIL_SCHEMA_GENDER_VALUES,
+    DETAIL_PUBLIC_GENDER_VALUES,
+    DETAIL_SENTINEL_VALUE_TOKENS,
+    DETAIL_SENTINEL_TOKEN_PATTERN,
+    DETAIL_UNRESOLVED_TEMPLATE_PATTERN,
     DETAIL_URL_GENDER_MARKERS,
 )
 from app.core.shared.field_coerce_text import strip_identifier_label_prefix
@@ -32,7 +36,21 @@ _SCHEMA_ENUM_VOCABULARIES = {
 def normalize_product_attribute_value(
     fact_type: str, value: str, flags: set[str]
 ) -> str:
-    return _schema_enum_value(fact_type, _identifier_value(fact_type, value, flags))
+    value = _schema_enum_value(fact_type, _identifier_value(fact_type, value, flags))
+    if re.search(DETAIL_UNRESOLVED_TEMPLATE_PATTERN, value):
+        flags.add("unresolved_template")
+    tokens = {
+        "".join(token.split())
+        for token in re.findall(DETAIL_SENTINEL_TOKEN_PATTERN, value.casefold())
+    }
+    if tokens and tokens <= DETAIL_SENTINEL_VALUE_TOKENS:
+        flags.add("placeholder_text")
+    if (
+        fact_type == field_mappings.PRODUCT_GENDER_FACT_TYPE
+        and value not in DETAIL_PUBLIC_GENDER_VALUES
+    ):
+        flags.add("invalid_gender")
+    return value
 
 
 def _identifier_value(fact_type: str, value: str, flags: set[str]) -> str:

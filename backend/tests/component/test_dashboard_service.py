@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import runpy
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,7 @@ from app.crawl.dashboard_service import (
     reset_domain_memory,
     session_transaction,
 )
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 DomainMemory = ExtractionTemplate
@@ -158,6 +159,16 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.crawl import dashboard_service
+
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "20260703_0001_greenfield_schema.py"
+    )
+    migration = runpy.run_path(str(migration_path))
+    await db_session.execute(text(migration["_RUN_EVENTS_APPEND_ONLY_FUNCTION_SQL"]))
+    await db_session.execute(text(migration["_RUN_EVENTS_APPEND_ONLY_TRIGGER_SQL"]))
 
     artifacts_dir = workspace_tmp_path / "artifacts"
     cookies_dir = workspace_tmp_path / "cookies"

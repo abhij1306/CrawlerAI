@@ -504,7 +504,7 @@ async def test_fetch_page_http_only_returns_retryable_status_without_hidden_retr
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chrome(
+async def test_fetch_page_does_not_retry_patchright_http2_error_with_real_chrome(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await crawl_fetch_runtime.reset_fetch_runtime_state()
@@ -555,24 +555,18 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
     )
 
     try:
-        result = await crawl_fetch_runtime.fetch_page(
-            crawl_fetch_runtime.FetchPageCall(
-                url,
-                surface="ecommerce_detail",
-                on_event=_on_event,
+        with pytest.raises(PlaywrightError, match="ERR_HTTP2_PROTOCOL_ERROR"):
+            await crawl_fetch_runtime.fetch_page(
+                crawl_fetch_runtime.FetchPageCall(
+                    url,
+                    surface="ecommerce_detail",
+                    on_event=_on_event,
+                )
             )
-        )
     finally:
         await crawl_fetch_runtime.reset_fetch_runtime_state()
 
-    assert result.method == "browser"
-    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
-    assert browser_engines == ["patchright", "real_chrome"]
-    assert events[-1] == AcquisitionEvent.browser_escalated(
-        status_code=0,
-        method="patchright",
-        reason_code="http2_protocol_error",
-    )
+    assert browser_engines == ["patchright"]
     http_failures = [
         event for event in events if event.kind is AcquisitionEventKind.HTTP_FAILED
     ]

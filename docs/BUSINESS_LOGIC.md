@@ -22,6 +22,7 @@ belong in `INVARIANTS.md`.
 - CrawlerAI starts with the configured deterministic acquisition policy and escalates only when observed content, block/shell evidence, learned policy, and remaining budget justify it.
 - Explicit fetch mode and robots policy are authoritative. The shared HTTP waterfall is bounded; traversal is separate from render escalation.
 - Browser use improves observation. It does not assign product fields.
+- Missing extracted fields or variants do not trigger a second browser request. A blocked headless browser may fall back to real Chrome inside acquisition.
 - Traversal runs only when the user enabled it. Listing discovery and detail expansion stay bounded and visible in diagnostics.
 - A usable rendered page wins over vendor-marker noise. Genuine challenge/error shells remain failures or partial observations.
 - Screenshots, network capture, and other diagnostic artifacts follow explicit run controls.
@@ -109,6 +110,7 @@ belong in `INVARIANTS.md`.
   derivation is allowed only when no valid explicit product brand exists and
   independent source signals identify one unambiguously; a derived brand never
   replaces an explicit one.
+- A title and URL can support a manufacturer hint over page identity only when separate product evidence corroborates that hint. A seller page title alone cannot replace a product brand.
 - `rating` publishes as a decimal and `review_count` as an integer, the types the
   canonical record declares. The conversion from source text is an authorized
   canonicalization carrying its own lineage. `price` stays a string, where
@@ -118,6 +120,7 @@ belong in `INVARIANTS.md`.
   control character inside a quoted value; other malformed syntax fails closed.
   When price evidence lacks currency, a leading country/locale URL segment may
   supply the currency without changing the source price.
+- A country locale in a generic host subdomain may resolve an ambiguous dollar sign for its offer. An explicit currency code on that offer has priority.
 - A direct visible `coming soon` product-offer state may refine unanimous
   variant `out_of_stock` evidence because it is the more precise non-sellable
   state. Other source conflicts remain unresolved or preserve selected-state

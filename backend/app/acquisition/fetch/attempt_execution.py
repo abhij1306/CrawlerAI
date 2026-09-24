@@ -17,7 +17,6 @@ from app.acquisition.fetch.browser_policy import (
     attach_exception_browser_diagnostics,
     host_policy_snapshot,
 )
-from app.acquisition.events import AcquisitionEvent
 from app.acquisition.fetch.types import AttemptOutcomeState as AttemptOutcomeState
 from app.acquisition.fetch.types import AttemptRunner
 from app.acquisition.runtime import PageFetchResult
@@ -244,21 +243,6 @@ async def record_attempt_exception(
         engine,
         exc_info=True,
     )
-    if runner.deps.should_retry_patchright_with_real_chrome(
-        context=runner.context,
-        exc=exc,
-        browser_engine=engine,
-        engine_attempts=engine_attempts,
-    ):
-        engine_attempts.append("real_chrome")
-        await runner.deps.emit_fetch_event(
-            runner.context.on_event,
-            AcquisitionEvent.browser_escalated(
-                status_code=0,
-                method="patchright",
-                reason_code="http2_protocol_error",
-            ),
-        )
     if attempt_host_policy.should_mark_vendor_timeout(
         runner, exc, engine_index, engine_attempts
     ):

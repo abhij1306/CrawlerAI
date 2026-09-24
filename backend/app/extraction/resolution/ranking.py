@@ -109,6 +109,9 @@ def rank(ev: Evidence) -> tuple[object, ...]:
     if ev.fact_type == "product.description":
         boundary_excerpt = int("description_hard_boundary" in ev.flags)
         return (quality, boundary_excerpt, *default)
+    if ev.fact_type == field_mappings.PRODUCT_MATERIAL_FACT_TYPE:
+        weak_metadata = int(ev.metadata.get("material_source") == "metadata")
+        return (quality, weak_metadata, *default)
     if ev.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
         inferred_from_symbol = int(
             str(ev.metadata.get("derived_by") or "") == "currency_from_price_symbol"

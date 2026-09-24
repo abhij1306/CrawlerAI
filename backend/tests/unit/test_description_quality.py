@@ -5,18 +5,21 @@ import json
 import pytest
 
 from app.extraction import Surface, extract
+from app.extraction.collectors.dom_scoping import node_context_excluded
+from app.extraction.documents import HtmlDocument
 from app.extraction.replay import fixture_request_from_inputs
 
 pytestmark = pytest.mark.unit
 
 
-def _extract(html: str):
+def _extract(html: str, *, artifacts: dict[str, object] | None = None):
     return extract(
         fixture_request_from_inputs(
             Surface.ECOMMERCE_DETAIL,
             html,
             "https://shop.test/products/complete-description",
             max_records=1,
+            artifacts=artifacts,
         )
     )
 
@@ -67,6 +70,90 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     result = _extract(_product_html(description=full, meta_description=excerpt))
 
     assert result.records[0]["description"] == full
+
+
+def test_bare_brand_meta_description_cannot_replace_product_prose() -> None:
+    prose = (
+        "Iconic embroidered symbols add a distinctive detail to the canvas high top."
+    )
+    html = (
+        '<meta name="description" content="Converse">'
+        '<main class="product-detail"><h1>Retro Embroidery High Top</h1>'
+        f'<p itemprop="description">{prose}</p></main>'
+    )
+    result = _extract(html)
+    assert result.records[0]["description"] == prose
+
+
+def test_long_single_token_description_is_not_a_bare_label() -> None:
+    description = "DetailedProductConstructionAndMaterials" * 3
+    result = _extract(_product_html(description=description))
+    assert result.records[0]["description"] == description
+
+
+def test_product_detail_aside_scope_is_allowed_but_plain_aside_is_excluded() -> None:
+    doc = HtmlDocument(
+        "scope",
+        "<main><aside class='product-detail'><p id='details'>Details</p></aside>"
+        "<aside class='sidebar'><p id='sidebar'>Sidebar</p></aside></main>",
+    )
+    details = doc.css_first("#details")
+    sidebar = doc.css_first("#sidebar")
+    assert details is not None and sidebar is not None
+    assert not node_context_excluded(details)
+    assert node_context_excluded(sidebar)
+
+
+def test_consent_component_does_not_compete_with_product_description() -> None:
+    product = "Soft leather uppers and a contoured footbed support all-day wear."
+    consent = "To view the video, accept marketing cookies in your privacy settings."
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        f"<p class='cookie-description'>{consent}</p>"
+        f"<p class='product-description'>{product}</p></main>"
+    )
+    result = _extract(html)
+    assert result.records[0]["description"] == product
+    assert not any(
+        row.value == consent
+        for row in result.evidence
+        if row.fact_type == "product.description"
+    )
+
+
+def test_consent_only_page_has_no_product_description() -> None:
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        "<p class='consent-description'>Accept analytics cookies to play this video.</p>"
+        "</main>"
+    )
+    assert _extract(html).records[0].get("description") is None
+
+
+def test_saved_item_ui_does_not_publish_as_product_description() -> None:
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        "<div class='saveditem-content-description'>Save this item to return to your choices later.</div>"
+        "</main>"
+    )
+    assert _extract(html).records[0].get("description") is None
+
+
+def test_nested_image_description_does_not_replace_product_prose() -> None:
+    prose = "A lined canvas jacket with a generous hood and reinforced seams."
+    result = _extract(
+        "<main><h1>Complete Description Product</h1></main>",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Complete Description Product",
+                    "description": prose,
+                    "image": {"description": "Complete Description Product"},
+                }
+            }
+        },
+    )
+    assert result.records[0]["description"] == prose
 
 
 def test_clean_product_description_suppresses_candidate_only_promotional_finding() -> (

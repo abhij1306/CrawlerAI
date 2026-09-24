@@ -74,7 +74,6 @@ from app.extraction.result_building import (
     field_state,
     is_shell_record,
     metrics,
-    retry_request,
 )
 from app.extraction.surfaces import Surface
 from app.extraction.validation import validate_selected_contract_fields
@@ -216,13 +215,11 @@ def _build_result(
         resolution.field_states,
         transport_outcome=transport_outcome,
     )
-    retry = retry_request(verdict, publication.records, request, harvest.evidence)
     review_required = _review_required(
         request,
         verdict=verdict,
         findings=findings,
         field_states=field_states,
-        retry=retry,
     )
     extraction_metrics = metrics(
         harvest.evidence,
@@ -255,7 +252,6 @@ def _build_result(
         data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
         verdict=verdict,
-        retry_request=retry,
         metrics=extraction_metrics,
         collector_outcomes=harvest.collector_outcomes,
         stage_outcomes=stage_outcomes,
@@ -778,7 +774,6 @@ def _blocked_result(
         data_integrity="blocked",
         records=(),
         verdict="blocked",
-        retry_request=None,
         metrics=metrics(
             evidence,
             EntityGraph(),
@@ -806,7 +801,6 @@ def _blocked_result(
                 verdict="blocked",
                 findings=(finding,),
                 field_states=states,
-                retry=None,
             ),
         ),
     )
@@ -1013,12 +1007,9 @@ def _review_required(
     verdict: Verdict,
     findings: tuple[Finding, ...],
     field_states,
-    retry,
 ) -> bool:
     if verdict == "review":
         return True
-    if retry is not None and retry.required:
-        return False
     if any(
         row.rule_id in DETAIL_REVIEW_RISK_FINDING_RULE_IDS and row.scope != "candidate"
         for row in findings

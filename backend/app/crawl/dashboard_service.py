@@ -289,7 +289,6 @@ async def _reset_crawl_data_tables(session: AsyncSession) -> None:
     await _reset_bucket_tables(
         session,
         [
-            RunEvent,
             CrawlRecord,
             CrawlUrlResult,
             LLMCostLog,

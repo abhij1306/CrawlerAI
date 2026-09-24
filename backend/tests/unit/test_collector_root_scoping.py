@@ -7,6 +7,7 @@ from app.extraction.contracts import CaptureBundle, RequestContext
 
 from app.core.records.js_state_scope import (
     RootSelection,
+    conflicting_product_roots,
     path_is_within_selected_root,
     path_product_identity_conflicts,
     root_admits_path,
@@ -15,6 +16,38 @@ from app.core.records.js_state_scope import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_conflicting_style_excludes_entire_nested_size_matrix() -> None:
+    page = "https://shop.test/t/air-force-1/CW2288-111"
+    objects = (
+        (
+            "/products/0",
+            {
+                "pdpUrl": {
+                    "url": page,
+                    "canonicalUrl": "https://shop.test/t/air-force-1",
+                },
+                "sizes": [{}],
+            },
+        ),
+        ("/products/0/sizes/0", {"size": "6"}),
+        (
+            "/products/1",
+            {
+                "pdpUrl": {
+                    "url": "https://shop.test/t/air-force-1/CT2302-100",
+                    "canonicalUrl": "https://shop.test/t/air-force-1",
+                },
+                "sizes": [{}],
+            },
+        ),
+        ("/products/1/sizes/0", {"size": "6"}),
+    )
+    excluded = conflicting_product_roots(objects, page)
+    assert excluded == ("/products/1",)
+    assert path_is_within_selected_root("/products/1/sizes/0", excluded)
+    assert not path_is_within_selected_root("/products/0/sizes/0", excluded)
 
 
 def test_exact_url_selects_matching_root() -> None:

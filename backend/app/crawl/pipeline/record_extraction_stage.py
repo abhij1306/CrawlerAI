@@ -5,7 +5,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
+from app.acquisition.acquirer import PageAcquisitionResult
 from app.connectors.adapter_registry import run_adapter
 from app.connectors.platform_adapter import AdapterResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
@@ -184,35 +184,6 @@ async def _run_adapter_for_capture(
     return None
 
 
-def _browser_retry_pending(
-    context: _URLProcessingContext,
-    acquisition_result: PageAcquisitionResult,
-    result: ExtractionResult,
-) -> bool:
-    """True when a browser retry rung will still run, so learning is deferred.
-
-    Learning fires only after the FINAL browser rung, so the defer decision is
-    driven by the REMAINING RUNG BUDGET: after rung 1 a retry can still be
-    required (``browser_escalation_count < max_attempts``) while
-    ``browser_attempted`` is already true, so a bare browser-attempted check
-    would latch learning too early — before the multi-rung ladder is exhausted.
-    The initial-browser short-circuit is preserved: with nothing escalated yet
-    (``browser_escalation_count == 0``) but the first pass already browser-fetched,
-    ``retry/stage.py`` short-circuits and climbs NO rung, so learning may fire now
-    (a pure budget check would defer forever for those initial-browser pages).
-    """
-
-    retry_request = result.retry_request
-    if retry_request is None or not retry_request.required:
-        return False
-    if (
-        context.browser_escalation_count == 0
-        and PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
-    ):
-        return False
-    return context.browser_escalation_count < retry_request.max_attempts
-
-
 async def _maybe_learn_once(
     context: _URLProcessingContext,
     *,
@@ -229,14 +200,8 @@ async def _maybe_learn_once(
 
     from app.crawl.pipeline.learn_once import learn_recipe_after_extraction
 
-    # Finding 5: at most one learn attempt per URL. The same context threads
-    # through the browser retry, so short-circuit once learning has been attempted.
+    # At most one learn attempt per URL.
     if context.learn_once_attempted:
-        return
-    # Learn only after the FINAL attempt: if a browser retry is still pending, the
-    # post-browser pass is the single learn attempt (and, with finding 6, the
-    # HTTP-only first pass would not call the model anyway).
-    if _browser_retry_pending(context, acquisition_result, result):
         return
     context.learn_once_attempted = True
 

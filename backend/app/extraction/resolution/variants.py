@@ -52,6 +52,7 @@ from app.extraction.resolution.lineage import (
     _derived_lineage,
     _put_decision_value,
     _resolved_product_url,
+    _resolved_value_and_lineage,
 )
 from app.extraction.resolution.offers import _offer_rank
 
@@ -113,6 +114,37 @@ def _resolve_variants(
         candidates, evidence_by_id
     )
     return tuple((*eligible, *rejected, *optionless_rejected))
+
+
+def _selected_variant_ids(
+    variants: tuple[VariantEntity, ...],
+    *,
+    primary_product_entity_id: str | None,
+    variant_decisions: tuple[VariantDecision, ...],
+    decisions: tuple[Decision, ...],
+    derived_facts: tuple[DerivedFact, ...],
+    evidence_by_id: dict[str, Evidence],
+) -> frozenset[str]:
+    explicit = frozenset(row.entity_id for row in variants if row.selected)
+    if explicit or primary_product_entity_id is None:
+        return explicit
+    product_sku = _resolved_value_and_lineage(
+        primary_product_entity_id,
+        field_mappings.PRODUCT_SKU_FACT_TYPE,
+        decisions,
+        derived_facts,
+        evidence_by_id,
+    )
+    if product_sku is None:
+        return frozenset()
+    matches = tuple(
+        row.variant_entity_id
+        for row in variant_decisions
+        if row.status == "eligible"
+        and str(row.values.get("sku") or "").casefold()
+        == str(product_sku[0]).casefold()
+    )
+    return frozenset(matches) if len(matches) == 1 else frozenset()
 
 
 def _preferred_offer_by_variant(entities: EntitySet) -> dict[str, OfferEntity]:

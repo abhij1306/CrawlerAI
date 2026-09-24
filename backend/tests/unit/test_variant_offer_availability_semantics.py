@@ -8,6 +8,7 @@ import pytest
 from app.core.config.extraction_rules import (
     AVAILABILITY_CANONICAL_ENUM,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
+    VARIANT_DOM_SELECTION_SIGNAL_METADATA_KEY,
     normalize_availability_value,
 )
 from app.core.records.normalizers import normalize_value
@@ -20,7 +21,8 @@ from app.extraction.contracts import (
     RequestContext,
     SourceLocator,
 )
-from app.extraction.entities import build_entities
+from app.extraction.entities import VariantEntity, build_entities
+from app.extraction.product_options import apply_dom_variant_selection
 from app.extraction.validation import validate
 
 pytestmark = pytest.mark.unit
@@ -50,6 +52,127 @@ def _product(bundle: CaptureBundle):
         hint=EntityHint(entity_type="product", url=bundle.final_url),
         subject_id="product-1",
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "selected"),
+    [
+        ("sku=shared", [False, False]),
+        ("attribute_sku=shared", [False, False]),
+        ("preselect=shared", [False, False]),
+        ("sku=missing", [False, False]),
+        ("color=Blue", [True, True]),
+        ("productId=parent", [False, False]),
+        ("productId=parent&preselect=child-1", [False, True]),
+    ],
+)
+def test_request_selection_abstains_on_ambiguous_identity(
+    query: str, selected: list[bool]
+) -> None:
+    bundle = _bundle().model_copy(
+        update={"requested_url": f"https://shop.test/products/item?{query}"}
+    )
+    variants = tuple(
+        VariantEntity(
+            entity_id=f"child-{index}",
+            product_entity_id="parent",
+            identity_key=f"id:child-{index}",
+            identity_keys=(f"id:child-{index}", "sku:shared"),
+            identity_evidence_ids=(),
+            option_values={"color": "Blue"},
+            attribute_evidence={},
+            offer_ids=(),
+            asset_ids=(),
+            selected=False,
+        )
+        for index in range(2)
+    )
+    owner = _product(bundle).model_copy(update={"collector_id": "url"})
+    result = apply_dom_variant_selection(
+        bundle, (owner,), variants, {"product-1": "parent"}
+    )
+    assert [row.selected for row in result] == selected
+
+
+@pytest.mark.parametrize("requested_sku", ["Red", "Blue", "missing"])
+def test_request_selection_precedes_conflicting_dom_even_when_already_selected(
+    requested_sku: str,
+) -> None:
+    bundle = _bundle().model_copy(
+        update={"requested_url": f"https://shop.test/products/item?sku={requested_sku}"}
+    )
+    variants = tuple(
+        VariantEntity(
+            entity_id=color,
+            product_entity_id="parent",
+            identity_key=f"sku:{color}",
+            identity_keys=(f"sku:{color}",),
+            identity_evidence_ids=(),
+            option_values={"color": color},
+            attribute_evidence={},
+            offer_ids=(),
+            asset_ids=(),
+            selected=color == "Red",
+        )
+        for color in ("Red", "Blue")
+    )
+    owner = _product(bundle).model_copy(update={"collector_id": "url"})
+    controls = tuple(
+        evidence(
+            bundle,
+            "html",
+            "dom",
+            fact,
+            value,
+            SourceLocator(kind="css_selector", value="button"),
+            subject_id="control",
+            parent_subject_id="product-1",
+            metadata={VARIANT_DOM_SELECTION_SIGNAL_METADATA_KEY: True},
+        )
+        for fact, value in (
+            ("variant.selected", True),
+            ("variant.option.color", "Blue"),
+        )
+    )
+    result = apply_dom_variant_selection(
+        bundle, (owner, *controls), variants, {"product-1": "parent"}
+    )
+    expected = "Red" if requested_sku == "Red" else "Blue"
+    assert [row.entity_id for row in result if row.selected] == [expected]
+
+
+def test_opaque_axis_codes_bind_only_to_unique_same_product_sku() -> None:
+    bundle = _bundle().model_copy(
+        update={
+            "requested_url": (
+                "https://shop.test/products/item?colorDisplayCode=57&sizeDisplayCode=004"
+            )
+        }
+    )
+    variants = tuple(
+        VariantEntity(
+            entity_id=f"row-{color}-{size}",
+            product_entity_id="parent",
+            identity_key=f"sku:item-{color}-{size}-000",
+            identity_keys=(f"sku:item-{color}-{size}-000",),
+            identity_evidence_ids=(),
+            option_values={"color": name, "size": label},
+            attribute_evidence={},
+            offer_ids=(),
+            asset_ids=(),
+            selected=False,
+        )
+        for color, name, size, label in (
+            ("57", "OLIVE", "004", "M"),
+            ("09", "BLACK", "004", "M"),
+            ("57", "OLIVE", "005", "L"),
+        )
+    )
+    owner = _product(bundle).model_copy(update={"collector_id": "url"})
+    result = apply_dom_variant_selection(
+        bundle, (owner,), variants, {"product-1": "parent"}
+    )
+    assert [row.entity_id for row in result if row.selected] == ["row-57-004"]
 
 
 def test_option_inventory_without_sellable_identity_is_not_variant() -> None:
