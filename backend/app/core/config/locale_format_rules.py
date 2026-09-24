@@ -187,7 +187,12 @@ def _country_currency(country: str) -> str | None:
 
 
 def _currency_from_locale_segments(path_segments: list[str]) -> str | None:
-    if path_segments and (currency := _country_currency(path_segments[0])):
+    # A bare /ar/ path can select Arabic; require an explicit country locale for ARS.
+    if (
+        path_segments
+        and path_segments[0] != "ar"
+        and (currency := _country_currency(path_segments[0]))
+    ):
         return currency
     for segment in path_segments:
         match = _LOCALE_SEGMENT_RE.match(segment)

@@ -13,6 +13,12 @@ def test_locale_path_segment_infers_currency() -> None:
     assert currency_hint_from_page_url("https://shop.test/fr-fr/p/item") == "EUR"
     # Underscore locale separators also work.
     assert currency_hint_from_page_url("https://shop.test/en_us/p/item") == "USD"
+    assert currency_hint_from_page_url("https://shop.test/es-ar/p/item") == "ARS"
+
+
+def test_language_only_arabic_path_defers_to_host_currency() -> None:
+    assert currency_hint_from_page_url("https://shop.ae/ar/products/item") == "AED"
+    assert currency_hint_from_page_url("https://shop.test/ar/products/item") is None
 
 
 def test_leading_country_path_segment_infers_currency() -> None:

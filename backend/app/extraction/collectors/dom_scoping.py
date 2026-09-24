@@ -53,7 +53,13 @@ def node_within_roots(node: HtmlNode, root_ids: set[int]) -> bool:
 def node_context_excluded(node: HtmlNode) -> bool:
     context_nodes = tuple(_component_ancestors(node))
     if any(
-        current.tag() in DETAIL_TEXT_SCOPE_EXCLUDE_TAGS for current in context_nodes
+        current.tag() in DETAIL_TEXT_SCOPE_EXCLUDE_TAGS
+        and not any(
+            token in str(current.attribute(attribute) or "").casefold()
+            for attribute in rules.DETAIL_DOM_IMAGE_SCOPE_ATTRIBUTES
+            for token in DETAIL_TEXT_SCOPE_PRIORITY_TOKENS
+        )
+        for current in context_nodes
     ):
         return True
     context = " ".join(

@@ -5,6 +5,8 @@ import json
 import pytest
 
 from app.extraction import Surface, extract
+from app.extraction.collectors.dom_scoping import node_context_excluded
+from app.extraction.documents import HtmlDocument
 from app.extraction.replay import fixture_request_from_inputs
 
 pytestmark = pytest.mark.unit
@@ -81,6 +83,25 @@ def test_bare_brand_meta_description_cannot_replace_product_prose() -> None:
     )
     result = _extract(html)
     assert result.records[0]["description"] == prose
+
+
+def test_long_single_token_description_is_not_a_bare_label() -> None:
+    description = "DetailedProductConstructionAndMaterials" * 3
+    result = _extract(_product_html(description=description))
+    assert result.records[0]["description"] == description
+
+
+def test_product_detail_aside_scope_is_allowed_but_plain_aside_is_excluded() -> None:
+    doc = HtmlDocument(
+        "scope",
+        "<main><aside class='product-detail'><p id='details'>Details</p></aside>"
+        "<aside class='sidebar'><p id='sidebar'>Sidebar</p></aside></main>",
+    )
+    details = doc.css_first("#details")
+    sidebar = doc.css_first("#sidebar")
+    assert details is not None and sidebar is not None
+    assert not node_context_excluded(details)
+    assert node_context_excluded(sidebar)
 
 
 def test_consent_component_does_not_compete_with_product_description() -> None:
