@@ -50,6 +50,7 @@ Field and identity rules:
 
 - Requested fields plus configured canonical defaults define the contract. Missing fields require deterministic recovery or a visible reason.
 - Candidate admission rejects breadcrumb categories, installment prices, promo values, system IDs/SKUs, structural tokens, placeholder types, related-product variants, sibling products, and non-product guide/glossary text before ranking.
+- Unresolved template expressions, values made solely of sentinel tokens, and audience values outside the public enum are rejected with concrete evidence reasons. Consent, saved-item, navigation, and image descriptions do not become product descriptions.
 - Network/embedded JSON is untrusted until URL, product ID, SKU, or selected-root evidence links it to the requested product.
 - Product-root URL conflict checks inspect the root's own URL, never an arbitrary nested child, breadcrumb, recommendation, or asset URL.
 - A URL-less schema Product may use its sole same-resource Offer URL as target-ownership evidence. Several or cross-resource offer URLs do not authorize the binding.
@@ -66,6 +67,7 @@ Variant rules:
 - Never publish `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, nested `option_values`, or variant `title`.
 - Variant IDs are unique. Do not delete explicit inherited offer fields because they equal parent values.
 - DOM axes without a same-product variant matrix do not authorize a synthesized cross-product. This remains the active Bombas-style extraction gap.
+- Request query, fragment, and path selection binds only to existing same-product variant identities or option values. Unmapped codes stay internal; ambiguous identity matches abstain.
 
 Never:
 

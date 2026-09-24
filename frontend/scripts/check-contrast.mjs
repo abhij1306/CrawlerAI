@@ -163,7 +163,7 @@ const PAIRS = [
 // and no existing border may be strengthened. Drift here is a hard failure.
 const FROZEN_BORDERS = {
   light: { '--border-subtle': '#f0f0f1', '--border': '#e7e7e9', '--border-strong': '#d9d9dc' },
-  dark: { '--border-subtle': '#1c1e24', '--border': '#23262d', '--border-strong': '#2f323b' },
+  dark: { '--border-subtle': '#1f1f1f', '--border': '#272727', '--border-strong': '#333333' },
 };
 
 /* ── Run ──────────────────────────────────────────────────────────────── */

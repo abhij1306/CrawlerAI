@@ -7,6 +7,68 @@ from app.core.config.run_events import RunEventKind
 from tests.unit.extraction_pipeline_test_support import *
 
 
+def test_fragment_identity_binds_only_existing_product_variant() -> None:
+    html = """
+    <script type="application/ld+json">{
+      "@context":"https://schema.org", "@type":"ProductGroup",
+      "name":"Layered Fragrance", "url":"https://shop.test/products/layered-fragrance",
+      "hasVariant":[
+        {"@type":"Product","@id":"100101","sku":"FR-30","size":"30 ml",
+         "offers":{"price":"80","priceCurrency":"USD"}},
+        {"@type":"Product","@id":"100102","sku":"FR-50","size":"50 ml",
+         "offers":{"price":"110","priceCurrency":"USD"}}
+      ]
+    }</script>
+    """
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/layered-fragrance#/sku/100102",
+    )
+    assert result.records[0].get("size") == "50 ml"
+    assert {row["sku"] for row in result.records[0]["variants"]} == {"FR-30", "FR-50"}
+
+
+def test_unmapped_query_option_code_stays_internal() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Everyday Tee</h1></main>",
+        "https://shop.test/products/everyday-tee?sizeDisplayCode=004",
+    )
+    assert result.records[0].get("size") is None
+    assert not result.records[0].get("variants")
+
+
+@pytest.mark.parametrize(
+    "product_query", ["", "productId=parent&", "product_id=parent&"]
+)
+def test_opaque_query_identity_selects_existing_same_product_child(
+    product_query: str,
+) -> None:
+    html = """
+    <script type="application/ld+json">{
+      "@context":"https://schema.org", "@type":"ProductGroup",
+      "name":"Woven Duvet", "url":"https://shop.test/products/woven-duvet",
+      "hasVariant":[
+        {"@type":"Product","@id":"812","sku":"DUVET-TWIN","size":"Twin"},
+        {"@type":"Product","@id":"813","sku":"DUVET-KING","size":"King"}
+      ]
+    }</script>
+    """
+    selected = _extract(
+        "ecommerce_detail",
+        html,
+        f"https://shop.test/products/woven-duvet?{product_query}preselect=813",
+    )
+    unresolved = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/woven-duvet?preselect=999",
+    )
+    assert selected.records[0].get("size") == "King"
+    assert unresolved.records[0].get("size") is None
+
+
 def test_network_product_id_selects_requested_detail_product() -> None:
     result = _extract(
         "ecommerce_detail",

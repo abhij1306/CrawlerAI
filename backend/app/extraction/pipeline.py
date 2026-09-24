@@ -750,8 +750,6 @@ def _normalize_typed_semantics(
         _flag_description_value(evidence, value, flags)
     if isinstance(value, str):
         value = normalize_product_attribute_value(evidence.fact_type, value, flags)
-    if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
-        flags.add("placeholder_text")
     return value
 
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.core.config.extraction_rules import (
     DETAIL_DOM_COLOR_EXPLICIT_SELECTOR,
+    DETAIL_DOM_COLOR_CONTROL_SELECTOR,
     DETAIL_DOM_COLOR_LABEL_PATTERN,
     DETAIL_DOM_COLOR_LABELS,
     DETAIL_DOM_COLOR_MAX_VALUE_CHARS,
@@ -94,7 +95,7 @@ def _explicit_color_candidates(
 def _explicit_color_value(node: HtmlNode) -> str:
     texts = (
         _text(node.direct_text()),
-        _text(node.text(separator=" ", strip=True)),
+        _color_content_text(node),
     )
     for text in texts:
         match = re.match(DETAIL_DOM_COLOR_LABEL_PATTERN, text, re.I)
@@ -108,6 +109,13 @@ def _explicit_color_value(node: HtmlNode) -> str:
     if node.tag() == "dt" and siblings and siblings[0].tag() == "dd":
         return _clean_color_value(siblings[0].text(separator=" ", strip=True))
     return ""
+
+
+def _color_content_text(node: HtmlNode) -> str:
+    content = HtmlDocument(node.artifact_id, node.html())
+    for control in content.safe_css(DETAIL_DOM_COLOR_CONTROL_SELECTOR):
+        control.node.decompose()
+    return _text(content.visible_text())
 
 
 def _clean_color_value(value: object) -> str:
@@ -374,5 +382,8 @@ def _material_evidence(
         metadata={
             "component_role": "product_details",
             "material_strategy": candidate.strategy,
+            "material_source": (
+                "metadata" if candidate.node.tag() == "meta" else "product_detail"
+            ),
         },
     )

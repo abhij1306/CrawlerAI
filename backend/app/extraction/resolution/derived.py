@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 
 from app.core.config import field_mappings
 from app.core.config.locale_format_rules import (
+    AMBIGUOUS_CURRENCY_SYMBOLS,
     CURRENCY_SYMBOL_TO_ISO,
     currency_hint_from_page_url,
 )
@@ -180,11 +181,7 @@ def _title_brand_fact(
         if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
         and row.subject_id == evidence.subject_id
     )
-    existing_brands = (
-        (existing_brand,)
-        if existing_brand
-        else tuple(row.value for row in brand_candidates)
-    )
+    existing_brands = tuple(row.value for row in brand_candidates)
     brand = _brand_from_title(
         evidence.value,
         marker_title=evidence.raw_value,  # pre-normalization boundary signal
@@ -195,10 +192,20 @@ def _title_brand_fact(
             if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
             for source_value in (row.value, row.raw_value)
         ),
+        product_evidence_values=tuple(
+            source_value
+            for row in evidence_by_id.values()
+            if row.fact_type
+            not in {
+                field_mappings.PRODUCT_URL_FACT_TYPE,
+                field_mappings.PRODUCT_TITLE_FACT_TYPE,
+            }
+            and _invalidity_reason(row) is None
+            for source_value in (row.value, row.raw_value)
+        ),
         existing_brands=existing_brands,
-        allow_page_identity_replacement=(
-            not existing_brand
-            and any(_invalidity_reason(row) is not None for row in brand_candidates)
+        allow_page_identity_replacement=any(
+            _invalidity_reason(row) is not None for row in brand_candidates
         ),
     )
     if not brand:
@@ -321,12 +328,15 @@ def _derived_fact(
 def _currency_for_price(evidence: Evidence, *, page_url: str) -> tuple[str, str] | None:
     raw = evidence.raw_value if isinstance(evidence.raw_value, str) else ""
     symbols = {
-        str(currency)
+        str(symbol): str(currency)
         for symbol, currency in CURRENCY_SYMBOL_TO_ISO.items()
         if str(symbol) in raw
     }
-    if len(symbols) == 1:
-        return symbols.pop(), "currency_from_price_symbol"
+    if symbols and set(symbols) <= AMBIGUOUS_CURRENCY_SYMBOLS:
+        if currency := currency_hint_from_page_url(page_url):
+            return currency, "currency_from_page_url_hint"
+    if len(set(symbols.values())) == 1:
+        return next(iter(symbols.values())), "currency_from_price_symbol"
     if currency := currency_hint_from_page_url(page_url):
         return currency, "currency_from_page_url_hint"
     return None
@@ -346,6 +356,7 @@ def _brand_from_title(
     page_url: str,
     marker_title: object = None,
     evidence_values: tuple[object, ...] = (),
+    product_evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
     allow_page_identity_replacement: bool = False,
 ) -> tuple[str, str] | None:
@@ -367,13 +378,24 @@ def _brand_from_title(
             page_identity,
             allow_replacement=allow_page_identity_replacement,
         )
-    if page_identity:
-        return page_identity, "page_identity"
-    return _new_title_brand(
+    product_brand = _new_title_brand(
         marked=marker_title if str(marker_title or "").strip() else title,
         page_url=page_url,
         has_independent_product_signal=has_independent_product_signal,
+        product_evidence_values=product_evidence_values,
+        page_identity_present=bool(page_identity),
     )
+    if product_brand and (
+        not page_identity
+        or any(
+            f" {' '.join(slug_tokens(product_brand[0]))} "
+            in f" {' '.join(slug_tokens(value))} "
+            for value in product_evidence_values
+            if slug_tokens(value) not in (slug_tokens(title), slug_tokens(marker_title))
+        )
+    ):
+        return product_brand
+    return (page_identity, "page_identity") if page_identity else None
 
 
 def _page_identity_brand(
@@ -425,6 +447,8 @@ def _new_title_brand(
     page_url: str,
     has_independent_product_signal: bool,
     marked: object,
+    product_evidence_values: tuple[object, ...] = (),
+    page_identity_present: bool = False,
 ) -> tuple[str, str] | None:
     # The marker locates where the brand name ends; it is not part of the name,
     # so the published brand drops it. The shared helper keeps the source form
@@ -439,7 +463,12 @@ def _new_title_brand(
         and has_independent_product_signal
     ):
         return marker_brand, "brand_from_title_marker"
-    product_url = infer_brand_from_product_url(url=page_url, title=marked)
+    product_url = infer_brand_from_product_url(
+        url=page_url,
+        title=marked,
+        evidence_values=product_evidence_values,
+        allow_title_prefix=page_identity_present,
+    )
     for rule_id, value in (
         ("brand_from_marked_title_path", marked_path),
         ("brand_from_product_url", product_url),

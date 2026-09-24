@@ -373,6 +373,7 @@ NUXT_DEVALUE_WRAPPER_TAGS = frozenset(
 NUXT_PRODUCT_ROOT_KEY_PREFIXES = ("productDetails-",)
 NUXT_DEVALUE_DECODE_MAX_NODES = 25_000
 VARIANT_MERCH_SKU_ID_KEYS = ("merchSkuId", "merch_sku_id")
+VARIANT_ID_KEYS = ("variantid", "skuid", "id", "variantbaseid", "skubaseid")
 VARIANT_MERCH_SKU_SIZE_KEYS = ("label", "localizedLabel")
 VARIANT_CHILD_COLLECTION_KEYS = (
     "variants",

@@ -323,7 +323,13 @@ class _BrandUrlContext:
         return self.words[0].strip(" |-–—'") if self.words else ""
 
 
-def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
+def infer_brand_from_product_url(
+    *,
+    url: str,
+    title: object,
+    evidence_values: tuple[object, ...] = (),
+    allow_title_prefix: bool = False,
+) -> str | None:
     text = clean_text(title)
     title_tokens = slug_tokens(text)
     if len(title_tokens) < 2:
@@ -345,6 +351,15 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
     ):
         if brand := inference(context, url):
             return brand
+    if allow_title_prefix and context.path_parts:
+        first = context.first_token
+        leaf = slug_tokens(context.path_parts[-1])
+        if (
+            first not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+            and leaf[:1] == [first]
+            and any(first in slug_tokens(value) for value in evidence_values)
+        ):
+            return context.first_word
     return None
 
 

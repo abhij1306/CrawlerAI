@@ -39,7 +39,11 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config import extraction_rules as rules
 from app.core.config import field_mappings
-from app.core.config.locale_format_rules import parse_money
+from app.core.config.locale_format_rules import (
+    AMBIGUOUS_CURRENCY_SYMBOLS,
+    currency_hint_from_page_url,
+    parse_money,
+)
 from app.core.config.field_mappings import (
     ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
     REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES,
@@ -424,14 +428,16 @@ def _admit_offer_node(
         )
     ):
         return None
-    offer = _visible_offer_values(node)
+    offer = _visible_offer_values(node, page_url=page_url)
     if offer is None or offer[:3] in seen:
         return None
     seen.add(offer[:3])
     return offer
 
 
-def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str, str] | None:
+def _visible_offer_values(
+    node: HtmlNode, *, page_url: str
+) -> tuple[str, str, str, str] | None:
     price_text = _offer_price_text(node)
     match = re.search(DETAIL_DOM_PRICE_TEXT_PATTERN, price_text, re.IGNORECASE)
     if match is None:
@@ -441,7 +447,7 @@ def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str, str] | None:
     if parsed_amount is None:
         return None
     amount = format(parsed_amount, "f")
-    currency = _offer_currency(node, match)
+    currency = _offer_currency(node, match, page_url=page_url)
     availability = _offer_availability(node)
     return amount, currency, availability, raw_amount
 
@@ -454,7 +460,9 @@ def _offer_price_text(node: HtmlNode) -> str:
     return " ".join(node.text(separator=" ", strip=True).split())
 
 
-def _offer_currency(node: HtmlNode, price_match: re.Match[str]) -> str:
+def _offer_currency(
+    node: HtmlNode, price_match: re.Match[str], *, page_url: str
+) -> str:
     for current in (node, *node.ancestors()[:DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT]):
         for attribute in ("data-currency", "content", "aria-label", "title"):
             value = str(current.attribute(attribute) or "").strip().upper()
@@ -465,6 +473,9 @@ def _offer_currency(node: HtmlNode, price_match: re.Match[str]) -> str:
         return code
     symbol = str(price_match.group("symbol") or "").strip()
     if symbol:
+        if symbol in AMBIGUOUS_CURRENCY_SYMBOLS:
+            if hint := currency_hint_from_page_url(page_url):
+                return hint
         return CURRENCY_SYMBOL_MAP.get(symbol, "")
     context = _offer_context_text(node).upper()
     code_match = re.search(DETAIL_DOM_CURRENCY_CONTEXT_PATTERN, context)

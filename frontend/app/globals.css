@@ -367,35 +367,35 @@
 }
 
 /* ─── DARK THEME — Refined Minimal Console ─────────────────────────────────────
-   Neutral surface hierarchy with a cool cast. Steps widened so fill alone
+   Neutral charcoal surface hierarchy. Steps widened so fill alone
    carries the elevation ladder — dark gets the better end of frozen borders.
-   bg-base #0d0e11 → bg-alt #131519 → bg-panel #17191f
-   →  bg-elevated #1d1f26 → bg-well #24272f (recessed)
+   bg-base #0e0e0e → bg-alt #151515 → bg-panel #1a1a1a
+   →  bg-elevated #202020 → bg-well #282828 (recessed)
    Accent fill stays #5e6ad2 — white on it is 4.70:1, passes AA.
 ──────────────────────────────────────────────────────────────────────── */
 html[data-theme='dark'] {
   color-scheme: dark;
 
-  /* Surfaces — pure neutral gray, no blue/purple cast */
-  --bg-base: #0d0e11;
-  --bg-alt: #131519;
-  --bg-panel: #17191f;
-  --bg-elevated: #1d1f26;
-  --bg-well: #24272f;
-  --bg-sidebar: #131519;
-  --surface-overlay: rgba(13, 14, 17, 0.9);
+  /* Surfaces — neutral charcoal */
+  --bg-base: #0e0e0e;
+  --bg-alt: #151515;
+  --bg-panel: #1a1a1a;
+  --bg-elevated: #202020;
+  --bg-well: #282828;
+  --bg-sidebar: #151515;
+  --surface-overlay: rgba(14, 14, 14, 0.9);
 
   /* Borders — FROZEN. See the colour contract above; do not strengthen. */
-  --border-subtle: #1c1e24;
-  --border: #23262d;
-  --border-strong: #2f323b;
+  --border-subtle: #1f1f1f;
+  --border: #272727;
+  --border-strong: #333333;
 
   /* Typography — neutral, no cool/blue cast.
      subtle raised to clear 3:1 as the placeholder/disabled tier. */
-  --text-primary: #ececf1;
-  --text-secondary: #b7b9c2;
-  --text-muted: #8d919d;
-  --text-subtle: #7d818d;
+  --text-primary: #eeeeee;
+  --text-secondary: #bdbdbd;
+  --text-muted: #979797;
+  --text-subtle: #858585;
 
   /* Accent — blue-violet, brightened for dark backgrounds */
   --accent: #5e6ad2;
@@ -458,15 +458,15 @@ html[data-theme='dark'] {
 
   /* Form controls */
   --tab-active-fg: var(--text-primary);
-  --toggle-thumb: #ececf1;
+  --toggle-thumb: #eeeeee;
 
-  /* Terminal — pure neutral black, no blue tint */
-  --terminal-bg: #16171c;
+  /* Terminal — neutral black */
+  --terminal-bg: #171717;
   --terminal-fg: #e0e0e0;
-  --terminal-secondary: #b7b9c2;
+  --terminal-secondary: #bdbdbd;
   --terminal-muted: var(--text-subtle);
-  --terminal-row-alt: #1b1d23;
-  --terminal-border: #1f2129;
+  --terminal-row-alt: #1d1d1d;
+  --terminal-border: #222222;
   --terminal-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
 
   /* Settings */

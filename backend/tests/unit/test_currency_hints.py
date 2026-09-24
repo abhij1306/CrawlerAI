@@ -41,6 +41,19 @@ def test_generic_gtld_without_locale_infers_nothing() -> None:
     assert currency_hint_from_page_url("https://example.io/products/item") is None
 
 
+def test_country_subdomain_on_generic_host_infers_currency() -> None:
+    assert (
+        currency_hint_from_page_url("https://ar.brand.test.com/products/item") == "ARS"
+    )
+    assert currency_hint_from_page_url("https://ca.brand.com/products/item") == "CAD"
+    assert (
+        currency_hint_from_page_url("https://www.ar.brand.com/products/item") == "ARS"
+    )
+    assert currency_hint_from_page_url("https://www.ar.brand.de/products/item") == "EUR"
+    assert currency_hint_from_page_url("https://www.ar.com/products/item") is None
+    assert currency_hint_from_page_url("https://brand.com/products/item") is None
+
+
 def test_empty_or_invalid_url_is_safe() -> None:
     assert currency_hint_from_page_url("") is None
     assert currency_hint_from_page_url(None) is None

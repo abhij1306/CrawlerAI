@@ -10,13 +10,14 @@ from app.extraction.replay import fixture_request_from_inputs
 pytestmark = pytest.mark.unit
 
 
-def _extract(html: str):
+def _extract(html: str, *, artifacts: dict[str, object] | None = None):
     return extract(
         fixture_request_from_inputs(
             Surface.ECOMMERCE_DETAIL,
             html,
             "https://shop.test/products/complete-description",
             max_records=1,
+            artifacts=artifacts,
         )
     )
 
@@ -67,6 +68,58 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     result = _extract(_product_html(description=full, meta_description=excerpt))
 
     assert result.records[0]["description"] == full
+
+
+def test_consent_component_does_not_compete_with_product_description() -> None:
+    product = "Soft leather uppers and a contoured footbed support all-day wear."
+    consent = "To view the video, accept marketing cookies in your privacy settings."
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        f"<p class='cookie-description'>{consent}</p>"
+        f"<p class='product-description'>{product}</p></main>"
+    )
+    result = _extract(html)
+    assert result.records[0]["description"] == product
+    assert not any(
+        row.value == consent
+        for row in result.evidence
+        if row.fact_type == "product.description"
+    )
+
+
+def test_consent_only_page_has_no_product_description() -> None:
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        "<p class='consent-description'>Accept analytics cookies to play this video.</p>"
+        "</main>"
+    )
+    assert _extract(html).records[0].get("description") is None
+
+
+def test_saved_item_ui_does_not_publish_as_product_description() -> None:
+    html = (
+        "<main><h1>Complete Description Product</h1>"
+        "<div class='saveditem-content-description'>Save this item to return to your choices later.</div>"
+        "</main>"
+    )
+    assert _extract(html).records[0].get("description") is None
+
+
+def test_nested_image_description_does_not_replace_product_prose() -> None:
+    prose = "A lined canvas jacket with a generous hood and reinforced seams."
+    result = _extract(
+        "<main><h1>Complete Description Product</h1></main>",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Complete Description Product",
+                    "description": prose,
+                    "image": {"description": "Complete Description Product"},
+                }
+            }
+        },
+    )
+    assert result.records[0]["description"] == prose
 
 
 def test_clean_product_description_suppresses_candidate_only_promotional_finding() -> (

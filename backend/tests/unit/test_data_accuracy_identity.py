@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.core.config.extraction_rules import (
     VARIANT_URL_AXIS_PARAMS,
     normalize_availability_value,
@@ -11,7 +13,10 @@ from app.core.records.product_identity import (
     target_offer_group_id,
     target_product_owner_id,
 )
-from app.core.records.url_identity import selected_variant_axes
+from app.core.records.url_identity import (
+    selected_variant_axes,
+    variant_selection_intents,
+)
 from app.core.records.variant_identity import variant_values_support_selection
 from app.extraction import Surface, extract
 from app.extraction.collectors.jsonld_targeting import (
@@ -136,6 +141,29 @@ def test_requested_variant_path_is_preserved_as_selected_state() -> None:
     assert result.records[0].get("variants") == ()
 
 
+def test_selection_intent_retains_origin_and_opaque_code() -> None:
+    intents = variant_selection_intents(
+        "https://shop.test/products/coat?sizeDisplayCode=004&preselect=812#/sku/991"
+    )
+    assert [
+        (row.source, row.raw_key, row.raw_value, row.axis, row.identity_strength)
+        for row in intents
+    ] == [
+        ("query", "sizeDisplayCode", "004", "size", "opaque"),
+        ("query", "preselect", "812", None, "opaque"),
+        ("fragment", "sku", "991", "sku", "identity"),
+    ]
+
+
+def test_tracking_query_does_not_become_selection_intent() -> None:
+    assert (
+        variant_selection_intents(
+            "https://shop.test/products/coat?gclid=812&campaign=991"
+        )
+        == ()
+    )
+
+
 def test_product_color_from_structured_product_stays_product_scoped() -> None:
     url = "https://shop.test/products/trail-shoe"
     product = {
@@ -180,6 +208,23 @@ def test_visible_labeled_color_is_product_evidence() -> None:
     )
 
 
+def test_color_panel_excludes_neighboring_navigation_controls() -> None:
+    result = _extract(
+        """
+        <main class="product-detail"><h1>Trail Shoe</h1>
+          <section data-testid="color-selector">
+            <h2>Color:</h2><p>White/Track Unit TRK</p>
+            <button>Previous</button><button>Next</button>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/trail-shoe",
+        "title",
+        "color",
+    )
+    assert result.records[0]["color"] == "White/Track Unit TRK"
+
+
 def test_color_temperature_label_is_not_product_color() -> None:
     result = _extract(
         """
@@ -194,6 +239,29 @@ def test_color_temperature_label_is_not_product_color() -> None:
     )
 
     assert result.records[0].get("color") is None
+
+
+def test_product_detail_material_beats_weaker_metadata() -> None:
+    result = _extract(
+        '<meta name="description" content="Composition: recycled polyester">'
+        '<main class="product-detail"><h1>Canvas Tote</h1>'
+        '<div data-field="material">Material: Organic cotton</div></main>',
+        "https://shop.test/products/canvas-tote",
+        "title",
+        "materials",
+    )
+    assert result.records[0]["materials"] == "Organic cotton"
+
+
+def test_unrelated_navigation_material_does_not_publish() -> None:
+    result = _extract(
+        '<main class="product-detail"><h1>Canvas Tote</h1>'
+        '<nav><div data-field="material">Material: Polyester</div></nav></main>',
+        "https://shop.test/products/canvas-tote",
+        "title",
+        "materials",
+    )
+    assert result.records[0].get("materials") is None
 
 
 def test_label_only_color_does_not_consume_unrelated_sibling() -> None:
@@ -277,6 +345,24 @@ def test_fragment_path_selected_axes_are_preserved() -> None:
     assert selected_variant_axes("https://shop.test/products/item#/sku/189322") == {
         "sku": "189322"
     }
+
+
+@pytest.mark.parametrize(
+    ("fragment", "expected"),
+    [
+        ("color=Black%26White&size=M%2FL", {"color": "Black&White", "size": "M/L"}),
+        ("?color=Black%2526White", {"color": "Black%26White"}),
+        ("/color/Black%2FWhite", {"color": "Black/White"}),
+        ("/product/coat?size=M%2FL", {"size": "M/L"}),
+        ("/color/Black%3FWhite?size=M", {"color": "Black?White", "size": "M"}),
+    ],
+)
+def test_fragment_components_decode_without_splitting_encoded_values(
+    fragment: str, expected: dict[str, str]
+) -> None:
+    assert (
+        selected_variant_axes(f"https://shop.test/products/item#{fragment}") == expected
+    )
 
 
 def test_prefixed_style_axis_params_resolve_to_their_axis() -> None:

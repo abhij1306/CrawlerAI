@@ -12,6 +12,9 @@ from app.core.config.field_mappings import (
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
     VARIANT_GTIN_FACT_TYPE,
 )
+from app.core.records.variant_identity import (
+    structured_variant_identity as _variant_identity_value,
+)
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
     ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS,
@@ -38,6 +41,7 @@ from app.core.records.structured_variant_state import (
     with_parent_variant_axes,
 )
 from app.core.records.js_state_scope import (
+    structured_fact_admissible as _network_value_is_admissible,
     has_product_context as _has_product_context,
     path_product_identity_conflicts as _path_product_identity_conflicts,
     path_tokens as _path_tokens,
@@ -443,6 +447,7 @@ def _network_product_evidence(
         for suffix in (f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else "",)
     ]
     source_rows.extend(path_rows)
+    path_tokens = _path_tokens(path)
     return [
         _network_evidence(
             bundle,
@@ -465,6 +470,7 @@ def _network_product_evidence(
             value,
             product_context=product_context,
             offer_context=offer_context,
+            path_tokens=path_tokens,
         )
     ]
 
@@ -481,20 +487,6 @@ def _network_product_subject(bundle: CaptureBundle) -> str:
         directness="inferred",
         confidence=0.0,
     ).subject_id
-
-
-def _network_value_is_admissible(
-    fact: str,
-    value: object,
-    *,
-    product_context: bool,
-    offer_context: bool,
-) -> bool:
-    if fact.startswith("product.") and not product_context:
-        return False
-    if fact.startswith("offer.") and not offer_context:
-        return False
-    return value not in (None, "", [], {})
 
 
 def _network_evidence(
@@ -949,14 +941,6 @@ def _first_key(obj: dict, *keys: str) -> str | None:
         nested_key = _first_key(source, *keys)
         if nested_key:
             return nested_key
-    return None
-
-
-def _variant_identity_value(obj: dict) -> str | None:
-    for key in ("variantId", "variant_id", "skuId", "sku_id", "id"):
-        value = _scalar_value(obj.get(key))
-        if value not in (None, "", [], {}):
-            return str(value).strip()
     return None
 
 

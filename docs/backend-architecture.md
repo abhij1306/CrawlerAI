@@ -142,6 +142,19 @@ orders those roles before URL-overlap tie-breaks. Product attribute value normal
 lives in `core/records/attribute_normalization.py`, so representation contracts keep one
 owner outside the extraction package.
 
+Attribute normalization flags unresolved template syntax, all-sentinel values, and
+unsupported audience values before scalar resolution. DOM product scope excludes
+consent, saved-item, navigation, and media controls. Product detail material evidence
+outranks weaker page metadata. Request query, fragment, and path selection intent is
+parsed in `core/records/url_identity.py`; `product_options.py` binds it only to an
+existing same-product variant matrix. The URL collector never creates a sellable
+variant or publishes an unmapped option code from request text.
+
+Offer currency stays with its source offer. A generic country locale in a URL can
+disambiguate a dollar symbol, while an explicit offer currency wins. Missing captured
+commerce remains visible in diagnosis. The offline JEV decision is recorded under
+`docs/audits/`; no production decision connector was promoted.
+
 Acquisition produces evidence; extraction consumes it. Missing fields continue through
 all applicable deterministic tiers before any explicitly enabled surface-specific LLM
 path. Ecommerce-detail LLM is adjudication-only and never invents field or variant data.

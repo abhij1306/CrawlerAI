@@ -4,6 +4,21 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Protocol
 
+from app.core.config.variant_policy import VARIANT_ID_KEYS
+from app.core.records.structured_variant_state import scalar_value
+
+
+def structured_variant_identity(values: Mapping[str, object]) -> str | None:
+    normalized = {
+        re.sub(r"[^a-z0-9]", "", str(key).casefold()): scalar_value(value)
+        for key, value in values.items()
+    }
+    for key in VARIANT_ID_KEYS:
+        value = normalized.get(key)
+        if value not in (None, "", [], {}):
+            return str(value).strip()
+    return None
+
 
 class VariantHint(Protocol):
     @property

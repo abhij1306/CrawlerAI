@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import field_mappings
+from app.core.records.attribute_normalization import normalize_product_attribute_value
 from app.core.config.extraction_rules import (
     DETAIL_TITLE_SOURCE_ROLE_DOCUMENT,
     DETAIL_TITLE_SOURCE_ROLE_METADATA_KEY,
@@ -79,6 +80,62 @@ def _winner(*evidence: Evidence) -> str:
     )
     assert decision.status == "resolved"
     return decision.accepted_evidence_ids[0]
+
+
+@pytest.mark.parametrize(
+    ("fact_type", "value", "expected_flag"),
+    [
+        ("product.brand", "{{ shop.name }}", "unresolved_template"),
+        ("product.size", "- / null", "placeholder_text"),
+        ("product.size", "N/A", "placeholder_text"),
+        ("product.size", "N / A", "placeholder_text"),
+        ("product.size", "N/A / null", "placeholder_text"),
+        ("product.size", "N/A N/A", "placeholder_text"),
+        ("product.gender", "Gender", "invalid_gender"),
+    ],
+)
+def test_structural_invalid_values_are_rejected(
+    fact_type: str, value: str, expected_flag: str
+) -> None:
+    flags: set[str] = set()
+    normalized = normalize_product_attribute_value(fact_type, value, flags)
+    assert expected_flag in flags
+    row = _evidence(
+        "invalid",
+        fact_type=fact_type,
+        value=normalized,
+        collector_id="jsonld",
+        flags=tuple(flags),
+    )
+    decision = _resolve_scalar(
+        "product-1", fact_type, (row.evidence_id,), {row.evidence_id: row}, ()
+    )
+    assert decision.status == "unresolved"
+    assert decision.rejected[0].reason == expected_flag
+
+
+@pytest.mark.parametrize(
+    ("fact_type", "value"),
+    [
+        ("product.brand", "Mina Atelier"),
+        ("product.size", "42"),
+        ("product.size", "A"),
+        ("product.size", "N"),
+        ("product.size", "No Ne"),
+        ("product.size", "N A"),
+        ("product.gender", "Women"),
+    ],
+)
+def test_valid_neighboring_attributes_remain_admissible(
+    fact_type: str, value: str
+) -> None:
+    flags: set[str] = set()
+    normalized = normalize_product_attribute_value(fact_type, value, flags)
+    assert not flags
+    row = _evidence(
+        "valid", fact_type=fact_type, value=normalized, collector_id="jsonld"
+    )
+    assert _winner(row) == row.evidence_id
 
 
 def test_jsonld_offer_outranks_phantom_dom_price() -> None:

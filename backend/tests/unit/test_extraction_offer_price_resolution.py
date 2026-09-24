@@ -80,6 +80,33 @@ def test_offer_price_inherits_currency_from_cctld() -> None:
     assert public.get("currency") == "INR"
 
 
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://ar.puma.com/pd/zapatillas-mostro-ecstasy-unisex/397328.html",
+        "https://ar.brand.com/products/canvas-sneaker",
+    ),
+)
+def test_ambiguous_dollar_uses_country_subdomain_for_same_offer(url: str) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        '<main><h1>Canvas Sneaker</h1><div data-price="$189999.00"></div></main>',
+        url,
+    )
+    assert result.records[0].get("price") == "189999.00"
+    assert result.records[0].get("currency") == "ARS"
+
+
+def test_explicit_offer_currency_beats_ambiguous_symbol() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Canvas Sneaker</h1>"
+        '<div data-price="$125.00" data-currency="USD"></div></main>',
+        "https://ar.brand.com/products/canvas-sneaker",
+    )
+    assert result.records[0].get("currency") == "USD"
+
+
 def test_uncorroborated_cent_magnitude_price_is_not_silently_repaired() -> None:
     result = _extract(
         "ecommerce_detail",

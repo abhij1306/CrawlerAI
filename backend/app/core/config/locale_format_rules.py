@@ -8,6 +8,7 @@ from app.core.config.extraction_rules import CURRENCY_SYMBOL_MAP
 
 COUNTRY_CURRENCY: dict[str, str] = {
     "us": "USD",
+    "ar": "ARS",
     "gb": "GBP",
     "in": "INR",
     "ca": "CAD",
@@ -88,6 +89,7 @@ DOT_DECIMAL_COUNTRIES = frozenset(
     {"au", "ca", "gb", "hk", "in", "jp", "nz", "sg", "us", "za"}
 )
 CURRENCY_SYMBOL_TO_ISO: dict[str, str] = dict(CURRENCY_SYMBOL_MAP)
+AMBIGUOUS_CURRENCY_SYMBOLS = frozenset({"$"})
 GTIN_LENGTHS = frozenset({8, 12, 13, 14})
 PRICE_CONTEXT_TOKENS = frozenset(
     {"cost", "from", "mrp", "msrp", "now", "price", "sale", "starting"}
@@ -158,6 +160,10 @@ def currency_hint_from_page_url_with_scope(page_url: object) -> tuple[str | None
         return currency, False
     if currency := _currency_from_host_hint(hostname):
         return currency, True
+    labels = [label for label in hostname.removeprefix("www.").split(".") if label]
+    if len(labels) >= 3 and labels[-1] in GENERIC_TLDS:
+        if currency := _country_currency(labels[0]):
+            return currency, True
     if currency := _currency_from_tld(hostname):
         return currency, True
     return None, False

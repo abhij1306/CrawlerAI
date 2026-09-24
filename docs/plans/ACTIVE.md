@@ -1,10 +1,10 @@
 # Active Plan
 
-**Current:** None
-**Status:** No active plan
-**Started:** 2026-08-25
+**Current:** Generic Crawl Correctness Before Conditional JEV → `docs/plans/evidence-coverage-and-jev-decision-plan.md`
+**Status:** COMPLETE — deterministic corrections verified; JEV no-go
+**Started:** 2026-09-24
 **Current slice:** None — plan complete
-**Last slice completed:** Post-close run-1 color and availability continuation
+**Last slice completed:** Slice 5 — Offline JEV decision
 
 ## Queue
 1. CrawlerAI Security Remediation and Deployment Failure Fixes → `docs/plans/crawlerai-security-remediation-and-deployment-fix-plan.md` — BLOCKED on external image/live-infrastructure evidence

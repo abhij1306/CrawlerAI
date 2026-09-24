@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 from app.core.config import variant_policy
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
+    ECOMMERCE_MEDIA_DESCRIPTION_PATH_TOKENS,
     ECOMMERCE_RELATED_PRODUCT_BOUNDARY_PATH_TOKENS,
 )
 from app.core.config.field_mappings import (
@@ -24,6 +25,26 @@ from app.core.records.url_identity import (
 )
 
 RootStatus = Literal["selected", "unresolved", "ambiguous"]
+
+
+def structured_fact_admissible(
+    fact: str,
+    value: object,
+    *,
+    product_context: bool,
+    offer_context: bool,
+    path_tokens: set[str],
+) -> bool:
+    if fact.startswith("product.") and not product_context:
+        return False
+    if (
+        fact == "product.description"
+        and path_tokens & ECOMMERCE_MEDIA_DESCRIPTION_PATH_TOKENS
+    ):
+        return False
+    if fact.startswith("offer.") and not offer_context:
+        return False
+    return value not in (None, "", [], {})
 
 
 @dataclass(frozen=True)
