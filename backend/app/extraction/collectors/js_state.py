@@ -41,11 +41,13 @@ from app.core.records.structured_variant_state import (
     with_parent_variant_axes,
 )
 from app.core.records.js_state_scope import (
+    conflicting_product_roots,
     structured_fact_admissible as _network_value_is_admissible,
     has_product_context as _has_product_context,
     path_product_identity_conflicts as _path_product_identity_conflicts,
     path_tokens as _path_tokens,
     path_is_nested_sibling_product,
+    path_is_within_selected_root,
     root_admits_path,
     select_product_roots,
 )
@@ -122,8 +124,11 @@ class JsStateCollector:
                 objects = objects[:MAX_SOURCE_OBJECTS_PER_ARTIFACT]
             axis_hints = variant_axis_hints(objects)
             selection = select_product_roots(objects, bundle.final_url)
+            conflicting_roots = conflicting_product_roots(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path):
+                    continue
+                if path_is_within_selected_root(path, conflicting_roots):
                     continue
                 if isinstance(obj, dict) and path_is_nested_sibling_product(
                     selection, path, obj, bundle.final_url

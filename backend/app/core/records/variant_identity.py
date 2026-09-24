@@ -119,6 +119,8 @@ def variant_identity_keys(rows: Iterable[VariantEvidence]) -> set[str]:
 
 def variant_identity_keys_overlap(left: set[str], right: set[str]) -> bool:
     option_conflict = _variant_option_keys_conflict(left, right)
+    if option_conflict:
+        return False
     for prefix in ("id:", "gtin:"):
         left_values = _prefixed_values(left, prefix)
         right_values = _prefixed_values(right, prefix)
@@ -128,8 +130,6 @@ def variant_identity_keys_overlap(left: set[str], right: set[str]) -> bool:
     right_skus = _prefixed_values(right, "sku:")
     if left_skus & right_skus and not option_conflict:
         return True
-    if option_conflict:
-        return False
     # Identifier roles stay distinct facts. Their exact values can still identify
     # one variant across sources (for example, DOM data-sku == structured id).
     if _variant_identifier_values(left) & _variant_identifier_values(right):

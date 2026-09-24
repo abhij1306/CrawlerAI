@@ -5,7 +5,6 @@ from typing import Any, Literal, Mapping, Protocol, get_args, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
 from app.core.config import field_mappings
-from app.core.config.cascade import CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP
 from app.core.config.variant_policy import ECOMMERCE_FACT_TYPES
 from app.core.extraction_memory.recipe_contracts import RecipeExecutionResult
 from app.extraction.surfaces import Surface
@@ -439,24 +438,6 @@ class TargetSelection(FrozenModel):
     root_entity_ids: tuple[str, ...] = ()
     selected_root_entity_id: str | None = None
     rejected_roots: tuple[RejectedEntity, ...] = ()
-
-
-class CapabilityRequest(FrozenModel):
-    schema_version: Literal["capability-request.v1"] = "capability-request.v1"
-    required: bool = False
-    reason: Literal[
-        "dynamic_content_missing",
-        "empty_extraction",
-        "explicit_variants_missing",
-        "http_shell",
-        "listing_boundaries_missing",
-        "network_floor_missing",
-    ]
-    required_artifacts: tuple[str, ...] = ()
-    max_attempts: int = Field(default=1, ge=1, le=CASCADE_CAPABILITY_MAX_ATTEMPTS_CAP)
-
-
-RetryRequest = CapabilityRequest
 
 
 FailureTaxonomy = Literal[
@@ -939,7 +920,6 @@ class ExtractionResult(FrozenModel):
         "divergent",
     ] = "unknown"
     verdict: Verdict
-    retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)
     collector_outcomes: tuple[CollectorOutcome, ...] = ()
     stage_outcomes: tuple[StageOutcome, ...] = ()

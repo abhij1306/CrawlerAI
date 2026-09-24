@@ -202,7 +202,6 @@ def test_child_join_failed_page_finding_routes_to_review() -> None:
             verdict="success",
             findings=(_finding("CHILD_JOIN_FAILED", scope="page"),),
             field_states=(),
-            retry=None,
         )
         is True
     )
@@ -220,7 +219,6 @@ def test_candidate_scope_offer_pair_findings_do_not_route() -> None:
                 _finding("CURRENCY_WITHOUT_PRICE", scope="candidate"),
             ),
             field_states=(),
-            retry=None,
         )
         is False
     )
@@ -236,7 +234,6 @@ def test_partial_missing_commercial_without_risk_does_not_route() -> None:
             verdict="partial",
             findings=(_finding("MISSING_CONTRACT_FIELD", scope="selected_entity"),),
             field_states=(),
-            retry=None,
         )
         is False
     )

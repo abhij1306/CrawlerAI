@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from app.core.records.field_policy import (
-    browser_retry_target_fields_for_surface,
     canonical_requested_fields,
     exact_requested_field_key,
     field_allowed_for_surface,
@@ -106,16 +105,6 @@ def test_ecommerce_repair_targets_include_requested_custom_fields() -> None:
         "price",
         "currency",
         "availability",
-    ]
-
-
-@pytest.mark.unit
-def test_ecommerce_browser_retry_targets_do_not_force_deep_variant_fields() -> None:
-    assert browser_retry_target_fields_for_surface("ecommerce_detail", []) == [
-        "price",
-        "currency",
-        "title",
-        "image_url",
     ]
 
 

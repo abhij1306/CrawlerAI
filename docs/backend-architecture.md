@@ -101,6 +101,9 @@ endpoints plus encrypted secret references.
 
 Traversal is explicit. The shared browser runtime is Patchright; native Chrome is an
 explicit escalation lane when configured and available.
+Extraction consumes the single acquisition result and never re-fetches to repair
+missing fields. Real Chrome fallback remains inside acquisition for a blocked
+headless browser.
 
 Platform-specific deterministic source readers live in top-level connector
 modules (`app/connectors/*_adapter.py`) and register through

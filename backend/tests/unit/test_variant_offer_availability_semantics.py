@@ -141,6 +141,40 @@ def test_request_selection_precedes_conflicting_dom_even_when_already_selected(
     assert [row.entity_id for row in result if row.selected] == [expected]
 
 
+def test_opaque_axis_codes_bind_only_to_unique_same_product_sku() -> None:
+    bundle = _bundle().model_copy(
+        update={
+            "requested_url": (
+                "https://shop.test/products/item?colorDisplayCode=57&sizeDisplayCode=004"
+            )
+        }
+    )
+    variants = tuple(
+        VariantEntity(
+            entity_id=f"row-{color}-{size}",
+            product_entity_id="parent",
+            identity_key=f"sku:item-{color}-{size}-000",
+            identity_keys=(f"sku:item-{color}-{size}-000",),
+            identity_evidence_ids=(),
+            option_values={"color": name, "size": label},
+            attribute_evidence={},
+            offer_ids=(),
+            asset_ids=(),
+            selected=False,
+        )
+        for color, name, size, label in (
+            ("57", "OLIVE", "004", "M"),
+            ("09", "BLACK", "004", "M"),
+            ("57", "OLIVE", "005", "L"),
+        )
+    )
+    owner = _product(bundle).model_copy(update={"collector_id": "url"})
+    result = apply_dom_variant_selection(
+        bundle, (owner,), variants, {"product-1": "parent"}
+    )
+    assert [row.entity_id for row in result if row.selected] == ["row-57-004"]
+
+
 def test_option_inventory_without_sellable_identity_is_not_variant() -> None:
     bundle = _bundle()
     rows = (

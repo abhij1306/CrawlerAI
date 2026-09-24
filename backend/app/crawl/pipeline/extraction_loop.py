@@ -20,6 +20,7 @@ from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
     VERDICT_LISTING_FAILED,
+    build_acquisition_profile,
     build_url_metrics,
     compute_verdict,
     finalize_url_metrics,
@@ -33,7 +34,13 @@ from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.extraction.contracts import ExtractionResult
-from .retry import build_acquisition_request, retry_extraction_request_with_browser
+from app.models.crawl_settings import CrawlRunSettings
+from app.acquisition.acquirer import AcquisitionRequest
+from app.acquisition.policy import AcquisitionPolicy
+from app.crawl.profile import (
+    apply_acquisition_contract_to_profile,
+    resolve_url_acquisition_recipe,
+)
 from .persistence import persist_extracted_records
 from app.persistence.url_results import upsert_url_result
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
@@ -51,6 +58,7 @@ from .runtime_helpers import (
     browser_outcome as _browser_outcome,
     effective_blocked as _effective_blocked,
     mark_run_failed,
+    pipeline_acquisition_event_logger as _pipeline_acquisition_event_logger,
     record_detail_expansion_extraction_outcome as _record_detail_expansion_extraction_outcome,
     suppress_empty_downstream_record_events as _suppress_empty_downstream_record_events,
     record_pipeline_event as _record_pipeline_event,
@@ -324,6 +332,48 @@ async def _run_acquisition_stage(
     )
 
 
+async def build_acquisition_request(
+    context: _URLProcessingContext,
+) -> AcquisitionRequest:
+    settings_view = context.run.settings_view
+    recipe = await resolve_url_acquisition_recipe(
+        context.session,
+        url=context.url,
+        surface=context.surface,
+        explicit_settings=settings_view.as_dict(),
+    )
+    resolved = CrawlRunSettings.from_value(recipe)
+    plan = resolved.acquisition_plan(
+        surface=context.surface,
+        max_records=context.config.max_records,
+    )
+    if context.config.proxy_list != settings_view.proxy_list():
+        plan = plan.with_updates(proxy_list=tuple(context.config.proxy_list))
+    if context.config.traversal_mode != settings_view.traversal_mode():
+        plan = plan.with_updates(traversal_mode=context.config.traversal_mode)
+    if context.config.max_pages != settings_view.max_pages():
+        plan = plan.with_updates(max_pages=context.config.max_pages)
+    if context.config.max_scrolls != settings_view.max_scrolls():
+        plan = plan.with_updates(max_scrolls=context.config.max_scrolls)
+    if context.config.sleep_ms != settings_view.sleep_ms():
+        plan = plan.with_updates(sleep_ms=context.config.sleep_ms)
+    profile = apply_acquisition_contract_to_profile(
+        build_acquisition_profile(resolved),
+        resolved.acquisition_contract(),
+    )
+    policy = AcquisitionPolicy.from_profile(profile)
+    return AcquisitionRequest(
+        run_id=context.run.id,
+        url=context.url,
+        plan=plan,
+        requested_fields=list(context.requested_fields),
+        requested_field_selectors={},
+        acquisition_profile=policy.to_profile(),
+        policy=policy,
+        on_event=_pipeline_acquisition_event_logger(context),
+    )
+
+
 def _build_prefetch_only_result(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
@@ -383,11 +433,6 @@ async def _run_extraction_stage_observed(
             ]
         ),
         requested_fields=list(context.requested_fields),
-    )
-    result = await retry_extraction_request_with_browser(
-        context,
-        fetched,
-        result=result,
     )
     set_logfire_attributes(
         span,

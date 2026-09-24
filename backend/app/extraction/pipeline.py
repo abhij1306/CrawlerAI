@@ -37,6 +37,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
     DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
     DETAIL_DESCRIPTION_MIN_GROUNDED_PROSE_LENGTH,
+    DETAIL_DESCRIPTION_MIN_CONTENT_WORDS,
     DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN,
     DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
@@ -816,6 +817,8 @@ def _segment_grounded_description(value: str) -> str:
 
 
 def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:
+    if len(value.split()) < DETAIL_DESCRIPTION_MIN_CONTENT_WORDS:
+        flags.add("description_bare_label")
     locator_value = str(evidence.locator.value or "").casefold()
     if any(
         token in locator_value

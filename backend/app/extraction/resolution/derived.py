@@ -195,11 +195,7 @@ def _title_brand_fact(
         product_evidence_values=tuple(
             source_value
             for row in evidence_by_id.values()
-            if row.fact_type
-            not in {
-                field_mappings.PRODUCT_URL_FACT_TYPE,
-                field_mappings.PRODUCT_TITLE_FACT_TYPE,
-            }
+            if row.fact_type == "product.description"
             and _invalidity_reason(row) is None
             for source_value in (row.value, row.raw_value)
         ),

@@ -79,7 +79,7 @@
         "tests/component/test_acquirer.py",
         "tests/component/test_browser_*.py",
         "tests/component/test_fetch_*.py",
-        "tests/component/test_escalation_ladder.py",
+        "tests/component/test_no_extraction_refetch.py",
         "tests/component/test_pacing.py",
         "tests/component/test_robots_policy.py",
         "tests/component/test_ssrf_*.py"

@@ -16,6 +16,7 @@ from app.acquisition.fetch.browser_attempt_runner import (
     BrowserAttemptDependencies,
     BrowserAttemptRunner,
 )
+from app.acquisition.host_protection_memory import HostProtectionPolicy
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 pytestmark = pytest.mark.unit
@@ -29,9 +30,7 @@ def _deps(**overrides) -> BrowserAttemptDependencies:
             kwargs["engine_attempts"]
         ),
         "browser_attempt_timeout_seconds": lambda *args, **kwargs: 5.0,
-        "should_retry_patchright_with_real_chrome": lambda **kwargs: False,
         "update_host_result_memory": lambda **kwargs: None,
-        "emit_fetch_event": lambda *args: None,
         "load_host_protection_policy": lambda *args, **kwargs: None,
         "note_host_hard_block": lambda *args, **kwargs: None,
         "wait_for_host_slot": lambda *args, **kwargs: None,
@@ -72,6 +71,68 @@ def _runner(**overrides) -> BrowserAttemptRunner:
     }
     values.update(overrides)
     return BrowserAttemptRunner(**values)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("first_outcome", "expected_engines"),
+    [
+        ("error", ["patchright"]),
+        ("blocked", ["patchright", "real_chrome"]),
+    ],
+)
+async def test_second_browser_is_only_real_chrome_after_headless_block(
+    monkeypatch, first_outcome: str, expected_engines: list[str]
+) -> None:
+    calls: list[str] = []
+
+    async def fake_attempt(self, _proxy_index, _proxy, engine, *_args):
+        calls.append(engine)
+        self.plan.attempt_results.append(
+            SimpleNamespace(outcome=first_outcome if len(calls) == 1 else "error")
+        )
+        return None
+
+    monkeypatch.setattr(BrowserAttemptRunner, "_run_engine_attempt", fake_attempt)
+    monkeypatch.setattr(
+        "app.acquisition.fetch.browser_attempt_runner.browser_escalation_lane",
+        lambda **kwargs: "test",
+    )
+    runner = _runner(
+        deps=_deps(
+            browser_engine_attempts=lambda **kwargs: ["patchright", "real_chrome"]
+        )
+    )
+    runner.active_host_policy = HostProtectionPolicy(host="example.com")
+
+    await runner._run_proxy_attempt(1, None)
+
+    assert calls == expected_engines
+
+
+@pytest.mark.asyncio
+async def test_browser_error_does_not_rotate_to_second_proxy(monkeypatch) -> None:
+    calls: list[str | None] = []
+
+    async def fake_proxy_attempt(self, _proxy_index, proxy):
+        calls.append(proxy)
+        self.plan.attempt_results.append(SimpleNamespace(outcome="error"))
+        return None
+
+    monkeypatch.setattr(BrowserAttemptRunner, "_run_proxy_attempt", fake_proxy_attempt)
+
+    async def fake_load_policy(_runner):
+        return None
+
+    monkeypatch.setattr(
+        attempt_host_policy, "load_active_host_policy", fake_load_policy
+    )
+    runner = _runner(proxies=["http://proxy-one.test", "http://proxy-two.test"])
+
+    with pytest.raises(Exception):
+        await runner.run()
+
+    assert calls == ["http://proxy-one.test"]
 
 
 def test_runner_groups_mutable_state_into_plan_and_outcome() -> None:

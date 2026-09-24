@@ -309,6 +309,7 @@ DETAIL_DOM_DESCRIPTION_SELECTORS = (
     "[class*='description' i]",
 )
 DETAIL_DOM_DESCRIPTION_MIN_CHARS = 24
+DETAIL_DESCRIPTION_MIN_CONTENT_WORDS = 2
 DETAIL_DOM_COLOR_EXPLICIT_SELECTOR = (
     "p, li, tr, dt, [data-component='product-trait'], "
     "[data-testid*='color' i], [data-testid*='colour' i], "
@@ -319,6 +320,7 @@ DETAIL_DOM_COLOR_MAX_VALUE_CHARS = 80
 DETAIL_DOM_COLOR_LABEL_PATTERN = (
     r"^(?:color|colour|colorway)(?:\s*:\s*|\s+)(?P<value>.+)$"
 )
+DETAIL_DOM_SELECTED_COLOR_TEST_ID_PATTERN = r"(?:selected[-_]?colou?r|colou?r[-_]?name)"
 DETAIL_DOM_COLOR_VALUE_BOUNDARY_PATTERN = (
     r"\s+(?:material|size|sku|style)\s*:?(?:\s|$).*$"
 )

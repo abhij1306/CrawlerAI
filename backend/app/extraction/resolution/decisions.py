@@ -296,6 +296,7 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
         "brand_url",
         "category_as_brand",
         "description_incomplete_ending",
+        "description_bare_label",
         "description_missing_separator",
         "description_promotional_copy",
         "description_ui_pollution",

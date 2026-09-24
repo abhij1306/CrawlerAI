@@ -115,13 +115,14 @@ def _query_selection_intents(
         if not value:
             continue
         raw_key = key.casefold()
-        axis = VARIANT_URL_AXIS_PARAMS.get(raw_key)
+        axis_key = re.sub(r"^dwvar_?[^_]+_", "", raw_key)
+        axis = VARIANT_URL_AXIS_PARAMS.get(axis_key)
         if axis is None and (
-            match := re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, raw_key, flags=re.I)
+            match := re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, axis_key, flags=re.I)
         ):
             axis = VARIANT_URL_AXIS_PARAMS.get(match.group("axis").casefold())
         if axis is None:
-            stem = re.sub(r"(?:display|product)?(?:code|name)$", "", raw_key)
+            stem = re.sub(r"(?:display|product)?(?:code|name)$", "", axis_key)
             axis = VARIANT_URL_AXIS_PARAMS.get(stem)
         strength = "opaque" if axis is None or raw_key.endswith("code") else "axis"
         if axis == "sku":

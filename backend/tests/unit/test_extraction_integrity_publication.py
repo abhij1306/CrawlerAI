@@ -460,8 +460,6 @@ def test_access_denied_shell_does_not_succeed() -> None:
         "https://us.louisvuitton.com/eng-us/products/bootleg-pants-nvprod7220319v/1AJUPQ",
     )
     assert result.verdict == "error"
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "http_shell"
 
 
 def test_punctuated_shell_title_with_offer_data_does_not_publish_record() -> None:
@@ -486,8 +484,6 @@ def test_punctuated_shell_title_with_offer_data_does_not_publish_record() -> Non
     )
     assert result.verdict == "error"
     assert result.records == ()
-    assert result.retry_request is not None
-    assert result.retry_request.reason == "http_shell"
 
 
 def test_order_and_duplicate_independence() -> None:

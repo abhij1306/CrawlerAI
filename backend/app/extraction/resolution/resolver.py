@@ -49,6 +49,7 @@ from app.extraction.resolution.variant_rollup import (
 from app.extraction.resolution.variants import (
     _resolve_variant,
     _resolve_variants,
+    _selected_variant_ids,
 )
 
 
@@ -244,6 +245,16 @@ def _variant_decision_pipeline(
         derived_facts=derived_facts,
         evidence_by_id=by_id,
     )
+    selected_variant_ids = _selected_variant_ids(
+        entities.variants,
+        primary_product_entity_id=(
+            primary_product.entity_id if primary_product is not None else None
+        ),
+        variant_decisions=variant_decisions,
+        decisions=tuple(decisions),
+        derived_facts=derived_facts,
+        evidence_by_id=by_id,
+    )
     parent_facts = _parent_derived_from_variants(
         primary_product_entity_id=(
             primary_product.entity_id if primary_product is not None else None
@@ -251,9 +262,7 @@ def _variant_decision_pipeline(
         primary_offer_entity_id=primary_offer_entity_id,
         variant_decisions=variant_decisions,
         expected_variant_count=len(entities.variants),
-        selected_variant_ids=frozenset(
-            variant.entity_id for variant in entities.variants if variant.selected
-        ),
+        selected_variant_ids=selected_variant_ids,
         existing_fact_keys=frozenset(
             (
                 *(

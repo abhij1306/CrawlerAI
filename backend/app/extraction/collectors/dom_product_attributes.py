@@ -7,6 +7,7 @@ from app.core.config.extraction_rules import (
     DETAIL_DOM_COLOR_EXPLICIT_SELECTOR,
     DETAIL_DOM_COLOR_CONTROL_SELECTOR,
     DETAIL_DOM_COLOR_LABEL_PATTERN,
+    DETAIL_DOM_SELECTED_COLOR_TEST_ID_PATTERN,
     DETAIL_DOM_COLOR_LABELS,
     DETAIL_DOM_COLOR_MAX_VALUE_CHARS,
     DETAIL_DOM_COLOR_SCAN_LIMIT,
@@ -93,6 +94,10 @@ def _explicit_color_candidates(
 
 
 def _explicit_color_value(node: HtmlNode) -> str:
+    test_id = node.attribute("data-testid") or ""
+    if re.search(DETAIL_DOM_SELECTED_COLOR_TEST_ID_PATTERN, test_id, re.I):
+        if value := _clean_color_value(node.direct_text()):
+            return value
     texts = (
         _text(node.direct_text()),
         _color_content_text(node),

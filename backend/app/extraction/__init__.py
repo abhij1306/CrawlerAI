@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-from app.extraction.contracts import CapabilityRequest
 from app.extraction.surfaces import Surface, parse_surface, surface_spec
 
 if TYPE_CHECKING:
@@ -19,7 +18,6 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
-    "CapabilityRequest",
     "Surface",
     "extract",
     "parse_surface",

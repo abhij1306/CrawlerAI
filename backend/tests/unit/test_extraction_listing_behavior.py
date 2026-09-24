@@ -240,7 +240,7 @@ def test_ecommerce_listing_restores_market_locale_shop_product_links() -> None:
     ]
 
 
-def test_ecommerce_listing_empty_http_result_requests_browser_retry() -> None:
+def test_ecommerce_listing_empty_http_result_remains_empty() -> None:
     result = _extract(
         "ecommerce_listing",
         """
@@ -255,9 +255,6 @@ def test_ecommerce_listing_empty_http_result_requests_browser_retry() -> None:
 
     assert result.records == ()
     assert result.verdict == "empty"
-    assert result.retry_request is not None
-    assert result.retry_request.required is True
-    assert result.retry_request.reason == "empty_extraction"
 
 
 def test_ecommerce_listing_keeps_generic_card_with_price_and_detail_link() -> None:

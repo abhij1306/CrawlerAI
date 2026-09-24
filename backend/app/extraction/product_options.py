@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
+import re
 from typing import Any, Protocol, Self, TypeVar
 
 from app.core.config.extraction_rules import (
@@ -175,6 +176,13 @@ def _intent_matches_variant(
     variant: VariantSelectionCandidate, axis: str | None, value: str, strength: str
 ) -> bool:
     expected = _normalized(value)
+    if strength == "opaque" and axis in variant.option_values:
+        if any(
+            expected in re.split(r"[^a-z0-9]+", key.removeprefix("sku:").casefold())
+            for key in variant.identity_keys
+            if key.startswith("sku:")
+        ):
+            return True
     if strength != "axis" or axis is None or axis == "sku":
         return any(
             _normalized(key.split(":", 1)[1]) == expected

@@ -101,24 +101,14 @@ def _latch_acquisition_result(*, method: str):
     )
 
 
-def _empty_result_with_retry(*, retry_required: bool):
-    from app.extraction.contracts import CapabilityRequest, ExtractionResult
+def _empty_result():
+    from app.extraction.contracts import ExtractionResult
     from app.extraction.surfaces import Surface
 
-    retry = (
-        CapabilityRequest(
-            required=True,
-            reason="empty_extraction",
-            required_artifacts=("rendered_html",),
-        )
-        if retry_required
-        else None
-    )
     return ExtractionResult(
         surface=Surface.ECOMMERCE_DETAIL,
         records=(),
         verdict="empty",
-        retry_request=retry,
     )
 
 
@@ -231,7 +221,7 @@ __all__ = [
     "AsyncSession",
     "ExtractionOperatorLabel",
     "Surface",
-    "_empty_result_with_retry",
+    "_empty_result",
     "_latch_acquisition_result",
     "_learned_recipe",
     "_persist_recipe",

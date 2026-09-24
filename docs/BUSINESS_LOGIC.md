@@ -22,6 +22,7 @@ belong in `INVARIANTS.md`.
 - CrawlerAI starts with the configured deterministic acquisition policy and escalates only when observed content, block/shell evidence, learned policy, and remaining budget justify it.
 - Explicit fetch mode and robots policy are authoritative. The shared HTTP waterfall is bounded; traversal is separate from render escalation.
 - Browser use improves observation. It does not assign product fields.
+- Missing extracted fields or variants do not trigger a second browser request. A blocked headless browser may fall back to real Chrome inside acquisition.
 - Traversal runs only when the user enabled it. Listing discovery and detail expansion stay bounded and visible in diagnostics.
 - A usable rendered page wins over vendor-marker noise. Genuine challenge/error shells remain failures or partial observations.
 - Screenshots, network capture, and other diagnostic artifacts follow explicit run controls.

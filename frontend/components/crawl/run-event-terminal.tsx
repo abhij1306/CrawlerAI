@@ -10,7 +10,6 @@ import {
   Globe,
   HardDrive,
   Layers,
-  RefreshCw,
   XCircle,
 } from 'lucide-react';
 import React, { memo, useEffect, useRef } from 'react';
@@ -59,7 +58,6 @@ function getRunEventIcon(event: RunEvent | null, stage: RunEventGroupStage) {
   if (!event) return Database;
   if (event.severity === 'error') return XCircle;
   if (event.severity === 'warning') return AlertTriangle;
-  if (event.kind.startsWith('browser_retry.')) return RefreshCw;
   if (stage === 'acquisition') return Globe;
   if (stage === 'extraction') return Database;
   if (stage === 'normalization') return Layers;

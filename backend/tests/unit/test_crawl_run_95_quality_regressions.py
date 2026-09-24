@@ -263,7 +263,6 @@ def test_requested_high_value_field_missing_after_capture_routes_review() -> Non
     result = extract(request)
 
     assert result.verdict == "partial"
-    assert result.retry_request is None
     assert result.diagnostics.review_required is True
     assert result.diagnostics.trust_state == "needs_review"
 
@@ -292,8 +291,6 @@ def test_semantic_shell_uses_terminal_capture_outcome_after_browser_spent() -> N
     assert result.verdict == "error"
     assert result.transport_outcome == "semantic_shell"
     assert result.data_integrity == "defect"
-    assert result.retry_request is not None
-    assert result.retry_request.required is False
     assert result.diagnostics.review_required is True
     assert result.diagnostics.trust_state == "needs_review"
 

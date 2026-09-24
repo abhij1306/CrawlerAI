@@ -363,24 +363,6 @@ ECOMMERCE_DETAIL_CRITICAL_CONTRACT_FIELDS = (
     *ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
 )
 ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD = "availability"
-ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS = frozenset(
-    {
-        "title",
-        "brand",
-        "description",
-        "price",
-        "currency",
-        "image",
-        "image_url",
-        "additional_images",
-        "sku",
-        ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
-    }
-)
-SURFACE_BROWSER_RETRY_TARGETS = {
-    "ecommerce_detail": ("price", "currency", "title", "image_url"),
-    "ecommerce_listing": ("title", "url"),
-}
 SURFACE_ACQUISITION_CONTRACT_FIELDS = {
     "ecommerce_detail": ("title", "price", "image_url")
 }

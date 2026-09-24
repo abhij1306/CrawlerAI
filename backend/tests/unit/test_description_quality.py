@@ -70,6 +70,19 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     assert result.records[0]["description"] == full
 
 
+def test_bare_brand_meta_description_cannot_replace_product_prose() -> None:
+    prose = (
+        "Iconic embroidered symbols add a distinctive detail to the canvas high top."
+    )
+    html = (
+        '<meta name="description" content="Converse">'
+        '<main class="product-detail"><h1>Retro Embroidery High Top</h1>'
+        f'<p itemprop="description">{prose}</p></main>'
+    )
+    result = _extract(html)
+    assert result.records[0]["description"] == prose
+
+
 def test_consent_component_does_not_compete_with_product_description() -> None:
     product = "Soft leather uppers and a contoured footbed support all-day wear."
     consent = "To view the video, accept marketing cookies in your privacy settings."

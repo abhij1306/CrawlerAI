@@ -107,6 +107,24 @@ def test_explicit_offer_currency_beats_ambiguous_symbol() -> None:
     assert result.records[0].get("currency") == "USD"
 
 
+def test_parent_sku_uses_its_variant_offer_instead_of_matrix_minimum() -> None:
+    html = """<script type="application/ld+json">{
+      "@context":"https://schema.org", "@type":"ProductGroup",
+      "name":"Carbone Eau de Parfum", "url":"https://shop.test/products/carbone",
+      "sku":"B1Q501", "hasVariant":[
+        {"@type":"Product", "sku":"B1DK01", "size":"10 ml",
+         "offers":{"@type":"Offer", "price":"45.00", "priceCurrency":"USD"}},
+        {"@type":"Product", "sku":"B1Q501", "size":"30 ml",
+         "offers":{"@type":"Offer", "price":"130.00", "priceCurrency":"USD"}}
+      ]}</script>"""
+    result = _extract("ecommerce_detail", html, "https://shop.test/products/carbone")
+    record = result.records[0]
+    assert record["sku"] == "B1Q501"
+    assert record["price"] == "130.00"
+    assert record["currency"] == "USD"
+    assert record["price_min"] == "45.00"
+
+
 def test_uncorroborated_cent_magnitude_price_is_not_silently_repaired() -> None:
     result = _extract(
         "ecommerce_detail",

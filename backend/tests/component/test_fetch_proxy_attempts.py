@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.acquisition.contracts import AcquisitionRuntimeError
 from tests.component.crawl_fetch_runtime_test_support import (
     AsyncMock,
     HostProtectionPolicy,
@@ -79,7 +80,7 @@ def test_resolve_proxy_attempts_rewrites_proxy_session_when_explicitly_enabled()
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_browser_only_retries_proxies_in_user_order_and_stamps_diagnostics(
+async def test_fetch_page_browser_only_stops_after_first_proxy_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempted_proxies: list[str | None] = []
@@ -106,20 +107,17 @@ async def test_fetch_page_browser_only_retries_proxies_in_user_order_and_stamps_
         lambda **_kwargs: ["patchright"],
     )
 
-    result = await crawl_fetch_runtime.fetch_page(
-        crawl_fetch_runtime.FetchPageCall(
-            "https://example.com/products/widget",
-            surface="ecommerce_detail",
-            fetch_mode="browser_only",
-            proxy_list=["socks5://proxy-a", "socks5://proxy-b", "socks5://proxy-a"],
+    with pytest.raises(AcquisitionRuntimeError) as failure:
+        await crawl_fetch_runtime.fetch_page(
+            crawl_fetch_runtime.FetchPageCall(
+                "https://example.com/products/widget",
+                surface="ecommerce_detail",
+                fetch_mode="browser_only",
+                proxy_list=["socks5://proxy-a", "socks5://proxy-b", "socks5://proxy-a"],
+            )
         )
-    )
-
-    assert attempted_proxies == ["socks5://proxy-a", "socks5://proxy-b"]
-    assert result.method == "browser"
-    assert result.browser_diagnostics["proxy_scheme"] == "socks5"
-    assert result.browser_diagnostics["browser_proxy_mode"] == "launch"
-    assert result.browser_diagnostics["proxy_attempt_index"] == 2
+    assert attempted_proxies == ["socks5://proxy-a"]
+    assert str(failure.value.__cause__) == "proxy-a failed"
 
 
 @pytest.mark.asyncio

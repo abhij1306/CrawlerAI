@@ -90,7 +90,7 @@ Never:
 Acquisition returns observations: requested/final URL, status, method, headers, blocked state, diagnostics, rendered HTML, visible/accessibility text, network payloads, expansion artifacts, and optional screenshots. It never writes logical product fields.
 
 - Fast-finalize only successful 2xx responses with verified usable/extractable content. Error bodies continue through error/block classification.
-- Retry/escalate only from policy and evidence, with enough URL-local budget. Record every retry. When budget is insufficient, return the observed result with an explicit skipped diagnostic.
+- Acquisition may escalate from HTTP to one browser fetch when policy and block/shell evidence allow it. Extraction never starts another browser fetch to fill missing fields or variants. A blocked headless browser may fall back to real Chrome when configured and available. Record each acquisition attempt.
 - Do not retry static not-found pages, mismatched homepage/category shells, or existing low-quality detail rows merely missing defaults.
 - Respect `capture_screenshot=False` on every outcome.
 - Browser-driver disconnect is URL-local. Recycle a failed shared browser at most once. Browser close tasks remain observed if cleanup exceeds budget; do not cancel driver internals.

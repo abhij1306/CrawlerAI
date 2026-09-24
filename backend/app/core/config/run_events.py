@@ -99,8 +99,6 @@ class RunEventKind(StrEnum):
     ACQUISITION_COMPLETED = "acquisition.completed"
     ACQUISITION_PROTECTION_DETECTED = "acquisition.protection_detected"
     ACQUISITION_POPUP_CLOSED = "acquisition.popup_closed"
-    BROWSER_RETRY_RESULT = "browser_retry.result"
-    BROWSER_RETRY_PRECOMMIT_UNAVAILABLE = "browser_retry.precommit_unavailable"
     TRAVERSAL_DETECTED = "traversal.detected"
     TRAVERSAL_PROGRESS = "traversal.progress"
     TRAVERSAL_SETTLED = "traversal.settled"
@@ -327,21 +325,6 @@ RUN_EVENT_DEFINITIONS: dict[RunEventKind, RunEventDefinition] = {
     RunEventKind.ACQUISITION_POPUP_CLOSED: _url(
         RunEventStage.ACQUISITION, required=("popup_url",)
     ),
-    RunEventKind.BROWSER_RETRY_RESULT: _url(
-        RunEventStage.ACQUISITION,
-        severity=RunEventSeverity.WARNING,
-        outcome=RunEventOutcome.PARTIAL,
-        optional=(
-            "exception_type",
-            "reason",
-        ),
-        reasons=("failed", "skipped"),
-    ),
-    RunEventKind.BROWSER_RETRY_PRECOMMIT_UNAVAILABLE: _url(
-        RunEventStage.ACQUISITION,
-        severity=RunEventSeverity.WARNING,
-        outcome=RunEventOutcome.SKIPPED,
-    ),
     RunEventKind.TRAVERSAL_DETECTED: _url(
         RunEventStage.ACQUISITION,
         required=("mode",),
@@ -403,8 +386,6 @@ RUN_EVENT_REASON_OUTCOMES: dict[tuple[RunEventKind, str], RunEventOutcome] = {
     (RunEventKind.ROBOTS_CHECKED, "blocked"): RunEventOutcome.BLOCKED,
     (RunEventKind.ROBOTS_CHECKED, "missing"): RunEventOutcome.SUCCEEDED,
     (RunEventKind.ROBOTS_CHECKED, "fetch_failed"): RunEventOutcome.PARTIAL,
-    (RunEventKind.BROWSER_RETRY_RESULT, "failed"): RunEventOutcome.FAILED,
-    (RunEventKind.BROWSER_RETRY_RESULT, "skipped"): RunEventOutcome.SKIPPED,
     (RunEventKind.EXTRACTION_LISTING_FALLBACK, "recovered"): RunEventOutcome.PARTIAL,
     (RunEventKind.EXTRACTION_LISTING_FALLBACK, "empty"): RunEventOutcome.FAILED,
 }
@@ -419,7 +400,6 @@ RUN_EVENT_REASON_SEVERITIES: dict[tuple[RunEventKind, str], RunEventSeverity] = 
     ): RunEventSeverity.WARNING,
     (RunEventKind.ROBOTS_CHECKED, "blocked"): RunEventSeverity.WARNING,
     (RunEventKind.ROBOTS_CHECKED, "fetch_failed"): RunEventSeverity.WARNING,
-    (RunEventKind.BROWSER_RETRY_RESULT, "skipped"): RunEventSeverity.INFO,
 }
 
 RUN_EVENT_VERDICT_OUTCOMES: dict[str, RunEventOutcome] = {

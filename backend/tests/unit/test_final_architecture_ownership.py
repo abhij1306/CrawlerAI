@@ -273,7 +273,6 @@ def test_dead_checkpoint_parameters_are_retired() -> None:
         ("PageAcquisitionResult", {"acquisition/acquirer.py"}),
         ("AttemptSpec", {"acquisition/contracts.py"}),
         ("AttemptResult", {"acquisition/contracts.py"}),
-        ("CapabilityRequest", {"extraction/contracts.py"}),
         ("UrlResult", {"crawl/contracts.py"}),
         ("RunSummary", {"crawl/contracts.py"}),
     ),
